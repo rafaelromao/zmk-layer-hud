@@ -1,7 +1,8 @@
-# Integrating with the keyboards repo
+# Integrating with the author's keyboards repo
 
-Exact changes for `~/projects/keyboards` (rafaelromao/keyboards). Three edits, then build and
-flash the central (or dongle). Peripherals need nothing.
+The generic guide is [zmk-setup.md](zmk-setup.md). This page is the same three changes applied to
+`~/projects/keyboards` (rafaelromao/keyboards), whose build script manages modules itself instead
+of `west.yml`. Then build and flash the central (or dongle). Peripherals need nothing.
 
 ## 1. Add the module
 

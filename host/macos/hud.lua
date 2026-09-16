@@ -1,9 +1,9 @@
 -- zmk-layer-hud: macOS host (Hammerspoon).
 --
 -- Two always-on-top, borderless webviews on the recording display:
---   * hud/index.html  (top-right)    the Diamond keymap rendered from the keyboards repo's drawer
---                                    YAML (hud/keymap/build.py); keys and combos light as they are
---                                    typed; the banner names the active layer.
+--   * hud/index.html  (top-right)    the keymap from your keymap-drawer YAML (see the config);
+--                                    keys and combos light as they are typed; the banner names the
+--                                    active layer as reported by the keyboard.
 --   * hud/keys.html   (bottom-left)  the typed-keys strip.
 --
 -- Load without touching ~/.hammerspoon (needs `require("hs.ipc")` there once):
@@ -17,11 +17,12 @@
 --               {"kind":"layers","ids":[…]}. Hammerspoon injects hud.load(...) / hud.setLayers(ids).
 --               Input Monitoring: the task inherits Hammerspoon's grant (it already taps keys).
 --   * keys      hs.eventtap on keyDown/keyUp/flagsChanged, forwarded to both pages.
---   * vim mode  the zmk-vim-mode daemon log (~/Library/Logs/zmk-vim-mode.log, launchd's stderr):
---               one INFO line `msg=decision mode=… code=… reason="…"` per transition, polled by
---               size every 200 ms (FSEvents are unreliable for a file launchd keeps open); shown
---               as the banner's reason, and used for the vim layers only until the keyboard's
---               own layers arrive. Fallback when the log is missing: `zmk-vim-mode status --json`.
+--   * vim mode  optional, only where zmk-vim-mode is installed: its daemon log
+--               (~/Library/Logs/zmk-vim-mode.log, launchd's stderr) has one INFO line
+--               `msg=decision mode=… code=… reason="…"` per transition, polled by size every
+--               200 ms (FSEvents are unreliable for a file launchd keeps open); shown as the
+--               banner's reason, and used for the vim layers only until the keyboard's own
+--               layers arrive. Fallback when the log is missing: `zmk-vim-mode status --json`.
 --
 -- The Linux host is host/linux/ (the same pages, driven over a WebSocket by hudfeed.py).
 
@@ -274,14 +275,17 @@ function M.start()
   -- the page is ready long before two seconds.
   readyTimer = hs.timer.doAfter(2, function() if not ready then flush(); readTail() end end)
 
+  -- zmk-vim-mode is optional: feed its decisions only where it is installed.
   if hs.fs.attributes(LOG) then
     watcher = hs.pathwatcher.new(LOG, readTail):start()
     logTimer = hs.timer.doEvery(0.2, function()
       local size = hs.fs.attributes(LOG, "size") or -1
       if size ~= lastSize then lastSize = size; readTail() end
     end)
-  else
+  elseif hs.fs.attributes(BINARY) then
     pollTimer = hs.timer.doEvery(0.2, pollStatus)
+  else
+    print("zmkhud: zmk-vim-mode not installed; the banner shows the keyboard's layers only")
   end
 
   startFeed()

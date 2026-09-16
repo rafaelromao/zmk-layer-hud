@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""Host feed for the zmk-layer-hud pages: layer announcements from the keyboard, key events,
-and the zmk-vim-mode daemon's decisions, as JSON messages over a WebSocket or on stdout.
+"""Host feed for the zmk-layer-hud pages: the keymap, layer announcements from the keyboard, key
+events and (optionally) the zmk-vim-mode daemon's decisions, as JSON messages over a WebSocket or
+on stdout. Nothing here needs zmk-vim-mode unless the config defines its `codes`.
 
 The HUD (hud/index.html) and the typed-keys strip (hud/keys.html) are plain web pages. On
 Linux, open them with `?ws=ws://127.0.0.1:8766` (host/linux/hud.sh does) and they connect
@@ -27,8 +28,9 @@ Inputs:
               (or the zmk-vim-mode daemon's identical rule).
   * evdev     every keyboard under /dev/input (Linux only; needs read access: the udev rule
               gives uaccess for the ZMK keyboard, `input` group membership covers the rest)
-  * journal   `journalctl --user -u zmk-vim-mode -f` for the daemon's `msg=decision …` lines
-              (Linux); falls back to polling `zmk-vim-mode status --json`.
+  * journal   optional, only with `codes` in the config (or --mode): `journalctl --user -u
+              zmk-vim-mode -f` for the daemon's `msg=decision …` lines (Linux); falls back to
+              polling `zmk-vim-mode status --json`.
 
 Dependencies: python-hidapi (`import hid`; Arch: python-hidapi, macOS: brew install hidapi &&
 pip install hidapi). Linux extras: python-evdev python-websockets.
@@ -382,7 +384,8 @@ def parse_args(argv=None):
     p.add_argument("--layers-only", action="store_true",
                    help="only what comes from the keyboard: keymap + raw-HID layers (no OS key feed, no daemon mode)")
     p.add_argument("--no-keys", action="store_true", help="skip the evdev key feed")
-    p.add_argument("--no-mode", action="store_true", help="skip the daemon decision feed")
+    p.add_argument("--no-mode", action="store_true", help="skip the zmk-vim-mode daemon feed")
+    p.add_argument("--mode", action="store_true", help="force the zmk-vim-mode daemon feed even without `codes` in the config")
     p.add_argument("--no-layers", action="store_true", help="skip the raw-HID layer feed")
     p.add_argument("--no-keymap", action="store_true", help="skip the keymap feed (pages keep whatever they have)")
     p.add_argument("--vid", type=lambda s: int(s, 0), help="keyboard vendor id (default: config `keyboard.vid`, else ZMK's)")
@@ -444,8 +447,13 @@ async def main(args):
         else:
             hub.log("hudfeed: key events come from the host's own tap on this platform (hud.lua)")
 
-    if not args.layers_only and not args.no_mode:
-        tasks.append(ModeFeed(hub.send, hub.log).run())
+    # The zmk-vim-mode daemon feed is optional: only when the config defines its `codes`, or when
+    # asked for explicitly. A standalone HUD never touches it.
+    if not args.layers_only and not args.no_mode and (cfg.get("codes") or args.mode):
+        if os.path.exists(BINARY) or shutil.which("zmk-vim-mode") or shutil.which("journalctl"):
+            tasks.append(ModeFeed(hub.send, hub.log).run())
+        else:
+            hub.log("hudfeed: zmk-vim-mode not installed; skipping the daemon mode feed")
 
     if not args.no_ws:
         try:
