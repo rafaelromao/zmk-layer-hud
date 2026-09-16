@@ -56,6 +56,7 @@ SIGNAL = {"base": 0xC0, "commit": 0xDF}
 # `hud:` section: every timing and size the page uses, in ms unless said otherwise.
 HUD_DEFAULTS = {
     "width": 598,              # panel width in points; the height follows the layout
+    "opacity": 86,             # panel background opacity, 0 (clear) to 100 (solid)
     "press_ms": 320,           # how long a pressed key stays lit
     "combo_pill_ms": 1000,     # how long a combo's pill stays up
     "combo_slack_ms": 20,      # added to combo_term_ms for the reports' travel time
@@ -549,6 +550,8 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None
     if unknown:
         raise KeymapError(f"hud: unknown settings {unknown}; known: {sorted(HUD_DEFAULTS)}")
     hud_cfg.update({k: int(v) for k, v in (cfg.get("hud") or {}).items()})
+    if not 0 <= hud_cfg["opacity"] <= 100:
+        raise KeymapError("hud.opacity must be between 0 and 100")
     # ZMK key position -> drawer key index (firmware `positions;`). Default: the drawer's key
     # order is the keymap's binding order (true for a YAML from `keymap parse`).
     positions = cfg.get("positions")

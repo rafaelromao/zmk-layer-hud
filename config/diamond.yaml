@@ -8,6 +8,7 @@ drawer_config: ~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawe
 # Every size and timing the HUD uses (ms unless noted). Shown with the defaults; drop any line.
 hud:
   width: 598                  # panel width in points; the height follows the layout
+  opacity: 86                 # panel background, 0 (clear) to 100 (solid)
   press_ms: 320               # a pressed key stays lit this long
   combo_pill_ms: 1000         # a combo's pill stays up this long
   combo_slack_ms: 20          # added to combo_term_ms for the reports' travel time

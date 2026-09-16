@@ -27,7 +27,7 @@
   const GAP = 6;             // px between keys at the drawn scale
   // Every timing the page uses comes from the config's `hud:` section (host/keymap.py fills the
   // defaults in); these are only the fallbacks for a keymap message without it.
-  const DEFAULTS = { press_ms: 320, momentary_ms: 700, combo_slack_ms: 20, activator_ms: 400,
+  const DEFAULTS = { opacity: 86, press_ms: 320, momentary_ms: 700, combo_slack_ms: 20, activator_ms: 400,
     positions_fresh_ms: 3000, combo_pill_ms: 1000, sequence_ms: 200, sequence_max: 6, one_shot_ms: 450 };
   const T = name => (state.data && state.data.hud && state.data.hud[name] != null) ? state.data.hud[name] : DEFAULTS[name];
   const recentPos = [];
@@ -593,6 +593,7 @@
       state.data = data;
       state.momentary = []; state.oneShot = null;
       state.baseLayers = [data.base];
+      document.documentElement.style.setProperty("--panel-alpha", String(T("opacity") / 100));
       buildBoard();
       const t = $("title");
       renderTitle();
