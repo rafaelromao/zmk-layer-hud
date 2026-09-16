@@ -47,13 +47,33 @@ class Layout(unittest.TestCase):
         lay = km.cpt_layout("22+1> 1<+22", key_w=10, key_h=10, split_gap=5)
         self.assertEqual(len(lay["keys"]), 10)
         xs = [k["x"] for k in lay["keys"][:4]]
-        self.assertEqual(xs, [5, 15, 30, 40])          # row 0: left hand, gap, right hand
+        # left cols 0,1 with its thumb at 1.5 (max x 1.5 -> right hand offset 2.5 keys + the gap);
+        # the right thumb at -0.5 shifts that hand half a key: cols at 3, 4 -> centres 40, 50 (+5 gap)
+        self.assertEqual(xs, [5, 15, 40, 50])
         self.assertEqual(lay["keys"][8]["y"], 25)       # thumbs on row 2
-        self.assertEqual((lay["width"], lay["height"]), (45, 30))
+        self.assertEqual((lay["width"], lay["height"]), (55, 30))
 
-    def test_diamond_notation(self):
-        lay = km.cpt_layout("1333+2> 2<+3331")
+    def test_diamond_notation_order_is_row_hand_column(self):
+        # keymap-drawer sorts by integer row, then part (hand), then column: row 0 has 6 keys
+        # (cols 1-3 left, 0-2 right), row 1 has 8, row 2 has 6, then the 4 thumbs.
+        lay = km.cpt_layout("1333+2> 2<+3331", key_w=10, key_h=10, split_gap=0)
         self.assertEqual(len(lay["keys"]), 24)
+        rows = [int(k["y"] // 10) for k in lay["keys"]]
+        self.assertEqual(rows, [0] * 6 + [1] * 8 + [2] * 6 + [3] * 4)
+        xs = [k["x"] for k in lay["keys"]]
+        # Left hand: cols at 0..3; its "2>" thumbs sit half a key inward (2.5, 3.5) so max x is 3.5
+        # and the right hand starts at 4.5. The right hand's "2<" thumbs start at -0.5, which the
+        # drawer normalises away by shifting that whole hand half a key: cols at 5..8, thumbs 4.5, 5.5.
+        self.assertEqual(xs[:6], [15, 25, 35, 55, 65, 75])            # row 0: left cols 1-3, right cols 0-2
+        self.assertEqual(xs[6:14], [5, 15, 25, 35, 55, 65, 75, 85])   # row 1: every column
+        self.assertEqual(xs[20:], [30, 40, 50, 60])                   # thumbs hug the inner edges
+
+    def test_shifted_columns(self):
+        lay = km.cpt_layout("3v3 33", key_w=10, key_h=10, split_gap=0)
+        # a "v" column sits half a row lower than its neighbour; it still sorts into rows 0..2
+        col0 = [k for k in lay["keys"] if k["x"] == 5]
+        self.assertEqual([k["y"] for k in col0], [10, 20, 30])
+        self.assertEqual(lay["keys"][0], col0[0])                      # row 0, part 0, leftmost column
 
 
 class Message(unittest.TestCase):

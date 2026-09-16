@@ -8,10 +8,16 @@ PYTHON ?= python3
 
 all: test
 
-venv: ## create .venv with hidapi and keymap-drawer (macOS: brew install hidapi first)
+UNAME_S := $(shell uname -s)
+VENV_PKGS := hidapi keymap-drawer websockets
+ifeq ($(UNAME_S),Darwin)
+VENV_PKGS += pyobjc-framework-Cocoa pyobjc-framework-WebKit
+endif
+
+venv: ## create .venv with hidapi, keymap-drawer, websockets (+ pyobjc on macOS; brew install hidapi first)
 	$(PYTHON) -m venv .venv
-	.venv/bin/python3 -m pip install --quiet --upgrade pip hidapi keymap-drawer
-	@echo "venv ready: .venv/bin/python3 (host/macos/start.sh and hud.lua pick it up)"
+	.venv/bin/python3 -m pip install --quiet --upgrade pip $(VENV_PKGS)
+	@echo "venv ready: .venv/bin/python3 (the host scripts pick it up)"
 
 test: test-firmware test-host ## run every test suite
 

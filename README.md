@@ -19,7 +19,7 @@ keyboard and any keymap-drawer file, and on macOS and Linux the same way.
 ```
 firmware/     ZMK module: zmk,layer-signal
 host/         hudfeed.py (feeds → WebSocket or stdout), keymap.py (keymap-drawer YAML → HUD keymap),
-              macos/ (Hammerspoon overlay), linux/ (Hyprland layer-shell panel)
+              macos/ (PyObjC overlay panel), linux/ (Hyprland layer-shell panel)
 hud/          the pages: layer HUD and typed-keys strip
 config/       example.yaml (any keyboard), diamond.yaml (the author's Diamond, with every option)
 docs/         zmk-setup.md (firmware, generic), keyboards-repo.md (the author's own build system)
@@ -49,7 +49,7 @@ macOS (Homebrew Python; Apple's `/usr/bin/python3` has none of the packages):
 ```bash
 git clone https://github.com/rafaelromao/zmk-layer-hud ~/projects/zmk-layer-hud
 cd ~/projects/zmk-layer-hud
-brew install hidapi && make venv          # .venv with hidapi + keymap-drawer; the hosts pick it up
+brew install hidapi && make venv          # .venv with hidapi, keymap-drawer, websockets, pyobjc
 ```
 
 Linux (Arch/Hyprland shown; the panel needs the system GTK bindings, the feed runs in the venv):
@@ -84,13 +84,36 @@ order is the ZMK layer order. Check it converts:
 ### 4. Run
 
 ```bash
-host/macos/start.sh        # macOS: Hammerspoon with require("hs.ipc") in ~/.hammerspoon/init.lua
-bash host/linux/hud.sh     # Linux: layer-shell panel on the recording monitor
+host/macos/start.sh        # macOS: transparent always-on-top panels (PyObjC + WKWebView)
+bash host/linux/hud.sh     # Linux: layer-shell panels on the recording monitor
 ```
 
-The panel appears top-right with the typed-keys strip. Within two seconds the status line reads
-"layers from the keyboard"; hold a layer key and the banner names it. Edit a legend in your
-keymap-drawer YAML and the HUD redraws when you save.
+Both start `hudfeed.py` and open two windows on the recording display (the external one when
+there is one): the layer HUD top-right and the typed-keys strip bottom-left. `stop` closes them,
+`log` (macOS) tails the panel and feed logs. The first run on macOS asks for Input Monitoring for
+the app you launched from (the terminal); grant it once and restart.
+
+### 5. Test it
+
+Watch the status line under the board:
+
+1. **"waiting for the keymap…"** for more than a second means the config or the YAML failed;
+   `host/macos/start.sh` already printed the reason, or run `.venv/bin/python3 host/keymap.py`.
+2. **"waiting for the keyboard's layers…"** means the keymap is drawn but no announcement has
+   arrived. Within two seconds of the keyboard being connected (heartbeat) it must flip to
+   **"layers from the keyboard"**. If it does not, `run/hudfeed.log` says whether the keyboard
+   opened at all (`reading <name>`), else see Troubleshooting.
+3. Hold a layer key: the banner names the layer and lists the active ZMK layer names, the key
+   you hold lights blue (activator), and the legends change. Release: back to the base layer.
+4. Type: each key flashes orange on the layer the keyboard reports, and the strip shows the
+   characters. A combo lights all its keys and draws its output in a pill above them. A dashed
+   flash means the character is not on that layer in your YAML (a legend spelled differently).
+5. Hold Shift: the keys whose hold legend carries ⇧ get a green inset (home-row mods).
+6. Edit a legend in the keymap-drawer YAML and save: the HUD redraws within a second. Break the
+   YAML on purpose: the HUD keeps the last good keymap and `run/hudfeed.log` names the error.
+
+Without the keyboard, `.venv/bin/python3 host/hudfeed.py --stdout --no-ws --debug` prints
+everything the pages would receive; `--raw` adds every report as hex.
 
 ## How the keyboard talks to the host
 
@@ -169,8 +192,7 @@ input reports with hidapi (the keyboard named in the config, else any 1d50:615e)
 keyboard report it derives the layer set (when the commit usage is present), key presses and
 releases (the difference between consecutive reports) and modifier changes (the modifier byte).
 Characters come from the usage through a US-layout table, which is what a ZMK keymap emits.
-Outputs: a WebSocket on 127.0.0.1:8766 and/or `--stdout` JSON lines (the macOS host runs it that
-way under Hammerspoon, which already has Input Monitoring).
+Outputs: a WebSocket on 127.0.0.1:8766 (both panels use it) and/or `--stdout` JSON lines.
 
 ```
 --config PATH        config file (default $ZMKHUD_CONFIG, ~/.config/zmk-layer-hud/config.yaml)
@@ -182,8 +204,8 @@ way under Hammerspoon, which already has Input Monitoring).
 
 ## Troubleshooting
 
-- **`cannot open <keyboard>`** on macOS: the app running Python (your terminal, or Hammerspoon
-  for `start.sh`) needs Input Monitoring (System Settings → Privacy & Security), and
+- **`cannot open <keyboard>`** on macOS (`run/hudfeed.log`): the app you launched from needs
+  Input Monitoring (System Settings → Privacy & Security), and
   Karabiner-Elements must not "modify events" for that keyboard, or it seizes the device.
   `python3 host/hiddiag.py` prints the raw IOKit code that names the blocker.
 - **`cannot open`** on Linux: hidraw permissions; install `contrib/udev/60-zmk-layer-hud.rules`
@@ -214,4 +236,5 @@ built-in `cols_thumbs_notation` fallback only.
   light each key they type.
 - Without keymap-drawer installed only `cols_thumbs_notation` layouts render, and combos given
   as `trigger_keys` are skipped.
-- The Linux host is ported from an earlier kit and not yet run on hardware.
+- The Linux host is ported from an earlier kit and not yet run on hardware; the macOS panel is
+  new and needs its first run on a real display (window levels, transparency, Input Monitoring).

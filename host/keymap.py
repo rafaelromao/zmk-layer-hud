@@ -163,34 +163,45 @@ def prettify(name):
 def cpt_layout(spec, key_w=70.0, key_h=68.0, split_gap=30.0):
     """Fallback for keymap-drawer's cols_thumbs_notation ("1333+2> 2<+3331"): centred key
     rectangles in the drawer's coordinate system. Used only when keymap_drawer is not installed."""
-    parts = spec.split()
-    keys = []
-    x0 = 0.0
-    for part in parts:
-        cols_spec, thumbs_spec = part, None
-        if "+" in part:
-            a, b = part.split("+", 1)
-            if a and a[0].isdigit() and not a.endswith(("<", ">")):
-                cols_spec, thumbs_spec = a, b          # "1333+2>"
-            else:
-                thumbs_spec, cols_spec = a, b          # "2<+3331"
-        cols = [int(c) for c in cols_spec]
-        rows = max(cols)
-        for col, count in enumerate(cols):
-            top = (rows - count) // 2
-            for r in range(top, top + count):
-                keys.append({"x": x0 + (col + 0.5) * key_w, "y": (r + 0.5) * key_h, "w": key_w, "h": key_h, "r": 0})
+    parts = [p for p in re.split(r"[ _]+", spec) if p]
+    # Column heights across every part decide the row grid (the drawer's max_rows).
+    thumbs_re = re.compile(r"^\d[><lr]*$")
+
+    def split_part(part):
+        """-> (column specs, thumbs spec or None, thumbs after the columns?)"""
+        if "+" not in part:
+            return re.findall(r"\d[v^ud]*", part), None, True
+        a, b = part.split("+", 1)
+        if thumbs_re.match(a):  # "2<+3331": thumbs before the columns (right hand)
+            return re.findall(r"\d[v^ud]*", b), a, False
+        return re.findall(r"\d[v^ud]*", a), b, True  # "1333+2>": thumbs after the columns (left hand)
+
+    parsed = [split_part(p) for p in parts]
+    max_rows = max(int(c[0]) for cols, _, _ in parsed for c in cols)
+    keys = []  # (row, part index, x, y) in key units, mirroring CPTLayout.generate
+    x_offset = 0.0
+    for part_ind, (cols, thumbs_spec, thumbs_left) in enumerate(parsed):
+        pts = []
+        for col, c_spec in enumerate(cols):
+            count = int(c_spec[0])
+            shift = c_spec.count("v") + c_spec.count("d") - c_spec.count("^") - c_spec.count("u")
+            y_top = (max_rows - count + shift) / 2  # short columns are centred (half rows allowed)
+            pts += [(col, y_top + i) for i in range(count)]
         if thumbs_spec:
-            n = int(thumbs_spec.rstrip("<>"))
-            start = len(cols) - n if thumbs_spec.endswith(">") or not thumbs_spec.endswith("<") else 0
-            if thumbs_spec.endswith("<"):
-                start = 0
-            for i in range(n):
-                keys.append({"x": x0 + (start + i + 0.5) * key_w, "y": (rows + 0.5) * key_h, "w": key_w, "h": key_h, "r": 0})
-        x0 += len(cols) * key_w + split_gap
-    # Row-major order like the drawer: sort by row then x, thumbs last per hand is what the
-    # drawer does too (columns are listed per row, thumbs after all rows).
-    ordered = sorted(keys, key=lambda k: (round(k["y"] / key_h), k["x"]))
+            n = int(re.match(r"\d", thumbs_spec).group())
+            shift = (thumbs_spec.count(">") + thumbs_spec.count("r") - thumbs_spec.count("<") - thumbs_spec.count("l")) / 2
+            x_left = (len(cols) - n if thumbs_left else 0) + shift
+            pts += [(x_left + i, max_rows) for i in range(n)]
+        # Each part is normalised to start at (0, 0), so a thumb shifted past the edge moves the
+        # whole hand; parts are then placed one key apart.
+        min_x, min_y = min(p[0] for p in pts), min(p[1] for p in pts)
+        pts = [(x - min_x, y - min_y) for x, y in pts]
+        for x, y in pts:
+            keys.append((int(y), part_ind, (x + 0.5 + x_offset) * key_w + part_ind * split_gap, (y + 0.5) * key_h))
+        x_offset += max(p[0] for p in pts) + 1
+    # The drawer's order: row, then part (hand), then column.
+    keys.sort(key=lambda k: (k[0], k[1], k[2]))
+    ordered = [{"x": x, "y": y, "w": key_w, "h": key_h, "r": 0} for _, _, x, y in keys]
     width = max(k["x"] + k["w"] / 2 for k in ordered)
     height = max(k["y"] + k["h"] / 2 for k in ordered)
     return {"width": width, "height": height, "keys": ordered}
