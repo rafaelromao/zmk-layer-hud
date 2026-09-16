@@ -264,18 +264,24 @@ class KeymapFeed:
         self.source, self.send, self.log, self.poll = source, send, log, poll
 
     async def run(self):
+        # main() already loaded (and validated) the keymap, which also snapshotted the file
+        # timestamps: send that first, then watch for edits.
+        if self.source.message is not None:
+            await self.announce(self.source.message)
         while True:
             if self.source.changed():
                 try:
-                    msg = self.source.load()
-                    self.log(f"hudfeed: keymap {msg['source']}: {len(msg['layout']['keys'])} keys, "
-                             f"{len(msg['layers'])} drawer layers, {len(msg['zmk_layers'])} ZMK layers")
-                    await self.send(msg)
+                    await self.announce(self.source.load())
                 except keymap_mod.KeymapError as e:
                     self.log(f"hudfeed: keymap not (re)loaded: {e}")
                 except Exception as e:  # a half-saved YAML, a typo in the config
                     self.log(f"hudfeed: keymap not (re)loaded: {type(e).__name__}: {e}")
             await asyncio.sleep(self.poll)
+
+    async def announce(self, msg):
+        self.log(f"hudfeed: keymap {msg['source']}: {len(msg['layout']['keys'])} keys, "
+                 f"{len(msg['layers'])} drawer layers, {len(msg['zmk_layers'])} ZMK layers")
+        await self.send(msg)
 
 
 # ---------- outputs ----------
