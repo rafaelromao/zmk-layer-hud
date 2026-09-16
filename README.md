@@ -4,8 +4,6 @@ An on-screen HUD for ZMK keyboards. It shows the layer you are on and lights the
 and macros as you press them, drawn from the same keymap-drawer file you document your layout
 with. The keyboard itself reports its layers and key positions, so nothing is guessed.
 
-![The HUD stepping through the 3x5 sample](docs/hud.gif)
-
 - **One source**: the keyboard's HID reports. No OS event tap, no daemon, no per-app plugin.
 - **Any ZMK keyboard**: a small ZMK module on the keyboard, a keymap-drawer YAML on the host.
 - **Live**: edit the YAML and the HUD redraws; every size and timing lives in one config file.
@@ -66,8 +64,8 @@ split (`config/example-3x5.yaml`) and a 4x12 ortho board (`config/example-4x12.y
 python3 -m http.server -d hud 8765         # open http://localhost:8765/index.html?keymap=keymap.json
 ```
 
-In the browser console, `hud.setLayers([1])` switches layers and `hud.pressAt(13)` lights a key.
-`docs/make-gif.sh` renders the animation above from this page.
+In the browser console, `hud.setLayers([1])` switches layers, `hud.pressAt(13)` lights a key and
+`hud.releaseAt(13)` lets it go, so the whole page can be exercised without hardware.
 
 ## Configuration
 

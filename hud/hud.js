@@ -752,34 +752,7 @@
 
   // Dev: index.html?keymap=keymap.json (python3 host/keymap.py --dump > hud/keymap.json) and real
   // key events, so the page can be exercised in a browser without a host.
-  // Dev: index.html?keymap=keymap.json&demo=N renders step N of the scripted demo (no timers), so
-  // a headless browser can screenshot each frame (docs/make-gif.sh builds the README animation).
-  const DEMO = [
-    { layers: [], device: "3x5 example" },
-    { layers: [], press: [1] },                       // W
-    { layers: [], press: [1, 10, 12] },               // W held, A and D (home-row mods)
-    { layers: [], press: [12, 13], combo: true },     // ( combo
-    { layers: [2], press: [32] },                     // NAV held on its thumb
-    { layers: [2], press: [32, 16] },                 // Down
-    { layers: [1], press: [33] },                     // SYM held
-    { layers: [1], press: [33, 7] },                  // 8
-    { layers: [], press: [] },
-  ];
-  function demoFrame(n) {
-    const step = DEMO[Math.max(0, Math.min(DEMO.length - 1, n))];
-    if (step.device) hud.setDevice(step.device);
-    hud.setLayers(step.layers);
-    for (const p of step.press || []) hud.pressAt(p);
-    if (step.combo) {
-      const combo = state.data.combos.find(c => c.positions.length === step.press.length && c.positions.every(p => step.press.includes(p)));
-      if (combo) { flash(combo.positions, "combo"); showCombo(combo.positions, combo.key); }
-    }
-    document.querySelectorAll(".combo-pill, .combo-links").forEach(e => e.classList.add("show"));
-  }
-  if (params.get("keymap")) fetch(params.get("keymap")).then(r => r.json()).then(data => {
-    hud.load(data);
-    if (params.get("demo") !== null) demoFrame(Number(params.get("demo")));
-  }).catch(e => console.error(e));
+  if (params.get("keymap")) fetch(params.get("keymap")).then(r => r.json()).then(hud.load).catch(e => console.error(e));
   if (location.protocol.startsWith("http")) window.addEventListener("keydown", e => {
     const name = e.key.length === 1 ? null : e.key.toLowerCase().replace("arrow", "").replace("backspace", "delete").replace("enter", "return");
     hud.key({ type: "keyDown", chars: e.key.length === 1 ? e.key : "", name, flags: {} });
