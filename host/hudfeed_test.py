@@ -123,5 +123,57 @@ class Decoder(unittest.TestCase):
         self.assertEqual(d.feed([]), [])
 
 
+class DeadKeys(unittest.TestCase):
+    """Accent macros type a US-International dead key then the letter, back to back."""
+
+    def test_acute_a(self):
+        d = ReportDecoder()
+        self.assertEqual(d.feed(R(0, 0x34), now_ms=1000), [])          # ' held back
+        self.assertEqual(d.feed(R(0), now_ms=1001), [])                 # its release: nothing yet...
+        msgs = d.feed(R(0, 0x04), now_ms=1002)                          # a
+        downs = [m for m in msgs if m.get("type") == "keyDown"]
+        self.assertEqual(len(downs), 1)
+        self.assertEqual((downs[0]["chars"], downs[0]["name"], downs[0]["composed"]), ("á", "á", [0x34, 0x04]))
+
+    def test_tilde_and_umlaut_use_shift(self):
+        d = ReportDecoder()
+        d.feed(R(0x02, 0x35), now_ms=0)      # shift + ` = ~
+        d.feed(R(0x02), now_ms=1)
+        msgs = d.feed(R(0, 0x11), now_ms=2)  # n
+        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["ñ"])
+        d.feed(R(0), now_ms=3)
+        d.feed(R(0x02, 0x34), now_ms=10)     # shift + ' = "
+        d.feed(R(0x02), now_ms=11)
+        msgs = d.feed(R(0x02, 0x18), now_ms=12)  # shift + u
+        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["Ü"])
+
+    def test_plain_apostrophe_is_released_on_timeout(self):
+        d = ReportDecoder()
+        self.assertEqual(d.feed(R(0, 0x34), now_ms=0), [])
+        self.assertEqual(d.feed(R(0), now_ms=5), [])                     # release held with it
+        self.assertEqual(d.flush(30), [])                                # not yet
+        out = d.flush(61)
+        self.assertEqual([(m["type"], m["chars"]) for m in out], [("keyDown", "'"), ("keyUp", "'")])
+
+    def test_apostrophe_then_slow_letter_stays_two_keys(self):
+        d = ReportDecoder()
+        d.feed(R(0, 0x34), now_ms=0)
+        d.feed(R(0), now_ms=5)
+        msgs = d.feed(R(0, 0x04), now_ms=200)                             # too late to compose
+        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["'", "a"])
+
+    def test_apostrophe_then_non_letter(self):
+        d = ReportDecoder()
+        d.feed(R(0, 0x34), now_ms=0)
+        d.feed(R(0), now_ms=1)
+        msgs = d.feed(R(0, 0x2C), now_ms=2)                               # space
+        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["'", " "])
+
+    def test_compose_can_be_disabled(self):
+        d = ReportDecoder(compose=False)
+        msgs = d.feed(R(0, 0x34), now_ms=0)
+        self.assertEqual([m["chars"] for m in msgs], ["'"])
+
+
 if __name__ == "__main__":
     unittest.main()

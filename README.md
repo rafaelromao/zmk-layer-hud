@@ -88,10 +88,13 @@ host/macos/start.sh        # macOS: transparent always-on-top panels (PyObjC + W
 bash host/linux/hud.sh     # Linux: layer-shell panels on the recording monitor
 ```
 
-Both start `hudfeed.py` and open two windows on the recording display (the external one when
-there is one): the layer HUD top-right and the typed-keys strip bottom-left. `stop` closes them,
-`log` (macOS) tails the panel and feed logs. The first run on macOS asks for Input Monitoring for
-the app you launched from (the terminal); grant it once and restart.
+macOS opens one always-on-top window, the board with the typed-keys strip below it, on the
+screen that has keyboard focus; drag it anywhere and it reopens there next time
+(`~/.config/zmk-layer-hud/state.json`). The feed runs inside the panel process and writes into
+the page directly. Linux opens the layer-shell panels on the recording monitor and talks to the
+feed over its WebSocket. `stop` closes them, `log` (macOS) tails the panel log. The first run on
+macOS asks for Input Monitoring for the app you launched from (the terminal); grant it once and
+restart.
 
 ### 5. Test it
 
@@ -108,6 +111,8 @@ Watch the status line under the board:
 4. Type: each key flashes orange on the layer the keyboard reports, and the strip shows the
    characters. A combo lights all its keys and draws its output in a pill above them. A dashed
    flash means the character is not on that layer in your YAML (a legend spelled differently).
+   Macros that type several keys (`->`, `=>`, `&&`) light the key or combo whose legend spells
+   the whole sequence; accents typed as dead key + letter show as one character (`á`).
 5. Hold Shift: the keys whose hold legend carries ⇧ get a green inset (home-row mods).
 6. Edit a legend in the keymap-drawer YAML and save: the HUD redraws within a second. Break the
    YAML on purpose: the HUD keeps the last good keymap and `run/hudfeed.log` names the error.
@@ -187,12 +192,17 @@ development, `index.html?keymap=keymap.json` loads a dumped message
 
 ## Host feed
 
-`host/hudfeed.py` sends the keymap (and re-sends it on change) and reads the keyboard's raw HID
-input reports with hidapi (the keyboard named in the config, else any 1d50:615e). From each
-keyboard report it derives the layer set (when the commit usage is present), key presses and
-releases (the difference between consecutive reports) and modifier changes (the modifier byte).
-Characters come from the usage through a US-layout table, which is what a ZMK keymap emits.
-Outputs: a WebSocket on 127.0.0.1:8766 (both panels use it) and/or `--stdout` JSON lines.
+`host/hudfeed.py` sends the keymap (and re-sends it on change) and reads the raw HID input
+reports of every matching keyboard with hidapi (any 1d50:615e by default; `keyboard.name` in the
+config narrows it to one, so a USB and a BLE board are both read). From each keyboard report it
+derives the layer set (when the commit usage is present), key presses and releases (the
+difference between consecutive reports) and modifier changes (the modifier byte). Characters
+come from the usage through a US-layout table, which is what a ZMK keymap emits; a
+US-International dead key (`` ` ' ^ ~ " ``) followed within 60 ms by a letter becomes the
+accented character, which is how accent macros type.
+
+The same code runs in-process in the macOS panel (`hudfeed.Feed`), or as a program serving a
+WebSocket on 127.0.0.1:8766 (the Linux panel, a browser) and/or `--stdout` JSON lines.
 
 ```
 --config PATH        config file (default $ZMKHUD_CONFIG, ~/.config/zmk-layer-hud/config.yaml)
@@ -232,8 +242,9 @@ built-in `cols_thumbs_notation` fallback only.
 
 - Layer ids must stay below 31 (30 with the default usages).
 - Keys are located by the character their HID usage maps to (US layout), on the layer the
-  keyboard reports; key positions themselves are not transmitted. Macros that type several keys
-  light each key they type.
+  keyboard reports; key positions themselves are not transmitted. A macro is recognised when the
+  keys it types, within 200 ms, spell a legend on the active layers; otherwise each key it types
+  lights on its own.
 - Without keymap-drawer installed only `cols_thumbs_notation` layouts render, and combos given
   as `trigger_keys` are skipped.
 - The Linux host is ported from an earlier kit and not yet run on hardware; the macOS panel is

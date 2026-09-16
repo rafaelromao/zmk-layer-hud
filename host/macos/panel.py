@@ -1,144 +1,184 @@
 #!/usr/bin/env python3
-"""zmk-layer-hud macOS host: two transparent, always-on-top, non-activating overlay windows
-(the layer HUD top-right, the typed-keys strip bottom-left) on the recording display, fed by
-host/hudfeed.py over its WebSocket. No Hammerspoon, no event tap: the keyboard's HID reports are
-the only source.
+"""zmk-layer-hud macOS host: one transparent, always-on-top, non-activating window with the layer
+HUD and the typed-keys strip below it. The feed (host/hudfeed.py) runs in this process and its
+messages are injected straight into the page: no WebSocket, no other source than the keyboard.
 
     .venv/bin/python3 host/macos/panel.py            # or host/macos/start.sh
-    ZMKHUD_SCREEN=main|external  ZMKHUD_PORT=8766    # optional
 
-Needs pyobjc-framework-Cocoa and pyobjc-framework-WebKit in the venv (make venv installs them on
-macOS). The first run asks for Input Monitoring for the app that launched this (your terminal,
-or the launchd agent); hudfeed.py inherits it as a child process.
+The window opens on the screen that has keyboard focus, can be dragged anywhere, and remembers
+its position in ~/.config/zmk-layer-hud/state.json. Needs pyobjc-framework-Cocoa and
+pyobjc-framework-WebKit in the venv (make venv installs them on macOS). The first run asks for
+Input Monitoring for the app that launched this (your terminal).
 """
 
+import json
 import os
 import signal
-import subprocess
 import sys
-import threading
 from pathlib import Path
 
 try:
-    import objc  # noqa: F401
-    from AppKit import (NSApp, NSApplication, NSApplicationActivationPolicyAccessory, NSBackingStoreBuffered, NSColor,
+    import objc
+    from AppKit import (NSApplication, NSApplicationActivationPolicyAccessory, NSBackingStoreBuffered, NSColor,
                         NSMakeRect, NSPanel, NSScreen, NSStatusWindowLevel, NSWindowCollectionBehaviorCanJoinAllSpaces,
                         NSWindowCollectionBehaviorFullScreenAuxiliary, NSWindowCollectionBehaviorStationary,
                         NSWindowStyleMaskBorderless, NSWindowStyleMaskNonactivatingPanel)
-    from Foundation import NSObject, NSURL
+    from Foundation import NSNotificationCenter, NSObject, NSURL
     from WebKit import WKUserContentController, WKWebView, WKWebViewConfiguration
     from PyObjCTools import AppHelper
 except ImportError:
     sys.exit("panel: pyobjc is required: make venv (installs pyobjc-framework-Cocoa and -WebKit)")
 
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import hudfeed  # noqa: E402
+
 ROOT = Path(__file__).resolve().parent.parent.parent
 PAGES = ROOT / "hud"
-RUN = ROOT / "run"
-PORT = int(os.environ.get("ZMKHUD_PORT", "8766"))
-HUD_W, HUD_H = 598, 392
-KEYS_W, KEYS_H = 900, 72
+STATE = Path(os.path.expanduser("~/.config/zmk-layer-hud/state.json"))
+WIDTH, HEIGHT = 598, 480   # board + banner + the typed-keys strip below
 MARGIN = 24
-WINDOWS = []
 
 
-def recording_screen():
-    """The external display when there is one (the laptop keeps the script), else the main one.
-    ZMKHUD_SCREEN=main forces the main display."""
-    screens = list(NSScreen.screens())
-    main = NSScreen.mainScreen()
-    if os.environ.get("ZMKHUD_SCREEN") == "main":
-        return main
-    for s in screens:
-        if s != screens[0]:
-            return s  # screens[0] is the one with the menu bar
-    return main
+def log(*a):
+    print("panel:", *a, file=sys.stderr, flush=True)
 
 
-class CloseHandler(NSObject):
-    """The page's ✕ button posts "close" through webkit.messageHandlers.zmkhud."""
+def load_state():
+    try:
+        return json.loads(STATE.read_text())
+    except (OSError, ValueError):
+        return {}
+
+
+def save_state(state):
+    try:
+        STATE.parent.mkdir(parents=True, exist_ok=True)
+        STATE.write_text(json.dumps(state))
+    except OSError as e:
+        log(f"could not save {STATE}: {e}")
+
+
+def focused_screen():
+    """The screen with keyboard focus (the key window's screen), else the one with the menu bar."""
+    return NSScreen.mainScreen() or NSScreen.screens()[0]
+
+
+def initial_frame():
+    """The remembered frame when it is still on some screen, else top-right of the focused screen."""
+    saved = load_state().get("frame")
+    if saved and len(saved) == 4:
+        x, y, w, h = saved
+        for s in NSScreen.screens():
+            f = s.frame()
+            if f.origin.x <= x + w / 2 <= f.origin.x + f.size.width and f.origin.y <= y + h / 2 <= f.origin.y + f.size.height:
+                return NSMakeRect(x, y, WIDTH, HEIGHT)
+    vf = focused_screen().visibleFrame()  # excludes menu bar and Dock; origin bottom-left
+    return NSMakeRect(vf.origin.x + vf.size.width - WIDTH - MARGIN, vf.origin.y + vf.size.height - HEIGHT - MARGIN, WIDTH, HEIGHT)
+
+
+class DragWebView(WKWebView):
+    """Dragging anywhere on the page moves the window; clicks still reach the page (the ✕)."""
+
+    def mouseDownCanMoveWindow(self):
+        return True
+
+
+class Bridge(NSObject):
+    """Page → host messages (the ✕ posts "close") and window events."""
 
     def userContentController_didReceiveScriptMessage_(self, controller, message):
         if str(message.body()) == "close":
-            print("panel: close requested by the page", flush=True)
-            quit_app()
+            log("close requested by the page")
+            AppHelper.stopEventLoop()
+
+    def windowDidMove_(self, notification):
+        f = notification.object().frame()
+        save_state({"frame": [f.origin.x, f.origin.y, f.size.width, f.size.height]})
+
+    def webView_didFinishNavigation_(self, webview, navigation):
+        Host.instance.page_ready()
 
 
-def overlay(frame, page, handler):
-    """A borderless, non-activating panel that floats above everything on every Space."""
-    panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
-        frame, NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel, NSBackingStoreBuffered, False)
-    panel.setLevel_(NSStatusWindowLevel)
-    panel.setOpaque_(False)
-    panel.setBackgroundColor_(NSColor.clearColor())
-    panel.setHasShadow_(False)
-    panel.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces
-                                 | NSWindowCollectionBehaviorStationary
-                                 | NSWindowCollectionBehaviorFullScreenAuxiliary)
-    panel.setHidesOnDeactivate_(False)
-    panel.setFloatingPanel_(True)
+class Host:
+    """Owns the window, the page and the in-process feed; marshals feed messages to the page."""
 
-    config = WKWebViewConfiguration.alloc().init()
-    ucc = WKUserContentController.alloc().init()
-    ucc.addScriptMessageHandler_name_(handler, "zmkhud")
-    config.setUserContentController_(ucc)
-    web = WKWebView.alloc().initWithFrame_configuration_(((0, 0), (frame.size.width, frame.size.height)), config)
-    web.setValue_forKey_(False, "drawsBackground")  # transparent page background
-    url = NSURL.fileURLWithPath_(str(PAGES / page))
-    # The query string survives a file URL in WKWebView; the page connects to hudfeed's WebSocket.
-    url = NSURL.URLWithString_relativeToURL_(f"{page}?ws=ws://127.0.0.1:{PORT}", url)
-    web.loadFileURL_allowingReadAccessToURL_(url, NSURL.fileURLWithPath_(str(PAGES)))
-    panel.setContentView_(web)
-    panel.orderFrontRegardless()
-    WINDOWS.append(panel)
-    return panel
+    instance = None
 
+    def __init__(self):
+        Host.instance = self
+        self.ready = False
+        self.queue = []
+        self.bridge = Bridge.alloc().init()
 
-def quit_app(*_):
-    AppHelper.stopEventLoop()
+        frame = initial_frame()
+        panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
+            frame, NSWindowStyleMaskBorderless | NSWindowStyleMaskNonactivatingPanel, NSBackingStoreBuffered, False)
+        panel.setLevel_(NSStatusWindowLevel)
+        panel.setOpaque_(False)
+        panel.setBackgroundColor_(NSColor.clearColor())
+        panel.setHasShadow_(False)
+        panel.setMovableByWindowBackground_(True)
+        panel.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces
+                                     | NSWindowCollectionBehaviorStationary
+                                     | NSWindowCollectionBehaviorFullScreenAuxiliary)
+        panel.setHidesOnDeactivate_(False)
+        panel.setFloatingPanel_(True)
+        NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
+            self.bridge, "windowDidMove:", "NSWindowDidMoveNotification", panel)
+
+        config = WKWebViewConfiguration.alloc().init()
+        ucc = WKUserContentController.alloc().init()
+        ucc.addScriptMessageHandler_name_(self.bridge, "zmkhud")
+        config.setUserContentController_(ucc)
+        web = DragWebView.alloc().initWithFrame_configuration_(((0, 0), (WIDTH, HEIGHT)), config)
+        web.setValue_forKey_(False, "drawsBackground")  # transparent page background
+        web.setNavigationDelegate_(self.bridge)
+        web.loadFileURL_allowingReadAccessToURL_(NSURL.fileURLWithPath_(str(PAGES / "index.html")),
+                                                 NSURL.fileURLWithPath_(str(PAGES)))
+        panel.setContentView_(web)
+        panel.orderFrontRegardless()
+        self.panel, self.web = panel, web
+        log(f"HUD on {focused_screen().localizedName()} at {int(frame.origin.x)},{int(frame.origin.y)}")
+
+        # The feed runs in this process; its worker threads hand messages to the main thread.
+        self.feed = hudfeed.Feed(lambda msg: AppHelper.callAfter(self.deliver, msg), log=log).start()
+
+    def page_ready(self):
+        self.ready = True
+        for js in self.queue:
+            self.web.evaluateJavaScript_completionHandler_(js, None)
+        self.queue = []
+
+    def deliver(self, msg):
+        data = json.dumps(msg, ensure_ascii=False)
+        if msg["kind"] == "keymap":
+            js = f"hud.load({data})"
+        elif msg["kind"] == "layers":
+            js = f"hud.setLayers({json.dumps(msg['ids'])})"
+        elif msg["kind"] == "key":
+            js = f"hud.key({data})"  # hud.key forwards to the strip on the same page
+        else:
+            return
+        if self.ready:
+            self.web.evaluateJavaScript_completionHandler_(js, None)
+        else:
+            self.queue.append(js)
+
+    def stop(self):
+        self.feed.stop()
+        self.panel.orderOut_(None)
 
 
 def main():
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)  # no Dock icon, no menu bar
-
-    RUN.mkdir(exist_ok=True)
-    feed_log = (RUN / "hudfeed.log").open("w")
-    feed = subprocess.Popen([sys.executable, "-u", str(ROOT / "host" / "hudfeed.py"), "--debug", "--port", str(PORT)],
-                            stdout=feed_log, stderr=feed_log, start_new_session=True)
-
-    screen = recording_screen()
-    vf = screen.visibleFrame()  # excludes the menu bar and the Dock; origin bottom-left
-    hud_frame = NSMakeRect(vf.origin.x + vf.size.width - HUD_W - MARGIN, vf.origin.y + vf.size.height - HUD_H - MARGIN, HUD_W, HUD_H)
-    keys_frame = NSMakeRect(vf.origin.x + MARGIN, vf.origin.y + MARGIN, KEYS_W, KEYS_H)
-
-    handler = CloseHandler.alloc().init()
-    overlay(hud_frame, "index.html", handler)
-    overlay(keys_frame, "keys.html", handler)
-    print(f"panel: HUD on {screen.localizedName()} ({int(vf.size.width)}x{int(vf.size.height)}); "
-          f"feed pid {feed.pid}, log {RUN / 'hudfeed.log'}", flush=True)
-
+    host = Host()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(sig, quit_app)
-
-    def watch_feed():
-        feed.wait()
-        print("panel: hudfeed exited; quitting", flush=True)
-        AppHelper.callAfter(quit_app)
-    threading.Thread(target=watch_feed, daemon=True).start()
-
+        signal.signal(sig, lambda *_: AppHelper.stopEventLoop())
     try:
         AppHelper.runEventLoop(installInterrupt=False)
     finally:
-        for w in WINDOWS:
-            w.orderOut_(None)
-        try:
-            os.killpg(feed.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        try:
-            feed.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            pass
+        host.stop()
 
 
 if __name__ == "__main__":

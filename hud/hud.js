@@ -369,6 +369,38 @@
     return null;
   }
 
+  // Recent keyDown tokens with the keys they lit, for multi-key legends ("->", "=>", "&&", "()").
+  const SEQUENCE_MS = 200, SEQUENCE_MAX = 6;
+  const recent = [];
+  function remember(token, lit) {
+    const now = Date.now();
+    while (recent.length && now - recent[0].t > SEQUENCE_MS) recent.shift();
+    recent.push({ token, t: now, lit: lit || [] });
+    if (recent.length > SEQUENCE_MAX) recent.shift();
+  }
+  function matchSequence(token, layers, cmdActive) {
+    const now = Date.now();
+    const fresh = recent.filter(r => now - r.t <= SEQUENCE_MS);
+    for (let n = Math.min(fresh.length, SEQUENCE_MAX - 1); n >= 1; n--) {
+      const parts = fresh.slice(fresh.length - n);
+      const seq = parts.map(p => p.token).join("") + token;
+      const r = resolveOnStack(seq, layers, cmdActive);
+      if (!r) continue;
+      // The single keys lit so far were the macro's steps, not presses: unlight them.
+      for (const p of parts) for (const idx of p.lit) {
+        const e = state.keyEls[idx];
+        if (e) { e.classList.remove("pressed", "combo", "inferred"); clearTimeout(state.timers.get(idx)); }
+      }
+      flash(r.hit, r.hit.length > 1 ? "combo" : null);
+      if (r.hit.length > 1) { const c = comboFor(r.layer, seq); if (c) showCombo(r.hit, c.key); }
+      setInferred(false);
+      recent.length = 0;
+      afterKey();
+      return true;
+    }
+    return false;
+  }
+
   function commandLayersActive(layers) {
     const gate = extras().letter_combos_on;
     return !gate || !gate.length || gate.some(l => layers.includes(l));
@@ -387,6 +419,10 @@
     const layers = stack();
     const cmdActive = commandLayersActive(layers);
 
+    // Macros type several keys back to back (-> is "-" then ">"): when the last few tokens
+    // together spell a legend on the live stack, that key or combo is what was pressed.
+    if (matchSequence(token, layers, cmdActive)) return;
+
     // Live: the keyboard told us the stack; the key must be on it (combos included).
     if (state.live) {
       const r = resolveOnStack(token, layers, cmdActive);
@@ -394,6 +430,7 @@
         const extra = r.viaShift ? activatorsOf(r.layer) : [];
         flash(r.hit.concat(extra), r.hit.length > 1 ? "combo" : null);
         if (r.hit.length > 1) { const c = comboFor(r.layer, token); if (c) showCombo(r.hit, c.key); }
+        remember(token, r.hit);
         setInferred(false);
         touchLayer(r.layer);
         afterKey();
@@ -419,6 +456,7 @@
         const shiftLayer = (ex.sticky || []).find(l => /shift/i.test(l));
         const extra = activatorsOf(ex.alpha2).concat(/^\p{Lu}$/u.test(token) && shiftLayer ? activatorsOf(shiftLayer) : []);
         flash([direct].concat(extra), inferredCls);
+        remember(token, [direct]);
         afterKey();
         return;
       }
@@ -429,6 +467,7 @@
       const extra = r.viaShift ? activatorsOf(r.layer) : [];
       flash(r.hit.concat(extra), [r.hit.length > 1 ? "combo" : "", inferredCls].join(" ").trim() || null);
       if (r.hit.length > 1) { const c = comboFor(r.layer, token); if (c) showCombo(r.hit, c.key); }
+      remember(token, r.hit);
       touchLayer(r.layer);
       afterKey();
       return;
@@ -447,6 +486,7 @@
         render();
         flash(hit.concat(activatorsOf(layer)), [hit.length > 1 ? "combo" : "", inferredCls].join(" ").trim() || null);
         if (hit.length > 1) { const c = comboFor(layer, token); if (c) showCombo(hit, c.key); }
+        remember(token, hit);
         afterKey();
         return;
       }
@@ -496,7 +536,11 @@
     },
     // Leave live mode (tests, or a host that lost the keyboard).
     clearLayers() { state.live = null; render(); },
-    key(ev) { handleKey(typeof ev === "string" ? JSON.parse(ev) : ev); },
+    key(ev) {
+      if (typeof ev === "string") ev = JSON.parse(ev);
+      handleKey(ev);
+      if (window.keys) window.keys.key(ev);  // the typed-keys strip on the same page
+    },
     press(indices) { flash(indices); },
     state,
   };

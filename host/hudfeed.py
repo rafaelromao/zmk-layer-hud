@@ -122,17 +122,63 @@ def key_message(usage, down, flags):
             "code": usage, "flags": flags, "repeat": False}
 
 
+# Dead keys of the US-International layout, which is how accent macros type on the host:
+# the dead key, then the letter, back to back (ZMK macro with wait-ms 0).
+DEAD_KEYS = {"`": "̀", "'": "́", "^": "̂", "~": "̃", '"': "̈"}
+DEAD_KEY_MS = 60  # a dead key followed by a letter within this window is one accented character
+
+
 class ReportDecoder:
     """Turns the stream of keyboard reports into layers / key / flagsChanged messages. Pure and
-    tested: feed(report) -> list of messages."""
+    tested: feed(report, now_ms) -> list of messages; flush(now_ms) releases a held dead key.
 
-    def __init__(self, base=BASE_USAGE, commit=COMMIT_USAGE, report_id=KEYBOARD_REPORT_ID):
-        self.base, self.commit, self.report_id = base, commit, report_id
+    A dead key (` ' ^ ~ ") is held back for DEAD_KEY_MS: if a letter follows in time, one keyDown
+    with the composed character (á, ç, ñ…) is emitted instead of two, which is what the
+    keymap-drawer legend says and what the host displays."""
+
+    def __init__(self, base=BASE_USAGE, commit=COMMIT_USAGE, report_id=KEYBOARD_REPORT_ID, compose=True):
+        self.base, self.commit, self.report_id, self.compose = base, commit, report_id, compose
         self.layers = None
         self.mods = 0
         self.held = []  # real usages currently down, in press order
+        self.pending = None  # (message, deadline_ms) of a dead key waiting for its letter
 
-    def feed(self, report):
+    def flush(self, now_ms=None):
+        """Release a held dead key (its time ran out, or the reader idled) as the plain key it was."""
+        if self.pending and (now_ms is None or now_ms >= self.pending["deadline"]):
+            p, self.pending = self.pending, None
+            return [p["down"]] + ([p["up"]] if p["up"] else [])
+        return []
+
+    def _down(self, msg, now_ms):
+        """Dead-key composition: returns the messages to emit for a keyDown."""
+        if not self.compose:
+            return [msg]
+        out = []
+        if self.pending:
+            p, self.pending = self.pending, None
+            if now_ms is not None and now_ms <= p["deadline"] and len(msg["chars"]) == 1 and msg["chars"].isalpha():
+                import unicodedata
+                composed = unicodedata.normalize("NFC", msg["chars"] + DEAD_KEYS[p["down"]["chars"]])
+                if len(composed) == 1:
+                    return [dict(msg, chars=composed, name=composed, composed=[p["down"]["code"], msg["code"]])]
+            out.append(p["down"])
+            if p["up"]:
+                out.append(p["up"])
+        if msg["chars"] in DEAD_KEYS and now_ms is not None:
+            self.pending = {"down": msg, "up": None, "deadline": now_ms + DEAD_KEY_MS}
+            return out
+        out.append(msg)
+        return out
+
+    def _up(self, msg):
+        """A dead key's release travels with its press: held back too, dropped when composed."""
+        if self.pending and self.pending["up"] is None and self.pending["down"]["code"] == msg["code"]:
+            self.pending["up"] = msg
+            return []
+        return [msg]
+
+    def feed(self, report, now_ms=None):
         parts = split_report(report, self.report_id)
         if parts is None:
             return []
@@ -151,10 +197,10 @@ class ReportDecoder:
         flags = flags_of(mods)
         for k in self.held:
             if k not in real:
-                out.append(key_message(k, False, flags))
+                out.extend(self._up(key_message(k, False, flags)))
         for k in real:
             if k not in self.held:
-                out.append(key_message(k, True, flags))
+                out.extend(self._down(key_message(k, True, flags), now_ms))
         self.held = real
         return out
 
@@ -230,15 +276,20 @@ class KeyboardReader:
             self._stop.wait(self.rescan)
 
     def _read_loop(self, path, dev, product):
+        import time
         decoder = ReportDecoder(self.base, self.commit, self.report_id)
         try:
             while not self._stop.is_set():
-                report = dev.read(64, timeout_ms=500)
+                # Wake early while a dead key waits, so it is released on time when no letter follows.
+                report = dev.read(64, timeout_ms=DEAD_KEY_MS if decoder.pending else 500)
+                now = int(time.monotonic() * 1000)
                 if not report:
+                    for msg in decoder.flush(now):
+                        self.emit(msg)
                     continue
                 if self.raw:
                     self.log(f"hudfeed: {product} raw {bytes(report).hex(' ')}")
-                for msg in decoder.feed(report):
+                for msg in decoder.feed(report, now):
                     self.emit(msg)
         except (OSError, IOError, ValueError) as e:
             self.log(f"hudfeed: {product} gone ({e})")
@@ -256,32 +307,88 @@ class KeyboardReader:
 
 # ---------- keymap (config + keymap-drawer YAML, live reload) ----------
 
-class KeymapFeed:
-    """Sends the keymap message on start and whenever one of its source files changes. A broken
+class KeymapWatcher(threading.Thread):
+    """Emits the keymap message on start and whenever one of its source files changes. A broken
     edit is logged and the last good keymap stays on screen."""
 
-    def __init__(self, source, send, log=print, poll=1.0):
-        self.source, self.send, self.log, self.poll = source, send, log, poll
+    def __init__(self, source, emit, log=print, poll=1.0):
+        super().__init__(name="keymap-watch", daemon=True)
+        self.source, self.emit, self.log, self.poll = source, emit, log, poll
+        self._stop = threading.Event()
 
-    async def run(self):
-        # main() already loaded (and validated) the keymap, which also snapshotted the file
+    def stop(self):
+        self._stop.set()
+
+    def announce(self, msg):
+        self.log(f"hudfeed: keymap {msg['source']}: {len(msg['layout']['keys'])} keys, "
+                 f"{len(msg['layers'])} drawer layers, {len(msg['zmk_layers'])} ZMK layers")
+        self.emit(msg)
+
+    def run(self):
+        # The caller already loaded (and validated) the keymap, which also snapshotted the file
         # timestamps: send that first, then watch for edits.
         if self.source.message is not None:
-            await self.announce(self.source.message)
-        while True:
+            self.announce(self.source.message)
+        while not self._stop.is_set():
             if self.source.changed():
                 try:
-                    await self.announce(self.source.load())
+                    self.announce(self.source.load())
                 except keymap_mod.KeymapError as e:
                     self.log(f"hudfeed: keymap not (re)loaded: {e}")
                 except Exception as e:  # a half-saved YAML, a typo in the config
                     self.log(f"hudfeed: keymap not (re)loaded: {type(e).__name__}: {e}")
-            await asyncio.sleep(self.poll)
+            self._stop.wait(self.poll)
 
-    async def announce(self, msg):
-        self.log(f"hudfeed: keymap {msg['source']}: {len(msg['layout']['keys'])} keys, "
-                 f"{len(msg['layers'])} drawer layers, {len(msg['zmk_layers'])} ZMK layers")
-        await self.send(msg)
+
+# ---------- the whole feed, embeddable ----------
+
+class Feed:
+    """Everything a host needs: load the config, watch the keymap, read the keyboard(s). `emit`
+    is called from worker threads with each message; hosts marshal it to their UI thread.
+    Used in-process by host/macos/panel.py and by main() below for the WebSocket/stdout modes."""
+
+    def __init__(self, emit, log=print, config=None, keys=True, keymap=True, vid=None, pid=None, name=None,
+                 base=None, commit=None, report_id=KEYBOARD_REPORT_ID, raw=False):
+        self.emit, self.log = emit, log
+        self.source, cfg = None, {}
+        try:
+            self.source = keymap_mod.KeymapSource(config)
+            self.source.load()  # fail early with a readable reason
+            cfg = self.source.cfg
+        except keymap_mod.KeymapError as e:
+            log(f"hudfeed: {e}")
+            if keymap:
+                log("hudfeed: continuing without a keymap; the pages show nothing until one arrives")
+        except Exception as e:
+            log(f"hudfeed: config/keymap failed: {type(e).__name__}: {e}")
+        kb = cfg.get("keyboard") or {}
+        sig = cfg.get("signal") or {}
+        self.keymap = keymap
+        self.keys = keys
+        self.reader = KeyboardReader(
+            self._emit, log=log, raw=raw, report_id=report_id,
+            vid=vid if vid is not None else int(kb.get("vid", ZMK_VID)),
+            pid=pid if pid is not None else int(kb.get("pid", ZMK_PID)),
+            name=name if name is not None else kb.get("name"),
+            base=base if base is not None else int(sig.get("base", BASE_USAGE)),
+            commit=commit if commit is not None else int(sig.get("commit", COMMIT_USAGE)))
+        self.watcher = KeymapWatcher(self.source, self._emit, log) if (self.source is not None and keymap) else None
+
+    def _emit(self, msg):
+        if not self.keys and msg["kind"] == "key":
+            return
+        self.emit(msg)
+
+    def start(self):
+        if self.watcher:
+            self.watcher.start()
+        self.reader.start()
+        return self
+
+    def stop(self):
+        if self.watcher:
+            self.watcher.stop()
+        self.reader.stop()
 
 
 # ---------- outputs ----------
@@ -347,37 +454,13 @@ def parse_args(argv=None):
 async def main(args):
     hub = Hub(stdout=args.stdout, debug=args.debug)
     loop = asyncio.get_running_loop()
-    tasks = []
-
-    # The config names the keymap and, optionally, the keyboard and the signal usages.
-    source, cfg = None, {}
-    try:
-        source = keymap_mod.KeymapSource(args.config)
-        source.load()  # fail early with a readable reason; KeymapFeed sends it and watches the files
-        cfg = source.cfg
-    except keymap_mod.KeymapError as e:
-        hub.log(f"hudfeed: {e}")
-        if not args.no_keymap:
-            hub.log("hudfeed: continuing without a keymap; the pages show nothing until one arrives")
-    except Exception as e:
-        hub.log(f"hudfeed: config/keymap failed: {type(e).__name__}: {e}")
-    if source is not None and not args.no_keymap:
-        tasks.append(KeymapFeed(source, hub.send, hub.log).run())
-    kb = cfg.get("keyboard") or {}
-    sig = cfg.get("signal") or {}
-    vid = args.vid if args.vid is not None else int(kb.get("vid", ZMK_VID))
-    pid = args.pid if args.pid is not None else int(kb.get("pid", ZMK_PID))
-    name = args.name if args.name is not None else kb.get("name")
-    base = args.base if args.base is not None else int(sig.get("base", BASE_USAGE))
-    commit = args.commit if args.commit is not None else int(sig.get("commit", COMMIT_USAGE))
 
     def emit(msg):
-        if args.no_keys and msg["kind"] == "key":
-            return
         loop.call_soon_threadsafe(lambda: asyncio.ensure_future(hub.send(msg)))
 
-    KeyboardReader(emit, vid=vid, pid=pid, name=name, base=base, commit=commit,
-                   report_id=None if args.no_report_id else KEYBOARD_REPORT_ID, log=hub.log, raw=args.raw).start()
+    Feed(emit, log=hub.log, config=args.config, keys=not args.no_keys, keymap=not args.no_keymap,
+         vid=args.vid, pid=args.pid, name=args.name, base=args.base, commit=args.commit,
+         report_id=None if args.no_report_id else KEYBOARD_REPORT_ID, raw=args.raw).start()
 
     if not args.no_ws:
         try:
@@ -386,9 +469,9 @@ async def main(args):
             sys.exit("python-websockets is required for the WebSocket (or pass --no-ws): pip install websockets")
         async with websockets.serve(hub.handler, "127.0.0.1", args.port):
             hub.log(f"hudfeed: ws://127.0.0.1:{args.port}")
-            await asyncio.gather(*tasks, asyncio.Event().wait())
+            await asyncio.Event().wait()
     else:
-        await asyncio.gather(*tasks, asyncio.Event().wait())
+        await asyncio.Event().wait()
 
 
 if __name__ == "__main__":

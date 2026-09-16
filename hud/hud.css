@@ -116,7 +116,20 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 .combo-links.show { opacity: 1; }
 .combo-links line { stroke: #7aa2f7; stroke-width: 3; stroke-linecap: round; }
 
-/* Close button: closes both overlays (Hammerspoon: zmkhud.stop(); WebSocket hosts: "close"). */
+/* Typed-keys strip: below the panel in index.html, alone in keys.html. */
+#keys { display: flex; align-items: flex-end; gap: 10px; padding: 8px 12px; min-height: 56px; font-family: var(--font); }
+#keys .chip {
+  padding: 8px 14px; border-radius: 12px; background: rgba(20, 22, 30, 0.88); color: #e6e8ef;
+  border: 1px solid rgba(255,255,255,0.1);
+  font-size: 26px; font-weight: 700; line-height: 1; white-space: pre; letter-spacing: 0.02em;
+  opacity: 0; transform: translateY(6px); transition: opacity 120ms ease, transform 120ms ease;
+}
+#keys .chip.show { opacity: 1; transform: none; }
+#keys .chip.special { color: #7aa2f7; }
+#keys .chip.chord { color: #e0af68; }
+#keys .chip.fade { opacity: 0; transition: opacity 500ms ease; }
+
+/* Close button: closes the HUD (the host receives "close"). */
 #close { margin-left: 10px; width: 22px; height: 22px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12);
   background: rgba(255,255,255,0.06); color: #aab0c0; font: 13px/1 var(--font); cursor: pointer; padding: 0; }
 #close:hover { background: var(--chip-raw); color: #101420; }
