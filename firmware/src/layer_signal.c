@@ -151,25 +151,47 @@ static void work_cb(struct k_work *work_item) {
     }
 }
 
-/* A key press: its position goes out as a hi+lo usage pair in one report and is released in
- * the next, synchronously, so no other press can interleave and a report never holds two
- * positions. The key's own report is sent by ZMK's HID listener as usual. */
-static void announce_position(uint32_t position) {
-    uint8_t pair[2];
-    if (!zls_encode_position(position, pair)) {
-        return;
-    }
-    if (zmk_hid_keyboard_press(pair[0]) < 0) {
-        return; /* report full of real keys: skip this one */
-    }
-    if (zmk_hid_keyboard_press(pair[1]) < 0) {
+/* Key presses: each position goes out as a hi+lo usage pair in one report and is released in
+ * the next. The pairs are sent from the system work queue, not from the key-press event
+ * handler: a USB send can block for tens of milliseconds, which would delay the keymap's own
+ * processing of the press (combo terms, tapping terms). The queue is drained one position at a
+ * time, so no two positions ever share a report. */
+#define POS_QUEUE_LEN 16
+static uint32_t pos_queue[POS_QUEUE_LEN];
+static uint8_t pos_head, pos_tail; /* head: next to send; tail: next free */
+
+static void pos_work_cb(struct k_work *work_item) {
+    ARG_UNUSED(work_item);
+    while (pos_head != pos_tail) {
+        uint32_t position = pos_queue[pos_head];
+        pos_head = (pos_head + 1) % POS_QUEUE_LEN;
+        uint8_t pair[2];
+        if (!zls_encode_position(position, pair)) {
+            continue;
+        }
+        if (zmk_hid_keyboard_press(pair[0]) < 0) {
+            continue; /* report full of real keys: skip this one */
+        }
+        if (zmk_hid_keyboard_press(pair[1]) < 0) {
+            zmk_hid_keyboard_release(pair[0]);
+            continue;
+        }
+        zmk_endpoint_send_report(HID_USAGE_KEY);
         zmk_hid_keyboard_release(pair[0]);
-        return;
+        zmk_hid_keyboard_release(pair[1]);
+        zmk_endpoint_send_report(HID_USAGE_KEY);
     }
-    zmk_endpoint_send_report(HID_USAGE_KEY);
-    zmk_hid_keyboard_release(pair[0]);
-    zmk_hid_keyboard_release(pair[1]);
-    zmk_endpoint_send_report(HID_USAGE_KEY);
+}
+static K_WORK_DEFINE(pos_work, pos_work_cb);
+
+static void announce_position(uint32_t position) {
+    uint8_t next = (pos_tail + 1) % POS_QUEUE_LEN;
+    if (next == pos_head) {
+        return; /* queue full (host not draining reports): drop rather than stall the keyboard */
+    }
+    pos_queue[pos_tail] = position;
+    pos_tail = next;
+    k_work_submit(&pos_work);
 }
 
 static int layer_signal_listener(const zmk_event_t *eh) {

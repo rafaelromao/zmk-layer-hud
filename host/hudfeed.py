@@ -418,7 +418,21 @@ class Feed:
     def _emit(self, msg):
         if not self.keys and msg["kind"] == "key":
             return
+        if msg["kind"] == "press":
+            self._check_position(msg["pos"])
         self.emit(msg)
+
+    def _check_position(self, pos):
+        """A position the keymap cannot place means the config lacks (or has a wrong) `positions:`
+        map for a drawer whose key order differs from the keymap's. Say so once."""
+        km = self.source.message if self.source else None
+        if not km or getattr(self, "_pos_warned", False):
+            return
+        if str(pos) not in km["positions"]:
+            self._pos_warned = True
+            self.log(f"hudfeed: key position {pos} is not in the keymap's {len(km['layout']['keys'])} drawer keys; "
+                     "add `positions:` (the ZMK position of each drawer key) to the config, "
+                     "see config/diamond.yaml")
 
     def start(self):
         if self.watcher:
