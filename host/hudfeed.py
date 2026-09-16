@@ -10,7 +10,10 @@ pages, over a WebSocket (Linux panel) or on stdout (macOS Hammerspoon host):
   {"kind":"layers","ids":[2,22]}          active ZMK layer ids (layer 0 omitted: always active), from
                                           the firmware module's announcement inside the report
   {"kind":"device","name":"Diamond"}      a keyboard was opened (its HID product name; the page's title)
-  {"kind":"press","pos":13}               a key at ZMK position 13 was pressed (firmware `positions;`)
+  {"kind":"press","pos":13}               a key at ZMK position 13 went down (firmware `positions;`)
+  {"kind":"release","pos":13}             ... and up again
+Every message from a keyboard carries "device": its HID product name, so the page can show which
+keyboard is typing.
   {"kind":"key","type":"keyDown","name":"space","chars":" ","code":44,
    "flags":{"cmd":false,"ctrl":false,"alt":false,"shift":false,"fn":false},"repeat":false}
                                           every key press/release and modifier change, straight from
@@ -115,13 +118,15 @@ POS_HI, POS_HI_N, POS_LO, POS_LO_N = 0xA5, 17, 0xB8, 8  # 0xB6/0xB7 skipped: Lin
 
 
 def decode_position(keys):
-    """Key bytes -> physical key position when exactly one hi (0xA5..0xB5) and one lo
-    (0xB8..0xBF) usage are present (firmware `positions;`), else None."""
-    hi = [k - POS_HI for k in keys if POS_HI <= k < POS_HI + POS_HI_N]
-    lo = [k - POS_LO for k in keys if POS_LO <= k < POS_LO + POS_LO_N]
+    """Key bytes -> (position, released) when exactly one hi (0xA5..0xB5) and one lo (0xB8..0xBF)
+    usage are present (firmware `positions;`), else None. ZMK fills the slots in press order: the
+    firmware sends hi before lo for a press and lo before hi for a release."""
+    keys = list(keys)
+    hi = [(i, k - POS_HI) for i, k in enumerate(keys) if POS_HI <= k < POS_HI + POS_HI_N]
+    lo = [(i, k - POS_LO) for i, k in enumerate(keys) if POS_LO <= k < POS_LO + POS_LO_N]
     if len(hi) != 1 or len(lo) != 1:
         return None
-    return hi[0] * POS_LO_N + lo[0]
+    return hi[0][1] * POS_LO_N + lo[0][1], lo[0][0] < hi[0][0]
 
 
 def split_report(report, report_id=KEYBOARD_REPORT_ID):
@@ -232,7 +237,7 @@ class ReportDecoder:
             out.append({"kind": "layers", "ids": ids})
         pos = decode_position(keys)
         if pos is not None:
-            out.append({"kind": "press", "pos": pos})
+            out.append({"kind": "release" if pos[1] else "press", "pos": pos[0]})
         real = [k for k in keys if k and not (self.base <= k <= self.commit)
                 and not (POS_HI <= k < POS_HI + POS_HI_N) and not (POS_LO <= k < POS_LO + POS_LO_N)]
         if mods != self.mods:
@@ -338,6 +343,7 @@ class KeyboardReader:
                 if self.raw:
                     self.log(f"hudfeed: {product} raw {bytes(report).hex(' ')}")
                 for msg in decoder.feed(report, now):
+                    msg["device"] = product  # which keyboard this came from
                     self.emit(msg)
         except (OSError, IOError, ValueError) as e:
             self.log(f"hudfeed: {product} gone ({e})")
@@ -428,7 +434,7 @@ class Feed:
     def _emit(self, msg):
         if not self.keys and msg["kind"] == "key":
             return
-        if msg["kind"] == "press":
+        if msg["kind"] in ("press", "release"):
             self._check_position(msg["pos"])
         self.emit(msg)
 

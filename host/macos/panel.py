@@ -177,7 +177,7 @@ class Host:
 
     def deliver(self, msg):
         data = json.dumps(msg, ensure_ascii=False)
-        if DEBUG and msg["kind"] in ("layers", "press"):
+        if DEBUG and msg["kind"] in ("layers", "press", "release"):
             log(f"{time.monotonic() * 1000:.0f}ms {data}")
         if msg["kind"] == "keymap":
             js = f"hud.load({data})"
@@ -189,8 +189,12 @@ class Host:
             js = f"hud.setDevice({json.dumps(msg['name'])})"
         elif msg["kind"] == "press":
             js = f"hud.pressAt({int(msg['pos'])})"
+        elif msg["kind"] == "release":
+            js = f"hud.releaseAt({int(msg['pos'])})"
         else:
             return
+        if msg.get("device"):
+            js = f"hud.setDevice({json.dumps(msg['device'])}); " + js
         if self.ready:
             self.web.evaluateJavaScript_completionHandler_(js, None)
         else:

@@ -3,13 +3,14 @@
 
 keymap: ~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawer.yaml
 drawer_config: ~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawer-config.yaml
-# title: Magic Romak          # default: the keyboard's name as it reports itself (Diamond, Rommana)
+# title: Magic Romak          # default: the name of whichever keyboard is typing (Diamond, Rommana)
 
 # Every size and timing the HUD uses (ms unless noted). Shown with the defaults; drop any line.
 hud:
   width: 598                  # panel width in points; the height follows the layout
   opacity: 86                 # panel background, 0 (clear) to 100 (solid)
-  press_ms: 320               # a pressed key stays lit this long
+  press_ms: 320               # a key stays lit this long after its release
+  held_timeout_ms: 5000       # ... or at most this long if its release report never arrives
   combo_pill_ms: 1000         # a combo's pill stays up this long
   combo_slack_ms: 20          # added to combo_term_ms for the reports' travel time
   activator_ms: 400           # a key pressed this recently before a layer appeared is its activator

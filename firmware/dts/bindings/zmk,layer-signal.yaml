@@ -70,7 +70,9 @@ properties:
       0xA5..0xB5 and one from 0xB8..0xBF in the same report encode
       position = (hi - 0xA5) * 8 + (lo - 0xB8), up to 136 keys, pressed and
       released within the event so a report never carries two positions
-      (0xB6/0xB7 are skipped: Linux types Keypad ( ) for them). The
+      (0xB6/0xB7 are skipped: Linux types Keypad ( ) for them). The pair is
+      sent for the key's press (hi before lo in the report) and for its
+      release (lo before hi), so the host can show keys as held. The
       HUD then lights the exact key for chords, combos, macros, layer and
       modifier keys, whatever they produce. Costs two extra reports per press.
       Requires base-usage >= 0xC0 (the default).

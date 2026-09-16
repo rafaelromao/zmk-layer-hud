@@ -7,8 +7,9 @@
  *   hud.setLayers([ids])               the keyboard's active ZMK layer ids (ground truth; the
  *                                      firmware's layer signal, decoded by host/hudfeed.py)
  *   hud.key({type, chars, name, flags}) one key or modifier event, decoded from the same reports
- *   hud.pressAt(pos)                   a key press by ZMK position (firmware `positions;`): the
- *                                      exact key lights; characters then only feed the strip
+ *   hud.pressAt(pos) / hud.releaseAt(pos)  a key going down / up by ZMK position (firmware
+ *                                      `positions;`): the exact key lights while held, then fades;
+ *                                      characters then only feed the strip
  *   hud.press([idx...])                light keys directly (tests)
  *
  * Two modes:
@@ -27,7 +28,7 @@
   const GAP = 6;             // px between keys at the drawn scale
   // Every timing the page uses comes from the config's `hud:` section (host/keymap.py fills the
   // defaults in); these are only the fallbacks for a keymap message without it.
-  const DEFAULTS = { opacity: 86, press_ms: 320, momentary_ms: 700, combo_slack_ms: 20, activator_ms: 400,
+  const DEFAULTS = { opacity: 86, press_ms: 320, held_timeout_ms: 5000, momentary_ms: 700, combo_slack_ms: 20, activator_ms: 400,
     positions_fresh_ms: 3000, combo_pill_ms: 1000, sequence_ms: 200, sequence_max: 6, one_shot_ms: 450 };
   const T = name => (state.data && state.data.hud && state.data.hud[name] != null) ? state.data.hud[name] : DEFAULTS[name];
   const recentPos = [];
@@ -652,6 +653,9 @@
       state.posAt = now; state.lastKeyAt = now;
       if (!state.keyEls[idx]) return;
       flash([idx]);
+      // Stay lit until the release arrives (a safety timeout covers a lost report).
+      clearTimeout(state.timers.get(idx));
+      state.timers.set(idx, setTimeout(() => hud.releaseAt(pos), T('held_timeout_ms')));
       // The keyboard's own combo term (config combo_term_ms) plus slack for the reports' travel.
       const term = ((state.data.combo_term || 50) + T('combo_slack_ms'));
       // Older presses stay in the list for the activator lookup (setLayers); the combo group is
@@ -691,7 +695,17 @@
     // Leave live mode (tests, or a host that lost the keyboard).
     clearLayers() { state.live = null; render(); },
     // The keyboard that was opened (its HID product name): the default title.
-    setDevice(name) { state.device = name || ""; renderTitle(); },
+    // The key at ZMK position `pos` went up: the flash fades out from now.
+    releaseAt(pos) {
+      if (!state.data) return;
+      const map = state.data.positions || {};
+      const idx = map[String(pos)] !== undefined ? map[String(pos)] : Number(pos);
+      const e = state.keyEls[idx];
+      if (!e) return;
+      clearTimeout(state.timers.get(idx));
+      state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo", "inferred"), T('press_ms')));
+    },
+    setDevice(name) { if ((name || "") !== state.device) { state.device = name || ""; renderTitle(); } },
     key(ev) {
       if (typeof ev === "string") ev = JSON.parse(ev);
       handleKey(ev);
@@ -728,6 +742,8 @@
         else if (m.kind === "layers") hud.setLayers(m.ids);
         else if (m.kind === "device") hud.setDevice(m.name);
         else if (m.kind === "press") hud.pressAt(m.pos);
+        else if (m.kind === "release") hud.releaseAt(m.pos);
+        if (m.device) hud.setDevice(m.device);  // the keyboard that is typing names the panel
       };
       s.onclose = () => setTimeout(connect, 1000);
     };

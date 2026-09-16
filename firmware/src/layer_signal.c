@@ -157,23 +157,29 @@ static void work_cb(struct k_work *work_item) {
  * processing of the press (combo terms, tapping terms). The queue is drained one position at a
  * time, so no two positions ever share a report. */
 #define POS_QUEUE_LEN 16
+#define POS_RELEASE_FLAG 0x80000000u
 static uint32_t pos_queue[POS_QUEUE_LEN];
 static uint8_t pos_head, pos_tail; /* head: next to send; tail: next free */
 
 static void pos_work_cb(struct k_work *work_item) {
     ARG_UNUSED(work_item);
     while (pos_head != pos_tail) {
-        uint32_t position = pos_queue[pos_head];
+        uint32_t entry = pos_queue[pos_head];
         pos_head = (pos_head + 1) % POS_QUEUE_LEN;
+        bool released = (entry & POS_RELEASE_FLAG) != 0;
         uint8_t pair[2];
-        if (!zls_encode_position(position, pair)) {
+        if (!zls_encode_position(entry & ~POS_RELEASE_FLAG, pair)) {
             continue;
         }
-        if (zmk_hid_keyboard_press(pair[0]) < 0) {
+        /* ZMK fills the report's key slots in press order, so the order of the two usages is
+         * the press/release bit: hi then lo for a press, lo then hi for a release. */
+        uint8_t first = released ? pair[1] : pair[0];
+        uint8_t second = released ? pair[0] : pair[1];
+        if (zmk_hid_keyboard_press(first) < 0) {
             continue; /* report full of real keys: skip this one */
         }
-        if (zmk_hid_keyboard_press(pair[1]) < 0) {
-            zmk_hid_keyboard_release(pair[0]);
+        if (zmk_hid_keyboard_press(second) < 0) {
+            zmk_hid_keyboard_release(first);
             continue;
         }
         zmk_endpoint_send_report(HID_USAGE_KEY);
@@ -184,12 +190,12 @@ static void pos_work_cb(struct k_work *work_item) {
 }
 static K_WORK_DEFINE(pos_work, pos_work_cb);
 
-static void announce_position(uint32_t position) {
+static void announce_position(uint32_t position, bool released) {
     uint8_t next = (pos_tail + 1) % POS_QUEUE_LEN;
     if (next == pos_head) {
         return; /* queue full (host not draining reports): drop rather than stall the keyboard */
     }
-    pos_queue[pos_tail] = position;
+    pos_queue[pos_tail] = position | (released ? POS_RELEASE_FLAG : 0);
     pos_tail = next;
     k_work_submit(&pos_work);
 }
@@ -205,8 +211,8 @@ static int layer_signal_listener(const zmk_event_t *eh) {
     }
 #if POSITIONS
     const struct zmk_position_state_changed *pos_ev = as_zmk_position_state_changed(eh);
-    if (pos_ev != NULL && pos_ev->state) {
-        announce_position(pos_ev->position);
+    if (pos_ev != NULL) {
+        announce_position(pos_ev->position, !pos_ev->state);
     }
 #endif
     return ZMK_EV_EVENT_BUBBLE;

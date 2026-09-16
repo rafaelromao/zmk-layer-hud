@@ -130,6 +130,13 @@ class Positions(unittest.TestCase):
         d = ReportDecoder()
         self.assertEqual(d.feed(R(0, 0xA6, 0xBD)), [{"kind": "press", "pos": 13}])
         self.assertEqual(d.feed(R(0)), [])                                # the pair's release: nothing
+        self.assertEqual(d.feed(R(0, 0xBD, 0xA6)), [{"kind": "release", "pos": 13}])  # lo first = key up
+
+    def test_release_order_survives_a_hole_in_the_report(self):
+        # a real key in slot 0, a hole in slot 1: ZMK fills first-free, order is still lo before hi
+        d = ReportDecoder()
+        msgs = d.feed(R(0, 0xBD, 0x04, 0xA6))
+        self.assertIn({"kind": "release", "pos": 13}, msgs)
 
     def test_position_next_to_the_key_it_produced(self):
         d = ReportDecoder()
@@ -140,6 +147,7 @@ class Positions(unittest.TestCase):
         d = ReportDecoder()
         msgs = d.feed(R(0, 0xC2, C, 0xA5, 0xBA))
         self.assertEqual(msgs, [{"kind": "layers", "ids": [2]}, {"kind": "press", "pos": 2}])
+        self.assertEqual(d.feed(R(0, 0xBA, 0xA5)), [{"kind": "release", "pos": 2}])
 
     def test_ambiguous_pair_ignored(self):
         d = ReportDecoder()
