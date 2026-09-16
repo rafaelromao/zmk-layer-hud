@@ -627,8 +627,11 @@
       for (const id of ids) {
         const name = (zl(id) || {}).drawer;
         if (!name || wasDrawn.has(name) || state.activatorOf[name] !== undefined) continue;
+        // Prefer a key the drawer marks as reaching this layer; else the key pressed right
+        // before the layer appeared is the one holding it (a thumb whose legend says otherwise).
         const candidates = activatorsOf(name);
-        const press = [...recentPos].reverse().find(p => now - p.t < T('activator_ms') && candidates.includes(p.idx));
+        const fresh = [...recentPos].reverse().filter(p => now - p.t < T('activator_ms'));
+        const press = fresh.find(p => candidates.includes(p.idx)) || fresh[0];
         if (press) state.activatorOf[name] = press.idx;
       }
       const drawnNow = new Set(ids.map(id => (zl(id) || {}).drawer).filter(Boolean));
@@ -658,15 +661,29 @@
       let start = recentPos.length - 1;
       while (start > 0 && now - recentPos[start - 1].t <= term) start--;
       if (start === recentPos.length - 1) state.comboShown = null; // a new group begins
-      const pressedSet = recentPos.slice(start).map(p => p.idx);
+      let pressedSet = recentPos.slice(start).map(p => p.idx);
+      // A key pressed while a layer is held: the drawer may describe it as a combo of the
+      // holding key and this one (thumb + key = a digit), which no timing window can catch.
+      if (pressedSet.length === 1) {
+        for (const name of liveStack()) {
+          const held = state.activatorOf[name];
+          if (held !== undefined && held !== idx) pressedSet = [held, idx];
+        }
+      }
       if (pressedSet.length > 1) {
         // The topmost active layer that defines a combo on these keys wins: the base layer is
         // always in the stack and often has a different combo on the same keys.
+        const samePositions = c => c.positions.length === pressedSet.length && c.positions.every(p => pressedSet.includes(p));
         let combo = null;
         for (const layer of stack()) {
-          combo = state.data.combos.find(c => c.layers.includes(layer) && c.positions.length === pressedSet.length
-            && c.positions.every(p => pressedSet.includes(p)));
+          combo = state.data.combos.find(c => c.layers.includes(layer) && samePositions(c));
           if (combo) break;
+        }
+        if (!combo) {
+          // The drawer may file a held-key combo under the layer it produces rather than the one
+          // it is pressed on (thumb + key = "5" drawn on numbers): accept it when unambiguous.
+          const any = state.data.combos.filter(samePositions);
+          if (any.length === 1) combo = any[0];
         }
         if (combo) {
           // A third key within the term makes a bigger combo: take the smaller one's pill down.
