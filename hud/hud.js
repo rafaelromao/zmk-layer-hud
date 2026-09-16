@@ -661,22 +661,10 @@
       let start = recentPos.length - 1;
       while (start > 0 && now - recentPos[start - 1].t <= term) start--;
       if (start === recentPos.length - 1) state.comboShown = null; // a new group begins
-      let pressedSet = recentPos.slice(start).map(p => p.idx);
-      // A key pressed while a layer is held: the drawer may describe it as a combo of the
-      // holding key and this one (thumb + key = a digit), which no timing window can catch.
-      if (pressedSet.length === 1) {
-        const sticky = new Set(extras().sticky || []);
-        for (const name of liveStack()) {
-          const held = state.activatorOf[name];
-          if (held === undefined || held === idx) continue;
-          // A one-shot layer (sticky, or reached by a sticky activator) was tapped into, not held:
-          // its key is not part of this press.
-          if (sticky.has(name)) continue;
-          const kind = state.data.activators.find(a => a.layer === name && a.idx === held);
-          if (kind && kind.kind !== "hold") continue;
-          pressedSet = [held, idx];
-        }
-      }
+      // Only presses within the keymap's combo term form a combo: ZMK's combo module releases the
+      // captured positions together when a combo completes, so they arrive within the term. A key
+      // pressed later while a layer is held is that layer's key, never a combo with the holder.
+      const pressedSet = recentPos.slice(start).map(p => p.idx);
       if (pressedSet.length > 1) {
         // The topmost active layer that defines a combo on these keys wins: the base layer is
         // always in the stack and often has a different combo on the same keys.
