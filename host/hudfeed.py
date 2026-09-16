@@ -113,6 +113,16 @@ class LayerReader:
             self.log("hudfeed: python-hidapi is required for layer signals "
                      "(pip install hidapi / pacman -S python-hidapi; macOS also brew install hidapi)")
             return
+        if sys.platform == "darwin":
+            # Since hidapi 0.12 the macOS backend opens devices exclusively (seizing them), which
+            # macOS refuses for a keyboard it is using: "open failed" although IOHIDDeviceOpen
+            # succeeds. The Python binding does not expose the switch, but the extension exports
+            # the C symbol, so flip it through ctypes before the first open.
+            try:
+                import ctypes
+                ctypes.CDLL(hid.__file__).hid_darwin_set_open_exclusive(0)
+            except (OSError, AttributeError) as e:
+                self.log(f"hudfeed: could not disable hidapi's exclusive open ({e}); opens may fail")
         while not self._stop.is_set():
             for path, product in self._paths(hid):
                 if path in self._open:
