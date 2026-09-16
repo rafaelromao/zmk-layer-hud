@@ -21,10 +21,10 @@ cd ~/projects/keyboards
 git submodule add ~/projects/zmk-layer-hud modules/rafaelromao/zmk-layer-hud
 ```
 
-## 2. Add the node to `src/features/vim.dtsi`
+## 2. Add the node in `src/features/hud.dtsi`
 
-Next to `vim_sync`. It is not vim-specific, but that file is already the module integration
-point; a separate `hud.dtsi` would also need a line in `src/definitions/includes.h`.
+A general-purpose feature file (the signal is not vim-related), included from
+`src/definitions/includes.h` after `vim.dtsi`:
 
 ```c
 / {
@@ -34,6 +34,10 @@ point; a separate `hud.dtsi` would also need a line in `src/definitions/includes
         /* defaults: base-usage 0xC0, commit-usage 0xDF, tap-ms 10, settle-ms 3 */
     };
 };
+```
+
+```c
+#include "../features/hud.dtsi"
 ```
 
 What it does: on every layer change (any mechanism: `&mo`, `&lt`, `&sl`, `&tog`, the auto-layers,
