@@ -24,8 +24,6 @@ Config keys (all paths may use ~):
       map:   per layer (by define name or id): a drawer layer name, null for a layer that is
              transparent or not drawn, or {drawer, label, class}.
   base:           the drawer layer that is always active (default: the layer for id 0)         (optional)
-  codes:          zmk-vim-mode daemon codes -> {layers, label, class, vim}; the banner uses them
-                  before the keyboard's own layers arrive                                       (optional)
   combos:         [{positions, layers}] overrides for combos the drawer lists on fewer layers
                   than the firmware has them                                                    (optional)
   extras:         inference hints used only while a key cannot be placed on the live stack:
@@ -338,18 +336,6 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source=""):
             raise KeymapError(f"extras.{key}: unknown layers {bad}")
     if extras.get("alpha2") and extras["alpha2"] not in layers:
         raise KeymapError(f"extras.alpha2: unknown layer {extras['alpha2']!r}")
-    codes = None
-    if cfg.get("codes"):
-        codes = {}
-        for code, spec in cfg["codes"].items():
-            spec = dict(spec or {})
-            lyrs = spec.get("layers") or [base]
-            bad = [l for l in lyrs if l not in layers]
-            if bad:
-                raise KeymapError(f"codes.{code}: unknown layers {bad}")
-            codes[str(code)] = {"layers": lyrs, "label": spec.get("label", f"code {code}"),
-                                "cls": spec.get("class", spec.get("cls", "off")), "vim": bool(spec.get("vim", False)),
-                                "mode": spec.get("mode", ""), "sub": spec.get("sub", "")}
     signal = dict(SIGNAL)
     signal.update({k: int(v) for k, v in (cfg.get("signal") or {}).items()})
     return {
@@ -363,7 +349,6 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source=""):
         "activators": activators(layers, extras),
         "zmk_layers": zmk_layers,
         "base": base,
-        "codes": codes,
         "extras": extras,
         "signal": signal,
     }
@@ -470,7 +455,7 @@ def main(argv=None):
     else:
         print(f"{src.config_path}: {msg['source']}: {len(msg['layout']['keys'])} keys, {len(msg['layers'])} drawer layers, "
               f"{len(msg['zmk_layers'])} ZMK layers, {len(msg['combos'])} combos, {len(msg['activators'])} activators, "
-              f"base {msg['base']!r}, codes {'yes' if msg['codes'] else 'no'}")
+              f"base {msg['base']!r}")
     return 0
 
 

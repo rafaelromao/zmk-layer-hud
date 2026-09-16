@@ -6,19 +6,15 @@
  *   hud.load(keymap)                   the {"kind":"keymap", ...} message
  *   hud.setLayers([ids])               the keyboard's active ZMK layer ids (ground truth; the
  *                                      firmware's layer signal, decoded by host/hudfeed.py)
- *   hud.setMode(code, mode, reason)    the zmk-vim-mode daemon's decision (banner reason; also the
- *                                      vim layers while no layer signal has arrived yet, if the
- *                                      keymap config defines `codes`)
- *   hud.key({type, chars, name, flags}) one keyboard event from the host's key feed
+ *   hud.key({type, chars, name, flags}) one key or modifier event, decoded from the same reports
  *   hud.press([idx...])                light keys directly (tests)
  *
  * Two modes:
  *   live      after the first setLayers: the stack is exactly what the keyboard reports; a key is
  *             resolved on that stack (combos included). A key that cannot be placed there is
  *             attributed by inference and drawn dashed ("inferred").
- *   emulated  before any setLayers (old firmware, or a rehearsal typing synthesized keys): the
- *             daemon's code gives the base layers and everything else is inferred from the typed
- *             characters, guided by the config's `extras`.
+ *   emulated  before any setLayers (firmware without the module): only the base layer is known
+ *             and everything else is inferred from the typed characters, guided by `extras`.
  *
  * In a browser (http://) it accepts real key events and `?keymap=keymap.json` loads a dumped
  * message, so the page can be developed without a host.
@@ -39,14 +35,12 @@
   // Alternative spellings a drawer file may use for the same named key.
   const ALIASES = { "␣": ["space", "spc", "SPACE"], "↵": ["⏎", "enter", "ret", "RET"], "⎋": ["esc", "ESC"],
     "⌫": ["bspc", "BSPC", "backspace"], "⌦": ["del", "DEL"], "⇥": ["tab", "TAB"] };
-  const ESC_LEGENDS = new Set(["⎋", "esc", "ESC"]);
   // Modifier flags → the glyph a hold legend uses for them (home-row mods light while held).
   const MOD_GLYPH = { shift: "⇧", ctrl: "⌃", alt: "⌥", cmd: "⌘" };
 
   const state = {
     data: null,
-    code: 0, mode: "off", reason: "", provisional: false,
-    baseLayers: [],           // emulated mode: from the daemon's code (or just the base layer)
+    baseLayers: [],           // emulated mode: just the base layer
     live: null,               // {ids: [..], at} once the keyboard has reported its layers
     inferred: false,          // last key was placed by inference while live
     momentary: [],            // [{layer, until}]  (inference only)
@@ -204,11 +198,8 @@
     return name;
   }
 
-  // Emulated mode: the daemon's code (when the config defines codes), else the base layer.
+  // Emulated mode: only the base layer is known.
   function codeSummary() {
-    const codes = state.data.codes;
-    const spec = codes && (codes[String(state.code)] || codes["0"]);
-    if (spec) return { name: spec.label, cls: spec.cls || "off", sub: spec.sub || spec.layers.join(" · ") };
     return { name: layerLabel(base()), cls: "off", sub: "" };
   }
 
@@ -239,10 +230,9 @@
 
   function renderBanner() {
     const a = activeSummary();
-    $("layer").className = a.cls + (state.provisional ? " provisional" : "") + (state.inferred ? " inferred" : "");
+    $("layer").className = a.cls + (state.inferred ? " inferred" : "");
     $("layerName").textContent = a.name;
     $("layerSub").textContent = a.sub;
-    $("reason").textContent = state.reason || "";
     $("board").className = a.cls;
   }
 
@@ -361,33 +351,6 @@
     if (state.momentary.length !== before) render();
   }
 
-  // Emulated mode only, and only with zmk-vim-mode codes configured: the transitions the vim
-  // firmware itself performs, so the banner moves on the keystroke; the daemon's decision replaces
-  // it a moment later. Live mode gets them from the keyboard.
-  function inferVim(token) {
-    if (state.live || !state.data.codes) return;
-    const cur = state.data.codes[String(state.code)];
-    if (!cur || !cur.vim) return;
-    const inNormal = state.code === 1 || state.code === 4 || state.code === 7;
-    if (inNormal || state.code === 3) {
-      if ("iaosc".includes(token)) return provisional(2);
-      if (token === ":" || token === "/") return provisional(5);
-      if (token === "v") return provisional(state.code === 3 ? 1 : 3);
-    }
-    if (ESC_LEGENDS.has(token) && state.code !== 1) return provisional(1);
-    if (state.code === 5 && token === "↵") return provisional(1);
-  }
-
-  function provisional(code) {
-    const spec = state.data.codes[String(code)];
-    if (!spec) return;
-    state.code = code;
-    state.mode = spec.mode || "";
-    state.provisional = true;
-    state.baseLayers = spec.layers.slice();
-    render();
-  }
-
   function setInferred(on) {
     if (state.inferred === on) return;
     state.inferred = on;
@@ -456,7 +419,6 @@
         const shiftLayer = (ex.sticky || []).find(l => /shift/i.test(l));
         const extra = activatorsOf(ex.alpha2).concat(/^\p{Lu}$/u.test(token) && shiftLayer ? activatorsOf(shiftLayer) : []);
         flash([direct].concat(extra), inferredCls);
-        inferVim(token);
         afterKey();
         return;
       }
@@ -468,7 +430,6 @@
       flash(r.hit.concat(extra), [r.hit.length > 1 ? "combo" : "", inferredCls].join(" ").trim() || null);
       if (r.hit.length > 1) { const c = comboFor(r.layer, token); if (c) showCombo(r.hit, c.key); }
       touchLayer(r.layer);
-      inferVim(token);
       afterKey();
       return;
     }
@@ -486,7 +447,6 @@
         render();
         flash(hit.concat(activatorsOf(layer)), [hit.length > 1 ? "combo" : "", inferredCls].join(" ").trim() || null);
         if (hit.length > 1) { const c = comboFor(layer, token); if (c) showCombo(hit, c.key); }
-        inferVim(token);
         afterKey();
         return;
       }
@@ -519,21 +479,10 @@
       if (!data || !data.layout || !data.layers) return;
       state.data = data;
       state.momentary = []; state.oneShot = null;
-      if (!state.baseLayers.length) state.baseLayers = [data.base];
+      state.baseLayers = [data.base];
       buildBoard();
       const t = $("title");
       if (t) t.textContent = data.title || (data.source ? data.source.split("/").pop().replace(/\.ya?ml$/, "") : "");
-      hud.setMode(state.code, state.mode, state.reason);
-    },
-    setMode(code, mode, reason) {
-      code = Number(code) || 0;
-      state.code = code; state.mode = mode || ""; state.reason = reason || "";
-      state.provisional = false;
-      if (!state.data) return;
-      const codes = state.data.codes;
-      const spec = codes && (codes[String(code)] || codes["0"]);
-      state.baseLayers = spec ? spec.layers.slice() : [state.data.base];
-      if (spec && !mode) state.mode = spec.mode || "";
       render();
     },
     // The keyboard's active ZMK layer ids (layer 0 omitted). Clears every inference: from now on
@@ -542,7 +491,7 @@
       if (typeof ids === "string") ids = JSON.parse(ids);
       if (!Array.isArray(ids)) return;
       state.live = { ids: ids.map(Number).filter(n => Number.isInteger(n) && n > 0), at: Date.now() };
-      state.momentary = []; state.oneShot = null; state.provisional = false; state.inferred = false;
+      state.momentary = []; state.oneShot = null; state.inferred = false;
       render();
     },
     // Leave live mode (tests, or a host that lost the keyboard).
@@ -565,8 +514,7 @@
   window.addEventListener("resize", () => { if (state.data) { buildBoard(); render(); } });
 
   // Generic host: index.html?ws=ws://127.0.0.1:8766 — messages are
-  //   {"kind":"keymap",…}  {"kind":"key", ...event}  {"kind":"mode","code":N,"mode":"…","reason":"…"}
-  //   {"kind":"layers","ids":[…]}     (host/hudfeed.py speaks this).
+  //   {"kind":"keymap",…}  {"kind":"key", ...event}  {"kind":"layers","ids":[…]}   (host/hudfeed.py speaks this).
   const params = new URLSearchParams(location.search);
   const wsUrl = params.get("ws");
   if (wsUrl) {
@@ -577,7 +525,6 @@
         const m = JSON.parse(e.data);
         if (m.kind === "keymap") hud.load(m);
         else if (m.kind === "key") hud.key(m);
-        else if (m.kind === "mode") hud.setMode(m.code, m.mode, m.reason);
         else if (m.kind === "layers") hud.setLayers(m.ids);
       };
       s.onclose = () => setTimeout(connect, 1000);

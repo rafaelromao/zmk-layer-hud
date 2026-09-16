@@ -37,8 +37,11 @@ will fall back to inference. Create the repo's virtualenv with:
 
 MSG
     fi
-    # Errors from hud.lua are printed here, not swallowed.
-    ZMKHUD_PYTHON="$PYTHON" "$HS" -c "if zmkhud then zmkhud.stop() end; zmkhud = dofile('$HERE/hud.lua'); return zmkhud.selftest()"
+    # Errors from hud.lua are printed here, not swallowed. hs runs the command inside Hammerspoon,
+    # whose environment does not see this shell's variables, so hud.lua gets the python path
+    # through its PYTHONS list (the repo's .venv first); ZMKHUD_PYTHON is honoured only when set
+    # in Hammerspoon's own environment.
+    "$HS" -c "if zmkhud then zmkhud.stop() end; zmkhud = dofile('$HERE/hud.lua'); return zmkhud.selftest()"
     echo "HUD started on the recording display. Stop with: $0 stop"
     ;;
   stop) "$HS" -c "if zmkhud then zmkhud.stop() end" ;;

@@ -63,7 +63,6 @@ class Message(unittest.TestCase):
         self.assertEqual(msg["zmk_layers"]["1"]["drawer"], "Nav")
         self.assertEqual(msg["zmk_layers"]["0"]["cls"], "off")
         self.assertEqual(msg["base"], "Base")
-        self.assertIsNone(msg["codes"])
         self.assertEqual(msg["signal"], {"base": 0xC0, "commit": 0xDF})
 
     def test_dtsi_ids_and_case_insensitive_drawer_match(self):
@@ -101,14 +100,6 @@ class Message(unittest.TestCase):
         self.assertEqual(msg["extras"]["base"], "Base")
         with self.assertRaises(km.KeymapError):
             km.build_message({"extras": {"alpha2": "Nope"}}, DOC)
-
-    def test_codes(self):
-        cfg = {"codes": {1: {"layers": ["Base", "Nav"], "label": "Vim normal", "class": "vim", "vim": True}}}
-        msg = km.build_message(cfg, DOC)
-        self.assertEqual(msg["codes"]["1"]["layers"], ["Base", "Nav"])
-        self.assertTrue(msg["codes"]["1"]["vim"])
-        with self.assertRaises(km.KeymapError):
-            km.build_message({"codes": {1: {"layers": ["Nope"]}}}, DOC)
 
     def test_layer_size_mismatch_fails(self):
         bad = {"layout": DOC["layout"], "layers": {"Base": [["a", "b"]]}}

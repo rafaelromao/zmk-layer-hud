@@ -47,17 +47,6 @@ layers:
 
 base: alpha1
 
-# zmk-vim-mode daemon codes (3 LED bits): what the keyboard is in before its own layers arrive.
-codes:
-  0: { layers: [alpha1], label: Alpha 1, class: off, sub: no vim editor focused, mode: off }
-  1: { layers: [alpha1, vim], label: Vim normal, class: vim, sub: VIM_NORMAL, vim: true, mode: normal }
-  2: { layers: [alpha1], label: Vim insert, class: vim-insert, sub: "VIM_INSERT is transparent: alpha 1 shows through", vim: true, mode: insert }
-  3: { layers: [alpha1, vim], label: Vim visual, class: vim, sub: VIM_VISUAL over VIM_NORMAL, vim: true, mode: visual }
-  4: { layers: [alpha1, vim], label: Vim normal, class: vim, sub: inferred by the keyboard (legacy), vim: true, mode: legacy }
-  5: { layers: [alpha1], label: Vim cmdline, class: vim-cmdline, sub: "VIM_CMDLINE is transparent: alpha 1 shows through", vim: true, mode: cmdline }
-  6: { layers: [alpha1], label: Raw, class: raw, sub: "no vim layers: keys pass through untouched", mode: raw }
-  7: { layers: [alpha1, vim], label: Vim normal, class: vim, sub: inferred by the keyboard (legacy), vim: true, mode: legacy }
-
 # The drawer lists Enter and Tab under "shortcuts" only (drawn separately), but the firmware
 # has them on nearly every layer (cb_enter RHM RHR R0, cb_tab RTM RTR R0 in combos.dtsi).
 combos:

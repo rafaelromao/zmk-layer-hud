@@ -10,19 +10,11 @@
 --   hs -c "zmkhud = dofile('/ABS/PATH/host/macos/hud.lua')"
 --   hs -c "zmkhud.stop()"            -- or the ✕ button on the panel
 --
--- Feeds:
---   * keymap    host/hudfeed.py --stdout --layers-only, run as an hs.task, converts the keymap-drawer
---   * layers    YAML named in ~/.config/zmk-layer-hud/config.yaml into {"kind":"keymap",…} (re-sent
---               when the file changes) and reads the keyboard's raw HID reports (python-hidapi) for
---               {"kind":"layers","ids":[…]}. Hammerspoon injects hud.load(...) / hud.setLayers(ids).
---               Input Monitoring: the task inherits Hammerspoon's grant (it already taps keys).
---   * keys      hs.eventtap on keyDown/keyUp/flagsChanged, forwarded to both pages.
---   * vim mode  optional, only where zmk-vim-mode is installed: its daemon log
---               (~/Library/Logs/zmk-vim-mode.log, launchd's stderr) has one INFO line
---               `msg=decision mode=… code=… reason="…"` per transition, polled by size every
---               200 ms (FSEvents are unreliable for a file launchd keeps open); shown as the
---               banner's reason, and used for the vim layers only until the keyboard's own
---               layers arrive. Fallback when the log is missing: `zmk-vim-mode status --json`.
+-- One feed: host/hudfeed.py --stdout, run as an hs.task. It converts the keymap-drawer YAML named
+-- in ~/.config/zmk-layer-hud/config.yaml into {"kind":"keymap",…} (re-sent when the file changes)
+-- and reads the keyboard's raw HID reports (python-hidapi) for {"kind":"layers",…} and every key
+-- and modifier event. Hammerspoon only injects those lines into the pages: no event tap, no other
+-- source than the keyboard. Input Monitoring: the task inherits Hammerspoon's grant.
 --
 -- The Linux host is host/linux/ (the same pages, driven over a WebSocket by hudfeed.py).
 
@@ -32,9 +24,6 @@ local HERE = debug.getinfo(1, "S").source:sub(2):match("(.*/)") or "./"
 local ROOT = HERE .. "../../"
 local PAGES = ROOT .. "hud/"
 local HUDFEED = ROOT .. "host/hudfeed.py"
-local HOME = os.getenv("HOME")
-local LOG = HOME .. "/Library/Logs/zmk-vim-mode.log"
-local BINARY = HOME .. "/.local/bin/zmk-vim-mode"
 
 -- panel: 2 hands × (4×62 + 3×6) + 34 gap + 2×14 padding + 2 px border = 598
 M.width, M.height = 598, 392
@@ -42,6 +31,7 @@ M.margin = 24
 M.screen = nil -- hs.screen; nil = the external display, else the primary
 M.lastKeys = {}
 M.lastLayers = nil
+M.lastKeymap = nil
 M.python = nil -- resolved in start(): the first python3 that exists in PYTHONS
 
 -- The interpreter needs hidapi and keymap-drawer: the repo's own virtualenv first (make venv),
@@ -49,17 +39,9 @@ M.python = nil -- resolved in start(): the first python3 that exists in PYTHONS
 local PYTHONS = { os.getenv("ZMKHUD_PYTHON"), ROOT .. ".venv/bin/python3", "/opt/homebrew/bin/python3",
   "/usr/local/bin/python3", "/usr/bin/python3" }
 
-local wv, kv, tap, watcher, pollTimer, logTimer, readyTimer, task, ucc, feed, feedTimer
+local wv, kv, readyTimer, ucc, feed, feedTimer
 local ready = false
 local queue = {}
-local lastSize = -1
-
--- A JavaScript string literal. hs.json.encode only takes tables, so strings need their own
--- quoting (the feed's mode and reason, the HUD's manual mode).
-local function jsstr(v)
-  v = tostring(v or "")
-  return '"' .. v:gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n"):gsub("\r", "") .. '"'
-end
 
 local function js(code)
   if not wv then return end
@@ -73,7 +55,7 @@ local function flush()
   queue = {}
 end
 
--- ---------- layer feed (hudfeed.py) ----------
+-- ---------- the feed (hudfeed.py) ----------
 
 local feedBuffer = ""
 
@@ -83,12 +65,21 @@ local function onFeedLine(line)
     print("zmkhud: hudfeed said: " .. line)
     return
   end
-  if msg.kind == "layers" and type(msg.ids) == "table" then
+  if msg.kind == "key" then
+    -- The line is already JSON: hand it to both pages verbatim.
+    if msg.type == "keyDown" then
+      -- zmkhud.lastKeys: the last raw events, newest last, for diagnosis:
+      --   hs -c "return table.concat(zmkhud.lastKeys, '\n')"
+      M.lastKeys[#M.lastKeys + 1] = os.date("%H:%M:%S ") .. line
+      if #M.lastKeys > 10 then table.remove(M.lastKeys, 1) end
+    end
+    js("hud.key(" .. line .. ")")
+    if kv and msg.type == "keyDown" then kv:evaluateJavaScript("keys.key(" .. line .. ")") end
+  elseif msg.kind == "layers" and type(msg.ids) == "table" then
     M.lastLayers = os.date("%H:%M:%S ") .. line
     -- An empty Lua table encodes as [] here, which is what setLayers wants.
     js("hud.setLayers(" .. hs.json.encode(msg.ids) .. ")")
   elseif msg.kind == "keymap" then
-    -- The line is already JSON: hand it to the page verbatim (hudfeed re-sends it on edits).
     M.lastKeymap = os.date("%H:%M:%S ") .. tostring(msg.source)
     js("hud.load(" .. line .. ")")
   end
@@ -97,10 +88,12 @@ end
 local function startFeed()
   if feed and feed:isRunning() then return end
   if not M.python then
-    print("zmkhud: no python3 found (set ZMKHUD_PYTHON); layer signals disabled")
+    print("zmkhud: no python3 found (set ZMKHUD_PYTHON or run make venv); nothing will be shown")
     return
   end
   feedBuffer = ""
+  local args = { HUDFEED, "--stdout", "--no-ws" }
+  if os.getenv("ZMKHUD_CONFIG") then args[#args + 1] = "--config"; args[#args + 1] = os.getenv("ZMKHUD_CONFIG") end
   feed = hs.task.new(M.python, function(exit, out, err)
     print(string.format("zmkhud: hudfeed exited (%s)%s", tostring(exit), err and err ~= "" and (": " .. err) or ""))
     if wv then
@@ -123,7 +116,7 @@ local function startFeed()
       end
     end
     return true
-  end, { HUDFEED, "--stdout", "--layers-only", "--no-ws" })
+  end, args)
   feed:start()
 end
 
@@ -134,84 +127,6 @@ local function stopFeed()
     feed = nil
     if t:isRunning() then t:terminate() end
   end
-end
-
--- ---------- daemon feed ----------
-
-local lastLine
-
-local function applyDecision(line)
-  if line == lastLine then return end
-  lastLine = line
-  local mode = line:match("mode=(%S+)")
-  local code = line:match("code=(%d)")
-  local reason = line:match('reason="([^"]*)"') or line:match("reason=(%S+)") or ""
-  if code then
-    js(string.format("hud.setMode(%s, %s, %s)", code, jsstr(mode), jsstr(reason)))
-  end
-end
-
-local function readTail()
-  local f = io.open(LOG, "rb")
-  if not f then return end
-  local size = f:seek("end")
-  f:seek("set", math.max(0, size - 16384))
-  local chunk = f:read("*a") or ""
-  f:close()
-  local last
-  for line in chunk:gmatch("[^\n]+") do
-    if line:find("msg=decision", 1, true) then last = line end
-  end
-  if last then applyDecision(last) end
-end
-
-local function pollStatus()
-  if task and task:isRunning() then return end
-  task = hs.task.new(BINARY, function(exit, out)
-    if exit ~= 0 then return end
-    local ok, st = pcall(hs.json.decode, out or "")
-    if ok and type(st) == "table" and st.code then
-      js(string.format("hud.setMode(%d, %s, %s)", st.code, jsstr(st.mode), jsstr(st.reason)))
-    end
-  end, { "status", "--json" })
-  task:start()
-end
-
--- ---------- key feed ----------
-
-local types = hs.eventtap.event.types
-
--- Always a JSON object with the four booleans: an empty Lua table would encode as [] and
--- JavaScript arrays have a method called "shift".
-local function flagsOf(ev)
-  local f = ev:getFlags()
-  return { cmd = f.cmd == true, ctrl = f.ctrl == true, alt = f.alt == true, shift = f.shift == true, fn = f.fn == true }
-end
-
-local function onKey(ev)
-  local t = ev:getType()
-  local name = hs.keycodes.map[ev:getKeyCode()]
-  local chars = ""
-  if t ~= types.flagsChanged then
-    local ok, c = pcall(function() return ev:getCharacters(true) end)
-    if ok and c then chars = c end
-  end
-  local rep = ev:getProperty(hs.eventtap.event.properties.keyboardEventAutorepeat) or 0
-  local payload = hs.json.encode({
-    type = (t == types.keyDown and "keyDown") or (t == types.keyUp and "keyUp") or "flagsChanged",
-    name = name, chars = chars, flags = flagsOf(ev), ["repeat"] = rep ~= 0,
-    code = ev:getKeyCode(),
-  })
-  if t == types.keyDown then
-    -- zmkhud.lastKeys: the last raw events, newest last, for diagnosis:
-    --   hs -c "return table.concat(zmkhud.lastKeys, '\n')"
-    M.lastKeys[#M.lastKeys + 1] = os.date("%H:%M:%S ") .. payload
-    if #M.lastKeys > 10 then table.remove(M.lastKeys, 1) end
-    M.lastKey = payload
-  end
-  js("hud.key(" .. payload .. ")")
-  if kv and t == types.keyDown then kv:evaluateJavaScript("keys.key(" .. payload .. ")") end
-  return false -- never swallow the key
 end
 
 -- ---------- windows ----------
@@ -258,35 +173,18 @@ function M.start()
   end)
   wv = overlay(hs.webview.new(frame(), { developerExtrasEnabled = false }, ucc))
   wv:navigationCallback(function(action)
-    if action == "didFinishNavigation" then flush(); readTail() end
+    if action == "didFinishNavigation" then flush() end
   end)
   wv:url("file://" .. PAGES .. "index.html")
   wv:show()
 
-  -- Typed-keys visualizer: bottom-left of the recording display, fed by the same event tap.
+  -- Typed-keys visualizer: bottom-left of the recording display, fed by the same events.
   kv = overlay(hs.webview.new(stripFrame(), { developerExtrasEnabled = false }))
   kv:url("file://" .. PAGES .. "keys.html")
   kv:show()
 
-  tap = hs.eventtap.new({ types.keyDown, types.keyUp, types.flagsChanged }, onKey)
-  tap:start()
-
-  -- If WebKit never reports the load, unblock the bridge anyway: keymap.js is inline, so
-  -- the page is ready long before two seconds.
-  readyTimer = hs.timer.doAfter(2, function() if not ready then flush(); readTail() end end)
-
-  -- zmk-vim-mode is optional: feed its decisions only where it is installed.
-  if hs.fs.attributes(LOG) then
-    watcher = hs.pathwatcher.new(LOG, readTail):start()
-    logTimer = hs.timer.doEvery(0.2, function()
-      local size = hs.fs.attributes(LOG, "size") or -1
-      if size ~= lastSize then lastSize = size; readTail() end
-    end)
-  elseif hs.fs.attributes(BINARY) then
-    pollTimer = hs.timer.doEvery(0.2, pollStatus)
-  else
-    print("zmkhud: zmk-vim-mode not installed; the banner shows the keyboard's layers only")
-  end
+  -- If WebKit never reports the load, unblock the bridge anyway.
+  readyTimer = hs.timer.doAfter(2, function() if not ready then flush() end end)
 
   startFeed()
   return M
@@ -294,10 +192,6 @@ end
 
 function M.stop()
   stopFeed()
-  if tap then tap:stop(); tap = nil end
-  if watcher then watcher:stop(); watcher = nil end
-  if pollTimer then pollTimer:stop(); pollTimer = nil end
-  if logTimer then logTimer:stop(); logTimer = nil end
   if readyTimer then readyTimer:stop(); readyTimer = nil end
   if wv then wv:delete(); wv = nil end
   if kv then kv:delete(); kv = nil end
@@ -320,21 +214,16 @@ function M.resize(w, h)
   end
 end
 
--- Without the keyboard: zmkhud.mode(2) sets the daemon code, zmkhud.layers({2, 22}) the layers.
-function M.mode(code, reason)
-  js(string.format("hud.setMode(%d, '', %s)", code, jsstr(reason or "manual")))
-end
-
+-- Without the keyboard: zmkhud.layers({2, 22}) sets the layers by hand.
 function M.layers(ids)
   js("hud.setLayers(" .. hs.json.encode(ids or {}) .. ")")
 end
 
 -- zmkhud.selftest(): what the HUD sees — for `hs -c "print(zmkhud.selftest())"`.
 function M.selftest()
-  local size = hs.fs.attributes(LOG, "size")
-  return string.format("ready=%s tap=%s feed=%s python=%s keymap=%s layers=%s log=%s size=%s last=%s",
-    tostring(ready), tostring(tap and tap:isEnabled()), tostring(feed and feed:isRunning()),
-    tostring(M.python), tostring(M.lastKeymap), tostring(M.lastLayers), LOG, tostring(size), tostring(lastLine))
+  return string.format("ready=%s feed=%s python=%s keymap=%s layers=%s lastKey=%s",
+    tostring(ready), tostring(feed and feed:isRunning()), tostring(M.python),
+    tostring(M.lastKeymap), tostring(M.lastLayers), tostring(M.lastKeys[#M.lastKeys]))
 end
 
 -- KeyCastr draws its own stacking bubbles wherever it was last placed; the strip replaces it.

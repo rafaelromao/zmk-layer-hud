@@ -94,12 +94,12 @@ With the keyboard connected and the HUD's Python environment set up (`make venv`
 zmk-layer-hud, see the README):
 
 ```bash
-.venv/bin/python3 host/hudfeed.py --stdout --layers-only --no-ws --debug --no-keymap
+.venv/bin/python3 host/hudfeed.py --stdout --no-ws --no-keymap --no-keys --debug
 ```
 
 Within two seconds (heartbeat) it prints `{"kind":"layers","ids":[]}`; holding a layer key
-prints that layer's id, releasing prints `[]` again. Type into a terminal and a text field
-meanwhile: nothing stray appears. If it prints `cannot open`, see the README's troubleshooting;
+prints that layer's id, releasing prints `[]` again. Drop `--no-keys` to also see every key press
+as `{"kind":"key",…}`. Type into a terminal and a text field meanwhile: nothing stray appears. If it prints `cannot open`, see the README's troubleshooting;
 if it prints nothing, add `--raw` to see the raw reports (15 bytes with 12 slots; a `df` byte
 marks an announcement).
 

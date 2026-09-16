@@ -135,7 +135,8 @@ def main():
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, quit_host)
     RUN.mkdir(exist_ok=True)
     with (RUN / "hudfeed.log").open("w") as output:
-        feed = subprocess.Popen([sys.executable, "-u", str(ROOT / "host" / "hudfeed.py"), "--debug"],
+        feed_python = os.environ.get("ZMKHUD_PYTHON", sys.executable)
+        feed = subprocess.Popen([feed_python, "-u", str(ROOT / "host" / "hudfeed.py"), "--debug"],
                                 stdout=output, stderr=output, start_new_session=True)
     def watch_feed():
         if feed.poll() is not None:

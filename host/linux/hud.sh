@@ -23,8 +23,13 @@ if [ "${1:-start}" = stop ]; then
   echo "HUD stopped; panel reservation released"
   exit 0
 fi
-python3 -c "import hid, evdev, websockets, gi; gi.require_version('Gtk', '3.0'); gi.require_version('WebKit2', '4.1'); gi.require_version('GtkLayerShell', '0.1')"
-python3 "$ROOT/host/keymap.py"   # validates the config + keymap-drawer YAML before the panel opens
+# The repo's virtualenv (make venv) has hidapi, keymap-drawer and websockets; the GTK bindings
+# come from the system python, so the panel runs with that one and hands the venv to hudfeed.
+python3 -c "import gi; gi.require_version('Gtk', '3.0'); gi.require_version('WebKit2', '4.1'); gi.require_version('GtkLayerShell', '0.1')"
+FEED_PYTHON="${ZMKHUD_PYTHON:-$ROOT/.venv/bin/python3}"; [ -x "$FEED_PYTHON" ] || FEED_PYTHON=python3
+"$FEED_PYTHON" -c "import hid, websockets"
+export ZMKHUD_PYTHON="$FEED_PYTHON"
+"$FEED_PYTHON" "$ROOT/host/keymap.py"   # validates the config + keymap-drawer YAML before the panel opens
 stop
 sleep 0.5
 nohup python3 -u "$HERE/panel.py" >"$RUN/panel.log" 2>&1 &

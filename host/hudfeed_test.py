@@ -1,4 +1,4 @@
-"""Decoder tests for host/hudfeed.py. The vectors mirror firmware/tests/test_layer_signal.c;
+"""Decoder tests for host/hudfeed.py. The layer vectors mirror firmware/tests/test_layer_signal.c;
 keep both in sync."""
 
 import os
@@ -7,7 +7,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from hudfeed import BASE_USAGE, COMMIT_USAGE, LayerReader, decode_keys, decode_report  # noqa: E402
+from hudfeed import BASE_USAGE, COMMIT_USAGE, ReportDecoder, decode_keys, decode_report  # noqa: E402
 
 C = COMMIT_USAGE
 
@@ -61,33 +61,66 @@ class DecodeReport(unittest.TestCase):
         self.assertEqual(decode_report([1, 0, 0] + keys), list(range(1, 12)))
 
 
-class ReaderDedup(unittest.TestCase):
-    """The reader only reports a set when it differs from the last announced one."""
+def R(mods=0, *keys):
+    return [1, mods, 0] + list(keys) + [0] * (12 - len(keys))
 
-    def test_unchanged_set_is_suppressed(self):
-        seen = []
-        r = LayerReader(seen.append, log=lambda *a: None)
 
-        class Dev:
-            def __init__(self, reports):
-                self.reports = list(reports)
+class Decoder(unittest.TestCase):
+    """The report stream -> layers / key / flagsChanged messages, all from the keyboard."""
 
-            def read(self, n, timeout_ms=0):
-                if not self.reports:
-                    r.stop()
-                    return []
-                return self.reports.pop(0)
+    def test_layers_only_when_changed(self):
+        d = ReportDecoder()
+        self.assertEqual(d.feed(R(0, 0xC2, C)), [{"kind": "layers", "ids": [2]}])
+        self.assertEqual(d.feed(R(0, 0xC2, C)), [])             # heartbeat: unchanged
+        self.assertEqual(d.feed(R(0, C)), [{"kind": "layers", "ids": []}])
 
-            def close(self):
-                pass
+    def test_key_press_and_release(self):
+        d = ReportDecoder()
+        down = d.feed(R(0, 0x04))
+        self.assertEqual(len(down), 1)
+        self.assertEqual((down[0]["type"], down[0]["name"], down[0]["chars"], down[0]["code"]), ("keyDown", "a", "a", 4))
+        up = d.feed(R(0))
+        self.assertEqual((up[0]["type"], up[0]["chars"]), ("keyUp", "a"))
 
-        r._read_loop("p", Dev([
-            [1, 0, 0, 0xC2, C, 0, 0, 0, 0],   # {2}
-            [1, 0, 0, 0x04, 0, 0, 0, 0, 0],   # typing: ignored
-            [1, 0, 0, 0xC2, C, 0, 0, 0, 0],   # {2} again (heartbeat): suppressed
-            [1, 0, 0, C, 0, 0, 0, 0, 0],      # {}
-        ]), "test")
-        self.assertEqual(seen, [[2], []])
+    def test_shift_gives_uppercase_and_symbols(self):
+        d = ReportDecoder()
+        msgs = d.feed(R(0x02, 0x04))                             # left shift + a
+        self.assertEqual(msgs[0]["type"], "flagsChanged")
+        self.assertTrue(msgs[0]["flags"]["shift"])
+        self.assertEqual((msgs[1]["type"], msgs[1]["chars"]), ("keyDown", "A"))
+        d.feed(R(0x02))
+        msgs = d.feed(R(0x20, 0x1E))                             # right shift + 1
+        self.assertEqual(msgs[-1]["chars"], "!")
+
+    def test_named_keys(self):
+        d = ReportDecoder()
+        self.assertEqual(d.feed(R(0, 0x28))[0]["name"], "return")
+        d.feed(R(0))
+        self.assertEqual(d.feed(R(0, 0x50))[0]["name"], "left")
+        d.feed(R(0))
+        self.assertEqual(d.feed(R(0, 0x68))[0]["name"], "f13")
+        d.feed(R(0))
+        m = d.feed(R(0, 0x2C))[0]
+        self.assertEqual((m["name"], m["chars"]), ("space", " "))
+
+    def test_announcement_usages_are_not_keys(self):
+        d = ReportDecoder()
+        msgs = d.feed(R(0, 0x04, 0xC2, C))                        # 'a' held while the keyboard announces
+        kinds = [(m["kind"], m.get("type")) for m in msgs]
+        self.assertEqual(kinds, [("layers", None), ("key", "keyDown")])
+        self.assertEqual(d.feed(R(0, 0x04)), [])                 # release of the announcement: nothing
+
+    def test_modifier_only_change(self):
+        d = ReportDecoder()
+        msgs = d.feed(R(0x08))                                   # cmd down
+        self.assertEqual([m["type"] for m in msgs], ["flagsChanged"])
+        self.assertTrue(msgs[0]["flags"]["cmd"])
+        self.assertEqual(d.feed(R(0))[0]["flags"]["cmd"], False)
+
+    def test_other_reports_ignored(self):
+        d = ReportDecoder()
+        self.assertEqual(d.feed([2, 0xCD, 0]), [])
+        self.assertEqual(d.feed([]), [])
 
 
 if __name__ == "__main__":

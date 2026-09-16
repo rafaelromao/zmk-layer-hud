@@ -42,8 +42,6 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 .chip.raw { background: var(--chip-raw); color: #101420; }
 .chip.off { background: var(--chip-off); color: #dfe3f0; }
 .chip.provisional { outline: 2px dashed rgba(255,255,255,0.45); outline-offset: -2px; }
-#reason { margin-left: 8px; padding-left: 12px; border-left: 1px solid #3b4261; font-size: 12px; color: #aab0c0; white-space: nowrap; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; line-height: 14px; padding-top: 3px; }
-#reason:empty { display: none; }
 /* The board is the keymap-drawer physical layout scaled to the panel width; every key is
    positioned (and rotated) from the drawer's coordinates, so any keyboard renders. */
 #board { position: relative; width: 100%; min-height: 40px; }

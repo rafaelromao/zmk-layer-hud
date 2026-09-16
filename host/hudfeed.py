@@ -1,39 +1,28 @@
 #!/usr/bin/env python3
-"""Host feed for the zmk-layer-hud pages: the keymap, layer announcements from the keyboard, key
-events and (optionally) the zmk-vim-mode daemon's decisions, as JSON messages over a WebSocket or
-on stdout. Nothing here needs zmk-vim-mode unless the config defines its `codes`.
+"""Host feed for the zmk-layer-hud pages. One source: the keyboard's own HID reports.
 
-The HUD (hud/index.html) and the typed-keys strip (hud/keys.html) are plain web pages. On
-Linux, open them with `?ws=ws://127.0.0.1:8766` (host/linux/hud.sh does) and they connect
-here. On macOS, Hammerspoon (host/macos/hud.lua) runs this script with `--stdout
---layers-only` and injects each line into its webviews itself.
+Reads the keyboard's raw input reports with hidapi and turns them into JSON messages for the
+pages, over a WebSocket (Linux panel) or on stdout (macOS Hammerspoon host):
 
-Messages (one JSON object per message or line):
-  {"kind":"keymap", ...}                  the keymap (layout, layers, combos, ZMK layer table), built
-                                          from the keymap-drawer YAML named in the config by host/keymap.py;
-                                          re-sent whenever that file, the config or the layer dtsi changes
-  {"kind":"layers","ids":[2,22]}          active ZMK layer ids, layer 0 omitted (always active)
-  {"kind":"key","type":"keyDown","name":"space","chars":" ","code":57,
+  {"kind":"keymap", ...}                  the keymap, built from the keymap-drawer YAML named in the
+                                          config by host/keymap.py; re-sent whenever that file, the
+                                          config or the layer dtsi changes
+  {"kind":"layers","ids":[2,22]}          active ZMK layer ids (layer 0 omitted: always active), from
+                                          the firmware module's announcement inside the report
+  {"kind":"key","type":"keyDown","name":"space","chars":" ","code":44,
    "flags":{"cmd":false,"ctrl":false,"alt":false,"shift":false,"fn":false},"repeat":false}
-  {"kind":"mode","code":1,"mode":"normal","reason":"nvim client"}
+                                          every key press/release and modifier change, straight from
+                                          the report: no OS event tap, no evdev, no layout guessing
 A client sending {"kind":"close"} (the ✕ button) makes this script exit.
 
-Inputs:
-  * raw HID   the keyboard's own keyboard report, read with hidapi. The firmware module
-              (firmware/) puts one reserved usage per active layer (base + id) plus a commit
-              usage into the report; only reports carrying the commit usage are decoded.
-              Ordinary reports (your typing) are discarded unread and never logged.
-              macOS: Input Monitoring for the process that runs this (Hammerspoon when started
-              from hud.lua). Linux: hidraw access, granted by contrib/udev/60-zmk-layer-hud.rules
-              (or the zmk-vim-mode daemon's identical rule).
-  * evdev     every keyboard under /dev/input (Linux only; needs read access: the udev rule
-              gives uaccess for the ZMK keyboard, `input` group membership covers the rest)
-  * journal   optional, only with `codes` in the config (or --mode): `journalctl --user -u
-              zmk-vim-mode -f` for the daemon's `msg=decision …` lines (Linux); falls back to
-              polling `zmk-vim-mode status --json`.
+Access: macOS needs Input Monitoring for the process running this (Hammerspoon when started from
+hud.lua, else your terminal); Linux needs hidraw access (contrib/udev/60-zmk-layer-hud.rules).
+Dependencies: hidapi and keymap-drawer (`make venv`); python-websockets for the WebSocket.
 
-Dependencies: python-hidapi (`import hid`; Arch: python-hidapi, macOS: brew install hidapi &&
-pip install hidapi). Linux extras: python-evdev python-websockets.
+The report is ZMK's HKRO keyboard report: [report id 1, modifiers, reserved, key usages...].
+Usages base..commit-1 are the layer announcement (host/keymap.py's `signal`), everything else is
+a real key. Characters are derived from the usage with a US layout table; the keymap-drawer
+legends are matched against them by the page.
 """
 
 from __future__ import annotations
@@ -42,12 +31,9 @@ import argparse
 import asyncio
 import json
 import os
-import re
 import shutil
-import subprocess
 import sys
 import threading
-import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import keymap as keymap_mod  # noqa: E402  (host/keymap.py)
@@ -55,12 +41,32 @@ import keymap as keymap_mod  # noqa: E402  (host/keymap.py)
 ZMK_VID, ZMK_PID = 0x1D50, 0x615E
 BASE_USAGE, COMMIT_USAGE = 0xC0, 0xDF
 KEYBOARD_REPORT_ID = 1
-KEY_UNKNOWN = 240  # evdev code Linux gives usages it has no name for (our reserved usages)
 
-BINARY = os.path.expanduser("~/.local/bin/zmk-vim-mode")
+# HID modifier byte bits -> HUD flag names (left/right collapse).
+MOD_BITS = {0x01: "ctrl", 0x02: "shift", 0x04: "alt", 0x08: "cmd", 0x10: "ctrl", 0x20: "shift", 0x40: "alt", 0x80: "cmd"}
 
+# Keyboard-page usage -> (char, shifted char), US layout.
+CHARS = {}
+for i, c in enumerate("abcdefghijklmnopqrstuvwxyz"):
+    CHARS[0x04 + i] = (c, c.upper())
+for i, (c, s) in enumerate(zip("1234567890", "!@#$%^&*()")):
+    CHARS[0x1E + i] = (c, s)
+CHARS.update({0x2C: (" ", " "), 0x2D: ("-", "_"), 0x2E: ("=", "+"), 0x2F: ("[", "{"), 0x30: ("]", "}"),
+              0x31: ("\\", "|"), 0x32: ("#", "~"), 0x33: (";", ":"), 0x34: ("'", '"'), 0x35: ("`", "~"),
+              0x36: (",", "<"), 0x37: (".", ">"), 0x38: ("/", "?"), 0x64: ("\\", "|"),
+              0x54: ("/", "/"), 0x55: ("*", "*"), 0x56: ("-", "-"), 0x57: ("+", "+"), 0x67: ("=", "=")})
+for i, c in enumerate("1234567890"):
+    CHARS[0x59 + i] = (c, c)  # keypad 1..9, 0 (0x59..0x62)
+CHARS[0x63] = (".", ".")
+# Usage -> name, spelled like Hammerspoon's hs.keycodes.map (the pages share one table).
+NAMED = {0x28: "return", 0x29: "escape", 0x2A: "delete", 0x2B: "tab", 0x2C: "space", 0x4C: "forwarddelete",
+         0x4F: "right", 0x50: "left", 0x51: "down", 0x52: "up", 0x4A: "home", 0x4D: "end", 0x4B: "pageup",
+         0x4E: "pagedown", 0x39: "capslock", 0x46: "printscreen", 0x47: "scrolllock", 0x48: "pause",
+         0x49: "insert", 0x58: "return", 0x65: "menu"}
+for i in range(24):
+    NAMED[0x3A + i if i < 12 else 0x68 + i - 12] = f"f{i + 1}"
+CONTROL_CHARS = {0x28: "\r", 0x29: "\x1b", 0x2A: "\x7f", 0x2B: "\t", 0x58: "\r"}
 
-# ---------- layer signal decoding (mirrors firmware/src/layer_signal_policy.h) ----------
 
 def decode_keys(keys, base=BASE_USAGE, commit=COMMIT_USAGE):
     """Key bytes of one keyboard report -> sorted layer ids, or None when the report does
@@ -84,16 +90,84 @@ def decode_report(report, base=BASE_USAGE, commit=COMMIT_USAGE, report_id=KEYBOA
     return decode_keys(data[2:], base, commit)
 
 
-class LayerReader:
-    """Reads the keyboard's raw HID reports on a thread and calls on_layers(ids) when the
-    announced set changes. Rescans for the device every `rescan` seconds (hotplug)."""
+def split_report(report, report_id=KEYBOARD_REPORT_ID):
+    """-> (modifiers byte, key usages) of a keyboard report, or None for other reports."""
+    data = bytes(report)
+    if report_id is not None:
+        if len(data) < 3 or data[0] != report_id:
+            return None
+        return data[1], data[3:]
+    if len(data) < 2:
+        return None
+    return data[0], data[2:]
 
-    def __init__(self, on_layers, vid=ZMK_VID, pid=ZMK_PID, name=None, base=BASE_USAGE,
-                 commit=COMMIT_USAGE, report_id=KEYBOARD_REPORT_ID, rescan=2.0, log=print, raw=False):
-        self.on_layers, self.vid, self.pid, self.name = on_layers, vid, pid, name
+
+def flags_of(mods):
+    f = {"cmd": False, "ctrl": False, "alt": False, "shift": False, "fn": False}
+    for bit, name in MOD_BITS.items():
+        if mods & bit:
+            f[name] = True
+    return f
+
+
+def key_message(usage, down, flags):
+    """A key press/release -> the HUD's key event."""
+    chars = ""
+    if usage in CHARS:
+        chars = CHARS[usage][1 if flags["shift"] else 0]
+    elif usage in CONTROL_CHARS:
+        chars = CONTROL_CHARS[usage]
+    name = NAMED.get(usage) or (chars if chars and chars != " " else f"usage{usage:02x}")
+    return {"kind": "key", "type": "keyDown" if down else "keyUp", "name": name, "chars": chars,
+            "code": usage, "flags": flags, "repeat": False}
+
+
+class ReportDecoder:
+    """Turns the stream of keyboard reports into layers / key / flagsChanged messages. Pure and
+    tested: feed(report) -> list of messages."""
+
+    def __init__(self, base=BASE_USAGE, commit=COMMIT_USAGE, report_id=KEYBOARD_REPORT_ID):
+        self.base, self.commit, self.report_id = base, commit, report_id
+        self.layers = None
+        self.mods = 0
+        self.held = []  # real usages currently down, in press order
+
+    def feed(self, report):
+        parts = split_report(report, self.report_id)
+        if parts is None:
+            return []
+        mods, keys = parts
+        out = []
+        ids = decode_keys(keys, self.base, self.commit)
+        if ids is not None and ids != self.layers:
+            self.layers = ids
+            out.append({"kind": "layers", "ids": ids})
+        real = [k for k in keys if k and not (self.base <= k <= self.commit)]
+        if mods != self.mods:
+            self.mods = mods
+            flags = flags_of(mods)
+            out.append({"kind": "key", "type": "flagsChanged", "name": "", "chars": "", "code": 0,
+                        "flags": flags, "repeat": False})
+        flags = flags_of(mods)
+        for k in self.held:
+            if k not in real:
+                out.append(key_message(k, False, flags))
+        for k in real:
+            if k not in self.held:
+                out.append(key_message(k, True, flags))
+        self.held = real
+        return out
+
+
+class KeyboardReader:
+    """Reads the keyboard's raw HID reports on a thread and calls emit(message) for every
+    decoded message. Rescans for the device every `rescan` seconds (hotplug)."""
+
+    def __init__(self, emit, vid=ZMK_VID, pid=ZMK_PID, name=None, base=BASE_USAGE, commit=COMMIT_USAGE,
+                 report_id=KEYBOARD_REPORT_ID, rescan=2.0, log=print, raw=False):
+        self.emit, self.vid, self.pid, self.name = emit, vid, pid, name
         self.base, self.commit, self.report_id, self.rescan, self.log = base, commit, report_id, rescan, log
         self.raw = raw  # debug only: dumps every report, i.e. also what you type
-        self.last = None
         self._open = {}
         self._stop = threading.Event()
 
@@ -119,8 +193,7 @@ class LayerReader:
         try:
             import hid
         except ImportError:
-            self.log("hudfeed: python-hidapi is required for layer signals "
-                     "(pip install hidapi / pacman -S python-hidapi; macOS also brew install hidapi)")
+            self.log("hudfeed: hidapi is required (make venv, or pip install hidapi; macOS also brew install hidapi)")
             return
         if sys.platform == "darwin":
             # Since hidapi 0.12 the macOS backend opens devices exclusively (seizing them), which
@@ -151,12 +224,13 @@ class LayerReader:
                     self._open[path] = None  # do not retry every scan
                     continue
                 self._open[path] = dev
-                self.log(f"hudfeed: reading layer signals from {product}")
+                self.log(f"hudfeed: reading {product}")
                 threading.Thread(target=self._read_loop, args=(path, dev, product),
                                  name="hid-read", daemon=True).start()
             self._stop.wait(self.rescan)
 
     def _read_loop(self, path, dev, product):
+        decoder = ReportDecoder(self.base, self.commit, self.report_id)
         try:
             while not self._stop.is_set():
                 report = dev.read(64, timeout_ms=500)
@@ -164,11 +238,8 @@ class LayerReader:
                     continue
                 if self.raw:
                     self.log(f"hudfeed: {product} raw {bytes(report).hex(' ')}")
-                ids = decode_report(report, self.base, self.commit, self.report_id)
-                if ids is None or ids == self.last:
-                    continue
-                self.last = ids
-                self.on_layers(ids)
+                for msg in decoder.feed(report):
+                    self.emit(msg)
         except (OSError, IOError, ValueError) as e:
             self.log(f"hudfeed: {product} gone ({e})")
         finally:
@@ -177,6 +248,10 @@ class LayerReader:
             except Exception:
                 pass
             self._open.pop(path, None)
+            # The keyboard went away: whatever was held is released.
+            flags = flags_of(0)
+            for k in decoder.held:
+                self.emit(key_message(k, False, flags))
 
 
 # ---------- keymap (config + keymap-drawer YAML, live reload) ----------
@@ -203,155 +278,24 @@ class KeymapFeed:
             await asyncio.sleep(self.poll)
 
 
-# ---------- key events (Linux evdev) ----------
-
-def evdev_tables():
-    from evdev import ecodes as E
-
-    # US layout: evdev key -> (char, shifted char). The HUD resolves characters against the
-    # keymap-drawer legends, so this only needs to match what the host layout produces.
-    chars = {
-        **{getattr(E, f"KEY_{c}"): (c.lower(), c) for c in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"},
-        E.KEY_1: ("1", "!"), E.KEY_2: ("2", "@"), E.KEY_3: ("3", "#"), E.KEY_4: ("4", "$"),
-        E.KEY_5: ("5", "%"), E.KEY_6: ("6", "^"), E.KEY_7: ("7", "&"), E.KEY_8: ("8", "*"),
-        E.KEY_9: ("9", "("), E.KEY_0: ("0", ")"), E.KEY_MINUS: ("-", "_"), E.KEY_EQUAL: ("=", "+"),
-        E.KEY_LEFTBRACE: ("[", "{"), E.KEY_RIGHTBRACE: ("]", "}"), E.KEY_BACKSLASH: ("\\", "|"),
-        E.KEY_SEMICOLON: (";", ":"), E.KEY_APOSTROPHE: ("'", '"'), E.KEY_GRAVE: ("`", "~"),
-        E.KEY_COMMA: (",", "<"), E.KEY_DOT: (".", ">"), E.KEY_SLASH: ("/", "?"), E.KEY_SPACE: (" ", " "),
-    }
-    # Named keys, spelled the way hs.keycodes.map spells them (the pages share one table).
-    named = {
-        E.KEY_SPACE: "space", E.KEY_ENTER: "return", E.KEY_ESC: "escape", E.KEY_BACKSPACE: "delete",
-        E.KEY_DELETE: "forwarddelete", E.KEY_TAB: "tab", E.KEY_LEFT: "left", E.KEY_RIGHT: "right",
-        E.KEY_UP: "up", E.KEY_DOWN: "down", E.KEY_HOME: "home", E.KEY_END: "end",
-        E.KEY_PAGEUP: "pageup", E.KEY_PAGEDOWN: "pagedown",
-        **{getattr(E, f"KEY_F{n}"): f"f{n}" for n in range(1, 13)},
-    }
-    mods = {
-        E.KEY_LEFTSHIFT: "shift", E.KEY_RIGHTSHIFT: "shift", E.KEY_LEFTCTRL: "ctrl", E.KEY_RIGHTCTRL: "ctrl",
-        E.KEY_LEFTALT: "alt", E.KEY_RIGHTALT: "alt", E.KEY_LEFTMETA: "cmd", E.KEY_RIGHTMETA: "cmd",
-    }
-    return E, chars, named, mods
-
-
-class KeyFeed:
-    def __init__(self, broadcast, log=print):
-        self.broadcast, self.log = broadcast, log
-        self.held = {"cmd": 0, "ctrl": 0, "alt": 0, "shift": 0}
-        self.E, self.CHARS, self.NAMED, self.MODS = evdev_tables()
-
-    def flags(self):
-        return {k: v > 0 for k, v in self.held.items()} | {"fn": False}
-
-    def key_event(self, code, value):
-        """One evdev key event -> HUD message (or None). value: 1 down, 0 up, 2 repeat."""
-        E = self.E
-        if code == KEY_UNKNOWN:
-            return None  # the layer-signal usages, when the kernel forwards them
-        if code in self.MODS:
-            m = self.MODS[code]
-            self.held[m] = max(0, self.held[m] + (1 if value == 1 else -1 if value == 0 else 0))
-            return {"kind": "key", "type": "flagsChanged", "name": m, "chars": "", "code": code,
-                    "flags": self.flags(), "repeat": False}
-        typ = "keyUp" if value == 0 else "keyDown"
-        chars = ""
-        if code in self.CHARS and code != E.KEY_SPACE:
-            chars = self.CHARS[code][1 if self.held["shift"] else 0]
-        elif code == E.KEY_SPACE:
-            chars = " "
-        elif code == E.KEY_ENTER:
-            chars = "\r"
-        elif code == E.KEY_ESC:
-            chars = "\x1b"
-        name = self.NAMED.get(code) or (chars if chars and chars != " " else E.KEY.get(code, str(code)).replace("KEY_", "").lower())
-        return {"kind": "key", "type": typ, "name": name, "chars": chars, "code": code,
-                "flags": self.flags(), "repeat": value == 2}
-
-    def keyboards(self):
-        import evdev
-        devs = []
-        for path in evdev.list_devices():
-            try:
-                d = evdev.InputDevice(path)
-            except PermissionError:
-                self.log(f"hudfeed: no permission for {path} (add yourself to the input group or fix udev)")
-                continue
-            caps = d.capabilities().get(self.E.EV_KEY, [])
-            if self.E.KEY_A in caps and self.E.KEY_Z in caps:
-                devs.append(d)
-        return devs
-
-    async def read(self, dev):
-        self.log(f"hudfeed: reading keys from {dev.path} ({dev.name})")
-        try:
-            async for ev in dev.async_read_loop():
-                if ev.type == self.E.EV_KEY:
-                    msg = self.key_event(ev.code, ev.value)
-                    if msg:
-                        await self.broadcast(msg)
-        except OSError as e:
-            self.log(f"hudfeed: {dev.path} gone ({e})")
-
-
-# ---------- daemon decisions ----------
-
-DECISION = re.compile(r'msg=decision mode=(\S+) code=(\d) reason="([^"]*)"')
-
-
-class ModeFeed:
-    def __init__(self, broadcast, log=print):
-        self.broadcast, self.log = broadcast, log
-        self.last = None
-
-    async def apply_line(self, line):
-        m = DECISION.search(line)
-        if not m:
-            return
-        msg = {"kind": "mode", "code": int(m.group(2)), "mode": m.group(1), "reason": m.group(3)}
-        if msg != self.last:
-            self.last = msg
-            await self.broadcast(msg)
-
-    async def run(self):
-        if sys.platform == "linux" and shutil.which("journalctl"):
-            proc = await asyncio.create_subprocess_exec(
-                "journalctl", "--user", "-u", "zmk-vim-mode", "-f", "-o", "cat", "-n", "50",
-                stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-            self.log("hudfeed: following journalctl --user -u zmk-vim-mode")
-            async for raw in proc.stdout:
-                await self.apply_line(raw.decode("utf-8", "replace"))
-            self.log("hudfeed: journalctl ended; polling status instead")
-        await self.poll_status()
-
-    async def poll_status(self):
-        while True:
-            try:
-                out = subprocess.run([BINARY, "status", "--json"], capture_output=True, text=True, timeout=2).stdout
-                st = json.loads(out)
-                await self.apply_line(f'msg=decision mode={st["mode"]} code={st["code"]} reason="{st.get("reason", "")}"')
-            except Exception:
-                pass
-            await asyncio.sleep(0.2)
-
-
 # ---------- outputs ----------
 
 class Hub:
-    """Fans messages out to WebSocket clients and/or stdout; replays the cached layer set and
-    mode to new clients so a page that (re)connects is right immediately."""
+    """Fans messages out to WebSocket clients and/or stdout; replays the cached keymap and layer
+    set to new clients so a page that (re)connects is right immediately."""
 
     def __init__(self, stdout=False, debug=False):
         self.stdout, self.debug = stdout, debug
         self.clients = set()
-        self.cache = {}  # kind -> last message, for "keymap", "layers" and "mode" (replayed to new clients)
+        self.cache = {}  # kind -> last message, for "keymap" and "layers"
 
     def log(self, *a):
         print(*a, file=sys.stderr, flush=True)
 
     async def send(self, msg):
-        if msg["kind"] in ("keymap", "layers", "mode"):
+        if msg["kind"] in ("keymap", "layers"):
             self.cache[msg["kind"]] = msg
-        if self.debug and msg["kind"] not in ("key", "keymap"):
+        if self.debug and msg["kind"] == "layers":
             self.log("hudfeed:", json.dumps(msg, ensure_ascii=False))
         data = json.dumps(msg, ensure_ascii=False)
         if self.stdout:
@@ -377,24 +321,19 @@ class Hub:
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    p.add_argument("--config", help=f"zmk-layer-hud config (default: $ZMKHUD_CONFIG or {keymap_mod.DEFAULT_CONFIG})")
     p.add_argument("--stdout", action="store_true", help="print messages as JSON lines (macOS host)")
     p.add_argument("--no-ws", action="store_true", help="do not serve the WebSocket")
     p.add_argument("--port", type=int, default=int(os.environ.get("ZMKHUD_PORT", "8766")))
-    p.add_argument("--config", help=f"zmk-layer-hud config (default: $ZMKHUD_CONFIG or {keymap_mod.DEFAULT_CONFIG})")
-    p.add_argument("--layers-only", action="store_true",
-                   help="only what comes from the keyboard: keymap + raw-HID layers (no OS key feed, no daemon mode)")
-    p.add_argument("--no-keys", action="store_true", help="skip the evdev key feed")
-    p.add_argument("--no-mode", action="store_true", help="skip the zmk-vim-mode daemon feed")
-    p.add_argument("--mode", action="store_true", help="force the zmk-vim-mode daemon feed even without `codes` in the config")
-    p.add_argument("--no-layers", action="store_true", help="skip the raw-HID layer feed")
     p.add_argument("--no-keymap", action="store_true", help="skip the keymap feed (pages keep whatever they have)")
+    p.add_argument("--no-keys", action="store_true", help="send layers only, no key events")
     p.add_argument("--vid", type=lambda s: int(s, 0), help="keyboard vendor id (default: config `keyboard.vid`, else ZMK's)")
     p.add_argument("--pid", type=lambda s: int(s, 0), help="keyboard product id (default: config `keyboard.pid`, else ZMK's)")
     p.add_argument("--name", help="substring of the HID product string to select one keyboard (default: config `keyboard.name`)")
     p.add_argument("--base", type=lambda s: int(s, 0), help="base-usage of the firmware node (default: config `signal.base`, else 0xC0)")
     p.add_argument("--commit", type=lambda s: int(s, 0), help="commit-usage of the firmware node (default: config `signal.commit`, else 0xDF)")
     p.add_argument("--no-report-id", action="store_true", help="firmware without HID report ids")
-    p.add_argument("--debug", action="store_true", help="log layer and mode messages to stderr")
+    p.add_argument("--debug", action="store_true", help="log layer messages to stderr")
     p.add_argument("--raw", action="store_true", help="DEBUG ONLY: dump every HID report as hex (includes your typing)")
     return p.parse_args(argv)
 
@@ -426,40 +365,19 @@ async def main(args):
     base = args.base if args.base is not None else int(sig.get("base", BASE_USAGE))
     commit = args.commit if args.commit is not None else int(sig.get("commit", COMMIT_USAGE))
 
-    if not args.no_layers:
-        def on_layers(ids):
-            loop.call_soon_threadsafe(lambda: asyncio.ensure_future(hub.send({"kind": "layers", "ids": ids})))
-        reader = LayerReader(on_layers, vid=vid, pid=pid, name=name, base=base,
-                             commit=commit, report_id=None if args.no_report_id else KEYBOARD_REPORT_ID,
-                             log=hub.log, raw=args.raw)
-        reader.start()
+    def emit(msg):
+        if args.no_keys and msg["kind"] == "key":
+            return
+        loop.call_soon_threadsafe(lambda: asyncio.ensure_future(hub.send(msg)))
 
-    if not args.layers_only and not args.no_keys:
-        if sys.platform == "linux":
-            try:
-                feed = KeyFeed(hub.send, hub.log)
-                devs = feed.keyboards()
-                if not devs:
-                    hub.log("hudfeed: no readable keyboard under /dev/input")
-                tasks += [feed.read(d) for d in devs]
-            except ImportError:
-                hub.log("hudfeed: python-evdev is required for key events: sudo pacman -S python-evdev")
-        else:
-            hub.log("hudfeed: key events come from the host's own tap on this platform (hud.lua)")
-
-    # The zmk-vim-mode daemon feed is optional: only when the config defines its `codes`, or when
-    # asked for explicitly. A standalone HUD never touches it.
-    if not args.layers_only and not args.no_mode and (cfg.get("codes") or args.mode):
-        if os.path.exists(BINARY) or shutil.which("zmk-vim-mode") or shutil.which("journalctl"):
-            tasks.append(ModeFeed(hub.send, hub.log).run())
-        else:
-            hub.log("hudfeed: zmk-vim-mode not installed; skipping the daemon mode feed")
+    KeyboardReader(emit, vid=vid, pid=pid, name=name, base=base, commit=commit,
+                   report_id=None if args.no_report_id else KEYBOARD_REPORT_ID, log=hub.log, raw=args.raw).start()
 
     if not args.no_ws:
         try:
             import websockets
         except ImportError:
-            sys.exit("python-websockets is required for the WebSocket (or pass --no-ws): sudo pacman -S python-websockets")
+            sys.exit("python-websockets is required for the WebSocket (or pass --no-ws): pip install websockets")
         async with websockets.serve(hub.handler, "127.0.0.1", args.port):
             hub.log(f"hudfeed: ws://127.0.0.1:{args.port}")
             await asyncio.gather(*tasks, asyncio.Event().wait())

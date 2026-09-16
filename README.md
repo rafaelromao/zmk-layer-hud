@@ -12,7 +12,9 @@ Two pieces:
 - a **host** (`host/`, Python plus a thin window host per OS) that reads those reports, converts
   your keymap-drawer YAML at runtime, and drives the HUD page (`hud/`).
 
-It works with any ZMK keyboard and any keymap-drawer file. It does not need any other project.
+The keyboard's HID reports are the **only source**: layers, key presses, releases and modifiers
+are all read from them. No OS event tap, no evdev, no other daemon. It works with any ZMK
+keyboard and any keymap-drawer file, and on macOS and Linux the same way.
 
 ```
 firmware/     ZMK module: zmk,layer-signal
@@ -50,13 +52,13 @@ cd ~/projects/zmk-layer-hud
 brew install hidapi && make venv          # .venv with hidapi + keymap-drawer; the hosts pick it up
 ```
 
-Linux (Arch/Hyprland shown):
+Linux (Arch/Hyprland shown; the panel needs the system GTK bindings, the feed runs in the venv):
 
 ```bash
 git clone https://github.com/rafaelromao/zmk-layer-hud ~/projects/zmk-layer-hud
 cd ~/projects/zmk-layer-hud
-sudo pacman -S python-gobject webkit2gtk-4.1 gtk-layer-shell python-evdev python-websockets
-make venv                                  # hidapi + keymap-drawer
+sudo pacman -S python-gobject webkit2gtk-4.1 gtk-layer-shell
+make venv && .venv/bin/pip install websockets   # hidapi + keymap-drawer (+ the WebSocket server)
 sudo cp contrib/udev/60-zmk-layer-hud.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
@@ -147,44 +149,36 @@ All other config keys are optional and documented in the docstring of `host/keym
   skipped), the banner names the top layer and lists the set, activator keys light, and a typed
   key is resolved on that stack, combos included.
 - `hud.key(event)` — `{type: keyDown|keyUp|flagsChanged, name, chars, code, flags, repeat}`,
-  `name` spelled like Hammerspoon's `hs.keycodes.map`. Held modifier flags light the keys whose
+  decoded from the same HID reports (`code` is the HID usage, `chars` the US-layout character,
+  `name` spelled like Hammerspoon's `hs.keycodes.map`). Held modifier flags light the keys whose
   hold legend carries that modifier (home-row mods).
-- `hud.setMode(code, mode, reason)` — optional, see zmk-vim-mode below.
-- A key that cannot be placed on the live stack (a synthesized key, a legend the drawer spells
-  differently from what the OS reports) is attributed by inference and drawn **dashed**, so it is
-  never mistaken for keyboard truth.
+- A key that cannot be placed on the live stack (a legend the drawer spells differently from the
+  character the usage maps to) is attributed by inference and drawn **dashed**, so it is never
+  mistaken for keyboard truth.
 
-A WebSocket host opens the page as `index.html?ws=ws://127.0.0.1:8766` and sends
-`{"kind":"keymap",…}`, `{"kind":"layers","ids":[…]}`, `{"kind":"key",…}`, `{"kind":"mode",…}`;
-the ✕ button sends `{"kind":"close"}`. `hud/keys.html` is the typed-keys strip
-(`window.keys.key(event)`). For development, `index.html?keymap=keymap.json` loads a dumped
-message (`python3 host/keymap.py --dump > hud/keymap.json`).
+A WebSocket host opens the page as `index.html?ws=ws://127.0.0.1:8766` and receives
+`{"kind":"keymap",…}`, `{"kind":"layers","ids":[…]}` and `{"kind":"key",…}`; the ✕ button sends
+`{"kind":"close"}`. `hud/keys.html` is the typed-keys strip (`window.keys.key(event)`). For
+development, `index.html?keymap=keymap.json` loads a dumped message
+(`python3 host/keymap.py --dump > hud/keymap.json`).
 
 ## Host feed
 
-`host/hudfeed.py` sends the keymap (and re-sends it on change), reads the keyboard's raw HID
-input reports with hidapi (the keyboard named in the config, else any 1d50:615e), decodes the
-announcements, and never logs or forwards any other report: your typing stays in the report it
-arrived in. Outputs: a WebSocket on 127.0.0.1:8766 and/or `--stdout` JSON lines (the macOS host
-runs it that way under Hammerspoon, which already has Input Monitoring). On Linux it also feeds
-key events from evdev.
+`host/hudfeed.py` sends the keymap (and re-sends it on change) and reads the keyboard's raw HID
+input reports with hidapi (the keyboard named in the config, else any 1d50:615e). From each
+keyboard report it derives the layer set (when the commit usage is present), key presses and
+releases (the difference between consecutive reports) and modifier changes (the modifier byte).
+Characters come from the usage through a US-layout table, which is what a ZMK keymap emits.
+Outputs: a WebSocket on 127.0.0.1:8766 and/or `--stdout` JSON lines (the macOS host runs it that
+way under Hammerspoon, which already has Input Monitoring).
 
 ```
 --config PATH        config file (default $ZMKHUD_CONFIG, ~/.config/zmk-layer-hud/config.yaml)
---layers-only        keyboard feeds only: keymap + raw HID (macOS host)
 --stdout / --no-ws   output selection               --vid/--pid/--name  override the config's keyboard
 --base/--commit      override the config's signal   --no-report-id      firmware without HID report ids
---debug              log layer/mode messages        --raw               DEBUG: dump every report as hex
+--no-keys            layers only, no key events     --no-keymap         do not send the keymap
+--debug              log layer messages             --raw               DEBUG: dump every report as hex
 ```
-
-## Optional: zmk-vim-mode
-
-The author also runs [zmk-vim-mode](https://github.com/rafaelromao/zmk-vim-mode), a daemon that
-mirrors the editor's vim mode to the keyboard. The HUD can show its decisions as the banner's
-reason line and, before the keyboard's own layers arrive, use them for the vim layers. That is
-switched on only by a `codes:` section in the config (as in `config/diamond.yaml`); without it the
-HUD never looks for the daemon. On macOS the Hammerspoon host tails the daemon's log when the
-daemon is installed and stays quiet otherwise.
 
 ## Troubleshooting
 
@@ -197,8 +191,8 @@ daemon is installed and stays quiet otherwise.
 - **No `layers` lines** although the device opened: the firmware is not announcing. Run with
   `--raw`: 9-byte reports mean the report size was not raised (6 slots); no `df` byte means the
   node is missing from the build. Check `CONFIG_ZMK_LAYER_SIGNAL=y` in the build's `.config`.
-- **Keys drawn dashed** while live: the OS reports a character the drawer spells differently
-  (macros, unknown `$$glyph$$` ids). Extend `GLYPHS` in `host/keymap.py` or the legend.
+- **Keys drawn dashed** while live: the key's usage maps to a character the drawer spells
+  differently (macros, unknown `$$glyph$$` ids). Extend `GLYPHS` in `host/keymap.py` or the legend.
 - **`python3 host/keymap.py` fails**: it says which layer, combo or mapping is wrong.
 
 ## Tests
@@ -215,8 +209,9 @@ built-in `cols_thumbs_notation` fallback only.
 ## Known limits
 
 - Layer ids must stay below 31 (30 with the default usages).
-- Keys are located by the character the OS reports, on the layer the keyboard reports; key
-  positions themselves are not transmitted.
+- Keys are located by the character their HID usage maps to (US layout), on the layer the
+  keyboard reports; key positions themselves are not transmitted. Macros that type several keys
+  light each key they type.
 - Without keymap-drawer installed only `cols_thumbs_notation` layouts render, and combos given
   as `trigger_keys` are skipped.
 - The Linux host is ported from an earlier kit and not yet run on hardware.
