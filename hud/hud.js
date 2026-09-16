@@ -25,10 +25,11 @@
   "use strict";
 
   const GAP = 6;             // px between keys at the drawn scale
-  const PRESS_MS = 320;
-  const MOMENTARY_MS = 700;
-  const COMBO_TERM_MS = 80;          // positions pressed within this form a combo
-  const POSITIONS_FRESH_MS = 3000;   // after a position report, characters do not light keys
+  // Every timing the page uses comes from the config's `hud:` section (host/keymap.py fills the
+  // defaults in); these are only the fallbacks for a keymap message without it.
+  const DEFAULTS = { press_ms: 320, momentary_ms: 700, combo_slack_ms: 20, activator_ms: 400,
+    positions_fresh_ms: 3000, combo_pill_ms: 1000, sequence_ms: 200, sequence_max: 6, one_shot_ms: 450 };
+  const T = name => (state.data && state.data.hud && state.data.hud[name] != null) ? state.data.hud[name] : DEFAULTS[name];
   const recentPos = [];
 
   // Named keys → the legend text keymap-drawer keymaps usually use for them.
@@ -52,6 +53,7 @@
     oneShot: null,            // layer name        (inference only)
     mods: {},                 // flag -> true while held
     device: "",               // the keyboard's HID product name
+    activatorOf: {},          // drawn layer -> the key idx that brought it in (positions)
     keyEls: [],
     timers: new Map(),
     scale: 1,
@@ -179,14 +181,19 @@
     for (const m of state.momentary) for (const a of activatorsOf(m.layer)) activators.add(a);
     if (state.oneShot) for (const a of activatorsOf(state.oneShot)) activators.add(a);
     if (state.live) {
-      // The thumbs (or sticky keys) that reach the live layers light as activators too.
-      for (const name of liveStack()) if (name !== base()) for (const a of activatorsOf(name)) activators.add(a);
+      // The key that reached each live layer lights as its activator: the one pressed right
+      // before the layer appeared when positions are reported, else every key that can reach it.
+      for (const name of liveStack()) {
+        if (name === base()) continue;
+        if (state.activatorOf[name] !== undefined) activators.add(state.activatorOf[name]);
+        else for (const a of activatorsOf(name)) activators.add(a);
+      }
     }
     const heldMods = Object.keys(state.mods).filter(f => state.mods[f]).map(f => MOD_GLYPH[f]).filter(Boolean);
     state.data.layout.keys.forEach((k, idx) => {
       const e = state.keyEls[idx];
       const r = resolveBinding(idx, layers);
-      e.classList.remove("trans", "blank", "held", "activator", "mod");
+      e.classList.remove("trans", "blank", "ghost", "held", "activator", "mod");
       if (!r) {
         e.classList.add("blank");
         fit(e.querySelector(".tap"), "");
@@ -198,6 +205,7 @@
       const topKey = state.data.layers[top] && state.data.layers[top][idx];
       if (r.layer !== top && topKey && topKey.type === "trans") e.classList.add("trans");
       if (r.key.type === "blank") e.classList.add("blank");
+      if (r.key.type === "ghost") e.classList.add("ghost");
       if (r.key.type.startsWith("held")) e.classList.add("held");
       if (activators.has(idx)) e.classList.add("activator");
       // A held modifier lights the keys that carry it: home-row mods (hold legend) and the
@@ -226,12 +234,13 @@
     const ids = state.live.ids.slice().sort((a, b) => b - a);
     const entries = ids.map(zl).filter(Boolean);
     const names = entries.map(z => z.name);
-    if (!entries.length) return { name: layerLabel(base()), cls: "off", sub: (zl(0) || {}).name || base() };
-    // A vim layer under a held layer keeps the vim tint on the board; the banner names the top.
+    if (!entries.length) return { name: layerLabel(base()), cls: "off", sub: "" };
+    // A vim layer under a held layer keeps the vim tint on the board; the banner names the top
+    // layer and, only when several are active, lists the whole set beside it.
     const top = entries[0];
     const vim = entries.find(z => (z.cls || "").startsWith("vim"));
     const cls = top.cls === "momentary" && vim ? "momentary" : (top.cls || "momentary");
-    const sub = names.join(" · ") + (vim && top !== vim ? " · over " + vim.label.toLowerCase() : "");
+    const sub = entries.length > 1 ? names.join(" · ") : "";
     return { name: top.label, cls, sub };
   }
 
@@ -285,7 +294,6 @@
 
   // A combo is drawn the way keymap-drawer draws it: a pill with the combo's legend at the
   // midpoint of its keys, on top of the flashed keys, fading after a moment.
-  const COMBO_MS = 1000;
   function showCombo(positions, key) {
     const board = $("board");
     const bb = board.getBoundingClientRect();
@@ -326,7 +334,7 @@
       pill.classList.remove("show"); svg.classList.remove("show");
       for (const idx of positions) state.keyEls[idx].classList.remove("combo-key");
       setTimeout(() => { pill.remove(); svg.remove(); }, 200);
-    }, COMBO_MS);
+    }, T('combo_pill_ms'));
     // A handle to take the pill down early when a longer legend supersedes it.
     return { remove() { pill.remove(); svg.remove(); } };
   }
@@ -342,7 +350,7 @@
       e.classList.add("pressed");
       if (cls) for (const c of cls.split(" ")) if (c) e.classList.add(c);
       clearTimeout(state.timers.get(idx));
-      state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo", "inferred"), PRESS_MS));
+      state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo", "inferred"), T('press_ms')));
     }
   }
 
@@ -389,8 +397,8 @@
   function armMomentary(layer) {
     const now = Date.now();
     const m = state.momentary.find(x => x.layer === layer);
-    if (m) m.until = now + MOMENTARY_MS; else state.momentary.push({ layer, until: now + MOMENTARY_MS });
-    setTimeout(expire, MOMENTARY_MS + 20);
+    if (m) m.until = now + T('momentary_ms'); else state.momentary.push({ layer, until: now + T('momentary_ms') });
+    setTimeout(expire, T('momentary_ms') + 20);
   }
 
   function expire() {
@@ -419,18 +427,17 @@
   }
 
   // Recent keyDown tokens with the keys they lit, for multi-key legends ("->", "=>", "&&", "()").
-  const SEQUENCE_MS = 200, SEQUENCE_MAX = 6;
   const recent = [];
   function remember(token, lit, pill) {
     const now = Date.now();
-    while (recent.length && now - recent[0].t > SEQUENCE_MS) recent.shift();
+    while (recent.length && now - recent[0].t > T('sequence_ms')) recent.shift();
     recent.push({ token, t: now, lit: lit || [], pill: pill || null });
-    if (recent.length > SEQUENCE_MAX) recent.shift();
+    if (recent.length > T('sequence_max')) recent.shift();
   }
   function matchSequence(token, layers, cmdActive) {
     const now = Date.now();
-    const fresh = recent.filter(r => now - r.t <= SEQUENCE_MS);
-    for (let n = Math.min(fresh.length, SEQUENCE_MAX - 1); n >= 1; n--) {
+    const fresh = recent.filter(r => now - r.t <= T('sequence_ms'));
+    for (let n = Math.min(fresh.length, T('sequence_max') - 1); n >= 1; n--) {
       const parts = fresh.slice(fresh.length - n);
       const seq = parts.map(p => p.token).join("") + token;
       const r = resolveOnStack(seq, layers, cmdActive);
@@ -473,7 +480,7 @@
     state.lastKeyAt = Date.now();
     // With key positions coming from the firmware, the board is lit from them; the character
     // only feeds the strip (hud.key forwards it).
-    if (state.posAt && Date.now() - state.posAt < POSITIONS_FRESH_MS) return;
+    if (state.posAt && Date.now() - state.posAt < T('positions_fresh_ms')) return;
     const token = tokenFor(ev);
     if (!token) return;
 
@@ -562,7 +569,7 @@
 
   function touchLayer(layer) {
     const m = state.momentary.find(x => x.layer === layer);
-    if (m) { m.until = Date.now() + MOMENTARY_MS; return; }
+    if (m) { m.until = Date.now() + T('momentary_ms'); return; }
     // a key that resolved only in the base drops any inferred momentary layer
     if (baseStack().includes(layer) && state.momentary.length) { state.momentary = []; render(); }
   }
@@ -572,7 +579,7 @@
   function afterKey() {
     if (!state.oneShot) return;
     clearTimeout(oneShotTimer);
-    oneShotTimer = setTimeout(() => { state.oneShot = null; render(); }, 450);
+    oneShotTimer = setTimeout(() => { state.oneShot = null; render(); }, T('one_shot_ms'));
   }
 
   // ---------- public API ----------
@@ -599,16 +606,33 @@
       if (!Array.isArray(ids)) return;
       ids = ids.map(Number).filter(n => Number.isInteger(n) && n > 0);
       clearTimeout(state.layersTimer);
-      // A one-shot layer leaves right after the key it served. Keep the board on that layer
-      // while the key's flash is visible (only when layers are removed, and a key just landed),
-      // otherwise the flash appears under the wrong legends.
-      const shrink = state.live && ids.every(i => state.live.ids.includes(i)) && ids.length < state.live.ids.length;
+      // A one-shot layer leaves right after the key it served (and may enter another, undrawn
+      // one). Keep the board on the drawn layers while the key's flash is visible, otherwise the
+      // flash appears under the wrong legends. Layers that only appear apply at once.
       const since = Date.now() - (state.lastKeyAt || 0);
-      if (shrink && since < PRESS_MS) {
-        state.layersTimer = setTimeout(() => hud.setLayers(ids), PRESS_MS - since);
-        return;
+      if (state.live && since < T('press_ms')) {
+        const drawn = set => new Set(set.map(id => (zl(id) || {}).drawer).filter(Boolean));
+        const before = drawn(state.live.ids), after = drawn(ids);
+        const losesDrawn = [...before].some(name => !after.has(name));
+        if (losesDrawn) {
+          state.layersTimer = setTimeout(() => hud.setLayers(ids), T('press_ms') - since);
+          return;
+        }
       }
-      state.live = { ids, at: Date.now() };
+      // Which key brought each new drawn layer in: the position pressed just before (its own
+      // activator among the candidates), so an alternate activator elsewhere stays dark.
+      const now = Date.now();
+      const wasDrawn = state.live ? new Set(state.live.ids.map(id => (zl(id) || {}).drawer).filter(Boolean)) : new Set();
+      for (const id of ids) {
+        const name = (zl(id) || {}).drawer;
+        if (!name || wasDrawn.has(name) || state.activatorOf[name] !== undefined) continue;
+        const candidates = activatorsOf(name);
+        const press = [...recentPos].reverse().find(p => now - p.t < T('activator_ms') && candidates.includes(p.idx));
+        if (press) state.activatorOf[name] = press.idx;
+      }
+      const drawnNow = new Set(ids.map(id => (zl(id) || {}).drawer).filter(Boolean));
+      for (const name of Object.keys(state.activatorOf)) if (!drawnNow.has(name)) delete state.activatorOf[name];
+      state.live = { ids, at: now };
       state.momentary = []; state.oneShot = null; state.inferred = false;
       render();
     },
@@ -624,14 +648,26 @@
       state.posAt = now; state.lastKeyAt = now;
       if (!state.keyEls[idx]) return;
       flash([idx]);
+      // The keyboard's own combo term (config combo_term_ms) plus slack for the reports' travel.
+      const term = ((state.data.combo_term || 50) + T('combo_slack_ms'));
+      // Older presses stay in the list for the activator lookup (setLayers); the combo group is
+      // the trailing run of presses that started within the term of this one.
+      while (recentPos.length && now - recentPos[0].t > T('activator_ms')) recentPos.shift();
       recentPos.push({ idx, t: now });
-      while (recentPos.length && now - recentPos[0].t > COMBO_TERM_MS) recentPos.shift();
-      const pressedSet = recentPos.map(p => p.idx);
+      let start = recentPos.length - 1;
+      while (start > 0 && now - recentPos[start - 1].t <= term) start--;
+      if (start === recentPos.length - 1) state.comboShown = null; // a new group begins
+      const pressedSet = recentPos.slice(start).map(p => p.idx);
       if (pressedSet.length > 1) {
         const layers = stack();
         const combo = state.data.combos.find(c => c.positions.length === pressedSet.length
           && c.positions.every(p => pressedSet.includes(p)) && c.layers.some(l => layers.includes(l)));
-        if (combo) { flash(combo.positions, "combo"); showCombo(combo.positions, combo.key); recentPos.length = 0; }
+        if (combo) {
+          // A third key within the term makes a bigger combo: take the smaller one's pill down.
+          if (state.comboShown) state.comboShown.remove();
+          flash(combo.positions, "combo");
+          state.comboShown = showCombo(combo.positions, combo.key);
+        }
       }
     },
     // Leave live mode (tests, or a host that lost the keyboard).

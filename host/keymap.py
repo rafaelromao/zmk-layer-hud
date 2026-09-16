@@ -14,7 +14,8 @@ dts_layout files. Without the library only cols_thumbs_notation is understood.
 Config keys (all paths may use ~):
   keymap:         path to the keymap-drawer YAML                                   (required)
   title:          text in the panel's corner (default: the keyboard's HID name)   (optional)
-  hud:            {width}: panel width in points (default 598); the height follows the layout (optional)
+  hud:            every size and timing the page uses; see HUD_DEFAULTS below      (optional)
+  feed:           the reader's timings; see FEED_DEFAULTS below                     (optional)
   drawer_config:  keymap-drawer config YAML (key sizes, glyphs); defaults otherwise (optional)
   keyboard:       {vid, pid, name} of the keyboard to read the layer signal from    (optional)
   signal:         {base, commit} usages of the firmware node                        (optional)
@@ -27,6 +28,8 @@ Config keys (all paths may use ~):
   base:           the drawer layer that is always active (default: the layer for id 0)         (optional)
   positions:      ZMK key position of each drawer key, in drawer order, when the drawer does not
                   list the keys in the keymap's binding order (firmware `positions;`)            (optional)
+  combo_term_ms:  the keymap's combo timeout (ZMK `timeout-ms`, default 50): key positions pressed
+                  within it form a combo on the HUD                                            (optional)
   combos:         [{positions, layers}] overrides for combos the drawer lists on fewer layers
                   than the firmware has them                                                    (optional)
   extras:         inference hints used only while a key cannot be placed on the live stack:
@@ -49,6 +52,25 @@ from itertools import chain
 
 DEFAULT_CONFIG = os.path.expanduser("~/.config/zmk-layer-hud/config.yaml")
 SIGNAL = {"base": 0xC0, "commit": 0xDF}
+
+# `hud:` section: every timing and size the page uses, in ms unless said otherwise.
+HUD_DEFAULTS = {
+    "width": 598,              # panel width in points; the height follows the layout
+    "press_ms": 320,           # how long a pressed key stays lit
+    "combo_pill_ms": 1000,     # how long a combo's pill stays up
+    "combo_slack_ms": 20,      # added to combo_term_ms for the reports' travel time
+    "activator_ms": 400,       # a key pressed this recently before a layer appeared is its activator
+    "one_shot_ms": 450,        # an inferred one-shot layer stays on the banner this long (no positions)
+    "momentary_ms": 700,       # an inferred held layer stays this long after its last key (no positions)
+    "sequence_ms": 200,        # keys typed within this may spell one multi-key legend (no positions)
+    "sequence_max": 6,         # longest such sequence, in keys
+    "positions_fresh_ms": 3000,  # after a position report, characters stop lighting keys for this long
+}
+# `feed:` section: the reader's timings.
+FEED_DEFAULTS = {
+    "dead_key_ms": 60,         # a dead key followed by a letter within this is one accented character
+    "rescan_s": 2,             # how often to look for (re)connected keyboards
+}
 
 # keymap-drawer glyph names -> text the HUD can show. The glyph id is kept too.
 GLYPHS = {
@@ -87,8 +109,14 @@ class KeymapError(Exception):
 
 # ---------- small pieces (pure, tested) ----------
 
-def expand(path):
-    return os.path.expanduser(os.path.expandvars(path)) if isinstance(path, str) else path
+def expand(path, base_dir=None):
+    """~ and $VARS expanded; a relative path is taken from the config file's directory."""
+    if not isinstance(path, str):
+        return path
+    p = os.path.expanduser(os.path.expandvars(path))
+    if base_dir and not os.path.isabs(p):
+        p = os.path.normpath(os.path.join(base_dir, p))
+    return p
 
 
 def legend(value):
@@ -214,9 +242,63 @@ def cpt_layout(spec, key_w=70.0, key_h=68.0, split_gap=30.0):
     return {"width": width, "height": height, "keys": ordered}
 
 
+def ortho_layout(spec, key_w=70.0, key_h=68.0, split_gap=30.0):
+    """Fallback for keymap-drawer's ortho_layout ({split, rows, columns, thumbs, drop_pinky,
+    drop_inner}): centred key rectangles in the drawer's order (rows top to bottom, then thumbs).
+    Mirrors OrthoLayout.generate; used only when keymap_drawer is not installed."""
+    split = bool(spec.get("split", False))
+    rows, cols = int(spec["rows"]), int(spec["columns"])
+    thumbs = spec.get("thumbs", 0) or 0
+    drop_pinky, drop_inner = bool(spec.get("drop_pinky")), bool(spec.get("drop_inner"))
+    if isinstance(thumbs, str):
+        if split or thumbs not in ("MIT", "2x2u") or cols % 2:
+            raise KeymapError("ortho_layout: MIT/2x2u thumbs need a non-split layout with an even column count")
+    elif thumbs and (thumbs > cols or not split):
+        raise KeymapError("ortho_layout: integer thumbs need a split layout and at most `columns` thumbs")
+    nrows = rows - (1 if isinstance(thumbs, str) else 0)
+    keys = []
+
+    def row_keys(x, y, n, w=key_w):
+        out = []
+        for _ in range(n):
+            out.append({"x": x + w / 2, "y": y + key_h / 2, "w": w, "h": key_h, "r": 0})
+            x += w
+        return out
+
+    y = 0.0
+    for row in range(nrows):
+        rk = row_keys(0.0, y, cols)
+        if split:
+            rk += row_keys(cols * key_w + split_gap, y, cols)
+        drop = ([0, -1] if drop_pinky else []) + ([len(rk) // 2 - 1, len(rk) // 2] if drop_inner else [])
+        for col in reversed(drop):
+            if row < nrows - 1:
+                rk[col]["y"] += key_h / 2
+            else:
+                rk.pop(col)
+        keys += rk
+        y += key_h
+    if thumbs:
+        if isinstance(thumbs, int):
+            keys += row_keys((cols - thumbs) * key_w, y, thumbs)
+            keys += row_keys(cols * key_w + split_gap, y, thumbs)
+        elif thumbs == "MIT":
+            keys += row_keys(0.0, y, cols // 2 - 1)
+            keys += [{"x": (cols / 2) * key_w, "y": y + key_h / 2, "w": 2 * key_w, "h": key_h, "r": 0}]
+            keys += row_keys((cols / 2 + 1) * key_w, y, cols // 2 - 1)
+        else:  # 2x2u
+            keys += row_keys(0.0, y, cols // 2 - 2)
+            keys += [{"x": (cols / 2 - 1) * key_w, "y": y + key_h / 2, "w": 2 * key_w, "h": key_h, "r": 0},
+                     {"x": (cols / 2 + 1) * key_w, "y": y + key_h / 2, "w": 2 * key_w, "h": key_h, "r": 0}]
+            keys += row_keys((cols / 2 + 2) * key_w, y, cols // 2 - 2)
+    width = max(k["x"] + k["w"] / 2 for k in keys)
+    height = max(k["y"] + k["h"] / 2 for k in keys)
+    return {"width": width, "height": height, "keys": keys}
+
+
 def physical_layout(layout_spec, drawer_cfg):
     """keymap-drawer `layout` mapping -> {width, height, keys:[{x,y,w,h,r}]} with centred keys.
-    Uses keymap_drawer when importable; else handles cols_thumbs_notation only."""
+    Uses keymap_drawer when importable; else handles cols_thumbs_notation and ortho_layout."""
     if not isinstance(layout_spec, dict) or not layout_spec:
         raise KeymapError("the keymap YAML needs a `layout` mapping (cols_thumbs_notation, ortho_layout, "
                           "qmk_keyboard, zmk_keyboard, ...)")
@@ -224,11 +306,14 @@ def physical_layout(layout_spec, drawer_cfg):
         from keymap_drawer.config import Config
         from keymap_drawer.physical_layout import PhysicalLayoutGenerator
     except ImportError:
+        dc = (drawer_cfg or {}).get("draw_config", {}) if drawer_cfg else {}
+        sizes = (dc.get("key_w", 70), dc.get("key_h", 68), dc.get("split_gap", 30))
         if "cols_thumbs_notation" in layout_spec:
-            dc = (drawer_cfg or {}).get("draw_config", {}) if drawer_cfg else {}
-            return cpt_layout(layout_spec["cols_thumbs_notation"], dc.get("key_w", 70), dc.get("key_h", 68),
-                              dc.get("split_gap", 30))
-        raise KeymapError("this layout kind needs keymap-drawer: pip install keymap-drawer")
+            return cpt_layout(layout_spec["cols_thumbs_notation"], *sizes)
+        if "ortho_layout" in layout_spec:
+            return ortho_layout(layout_spec["ortho_layout"], *sizes)
+        raise KeymapError("this layout kind (qmk_keyboard, zmk_keyboard, dts_layout, ...) needs keymap-drawer: "
+                          "pip install keymap-drawer")
     cfg = Config.model_validate(drawer_cfg) if drawer_cfg else Config()
     try:
         layout = PhysicalLayoutGenerator(config=cfg, **layout_spec).generate().normalize()
@@ -459,7 +544,11 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None
     signal = dict(SIGNAL)
     signal.update({k: int(v) for k, v in (cfg.get("signal") or {}).items()})
     glyphs = resolve_glyphs(glyph_names(layers, combos), drawer_cfg, log=log, fetch=fetch_glyphs)
-    hud_cfg = dict(cfg.get("hud") or {})
+    hud_cfg = dict(HUD_DEFAULTS)
+    unknown = sorted(set(cfg.get("hud") or {}) - set(HUD_DEFAULTS))
+    if unknown:
+        raise KeymapError(f"hud: unknown settings {unknown}; known: {sorted(HUD_DEFAULTS)}")
+    hud_cfg.update({k: int(v) for k, v in (cfg.get("hud") or {}).items()})
     # ZMK key position -> drawer key index (firmware `positions;`). Default: the drawer's key
     # order is the keymap's binding order (true for a YAML from `keymap parse`).
     positions = cfg.get("positions")
@@ -473,7 +562,9 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None
         "kind": "keymap",
         "source": source,
         "title": cfg.get("title") or "",
-        "hud": {"width": int(hud_cfg.get("width", 598))},
+        "hud": hud_cfg,
+        # The keyboard's combo term: positions pressed within it form a combo (+ hud.combo_slack_ms).
+        "combo_term": int(cfg.get("combo_term_ms", 50)),
         "glyphs": glyphs,
         "positions": pos_to_idx,
         "layout": layout,
@@ -535,11 +626,12 @@ class KeymapSource:
         cfg = load_yaml(self.config_path)
         if not isinstance(cfg, dict) or not cfg.get("keymap"):
             raise KeymapError(f"{self.config_path}: `keymap:` (path to a keymap-drawer YAML) is required")
-        paths = [self.config_path, expand(cfg["keymap"])]
+        base = os.path.dirname(os.path.abspath(self.config_path))
+        paths = [self.config_path, expand(cfg["keymap"], base)]
         if cfg.get("drawer_config"):
-            paths.append(expand(cfg["drawer_config"]))
+            paths.append(expand(cfg["drawer_config"], base))
         if (cfg.get("layers") or {}).get("dtsi"):
-            paths.append(expand(cfg["layers"]["dtsi"]))
+            paths.append(expand(cfg["layers"]["dtsi"], base))
         return cfg, paths
 
     def changed(self):
@@ -563,10 +655,10 @@ class KeymapSource:
         cfg, paths = self._watch()
         self.cfg, self.paths = cfg, paths
         doc = load_yaml(paths[1])
-        drawer_cfg = load_yaml(expand(cfg["drawer_config"])) if cfg.get("drawer_config") else None
+        drawer_cfg = load_yaml(paths[2]) if cfg.get("drawer_config") else None
         dtsi_text = None
         if (cfg.get("layers") or {}).get("dtsi"):
-            with open(expand(cfg["layers"]["dtsi"]), encoding="utf-8") as f:
+            with open(paths[-1], encoding="utf-8") as f:
                 dtsi_text = f.read()
         self.message = build_message(cfg, doc, drawer_cfg, dtsi_text,
                                      source=os.path.relpath(paths[1], os.path.expanduser("~")), log=self.log,

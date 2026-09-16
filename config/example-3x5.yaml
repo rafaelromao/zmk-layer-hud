@@ -1,0 +1,17 @@
+# zmk-layer-hud config for keymap-drawer's 3x5 example (examples/3x5.yaml, a 3x5+3 split).
+# Paths are relative to this file. Try it without a keyboard:
+#
+#   .venv/bin/python3 host/keymap.py --config config/example-3x5.yaml --dump > hud/keymap.json
+#   python3 -m http.server -d hud 8765     # then open http://localhost:8765/index.html?keymap=keymap.json
+#   in the browser console: hud.setLayers([1]); hud.pressAt(13)
+#
+# or run the HUD against it: ZMKHUD_CONFIG=config/example-3x5.yaml host/macos/start.sh
+#
+# The YAML came from `keymap parse`-style authoring: its layer order is the ZMK layer order and
+# its key order is the keymap's, so no `layers:` or `positions:` mapping is needed.
+
+keymap: ../examples/3x5.yaml
+title: 3x5 example
+
+extras:
+  sticky: []

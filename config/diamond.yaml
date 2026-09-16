@@ -4,7 +4,24 @@
 keymap: ~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawer.yaml
 drawer_config: ~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawer-config.yaml
 # title: Magic Romak          # default: the keyboard's name as it reports itself (Diamond, Rommana)
-# hud: { width: 598 }         # panel width; the height follows the layout
+
+# Every size and timing the HUD uses (ms unless noted). Shown with the defaults; drop any line.
+hud:
+  width: 598                  # panel width in points; the height follows the layout
+  press_ms: 320               # a pressed key stays lit this long
+  combo_pill_ms: 1000         # a combo's pill stays up this long
+  combo_slack_ms: 20          # added to combo_term_ms for the reports' travel time
+  activator_ms: 400           # a key pressed this recently before a layer appeared is its activator
+  positions_fresh_ms: 3000    # after a position report, characters stop lighting keys for this long
+  one_shot_ms: 450            # (no positions) an inferred one-shot layer stays on the banner this long
+  momentary_ms: 700           # (no positions) an inferred held layer stays this long after its last key
+  sequence_ms: 200            # (no positions) keys within this may spell one multi-key legend
+  sequence_max: 6             # (no positions) longest such sequence, in keys
+
+# The reader's timings.
+feed:
+  dead_key_ms: 60             # dead key + letter within this = one accented character
+  rescan_s: 2                 # how often to look for (re)connected keyboards
 
 # Every ZMK board (Diamond over USB, Rommana over BLE) is read; add `name: Diamond` to pick one.
 keyboard: { vid: 0x1d50, pid: 0x615e }
@@ -53,6 +70,9 @@ base: alpha1
 # key-position announcements (`positions;` in the node) light the right key. Rows top to
 # bottom, left hand then right hand, thumbs last.
 positions: [1, 2, 3, 6, 7, 8, 10, 11, 12, 13, 16, 17, 18, 19, 21, 22, 23, 26, 27, 28, 31, 32, 33, 34]
+
+# COMBO_TERM in config.dtsi: key positions pressed within it are one combo.
+combo_term_ms: 30
 
 # The drawer lists Enter and Tab under "shortcuts" only (drawn separately), but the firmware
 # has them on nearly every layer (cb_enter RHM RHR R0, cb_tab RTM RTR R0 in combos.dtsi).

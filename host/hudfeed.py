@@ -161,6 +161,8 @@ def key_message(usage, down, flags):
 # Dead keys of the US-International layout, which is how accent macros type on the host:
 # the dead key, then the letter, back to back (ZMK macro with wait-ms 0).
 DEAD_KEYS = {"`": "̀", "'": "́", "^": "̂", "~": "̃", '"': "̈"}
+# US-International special cases that are not the combining mark: ' + c is ç, not ć.
+DEAD_KEY_SPECIAL = {("'", "c"): "ç", ("'", "C"): "Ç"}
 DEAD_KEY_MS = 60  # a dead key followed by a letter within this window is one accented character
 
 
@@ -172,8 +174,10 @@ class ReportDecoder:
     with the composed character (á, ç, ñ…) is emitted instead of two, which is what the
     keymap-drawer legend says and what the host displays."""
 
-    def __init__(self, base=BASE_USAGE, commit=COMMIT_USAGE, report_id=KEYBOARD_REPORT_ID, compose=True):
+    def __init__(self, base=BASE_USAGE, commit=COMMIT_USAGE, report_id=KEYBOARD_REPORT_ID, compose=True,
+                 dead_key_ms=DEAD_KEY_MS):
         self.base, self.commit, self.report_id, self.compose = base, commit, report_id, compose
+        self.dead_key_ms = dead_key_ms
         self.layers = None
         self.mods = 0
         self.held = []  # real usages currently down, in press order
@@ -195,14 +199,16 @@ class ReportDecoder:
             p, self.pending = self.pending, None
             if now_ms is not None and now_ms <= p["deadline"] and len(msg["chars"]) == 1 and msg["chars"].isalpha():
                 import unicodedata
-                composed = unicodedata.normalize("NFC", msg["chars"] + DEAD_KEYS[p["down"]["chars"]])
+                dead = p["down"]["chars"]
+                composed = DEAD_KEY_SPECIAL.get((dead, msg["chars"])) or \
+                    unicodedata.normalize("NFC", msg["chars"] + DEAD_KEYS[dead])
                 if len(composed) == 1:
                     return [dict(msg, chars=composed, name=composed, composed=[p["down"]["code"], msg["code"]])]
             out.append(p["down"])
             if p["up"]:
                 out.append(p["up"])
         if msg["chars"] in DEAD_KEYS and now_ms is not None:
-            self.pending = {"down": msg, "up": None, "deadline": now_ms + DEAD_KEY_MS}
+            self.pending = {"down": msg, "up": None, "deadline": now_ms + self.dead_key_ms}
             return out
         out.append(msg)
         return out
@@ -250,10 +256,11 @@ class KeyboardReader:
     decoded message. Rescans for the device every `rescan` seconds (hotplug)."""
 
     def __init__(self, emit, vid=ZMK_VID, pid=ZMK_PID, name=None, base=BASE_USAGE, commit=COMMIT_USAGE,
-                 report_id=KEYBOARD_REPORT_ID, rescan=2.0, log=print, raw=False):
+                 report_id=KEYBOARD_REPORT_ID, rescan=2.0, log=print, raw=False, dead_key_ms=DEAD_KEY_MS):
         self.emit, self.vid, self.pid, self.name = emit, vid, pid, name
         self.base, self.commit, self.report_id, self.rescan, self.log = base, commit, report_id, rescan, log
         self.raw = raw  # debug only: dumps every report, i.e. also what you type
+        self.dead_key_ms = dead_key_ms
         self._open = {}
         self._stop = threading.Event()
 
@@ -318,11 +325,11 @@ class KeyboardReader:
 
     def _read_loop(self, path, dev, product):
         import time
-        decoder = ReportDecoder(self.base, self.commit, self.report_id)
+        decoder = ReportDecoder(self.base, self.commit, self.report_id, dead_key_ms=self.dead_key_ms)
         try:
             while not self._stop.is_set():
                 # Wake early while a dead key waits, so it is released on time when no letter follows.
-                report = dev.read(64, timeout_ms=DEAD_KEY_MS if decoder.pending else 500)
+                report = dev.read(64, timeout_ms=self.dead_key_ms if decoder.pending else 500)
                 now = int(time.monotonic() * 1000)
                 if not report:
                     for msg in decoder.flush(now):
@@ -404,10 +411,13 @@ class Feed:
             log(f"hudfeed: config/keymap failed: {type(e).__name__}: {e}")
         kb = cfg.get("keyboard") or {}
         sig = cfg.get("signal") or {}
+        feed_cfg = dict(keymap_mod.FEED_DEFAULTS)
+        feed_cfg.update(cfg.get("feed") or {})
         self.keymap = keymap
         self.keys = keys
         self.reader = KeyboardReader(
             self._emit, log=log, raw=raw, report_id=report_id,
+            rescan=float(feed_cfg["rescan_s"]), dead_key_ms=int(feed_cfg["dead_key_ms"]),
             vid=vid if vid is not None else int(kb.get("vid", ZMK_VID)),
             pid=pid if pid is not None else int(kb.get("pid", ZMK_PID)),
             name=name if name is not None else kb.get("name"),

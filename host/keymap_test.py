@@ -76,6 +76,32 @@ class Layout(unittest.TestCase):
         self.assertEqual(lay["keys"][0], col0[0])                      # row 0, part 0, leftmost column
 
 
+class Ortho(unittest.TestCase):
+    def test_split_with_thumbs(self):
+        lay = km.ortho_layout({"split": True, "rows": 3, "columns": 5, "thumbs": 3}, key_w=10, key_h=10, split_gap=5)
+        self.assertEqual(len(lay["keys"]), 36)
+        self.assertEqual([k["x"] for k in lay["keys"][:10]], [5, 15, 25, 35, 45, 60, 70, 80, 90, 100])
+        thumbs = lay["keys"][30:]
+        self.assertEqual([(k["x"], k["y"]) for k in thumbs], [(25, 35), (35, 35), (45, 35), (60, 35), (70, 35), (80, 35)])
+        self.assertEqual((lay["width"], lay["height"]), (105, 40))
+
+    def test_mit_bottom_row(self):
+        lay = km.ortho_layout({"rows": 4, "columns": 12, "thumbs": "MIT"}, key_w=10, key_h=10)
+        self.assertEqual(len(lay["keys"]), 3 * 12 + 11)
+        wide = [k for k in lay["keys"] if k["w"] == 20]
+        self.assertEqual([(k["x"], k["y"]) for k in wide], [(60, 35)])
+
+    def test_drop_pinky_shifts_then_drops(self):
+        lay = km.ortho_layout({"split": True, "rows": 3, "columns": 5, "drop_pinky": True}, key_w=10, key_h=10, split_gap=0)
+        self.assertEqual(lay["keys"][0]["y"], 10)          # row 0 pinky is half a key lower
+        self.assertEqual(len(lay["keys"]), 2 * 10 + 8)      # last row loses both pinkies
+
+    def test_ortho_through_build_message(self):
+        doc = dict(DOC, layout={"ortho_layout": {"split": True, "rows": 2, "columns": 2, "thumbs": 1}})
+        msg = km.build_message({}, doc)
+        self.assertEqual(len(msg["layout"]["keys"]), 10)
+
+
 class Message(unittest.TestCase):
     def test_default_layer_ids_follow_yaml_order(self):
         msg = km.build_message({}, DOC)

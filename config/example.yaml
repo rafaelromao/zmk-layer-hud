@@ -22,6 +22,14 @@ keymap: ~/path/to/my-keymap.yaml
 #     3: { label: Navigation }
 #     4: { drawer: null, label: Adjust }     # a layer the YAML does not draw
 
+# Optional: the keymap's combo timeout (ZMK timeout-ms), so simultaneous presses form a combo.
+# combo_term_ms: 50
+
+# Optional: every size and timing the HUD and the reader use; see config/diamond.yaml for the
+# full list with defaults.
+# hud: { width: 700, press_ms: 320 }
+# feed: { dead_key_ms: 60 }
+
 # Optional: layers entered for one key (sticky-key style), shown as one-shot while inferring.
 # extras:
 #   sticky: [Sym]

@@ -61,6 +61,7 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 .key.trans { background: #e6e8ef; }
 .key.trans .tap, .key.trans .hold, .key.trans .shifted { color: var(--key-dim); }
 .key.blank { background: #dcdfe8; border-style: dashed; }
+.key.ghost { background: #e6e8ef; border-style: dotted; opacity: 0.75; }   /* keymap-drawer `type: ghost` */
 .key.held { background: var(--held); }
 .key.activator { background: var(--held); box-shadow: inset 0 0 0 2px #7aa2f7; }
 .key.pressed { background: var(--pressed); transform: translateY(2px); box-shadow: 0 0 0 3px rgba(255,180,84,0.55); }

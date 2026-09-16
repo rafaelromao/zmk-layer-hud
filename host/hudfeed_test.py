@@ -177,6 +177,18 @@ class DeadKeys(unittest.TestCase):
         msgs = d.feed(R(0x02, 0x18), now_ms=12)  # shift + u
         self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["Ü"])
 
+    def test_cedilla_is_the_us_international_special_case(self):
+        d = ReportDecoder()
+        d.feed(R(0, 0x34), now_ms=0)         # '
+        d.feed(R(0), now_ms=1)
+        msgs = d.feed(R(0, 0x06), now_ms=2)  # c -> ç, not ć
+        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["ç"])
+        d.feed(R(0), now_ms=3)
+        d.feed(R(0, 0x34), now_ms=10)
+        d.feed(R(0), now_ms=11)
+        msgs = d.feed(R(0x02, 0x06), now_ms=12)  # shift + c -> Ç
+        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["Ç"])
+
     def test_plain_apostrophe_is_released_on_timeout(self):
         d = ReportDecoder()
         self.assertEqual(d.feed(R(0, 0x34), now_ms=0), [])

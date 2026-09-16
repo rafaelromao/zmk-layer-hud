@@ -123,6 +123,21 @@ Watch the status line under the board:
 Without the keyboard, `.venv/bin/python3 host/hudfeed.py --stdout --no-ws --debug` prints
 everything the pages would receive; `--raw` adds every report as hex.
 
+### Try it without a keyboard
+
+Two keymaps from keymap-drawer's own examples ship in `examples/` with ready configs: a 3x5+3
+split (`config/example-3x5.yaml`, layout from the drawer's QMK database, needs the library) and a
+4x12 ortho board with a 2u space bar (`config/example-4x12.yaml`, renders even without it).
+
+```bash
+.venv/bin/python3 host/keymap.py --config config/example-4x12.yaml --dump > hud/keymap.json
+python3 -m http.server -d hud 8765      # open http://localhost:8765/index.html?keymap=keymap.json
+```
+
+In the browser console, `hud.setLayers([1])` switches to the second layer and `hud.pressAt(13)`
+lights ZMK position 13. `ZMKHUD_CONFIG=config/example-4x12.yaml host/macos/start.sh` runs the real
+panel against it. Paths in a config are relative to the config file.
+
 ## How the keyboard talks to the host
 
 There is no spare channel from a keyboard to a host that works over USB and BLE on every OS
@@ -174,10 +189,14 @@ layer that shows it, plus a label and banner class. [config/diamond.yaml](config
 is a complete example; `python3 host/keymap.py` explains what is wrong when a mapping is off.
 
 All other config keys are optional and documented in the docstring of `host/keymap.py`:
-`keyboard` (pick one of several ZMK boards), `signal` (non-default usages), `base`, `combos`
-(combo layer coverage the drawer understates), `extras` (inference hints for firmware without
-the module), `title` (default: the keyboard's own name), `hud.width` (panel width; the height
-follows the layout, so a 3x5+2, a 60% or a rotated layout all fit).
+`keyboard` (pick one of several ZMK boards), `signal` (non-default usages), `base`, `positions`
+(ZMK position of each drawer key), `combo_term_ms` (the keymap's combo timeout), `combos` (combo
+layer coverage the drawer understates), `extras` (inference hints for firmware without the
+module), `title` (default: the keyboard's own name), and every size and timing the HUD and the
+reader use under `hud:` and `feed:` (panel width, flash and pill durations, combo slack, dead-key
+window …), all listed with their defaults in `config/diamond.yaml`. Nothing the HUD does is tuned
+anywhere else. Without keymap-drawer installed, `cols_thumbs_notation` and `ortho_layout` layouts
+still render through built-in ports of the drawer's generators.
 
 ## Pages
 
@@ -262,7 +281,7 @@ built-in `cols_thumbs_notation` fallback only.
   maps to (US layout), on the layer the keyboard reports; a macro is recognised when the keys it
   types, within 200 ms, spell a legend on the active layers, and chords on icon-only layers
   cannot be located.
-- Without keymap-drawer installed only `cols_thumbs_notation` layouts render, and combos given
-  as `trigger_keys` are skipped.
+- Without keymap-drawer installed only `cols_thumbs_notation` and `ortho_layout` layouts render,
+  and combos given as `trigger_keys` are skipped.
 - The Linux host is ported from an earlier kit and not yet run on hardware; the macOS panel is
   new and needs its first run on a real display (window levels, transparency, Input Monitoring).
