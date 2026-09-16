@@ -111,13 +111,13 @@ def decode_report(report, base=BASE_USAGE, commit=COMMIT_USAGE, report_id=KEYBOA
     return decode_keys(data[2:], base, commit)
 
 
-POS_HI, POS_LO, POS_LO_N = 0xA5, 0xB4, 12
+POS_HI, POS_HI_N, POS_LO, POS_LO_N = 0xA5, 17, 0xB8, 8  # 0xB6/0xB7 skipped: Linux types ( ) for them
 
 
 def decode_position(keys):
-    """Key bytes -> physical key position when exactly one hi (0xA5..0xB3) and one lo
-    (0xB4..0xBF) usage are present (firmware `positions;`), else None."""
-    hi = [k - POS_HI for k in keys if POS_HI <= k < POS_LO]
+    """Key bytes -> physical key position when exactly one hi (0xA5..0xB5) and one lo
+    (0xB8..0xBF) usage are present (firmware `positions;`), else None."""
+    hi = [k - POS_HI for k in keys if POS_HI <= k < POS_HI + POS_HI_N]
     lo = [k - POS_LO for k in keys if POS_LO <= k < POS_LO + POS_LO_N]
     if len(hi) != 1 or len(lo) != 1:
         return None
@@ -227,7 +227,8 @@ class ReportDecoder:
         pos = decode_position(keys)
         if pos is not None:
             out.append({"kind": "press", "pos": pos})
-        real = [k for k in keys if k and not (self.base <= k <= self.commit) and not (POS_HI <= k < POS_LO + POS_LO_N)]
+        real = [k for k in keys if k and not (self.base <= k <= self.commit)
+                and not (POS_HI <= k < POS_HI + POS_HI_N) and not (POS_LO <= k < POS_LO + POS_LO_N)]
         if mods != self.mods:
             self.mods = mods
             flags = flags_of(mods)

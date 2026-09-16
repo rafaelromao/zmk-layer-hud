@@ -67,9 +67,10 @@ properties:
     type: boolean
     description: |
       Also announce the physical position of every key press: one usage from
-      0xA5..0xB3 and one from 0xB4..0xBF in the same report encode
-      position = (hi - 0xA5) * 12 + (lo - 0xB4), up to 180 keys, pressed and
-      released within the event so a report never carries two positions. The
+      0xA5..0xB5 and one from 0xB8..0xBF in the same report encode
+      position = (hi - 0xA5) * 8 + (lo - 0xB8), up to 136 keys, pressed and
+      released within the event so a report never carries two positions
+      (0xB6/0xB7 are skipped: Linux types Keypad ( ) for them). The
       HUD then lights the exact key for chords, combos, macros, layer and
       modifier keys, whatever they produce. Costs two extra reports per press.
       Requires base-usage >= 0xC0 (the default).
@@ -81,3 +82,5 @@ properties:
       When non-zero, re-send the current set this often while idle, so a host
       that starts mid-session learns the state without a resync channel. Two
       small reports per period; 2000 is a good value for a HUD. 0 disables it.
+      Skipped while a real key is held, so it never interrupts a host's
+      auto-repeat of that key.

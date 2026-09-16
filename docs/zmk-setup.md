@@ -66,7 +66,7 @@ Properties (all optional):
 With the defaults, layer ids 1–30 are representable (layer 0 is always active and never sent).
 If your keymap has more layers, lower `base-usage` (0xA5 is the lowest reserved usage, and
 0xA5–0xBF carry the positions when `positions;` is set) and keep the host config's `signal:` in
-sync. Positions 0–179 are representable; a key's position is its index in the keymap's binding
+sync. Positions 0–135 are representable; a key's position is its index in the keymap's binding
 list, which is also the drawer's key order for a YAML from `keymap parse`. A curated drawer file
 with a different key order lists each drawer key's position in the host config (`positions:`).
 
@@ -114,7 +114,10 @@ marks an announcement).
 
 The HID Usage Tables reserve keyboard-page usages 0xA5–0xDF. No operating system maps them to a
 key: macOS produces no key event for them, Linux delivers them to evdev as `KEY_UNKNOWN` with no
-keysym, Windows ignores them. So a report that carries them reaches raw-HID readers and nothing
+keysym, Windows ignores them. The two exceptions are 0xB6 and 0xB7, which Linux maps to Keypad
+`(` and `)`; the module never uses them. Linux still sees `KEY_UNKNOWN` events, which is why the
+heartbeat pauses while a key is held: a compositor stops auto-repeating a key when any other key
+event arrives. So a report that carries them reaches raw-HID readers and nothing
 else, over USB and BLE alike, without drivers. The module writes them straight into the
 keyboard report (not as key events on ZMK's bus), so behaviours that watch key presses, such as
 auto-layer, adaptive keys, caps word and sticky keys, never notice.

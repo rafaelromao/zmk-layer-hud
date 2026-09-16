@@ -71,13 +71,17 @@ static inline bool zls_decode(const uint8_t *keys, size_t n, uint8_t base, uint8
 }
 
 /* Key positions ride on the same wire, below the layer usages: one usage from the "hi" range
- * (0xA5..0xB3, 15 values) plus one from the "lo" range (0xB4..0xBF, 12 values) in the same
- * report encode position = hi * 12 + lo, so up to 180 keys. The pair is pressed and released
- * within one event, so a report never carries more than one position. */
+ * (0xA5..0xB5, 17 values) plus one from the "lo" range (0xB8..0xBF, 8 values) in the same
+ * report encode position = hi * 8 + lo, so up to 136 keys. The pair is pressed and released
+ * within one event, so a report never carries more than one position.
+ *
+ * 0xB6 and 0xB7 are deliberately unused: Linux maps them to Keypad ( and ), the only two
+ * usages in 0xA5..0xDF that any OS turns into a printable key. */
 #define ZLS_POS_HI 0xA5
-#define ZLS_POS_LO 0xB4
-#define ZLS_POS_LO_N 12
-#define ZLS_POS_MAX (15 * ZLS_POS_LO_N)
+#define ZLS_POS_HI_N 17
+#define ZLS_POS_LO 0xB8
+#define ZLS_POS_LO_N 8
+#define ZLS_POS_MAX (ZLS_POS_HI_N * ZLS_POS_LO_N)
 
 static inline bool zls_encode_position(uint32_t pos, uint8_t out[2]) {
     if (pos >= ZLS_POS_MAX) {
@@ -93,7 +97,7 @@ static inline bool zls_decode_position(const uint8_t *keys, size_t n, uint32_t *
     int hi = -1, lo = -1, n_hi = 0, n_lo = 0;
     for (size_t i = 0; i < n; i++) {
         uint8_t k = keys[i];
-        if (k >= ZLS_POS_HI && k < ZLS_POS_LO) {
+        if (k >= ZLS_POS_HI && k < ZLS_POS_HI + ZLS_POS_HI_N) {
             hi = k - ZLS_POS_HI;
             n_hi++;
         } else if (k >= ZLS_POS_LO && k < ZLS_POS_LO + ZLS_POS_LO_N) {

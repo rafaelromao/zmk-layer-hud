@@ -126,29 +126,30 @@ static void test_positions(void) {
     uint8_t pair[2];
     uint32_t pos = 999;
 
-    check(zls_encode_position(0, pair) && pair[0] == 0xA5 && pair[1] == 0xB4, "position 0 -> A5 B4");
-    check(zls_encode_position(13, pair) && pair[0] == 0xA6 && pair[1] == 0xB5, "position 13 -> A6 B5");
-    check(zls_encode_position(179, pair) && pair[0] == 0xB3 && pair[1] == 0xBF, "position 179 is the last");
-    check(!zls_encode_position(180, pair), "position 180 does not fit");
+    check(zls_encode_position(0, pair) && pair[0] == 0xA5 && pair[1] == 0xB8, "position 0 -> A5 B8");
+    check(zls_encode_position(13, pair) && pair[0] == 0xA6 && pair[1] == 0xBD, "position 13 -> A6 BD");
+    check(zls_encode_position(135, pair) && pair[0] == 0xB5 && pair[1] == 0xBF, "position 135 is the last");
+    check(!zls_encode_position(136, pair), "position 136 does not fit");
 
-    check(zls_decode_position((const uint8_t[]){0x04, 0xA6, 0xB5, 0, 0, 0}, 6, &pos) && pos == 13,
+    check(zls_decode_position((const uint8_t[]){0x04, 0xA6, 0xBD, 0, 0, 0}, 6, &pos) && pos == 13,
           "decode 13 next to a real key");
     check(!zls_decode_position((const uint8_t[]){0xA6, 0, 0, 0}, 4, &pos), "hi alone is not a position");
-    check(!zls_decode_position((const uint8_t[]){0xA6, 0xA7, 0xB5, 0}, 4, &pos), "two hi usages: ambiguous, ignored");
+    check(!zls_decode_position((const uint8_t[]){0xA6, 0xA7, 0xBD, 0}, 4, &pos), "two hi usages: ambiguous, ignored");
     /* A layer announcement in the same report does not disturb it. */
-    check(zls_decode_position((const uint8_t[]){0xC2, 0xDF, 0xA5, 0xB6}, 4, &pos) && pos == 2,
+    check(zls_decode_position((const uint8_t[]){0xC2, 0xDF, 0xA5, 0xBA}, 4, &pos) && pos == 2,
           "position beside a layer announcement");
     uint32_t layers;
-    check(zls_decode((const uint8_t[]){0xC2, 0xDF, 0xA5, 0xB6}, 4, BASE, COMMIT, &layers) && layers == (1u << 2),
+    check(zls_decode((const uint8_t[]){0xC2, 0xDF, 0xA5, 0xBA}, 4, BASE, COMMIT, &layers) && layers == (1u << 2),
           "layer decode ignores the position usages");
 
-    /* Round trip over every position. */
+    /* Linux types Keypad ( and ) for 0xB6 and 0xB7: no position may use them. */
     bool ok = true;
     for (uint32_t p = 0; p < ZLS_POS_MAX; p++) {
         uint32_t back;
-        ok = ok && zls_encode_position(p, pair) && zls_decode_position(pair, 2, &back) && back == p;
+        ok = ok && zls_encode_position(p, pair) && zls_decode_position(pair, 2, &back) && back == p &&
+             pair[0] != 0xB6 && pair[0] != 0xB7 && pair[1] != 0xB6 && pair[1] != 0xB7;
     }
-    check(ok, "all 180 positions round-trip");
+    check(ok, "all 136 positions round-trip and avoid 0xB6/0xB7");
 }
 
 int main(void) {

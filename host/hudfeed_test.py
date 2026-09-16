@@ -128,22 +128,29 @@ class Positions(unittest.TestCase):
 
     def test_position_report(self):
         d = ReportDecoder()
-        self.assertEqual(d.feed(R(0, 0xA6, 0xB5)), [{"kind": "press", "pos": 13}])
+        self.assertEqual(d.feed(R(0, 0xA6, 0xBD)), [{"kind": "press", "pos": 13}])
         self.assertEqual(d.feed(R(0)), [])                                # the pair's release: nothing
 
     def test_position_next_to_the_key_it_produced(self):
         d = ReportDecoder()
-        msgs = d.feed(R(0, 0x04, 0xA5, 0xB4), now_ms=0)
+        msgs = d.feed(R(0, 0x04, 0xA5, 0xB8), now_ms=0)
         self.assertEqual([(m["kind"], m.get("pos", m.get("chars"))) for m in msgs], [("press", 0), ("key", "a")])
 
     def test_position_and_layers_in_one_report(self):
         d = ReportDecoder()
-        msgs = d.feed(R(0, 0xC2, C, 0xA5, 0xB6))
+        msgs = d.feed(R(0, 0xC2, C, 0xA5, 0xBA))
         self.assertEqual(msgs, [{"kind": "layers", "ids": [2]}, {"kind": "press", "pos": 2}])
 
     def test_ambiguous_pair_ignored(self):
         d = ReportDecoder()
-        self.assertEqual(d.feed(R(0, 0xA5, 0xA6, 0xB4)), [])
+        self.assertEqual(d.feed(R(0, 0xA5, 0xA6, 0xB8)), [])
+
+    def test_keypad_paren_usages_are_never_positions(self):
+        # 0xB6/0xB7 are Keypad ( ) on Linux; the firmware never sends them and the decoder
+        # treats them as ordinary keys, not as part of a position.
+        d = ReportDecoder()
+        msgs = d.feed(R(0, 0xA5, 0xB6), now_ms=0)
+        self.assertEqual([m["kind"] for m in msgs], ["key"])
 
 
 class DeadKeys(unittest.TestCase):

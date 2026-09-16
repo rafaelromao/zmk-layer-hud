@@ -142,7 +142,8 @@ to raw-HID readers and ignored by everything else. The module uses them as a dat
   raised as key events, so behaviours that watch key presses (auto-layer, adaptive keys, caps
   word, sticky keys) do not notice.
 - With `positions;` in the node, every key press also carries its physical position as a pair
-  of usages from 0xA5–0xBF (`(hi − 0xA5) × 12 + (lo − 0xB4)`, up to 180 keys), pressed and
+  of usages from 0xA5–0xB5 and 0xB8–0xBF (`(hi − 0xA5) × 8 + (lo − 0xB8)`, up to 136 keys;
+  0xB6/0xB7 are skipped because Linux types Keypad `(` `)` for them), pressed and
   released within the event so a report never holds two. The HUD then lights the exact key for
   anything: chords on a shortcut layer, a combo versus a single key with the same output, a
   macro, a layer or modifier key. Without it the page falls back to matching what the key

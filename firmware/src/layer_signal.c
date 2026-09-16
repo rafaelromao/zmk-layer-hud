@@ -121,11 +121,28 @@ static void burst(void) {
     k_work_reschedule(&work, K_MSEC(TAP_MS));
 }
 
+/* Any real key currently in the report? Hosts stop auto-repeating a held key when another key
+ * event arrives, and Linux turns our usages into key events, so the heartbeat waits. */
+static bool real_key_held(void) {
+    const struct zmk_hid_keyboard_report *report = zmk_hid_get_keyboard_report();
+    for (size_t i = 0; i < ARRAY_SIZE(report->body.keys); i++) {
+        uint8_t k = report->body.keys[i];
+        if (k != 0 && k < ZLS_POS_HI) {
+            return true;
+        }
+    }
+    return false;
+}
+
 static void work_cb(struct k_work *work_item) {
     ARG_UNUSED(work_item);
     if (pressed) {
         release_all(true);
         rearm_idle();
+        return;
+    }
+    if (!dirty && real_key_held()) {
+        k_work_reschedule(&work, K_MSEC(250)); /* heartbeat: try again once the key is up */
         return;
     }
     burst();
