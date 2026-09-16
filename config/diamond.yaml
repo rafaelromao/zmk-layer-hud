@@ -9,8 +9,9 @@ drawer_config: ~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawe
 hud:
   width: 598                  # panel width in points; the height follows the layout
   opacity: 86                 # panel background, 0 (clear) to 100 (solid)
-  press_ms: 320               # a key stays lit this long after its release
-  held_timeout_ms: 5000       # ... or at most this long if its release report never arrives
+  press_ms: 320               # (no positions) a key stays lit this long after a press
+  release_ms: 60              # a key stays lit this long after its reported release
+  held_timeout_ms: 5000       # a held key is released on the HUD after this if its release report is lost
   combo_pill_ms: 1000         # a combo's pill stays up this long
   combo_slack_ms: 20          # added to combo_term_ms for the reports' travel time
   activator_ms: 400           # a key pressed this recently before a layer appeared is its activator

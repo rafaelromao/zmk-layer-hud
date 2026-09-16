@@ -28,7 +28,7 @@
   const GAP = 6;             // px between keys at the drawn scale
   // Every timing the page uses comes from the config's `hud:` section (host/keymap.py fills the
   // defaults in); these are only the fallbacks for a keymap message without it.
-  const DEFAULTS = { opacity: 86, press_ms: 320, held_timeout_ms: 5000, momentary_ms: 700, combo_slack_ms: 20, activator_ms: 400,
+  const DEFAULTS = { opacity: 86, press_ms: 320, release_ms: 60, held_timeout_ms: 5000, momentary_ms: 700, combo_slack_ms: 20, activator_ms: 400,
     positions_fresh_ms: 3000, combo_pill_ms: 1000, sequence_ms: 200, sequence_max: 6, one_shot_ms: 450 };
   const T = name => (state.data && state.data.hud && state.data.hud[name] != null) ? state.data.hud[name] : DEFAULTS[name];
   const recentPos = [];
@@ -703,7 +703,7 @@
       const e = state.keyEls[idx];
       if (!e) return;
       clearTimeout(state.timers.get(idx));
-      state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo", "inferred"), T('press_ms')));
+      state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo", "inferred"), T('release_ms')));
     },
     setDevice(name) { if ((name || "") !== state.device) { state.device = name || ""; renderTitle(); } },
     key(ev) {

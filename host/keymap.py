@@ -57,7 +57,8 @@ SIGNAL = {"base": 0xC0, "commit": 0xDF}
 HUD_DEFAULTS = {
     "width": 598,              # panel width in points; the height follows the layout
     "opacity": 86,             # panel background opacity, 0 (clear) to 100 (solid)
-    "press_ms": 320,           # how long a key stays lit after its release (or after a press without positions)
+    "press_ms": 320,           # how long a key stays lit after a press when no release is reported (no positions)
+    "release_ms": 60,          # how long a key stays lit after its reported release
     "held_timeout_ms": 5000,   # a held key is released on the HUD after this if its release report is lost
     "combo_pill_ms": 1000,     # how long a combo's pill stays up
     "combo_slack_ms": 20,      # added to combo_term_ms for the reports' travel time
