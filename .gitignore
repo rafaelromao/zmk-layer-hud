@@ -11,3 +11,6 @@ hud/keymap.js
 
 # editor/agent local config
 .claude/
+
+# python virtualenv (make venv)
+.venv/

@@ -6,7 +6,10 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 HS=/opt/homebrew/bin/hs
-PYTHON="${ZMKHUD_PYTHON:-$(command -v python3)}"
+# The repo's virtualenv (make venv) has hidapi and keymap-drawer; ZMKHUD_PYTHON overrides.
+if [ -n "${ZMKHUD_PYTHON:-}" ]; then PYTHON="$ZMKHUD_PYTHON"
+elif [ -x "$ROOT/.venv/bin/python3" ]; then PYTHON="$ROOT/.venv/bin/python3"
+else PYTHON="$(command -v python3)"; fi
 
 if ! command -v "$HS" >/dev/null; then
   echo "hs CLI not found; Hammerspoon installs it at $HS" >&2; exit 1
@@ -28,9 +31,9 @@ case "${1:-start}" in
     if ! "$PYTHON" -c 'import hid' 2>/dev/null; then
       cat >&2 <<MSG
 warning: $PYTHON has no 'hid' module, so the keyboard's layer signal cannot be read and the HUD
-will fall back to inference. Install it with:
+will fall back to inference. Create the repo's virtualenv with:
 
-    brew install hidapi && $PYTHON -m pip install hidapi
+    brew install hidapi && make -C "$ROOT" venv
 
 MSG
     fi

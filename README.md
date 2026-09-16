@@ -72,7 +72,7 @@ report size), build and flash the central/dongle.
 Host, macOS (Homebrew Python; Apple's `/usr/bin/python3` has none of the packages):
 
 ```bash
-brew install hidapi && /opt/homebrew/bin/python3 -m pip install hidapi keymap-drawer
+brew install hidapi && make venv          # .venv with hidapi + keymap-drawer; the hosts pick it up
 mkdir -p ~/.config/zmk-layer-hud && cp config/diamond.yaml ~/.config/zmk-layer-hud/config.yaml   # then edit the paths
 host/macos/start.sh                    # Hammerspoon with require("hs.ipc") in init.lua
 ```

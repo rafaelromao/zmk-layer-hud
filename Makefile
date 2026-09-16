@@ -4,9 +4,14 @@
 CC ?= cc
 PYTHON ?= python3
 
-.PHONY: all test test-firmware test-host keymap clean help
+.PHONY: all test test-firmware test-host keymap venv clean help
 
 all: test
+
+venv: ## create .venv with hidapi and keymap-drawer (macOS: brew install hidapi first)
+	$(PYTHON) -m venv .venv
+	.venv/bin/python3 -m pip install --quiet --upgrade pip hidapi keymap-drawer
+	@echo "venv ready: .venv/bin/python3 (host/macos/start.sh and hud.lua pick it up)"
 
 test: test-firmware test-host ## run every test suite
 

@@ -43,8 +43,10 @@ M.lastKeys = {}
 M.lastLayers = nil
 M.python = nil -- resolved in start(): the first python3 that exists in PYTHONS
 
--- The interpreter must have python-hidapi installed (`pip install hidapi`).
-local PYTHONS = { os.getenv("ZMKHUD_PYTHON"), "/opt/homebrew/bin/python3", "/usr/local/bin/python3", "/usr/bin/python3" }
+-- The interpreter needs hidapi and keymap-drawer: the repo's own virtualenv first (make venv),
+-- then a system python that happens to have them.
+local PYTHONS = { os.getenv("ZMKHUD_PYTHON"), ROOT .. ".venv/bin/python3", "/opt/homebrew/bin/python3",
+  "/usr/local/bin/python3", "/usr/bin/python3" }
 
 local wv, kv, tap, watcher, pollTimer, logTimer, readyTimer, task, ucc, feed, feedTimer
 local ready = false
