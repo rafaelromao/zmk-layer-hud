@@ -659,9 +659,14 @@
       if (start === recentPos.length - 1) state.comboShown = null; // a new group begins
       const pressedSet = recentPos.slice(start).map(p => p.idx);
       if (pressedSet.length > 1) {
-        const layers = stack();
-        const combo = state.data.combos.find(c => c.positions.length === pressedSet.length
-          && c.positions.every(p => pressedSet.includes(p)) && c.layers.some(l => layers.includes(l)));
+        // The topmost active layer that defines a combo on these keys wins: the base layer is
+        // always in the stack and often has a different combo on the same keys.
+        let combo = null;
+        for (const layer of stack()) {
+          combo = state.data.combos.find(c => c.layers.includes(layer) && c.positions.length === pressedSet.length
+            && c.positions.every(p => pressedSet.includes(p)));
+          if (combo) break;
+        }
         if (combo) {
           // A third key within the term makes a bigger combo: take the smaller one's pill down.
           if (state.comboShown) state.comboShown.remove();
