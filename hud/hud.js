@@ -665,9 +665,16 @@
       // A key pressed while a layer is held: the drawer may describe it as a combo of the
       // holding key and this one (thumb + key = a digit), which no timing window can catch.
       if (pressedSet.length === 1) {
+        const sticky = new Set(extras().sticky || []);
         for (const name of liveStack()) {
           const held = state.activatorOf[name];
-          if (held !== undefined && held !== idx) pressedSet = [held, idx];
+          if (held === undefined || held === idx) continue;
+          // A one-shot layer (sticky, or reached by a sticky activator) was tapped into, not held:
+          // its key is not part of this press.
+          if (sticky.has(name)) continue;
+          const kind = state.data.activators.find(a => a.layer === name && a.idx === held);
+          if (kind && kind.kind !== "hold") continue;
+          pressedSet = [held, idx];
         }
       }
       if (pressedSet.length > 1) {
