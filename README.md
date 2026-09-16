@@ -31,7 +31,7 @@ to raw-HID readers and ignored by everything else. The module uses them as a dat
   so real keys pressed meanwhile cannot produce a torn state, and a missed report heals on the
   next change. With `heartbeat-ms` set, the set is repeated while idle so a HUD started
   mid-session converges.
-- The report is written directly (`zmk_hid_keyboard_press` + `zmk_endpoints_send_report`), not
+- The report is written directly (`zmk_hid_keyboard_press` + `zmk_endpoint_send_report`), not
   raised as key events, so behaviours that watch key presses (auto-layer, adaptive keys, caps
   word, sticky keys) do not notice.
 

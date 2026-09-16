@@ -13,7 +13,7 @@
  * harmless: they still contain the full set or no commit at all.
  *
  * The report is written directly through zmk_hid_keyboard_press/release and
- * zmk_endpoints_send_report, the same calls hid_listener.c makes. Raising
+ * zmk_endpoint_send_report, the same calls hid_listener.c makes. Raising
  * zmk_keycode_state_changed instead would show the fake usages to every keycode
  * listener: auto-layer would end num-word, adaptive keys would record them as
  * antecedent, caps word and sticky keys would react.
@@ -77,7 +77,7 @@ static void release_all(bool send) {
     n_usages = 0;
     pressed = false;
     if (send) {
-        int err = zmk_endpoints_send_report(HID_USAGE_KEY);
+        int err = zmk_endpoint_send_report(HID_USAGE_KEY);
         if (err < 0) {
             LOG_WRN("layer signal release report failed (%d)", err);
         }
@@ -109,7 +109,7 @@ static void burst(void) {
     }
     n_usages = n;
     pressed = true;
-    int err = zmk_endpoints_send_report(HID_USAGE_KEY);
+    int err = zmk_endpoint_send_report(HID_USAGE_KEY);
     if (err < 0) {
         LOG_WRN("layer signal report failed (%d)", err);
     }
