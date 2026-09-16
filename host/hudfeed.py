@@ -473,8 +473,9 @@ class Hub:
     async def send(self, msg):
         if msg["kind"] in ("keymap", "layers", "device"):
             self.cache[msg["kind"]] = msg
-        if self.debug and msg["kind"] == "layers":
-            self.log("hudfeed:", json.dumps(msg, ensure_ascii=False))
+        if self.debug and msg["kind"] in ("layers", "press"):
+            import time
+            self.log(f"hudfeed: {time.monotonic() * 1000:.0f}ms", json.dumps(msg, ensure_ascii=False))
         data = json.dumps(msg, ensure_ascii=False)
         if self.stdout:
             print(data, flush=True)

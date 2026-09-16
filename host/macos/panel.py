@@ -15,7 +15,10 @@ import json
 import os
 import signal
 import sys
+import time
 from pathlib import Path
+
+DEBUG = os.environ.get("ZMKHUD_DEBUG") == "1"  # log every layer and position message with a timestamp
 
 try:
     import objc
@@ -174,6 +177,8 @@ class Host:
 
     def deliver(self, msg):
         data = json.dumps(msg, ensure_ascii=False)
+        if DEBUG and msg["kind"] in ("layers", "press"):
+            log(f"{time.monotonic() * 1000:.0f}ms {data}")
         if msg["kind"] == "keymap":
             js = f"hud.load({data})"
         elif msg["kind"] == "layers":
