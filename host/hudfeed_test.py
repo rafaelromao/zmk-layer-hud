@@ -169,6 +169,14 @@ class DeadKeys(unittest.TestCase):
         msgs = d.feed(R(0, 0x2C), now_ms=2)                               # space
         self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["'", " "])
 
+    def test_option_layer_characters(self):
+        d = ReportDecoder()
+        msgs = d.feed(R(0x02 | 0x04, 0x1F), now_ms=0)                    # shift + alt + 2 = €
+        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["€"])
+        d.feed(R(0), now_ms=1)
+        msgs = d.feed(R(0x04, 0x2D), now_ms=2)                           # alt + - = en dash
+        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["–"])
+
     def test_compose_can_be_disabled(self):
         d = ReportDecoder(compose=False)
         msgs = d.feed(R(0, 0x34), now_ms=0)

@@ -87,9 +87,17 @@ class Bridge(NSObject):
     """Page → host messages (the ✕ posts "close") and window events."""
 
     def userContentController_didReceiveScriptMessage_(self, controller, message):
-        if str(message.body()) == "close":
+        body = str(message.body())
+        if body == "close":
             log("close requested by the page")
             AppHelper.stopEventLoop()
+            return
+        try:
+            msg = json.loads(body)
+        except ValueError:
+            return
+        if msg.get("kind") == "size":
+            Host.instance.resize(msg.get("width"), msg.get("height"))
 
     def windowDidMove_(self, notification):
         f = notification.object().frame()
@@ -142,6 +150,21 @@ class Host:
 
         # The feed runs in this process; its worker threads hand messages to the main thread.
         self.feed = hudfeed.Feed(lambda msg: AppHelper.callAfter(self.deliver, msg), log=log).start()
+        # Width from the config (hud.width); the height follows the page (see resize).
+        width = ((self.feed.source.cfg if self.feed.source else {}).get("hud") or {}).get("width")
+        if width:
+            self.resize(int(width), None)
+
+    def resize(self, width, height):
+        """The page knows how tall the layout is; keep the top-left corner where the user put it."""
+        f = self.panel.frame()
+        w = float(width or f.size.width)
+        h = float(height or f.size.height)
+        if abs(w - f.size.width) < 1 and abs(h - f.size.height) < 1:
+            return
+        top = f.origin.y + f.size.height
+        self.panel.setFrame_display_(NSMakeRect(f.origin.x, top - h, w, h), True)
+        self.web.setFrame_(((0, 0), (w, h)))
 
     def page_ready(self):
         self.ready = True
@@ -157,6 +180,8 @@ class Host:
             js = f"hud.setLayers({json.dumps(msg['ids'])})"
         elif msg["kind"] == "key":
             js = f"hud.key({data})"  # hud.key forwards to the strip on the same page
+        elif msg["kind"] == "device":
+            js = f"hud.setDevice({json.dumps(msg['name'])})"
         else:
             return
         if self.ready:

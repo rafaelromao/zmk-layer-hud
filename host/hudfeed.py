@@ -9,6 +9,7 @@ pages, over a WebSocket (Linux panel) or on stdout (macOS Hammerspoon host):
                                           config or the layer dtsi changes
   {"kind":"layers","ids":[2,22]}          active ZMK layer ids (layer 0 omitted: always active), from
                                           the firmware module's announcement inside the report
+  {"kind":"device","name":"Diamond"}      a keyboard was opened (its HID product name; the page's title)
   {"kind":"key","type":"keyDown","name":"space","chars":" ","code":44,
    "flags":{"cmd":false,"ctrl":false,"alt":false,"shift":false,"fn":false},"repeat":false}
                                           every key press/release and modifier change, straight from
@@ -66,6 +67,25 @@ NAMED = {0x28: "return", 0x29: "escape", 0x2A: "delete", 0x2B: "tab", 0x2C: "spa
 for i in range(24):
     NAMED[0x3A + i if i < 12 else 0x68 + i - 12] = f"f{i + 1}"
 CONTROL_CHARS = {0x28: "\r", 0x29: "\x1b", 0x2A: "\x7f", 0x2B: "\t", 0x58: "\r"}
+# macOS Option layer of the US layout: (usage, shifted) -> character. Macros like &kp LS(LA(N2))
+# for € land here. Dead keys of that layer (⌥e ⌥` ⌥i ⌥u ⌥n) are left out on purpose.
+ALT_CHARS = {
+    (0x1E, False): "¡", (0x1E, True): "⁄", (0x1F, False): "™", (0x1F, True): "€", (0x20, False): "£", (0x20, True): "‹",
+    (0x21, False): "¢", (0x21, True): "›", (0x22, False): "∞", (0x22, True): "ﬁ", (0x23, False): "§", (0x23, True): "ﬂ",
+    (0x24, False): "¶", (0x24, True): "‡", (0x25, False): "•", (0x25, True): "°", (0x26, False): "ª", (0x26, True): "·",
+    (0x27, False): "º", (0x27, True): "‚", (0x2D, False): "–", (0x2D, True): "—", (0x2E, False): "≠", (0x2E, True): "±",
+    (0x2F, False): "“", (0x2F, True): "”", (0x30, False): "‘", (0x30, True): "’", (0x31, False): "«", (0x31, True): "»",
+    (0x33, False): "…", (0x33, True): "Ú", (0x34, False): "æ", (0x34, True): "Æ", (0x36, False): "≤", (0x36, True): "¯",
+    (0x37, False): "≥", (0x37, True): "˘", (0x38, False): "÷", (0x38, True): "¿",
+    (0x04, False): "å", (0x04, True): "Å", (0x05, False): "∫", (0x05, True): "ı", (0x06, False): "ç", (0x06, True): "Ç",
+    (0x07, False): "∂", (0x07, True): "Î", (0x09, False): "ƒ", (0x09, True): "Ï", (0x0A, False): "©", (0x0A, True): "˝",
+    (0x0B, False): "˙", (0x0B, True): "Ó", (0x0D, False): "∆", (0x0D, True): "Ô", (0x0E, False): "˚", (0x0E, True): "",
+    (0x0F, False): "¬", (0x0F, True): "Ò", (0x10, False): "µ", (0x10, True): "Â", (0x12, False): "ø", (0x12, True): "Ø",
+    (0x13, False): "π", (0x13, True): "∏", (0x14, False): "œ", (0x14, True): "Œ", (0x15, False): "®", (0x15, True): "‰",
+    (0x16, False): "ß", (0x16, True): "Í", (0x17, False): "†", (0x17, True): "ˇ", (0x19, False): "√", (0x19, True): "◊",
+    (0x1A, False): "∑", (0x1A, True): "„", (0x1B, False): "≈", (0x1B, True): "˛", (0x1C, False): "¥", (0x1C, True): "Á",
+    (0x1D, False): "Ω", (0x1D, True): "¸",
+}
 
 
 def decode_keys(keys, base=BASE_USAGE, commit=COMMIT_USAGE):
@@ -113,7 +133,9 @@ def flags_of(mods):
 def key_message(usage, down, flags):
     """A key press/release -> the HUD's key event."""
     chars = ""
-    if usage in CHARS:
+    if flags["alt"] and not flags["cmd"] and not flags["ctrl"] and (usage, flags["shift"]) in ALT_CHARS:
+        chars = ALT_CHARS[(usage, flags["shift"])]
+    elif usage in CHARS:
         chars = CHARS[usage][1 if flags["shift"] else 0]
     elif usage in CONTROL_CHARS:
         chars = CONTROL_CHARS[usage]
@@ -271,6 +293,7 @@ class KeyboardReader:
                     continue
                 self._open[path] = dev
                 self.log(f"hudfeed: reading {product}")
+                self.emit({"kind": "device", "name": product})
                 threading.Thread(target=self._read_loop, args=(path, dev, product),
                                  name="hid-read", daemon=True).start()
             self._stop.wait(self.rescan)
@@ -406,7 +429,7 @@ class Hub:
         print(*a, file=sys.stderr, flush=True)
 
     async def send(self, msg):
-        if msg["kind"] in ("keymap", "layers"):
+        if msg["kind"] in ("keymap", "layers", "device"):
             self.cache[msg["kind"]] = msg
         if self.debug and msg["kind"] == "layers":
             self.log("hudfeed:", json.dumps(msg, ensure_ascii=False))

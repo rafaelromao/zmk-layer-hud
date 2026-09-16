@@ -13,7 +13,8 @@ dts_layout files. Without the library only cols_thumbs_notation is understood.
 
 Config keys (all paths may use ~):
   keymap:         path to the keymap-drawer YAML                                   (required)
-  title:          text in the panel's corner (default: the YAML file name)        (optional)
+  title:          text in the panel's corner (default: the keyboard's HID name)   (optional)
+  hud:            {width}: panel width in points (default 598); the height follows the layout (optional)
   drawer_config:  keymap-drawer config YAML (key sizes, glyphs); defaults otherwise (optional)
   keyboard:       {vid, pid, name} of the keyboard to read the layer signal from    (optional)
   signal:         {base, commit} usages of the firmware node                        (optional)
@@ -110,14 +111,18 @@ def norm_key(raw):
     if not isinstance(raw, dict):
         raise KeymapError(f"invalid key spec {raw!r}")
     tap, glyph = legend(raw.get("t", raw.get("tap", raw.get("center"))))
-    hold, _ = legend(raw.get("h", raw.get("hold", raw.get("bottom"))))
-    shifted, _ = legend(raw.get("s", raw.get("shifted")))
+    hold, glyph_h = legend(raw.get("h", raw.get("hold", raw.get("bottom"))))
+    shifted, glyph_s = legend(raw.get("s", raw.get("shifted")))
     ktype = raw.get("type", "") or ""
     if tap == "▽":
         tap, ktype = "", "trans"
     key = {"tap": tap, "hold": hold, "shifted": shifted, "type": ktype or "key"}
     if glyph:
         key["glyph"] = glyph
+    if glyph_h:
+        key["glyph_hold"] = glyph_h
+    if glyph_s:
+        key["glyph_shifted"] = glyph_s
     for side in ("left", "right"):
         if raw.get(side):
             key[side] = legend(raw[side])[0]
@@ -322,7 +327,109 @@ def activators(layers, extras):
     return out
 
 
-def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source=""):
+# ---------- glyphs: the same SVGs keymap-drawer draws ----------
+
+# keymap-drawer's default glyph_urls (DrawConfig); the drawer config may add or override sources.
+GLYPH_URLS = {
+    "tabler": "https://raw.githubusercontent.com/tabler/tabler-icons/main/icons/outline/{}.svg",
+    "mdi": "https://raw.githubusercontent.com/Templarian/MaterialDesign-SVG/master/svg/{}.svg",
+    "mdil": "https://raw.githubusercontent.com/Pictogrammers/MaterialDesignLight/master/svg/{}.svg",
+    "material": "https://raw.githubusercontent.com/marella/material-symbols/main/svg/400/rounded/{}.svg",
+    "phosphor": "https://raw.githubusercontent.com/phosphor-icons/core/main/assets/{}.svg",
+    "fa": "https://raw.githubusercontent.com/FortAwesome/Font-Awesome/6.x/svgs/{}.svg",
+}
+_glyph_memo = {}
+
+
+def glyph_cache_dir():
+    """keymap-drawer's own glyph cache, so a glyph fetched by either tool serves both."""
+    try:
+        from platformdirs import user_cache_dir
+        return os.path.join(user_cache_dir("keymap-drawer", False), "glyphs")
+    except ImportError:
+        return os.path.expanduser("~/.cache/keymap-drawer/glyphs")
+
+
+def glyph_names(layers, combos):
+    names = set()
+    for keys in list(layers.values()) + [[c["key"] for c in combos]]:
+        for k in keys:
+            for field in ("glyph", "glyph_hold", "glyph_shifted"):
+                if k.get(field):
+                    names.add(k[field])
+    return names
+
+
+def glyph_url(name, urls):
+    if ":" not in name:
+        return None
+    source, glyph_id = name.split(":", 1)
+    template = urls.get(source)
+    if not template:
+        return None
+    if source in ("phosphor", "fa") and "/" in glyph_id:
+        sub, gid = glyph_id.split("/", 1)
+        glyph_id = f"{sub.lower()}/{gid}" + (f"-{sub.lower()}" if source == "phosphor" and sub.lower() != "regular" else "")
+    return template.format(glyph_id)
+
+
+def resolve_glyphs(names, drawer_cfg, log=None, fetch=True):
+    """name -> SVG text, from draw_config.glyphs, keymap-drawer's cache, or the glyph_urls (fetched
+    in parallel, once, and cached there). Names that cannot be resolved are left out; the page
+    shows text for them. Fetching stops for this run after the first network failure."""
+    dc = (drawer_cfg or {}).get("draw_config", {}) if drawer_cfg else {}
+    inline = dc.get("glyphs") or {}
+    urls = dict(GLYPH_URLS)
+    urls.update(dc.get("glyph_urls") or {})
+    cache = glyph_cache_dir()
+    out, to_fetch = {}, {}
+    for name in sorted(names):
+        if name in inline:
+            out[name] = inline[name]
+        elif name in _glyph_memo:
+            out[name] = _glyph_memo[name]
+        else:
+            path = os.path.join(cache, f"{name.replace('/', '@')}.svg")
+            if os.path.isfile(path):
+                with open(path, encoding="utf-8") as f:
+                    out[name] = _glyph_memo[name] = f.read()
+            elif fetch and not _glyph_memo.get("__offline__"):
+                url = glyph_url(name, urls)
+                if url:
+                    to_fetch[name] = (url, path)
+    if to_fetch:
+        from concurrent.futures import ThreadPoolExecutor
+        from urllib.request import urlopen
+
+        def get(item):
+            name, (url, path) = item
+            try:
+                with urlopen(url, timeout=5) as f:
+                    svg = f.read().decode("utf-8")
+                os.makedirs(cache, exist_ok=True)
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write(svg)
+                return name, svg, None
+            except Exception as e:  # offline, unknown icon: text fallback
+                return name, None, e
+
+        failures = 0
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            for name, svg, err in pool.map(get, to_fetch.items()):
+                if svg:
+                    out[name] = _glyph_memo[name] = svg
+                else:
+                    failures += 1
+                    if log and failures <= 3:
+                        log(f"keymap: glyph {name} not fetched ({err}); showing text")
+        if failures and failures == len(to_fetch):
+            _glyph_memo["__offline__"] = True  # do not retry on every reload while offline
+            if log:
+                log(f"keymap: {failures} glyphs could not be fetched; not retrying until restart")
+    return out
+
+
+def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None, fetch_glyphs=True):
     """Everything the page needs, from parsed config + keymap YAML dicts."""
     layout = physical_layout(doc.get("layout"), drawer_cfg)
     n = len(layout["keys"])
@@ -349,10 +456,14 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source=""):
         raise KeymapError(f"extras.alpha2: unknown layer {extras['alpha2']!r}")
     signal = dict(SIGNAL)
     signal.update({k: int(v) for k, v in (cfg.get("signal") or {}).items()})
+    glyphs = resolve_glyphs(glyph_names(layers, combos), drawer_cfg, log=log, fetch=fetch_glyphs)
+    hud_cfg = dict(cfg.get("hud") or {})
     return {
         "kind": "keymap",
         "source": source,
         "title": cfg.get("title") or "",
+        "hud": {"width": int(hud_cfg.get("width", 598))},
+        "glyphs": glyphs,
         "layout": layout,
         "layers": layers,
         "layer_order": layer_names,
@@ -400,8 +511,9 @@ def find_config(path=None):
 class KeymapSource:
     """Loads config + keymap files and knows when any of them changed."""
 
-    def __init__(self, config_path=None):
+    def __init__(self, config_path=None, log=None):
         self.config_path = find_config(config_path)
+        self.log = log or (lambda *a: print(*a, file=sys.stderr))
         self.cfg = {}
         self.paths = []
         self.mtimes = {}
@@ -444,7 +556,9 @@ class KeymapSource:
         if (cfg.get("layers") or {}).get("dtsi"):
             with open(expand(cfg["layers"]["dtsi"]), encoding="utf-8") as f:
                 dtsi_text = f.read()
-        self.message = build_message(cfg, doc, drawer_cfg, dtsi_text, source=os.path.relpath(paths[1], os.path.expanduser("~")))
+        self.message = build_message(cfg, doc, drawer_cfg, dtsi_text,
+                                     source=os.path.relpath(paths[1], os.path.expanduser("~")), log=self.log,
+                                     fetch_glyphs=getattr(self, "fetch_glyphs", True))
         self.changed()  # snapshot mtimes after a successful load
         return self.message
 
@@ -453,9 +567,11 @@ def main(argv=None):
     p = argparse.ArgumentParser(description="Convert the configured keymap-drawer YAML to the HUD's keymap message.")
     p.add_argument("--config", help=f"config file (default: $ZMKHUD_CONFIG or {DEFAULT_CONFIG})")
     p.add_argument("--dump", action="store_true", help="print the full JSON message (default: a summary)")
+    p.add_argument("--no-fetch", action="store_true", help="do not fetch missing glyphs (offline)")
     args = p.parse_args(argv)
     try:
         src = KeymapSource(args.config)
+        src.fetch_glyphs = not args.no_fetch
         msg = src.load()
     except KeymapError as e:
         print(f"keymap: {e}", file=sys.stderr)
@@ -465,6 +581,7 @@ def main(argv=None):
         print()
     else:
         print(f"{src.config_path}: {msg['source']}: {len(msg['layout']['keys'])} keys, {len(msg['layers'])} drawer layers, "
+              f"{len(msg['glyphs'])} glyphs, "
               f"{len(msg['zmk_layers'])} ZMK layers, {len(msg['combos'])} combos, {len(msg['activators'])} activators, "
               f"base {msg['base']!r}")
     return 0

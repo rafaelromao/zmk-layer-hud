@@ -73,7 +73,11 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 #layer.inferred { border-bottom-style: dashed; }
 #status { font-size: 12px; color: #aab0c0; min-height: 16px; display: flex; }
 #feed { color: #e0af68; }
-#feed.live { color: #9ece6a; }
+#feed:empty { display: none; }
+/* keymap-drawer glyphs, drawn as the SVG it draws, sized like the legend text around them. */
+.glyph { display: inline-flex; align-items: center; justify-content: center; height: 1.15em; }
+.glyph svg { height: 100%; width: auto; fill: currentColor; }
+.key .tap .glyph { height: 1.25em; }
 #title { font-size: 13px; color: #aab0c0; margin-left: auto; letter-spacing: 0.04em; }
 
 /* Active layer banner: the one thing to read at a glance. */

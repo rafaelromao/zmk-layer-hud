@@ -3,7 +3,8 @@
 
 keymap: ~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawer.yaml
 drawer_config: ~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawer-config.yaml
-title: Magic Romak
+# title: Magic Romak          # default: the keyboard's name as it reports itself (Diamond, Rommana)
+# hud: { width: 598 }         # panel width; the height follows the layout
 
 # Every ZMK board (Diamond over USB, Rommana over BLE) is read; add `name: Diamond` to pick one.
 keyboard: { vid: 0x1d50, pid: 0x615e }

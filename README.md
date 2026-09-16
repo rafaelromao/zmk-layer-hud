@@ -111,9 +111,11 @@ Watch the status line under the board:
 4. Type: each key flashes orange on the layer the keyboard reports, and the strip shows the
    characters. A combo lights all its keys and draws its output in a pill above them. A dashed
    flash means the character is not on that layer in your YAML (a legend spelled differently).
-   Macros that type several keys (`->`, `=>`, `&&`) light the key or combo whose legend spells
-   the whole sequence; accents typed as dead key + letter show as one character (`á`).
-5. Hold Shift: the keys whose hold legend carries ⇧ get a green inset (home-row mods).
+   Macros that type several keys (`->`, `=>`, `();`) light the key or combo whose legend spells
+   the sequence, motion keys and hint glyphs aside; accents typed as dead key + letter show as
+   one character (`á`); Option-layer characters (`€`) resolve too.
+5. Hold Shift, or tap a sticky Shift: the keys carrying ⇧ (home-row mods, the sticky key
+   itself) get a green inset until the modifier drops.
 6. Edit a legend in the keymap-drawer YAML and save: the HUD redraws within a second. Break the
    YAML on purpose: the HUD keeps the last good keymap and `run/hudfeed.log` names the error.
 
@@ -153,6 +155,9 @@ of the keys come from keymap-drawer itself, so every layout kind it draws works:
 from its database, `qmk_info_json` and `dts_layout` files. Layers, combos (including
 `trigger_keys`), `$$glyph$$` legends and `▽` transparency are read the same way the drawer reads
 them. Your keymap-drawer config (key sizes, glyphs) can be named with `drawer_config:`.
+`$$glyph$$` legends are drawn as the same SVGs the drawer draws: inline glyphs from your drawer
+config, then keymap-drawer's own glyph cache, then a fetch from the drawer's `glyph_urls`
+(cached there for both tools). Offline, a glyph falls back to its name.
 
 **Layer ids.** For a YAML produced by `keymap parse`, nothing is needed. A curated file whose
 layers do not match ZMK's one to one (several ZMK layers drawn as one, layers not drawn at all)
@@ -162,8 +167,9 @@ is a complete example; `python3 host/keymap.py` explains what is wrong when a ma
 
 All other config keys are optional and documented in the docstring of `host/keymap.py`:
 `keyboard` (pick one of several ZMK boards), `signal` (non-default usages), `base`, `combos`
-(combo layer coverage the drawer understates), `extras` (inference hints), `codes` (see below),
-`title`.
+(combo layer coverage the drawer understates), `extras` (inference hints for firmware without
+the module), `title` (default: the keyboard's own name), `hud.width` (panel width; the height
+follows the layout, so a 3x5+2, a 60% or a rotated layout all fit).
 
 ## Pages
 
@@ -180,9 +186,10 @@ All other config keys are optional and documented in the docstring of `host/keym
   decoded from the same HID reports (`code` is the HID usage, `chars` the US-layout character,
   `name` spelled like Hammerspoon's `hs.keycodes.map`). Held modifier flags light the keys whose
   hold legend carries that modifier (home-row mods).
-- A key that cannot be placed on the live stack (a legend the drawer spells differently from the
-  character the usage maps to) is attributed by inference and drawn **dashed**, so it is never
-  mistaken for keyboard truth.
+- A key that cannot be placed on the live stack lights nothing: a chord whose legend is an icon
+  or a label (shortcut layers) cannot be located from the keys it sends. Spelling the legend or
+  its `shifted` field with the chord (`⌘c`) makes it match. Before the first `setLayers`
+  (firmware without the module) the page falls back to character-based inference, drawn dashed.
 
 A WebSocket host opens the page as `index.html?ws=ws://127.0.0.1:8766` and receives
 `{"kind":"keymap",…}`, `{"kind":"layers","ids":[…]}` and `{"kind":"key",…}`; the ✕ button sends

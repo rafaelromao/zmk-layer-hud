@@ -46,6 +46,7 @@
     momentary: [],            // [{layer, until}]  (inference only)
     oneShot: null,            // layer name        (inference only)
     mods: {},                 // flag -> true while held
+    device: "",               // the keyboard's HID product name
     keyEls: [],
     timers: new Map(),
     scale: 1,
@@ -146,9 +147,19 @@
     return null;
   }
 
-  function fit(tapEl, text) {
-    tapEl.textContent = text;
+  // A legend is text, or the SVG keymap-drawer draws for a $$glyph$$ (sent with the keymap).
+  function legendHTML(text, glyph) {
+    const svg = glyph && state.data.glyphs && state.data.glyphs[glyph];
+    return svg ? `<span class="glyph">${svg}</span>` : null;
+  }
+  function setLegend(el, text, glyph) {
+    const html = legendHTML(text, glyph);
+    if (html) el.innerHTML = html; else el.textContent = text || "";
+  }
+  function fit(tapEl, text, glyph) {
+    setLegend(tapEl, text, glyph);
     tapEl.classList.remove("long", "mid");
+    if (legendHTML(text, glyph)) return;
     if (text.length > 4) tapEl.classList.add("long");
     else if (text.length > 2) tapEl.classList.add("mid");
   }
@@ -184,10 +195,12 @@
       if (r.key.type === "blank") e.classList.add("blank");
       if (r.key.type.startsWith("held")) e.classList.add("held");
       if (activators.has(idx)) e.classList.add("activator");
-      if (heldMods.length && r.key.hold && heldMods.some(g => r.key.hold.includes(g))) e.classList.add("mod");
-      fit(e.querySelector(".tap"), r.key.tap || "");
-      e.querySelector(".hold").textContent = r.key.hold || "";
-      e.querySelector(".shifted").textContent = r.key.shifted || "";
+      // A held modifier lights the keys that carry it: home-row mods (hold legend) and the
+      // modifier keys themselves, including a sticky shift that was tapped (tap legend).
+      if (heldMods.length && heldMods.some(g => (r.key.hold && r.key.hold.includes(g)) || r.key.tap === g)) e.classList.add("mod");
+      fit(e.querySelector(".tap"), r.key.tap || "", r.key.glyph);
+      setLegend(e.querySelector(".hold"), r.key.hold, r.key.glyph_hold);
+      setLegend(e.querySelector(".shifted"), r.key.shifted, r.key.glyph_shifted);
     });
   }
 
@@ -239,12 +252,29 @@
   function renderFeed() {
     const f = $("feed");
     if (!f) return;
+    // Only the two waiting states are worth a line; once the keyboard reports, say nothing.
     if (!state.data) { f.textContent = "waiting for the keymap…"; f.className = ""; return; }
-    if (state.live) { f.textContent = "layers from the keyboard"; f.className = "live"; }
-    else { f.textContent = "waiting for the keyboard's layers…"; f.className = ""; }
+    f.textContent = state.live ? "" : "waiting for the keyboard's layers…";
+    f.className = state.live ? "live" : "";
   }
 
   function render() { if (!state.data) { renderFeed(); return; } renderBanner(); renderKeys(); renderFeed(); }
+
+  // The corner text: the config's title, else the keyboard's own name, else the file's.
+  function renderTitle() {
+    const t = $("title");
+    if (!t) return;
+    const d = state.data || {};
+    t.textContent = d.title || state.device || (d.source ? d.source.split("/").pop().replace(/\.ya?ml$/, "") : "");
+  }
+
+  // Tell a native host how tall the page wants to be (the layout decides), and how wide the
+  // config says. Hosts that listen (host/macos/panel.py) resize their window to it.
+  function postSize() {
+    const width = (state.data && state.data.hud && state.data.hud.width) || null;
+    const height = Math.ceil(document.body.scrollHeight);
+    try { window.webkit.messageHandlers.zmkhud.postMessage(JSON.stringify({ kind: "size", width, height })); } catch (e) { /* not WebKit */ }
+  }
 
   // ---------- resolver ----------
 
@@ -275,8 +305,14 @@
 
     const pill = el("div", "combo-pill");
     pill.appendChild(el("span", "combo-label", "combo"));
-    pill.appendChild(el("span", "combo-tap", key.tap || ""));
-    if (key.hold || key.shifted) pill.appendChild(el("span", "combo-sub", key.hold || key.shifted));
+    const tapEl = el("span", "combo-tap");
+    setLegend(tapEl, key.tap, key.glyph);
+    pill.appendChild(tapEl);
+    if (key.hold || key.shifted) {
+      const sub = el("span", "combo-sub");
+      setLegend(sub, key.hold || key.shifted, key.hold ? key.glyph_hold : key.glyph_shifted);
+      pill.appendChild(sub);
+    }
     pill.style.left = cx + "px"; pill.style.top = cy + "px";
     board.appendChild(pill);
     requestAnimationFrame(() => { pill.classList.add("show"); svg.classList.add("show"); });
@@ -304,13 +340,19 @@
   }
 
   // A legend matches a typed token exactly, through the alias table, or as one side of an
-  // "a|b" legend (a key that produces either).
+  // "a|b" legend (a key that produces either). A multi-key sequence (a macro) matches when its
+  // printable core equals the legend's: motion keys the macro types (End, arrows) and the
+  // glyphs the legend uses to hint at them (⇥ → ⇲ …) are ignored on both sides.
+  const MOTION = /[⇥⇤→←↑↓⇲⇱⇢⇠⏎↵␣⌫⌦\s]/g;
+  const core = s => s.replace(MOTION, "");
   function legendMatches(legend, token) {
     if (!legend) return false;
     if (legend === token) return true;
     if (legend.includes("|") && legend.split("|").some(part => part.trim() === token)) return true;
     const alts = ALIASES[token];
-    return !!(alts && alts.includes(legend));
+    if (alts && alts.includes(legend)) return true;
+    if (token.length > 1) { const c = core(token); return c.length > 1 && c === core(legend); }
+    return false;
   }
 
   const isLetter = t => /^[\p{L}]$/u.test(t);
@@ -423,9 +465,12 @@
     // together spell a legend on the live stack, that key or combo is what was pressed.
     if (matchSequence(token, layers, cmdActive)) return;
 
-    // Live: the keyboard told us the stack; the key must be on it (combos included).
+    // Live: the keyboard told us the stack; the key must be on it (combos included). A chord
+    // (⌘c, ⌃⇧a) first tries the legend spelled with its modifier glyphs.
     if (state.live) {
-      const r = resolveOnStack(token, layers, cmdActive);
+      const f = ev.flags || {};
+      const modsGlyph = ["cmd", "ctrl", "alt", "shift"].filter(m => f[m] && (m !== "shift" || f.cmd || f.ctrl || f.alt)).map(m => MOD_GLYPH[m]).join("");
+      const r = (modsGlyph && resolveOnStack(modsGlyph + token, layers, cmdActive)) || resolveOnStack(token, layers, cmdActive);
       if (r) {
         const extra = r.viaShift ? activatorsOf(r.layer) : [];
         flash(r.hit.concat(extra), r.hit.length > 1 ? "combo" : null);
@@ -436,9 +481,11 @@
         afterKey();
         return;
       }
-      // Not on the real stack: a synthesized key (rehearsal) or a legend the drawer spells
-      // differently. Fall through to inference, drawn dashed so it is never mistaken for truth.
-      setInferred(true);
+      // Not on the real stack: a chord whose legend is a label or an icon (shortcut layers), or
+      // a legend the drawer spells differently. The keyboard is the only source, so guessing
+      // another layer would be wrong: remember the token for a possible macro and light nothing.
+      remember(token, []);
+      return;
     }
 
     const inferredCls = state.live ? "inferred" : "";
@@ -522,7 +569,8 @@
       state.baseLayers = [data.base];
       buildBoard();
       const t = $("title");
-      if (t) t.textContent = data.title || (data.source ? data.source.split("/").pop().replace(/\.ya?ml$/, "") : "");
+      renderTitle();
+      postSize();
       render();
     },
     // The keyboard's active ZMK layer ids (layer 0 omitted). Clears every inference: from now on
@@ -536,6 +584,8 @@
     },
     // Leave live mode (tests, or a host that lost the keyboard).
     clearLayers() { state.live = null; render(); },
+    // The keyboard that was opened (its HID product name): the default title.
+    setDevice(name) { state.device = name || ""; renderTitle(); },
     key(ev) {
       if (typeof ev === "string") ev = JSON.parse(ev);
       handleKey(ev);
@@ -555,7 +605,7 @@
   });
 
   // Rebuild the geometry when the panel is resized (zoom, moveTo another screen).
-  window.addEventListener("resize", () => { if (state.data) { buildBoard(); render(); } });
+  window.addEventListener("resize", () => { if (state.data) { buildBoard(); render(); postSize(); } });
 
   // Generic host: index.html?ws=ws://127.0.0.1:8766 — messages are
   //   {"kind":"keymap",…}  {"kind":"key", ...event}  {"kind":"layers","ids":[…]}   (host/hudfeed.py speaks this).
@@ -570,6 +620,7 @@
         if (m.kind === "keymap") hud.load(m);
         else if (m.kind === "key") hud.key(m);
         else if (m.kind === "layers") hud.setLayers(m.ids);
+        else if (m.kind === "device") hud.setDevice(m.name);
       };
       s.onclose = () => setTimeout(connect, 1000);
     };
