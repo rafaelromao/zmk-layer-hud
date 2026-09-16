@@ -81,9 +81,10 @@ class LayerReader:
     announced set changes. Rescans for the device every `rescan` seconds (hotplug)."""
 
     def __init__(self, on_layers, vid=ZMK_VID, pid=ZMK_PID, name=None, base=BASE_USAGE,
-                 commit=COMMIT_USAGE, report_id=KEYBOARD_REPORT_ID, rescan=2.0, log=print):
+                 commit=COMMIT_USAGE, report_id=KEYBOARD_REPORT_ID, rescan=2.0, log=print, raw=False):
         self.on_layers, self.vid, self.pid, self.name = on_layers, vid, pid, name
         self.base, self.commit, self.report_id, self.rescan, self.log = base, commit, report_id, rescan, log
+        self.raw = raw  # debug only: dumps every report, i.e. also what you type
         self.last = None
         self._open = {}
         self._stop = threading.Event()
@@ -153,6 +154,8 @@ class LayerReader:
                 report = dev.read(64, timeout_ms=500)
                 if not report:
                     continue
+                if self.raw:
+                    self.log(f"hudfeed: {product} raw {bytes(report).hex(' ')}")
                 ids = decode_report(report, self.base, self.commit, self.report_id)
                 if ids is None or ids == self.last:
                     continue
@@ -356,6 +359,7 @@ def parse_args(argv=None):
     p.add_argument("--commit", type=lambda s: int(s, 0), default=COMMIT_USAGE, help="commit-usage of the firmware node")
     p.add_argument("--no-report-id", action="store_true", help="firmware without HID report ids")
     p.add_argument("--debug", action="store_true", help="log layer and mode messages to stderr")
+    p.add_argument("--raw", action="store_true", help="DEBUG ONLY: dump every HID report as hex (includes your typing)")
     return p.parse_args(argv)
 
 
@@ -369,7 +373,7 @@ async def main(args):
             loop.call_soon_threadsafe(lambda: asyncio.ensure_future(hub.send({"kind": "layers", "ids": ids})))
         reader = LayerReader(on_layers, vid=args.vid, pid=args.pid, name=args.name, base=args.base,
                              commit=args.commit, report_id=None if args.no_report_id else KEYBOARD_REPORT_ID,
-                             log=hub.log)
+                             log=hub.log, raw=args.raw)
         reader.start()
 
     if not args.layers_only and not args.no_keys:
