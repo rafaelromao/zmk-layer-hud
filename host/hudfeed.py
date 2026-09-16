@@ -122,6 +122,13 @@ class LayerReader:
                     dev.open_path(path)
                 except (OSError, IOError, ValueError) as e:
                     self.log(f"hudfeed: cannot open {product} ({path!r}): {e}")
+                    if sys.platform == "darwin":
+                        self.log("hudfeed: on macOS this means the app running Python (your terminal, or "
+                                 "Hammerspoon) lacks Input Monitoring (System Settings > Privacy & Security), "
+                                 "or Karabiner-Elements modifies this keyboard's events and has seized it "
+                                 "(Karabiner > Devices: untick it)")
+                    else:
+                        self.log("hudfeed: check hidraw permissions (contrib/udev/60-zmk-layer-hud.rules)")
                     self._open[path] = None  # do not retry every scan
                     continue
                 self._open[path] = dev
