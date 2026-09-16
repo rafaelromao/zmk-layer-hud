@@ -102,6 +102,40 @@ class Ortho(unittest.TestCase):
         self.assertEqual(len(msg["layout"]["keys"]), 10)
 
 
+class Settings(unittest.TestCase):
+    def test_hud_and_feed_defaults_are_filled_in(self):
+        msg = km.build_message({}, DOC)
+        self.assertEqual(msg["hud"], km.HUD_DEFAULTS)
+        self.assertEqual(msg["combo_term"], 50)
+
+    def test_hud_overrides_and_validation(self):
+        msg = km.build_message({"hud": {"width": 700, "opacity": 40}, "combo_term_ms": 30}, DOC)
+        self.assertEqual((msg["hud"]["width"], msg["hud"]["opacity"], msg["combo_term"]), (700, 40, 30))
+        with self.assertRaises(km.KeymapError):
+            km.build_message({"hud": {"nope": 1}}, DOC)
+        with self.assertRaises(km.KeymapError):
+            km.build_message({"hud": {"opacity": 120}}, DOC)
+
+    def test_positions_map(self):
+        msg = km.build_message({}, DOC)
+        self.assertEqual(msg["positions"]["3"], 3)                       # identity by default
+        msg = km.build_message({"positions": [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]}, DOC)
+        self.assertEqual(msg["positions"]["9"], 0)
+        with self.assertRaises(km.KeymapError):
+            km.build_message({"positions": [1, 2]}, DOC)
+
+    def test_relative_paths_resolve_against_the_config_dir(self):
+        self.assertEqual(km.expand("../examples/x.yaml", "/a/b/config"), "/a/b/examples/x.yaml")
+        self.assertEqual(km.expand("/abs/x.yaml", "/a/b/config"), "/abs/x.yaml")
+        self.assertTrue(km.expand("~/x.yaml", "/a").startswith(os.path.expanduser("~")))
+
+    def test_glyph_url_templates(self):
+        urls = km.GLYPH_URLS
+        self.assertTrue(km.glyph_url("mdi:cog", urls).endswith("/svg/cog.svg"))
+        self.assertEqual(km.glyph_url("shift_command", urls), None)     # no source: inline only
+        self.assertIn("bold/x-bold.svg", km.glyph_url("phosphor:bold/x", urls))
+
+
 class Message(unittest.TestCase):
     def test_default_layer_ids_follow_yaml_order(self):
         msg = km.build_message({}, DOC)

@@ -1,37 +1,21 @@
 # zmk-layer-hud
 
-An on-screen HUD for a ZMK keyboard that shows the **real** active layers and lights the keys and
-combos as they are typed. The keyboard reports its layer state itself, on every transition, and
-the picture comes from the keymap-drawer file you already draw your layout with. Nothing is
-guessed from the characters that arrive.
+An on-screen HUD for ZMK keyboards. It shows the layer you are on and lights the keys, combos
+and macros as you press them, drawn from the same keymap-drawer file you document your layout
+with. The keyboard itself reports its layers and key positions, so nothing is guessed.
 
-Two pieces:
+![The HUD stepping through the 3x5 sample](docs/hud.gif)
 
-- a small **ZMK module** (`firmware/`) that announces the active layers inside the ordinary
-  keyboard HID report, using usages no operating system maps to a key;
-- a **host** (`host/`, Python plus a thin window host per OS) that reads those reports, converts
-  your keymap-drawer YAML at runtime, and drives the HUD page (`hud/`).
-
-The keyboard's HID reports are the **only source**: layers, key presses, releases and modifiers
-are all read from them. No OS event tap, no evdev, no other daemon. It works with any ZMK
-keyboard and any keymap-drawer file, and on macOS and Linux the same way.
-
-```
-firmware/     ZMK module: zmk,layer-signal
-host/         hudfeed.py (feeds → WebSocket or stdout), keymap.py (keymap-drawer YAML → HUD keymap),
-              macos/ (PyObjC overlay panel), linux/ (Hyprland layer-shell panel)
-hud/          the pages: layer HUD and typed-keys strip
-config/       example.yaml (any keyboard), diamond.yaml (the author's Diamond, with every option)
-docs/         zmk-setup.md (firmware, generic), keyboards-repo.md (the author's own build system)
-contrib/udev/ hidraw access rule for Linux
-```
+- **One source**: the keyboard's HID reports. No OS event tap, no daemon, no per-app plugin.
+- **Any ZMK keyboard**: a small ZMK module on the keyboard, a keymap-drawer YAML on the host.
+- **Live**: edit the YAML and the HUD redraws; every size and timing lives in one config file.
+- macOS (native overlay panel) and Linux (Hyprland layer-shell panel).
 
 ## Quick start
 
-### 1. Firmware
-
-Follow [docs/zmk-setup.md](docs/zmk-setup.md): add the module to your `west.yml`, put one node in
-your keymap, set `CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE=12` on the central/dongle, build, flash.
+**Keyboard.** Add the module to your ZMK config and one node to your keymap, set
+`CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE=12` on the central/dongle, build, flash. Step by step in
+[docs/zmk-setup.md](docs/zmk-setup.md).
 
 ```c
 / {
@@ -43,245 +27,114 @@ your keymap, set `CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE=12` on the central/dongle,
 };
 ```
 
-### 2. Host environment
-
-macOS (Homebrew Python; Apple's `/usr/bin/python3` has none of the packages):
+**Host.**
 
 ```bash
 git clone https://github.com/rafaelromao/zmk-layer-hud ~/projects/zmk-layer-hud
 cd ~/projects/zmk-layer-hud
-brew install hidapi && make venv          # .venv with hidapi, keymap-drawer, websockets, pyobjc
-```
-
-Linux (Arch/Hyprland shown; the panel needs the system GTK bindings, the feed runs in the venv):
-
-```bash
-git clone https://github.com/rafaelromao/zmk-layer-hud ~/projects/zmk-layer-hud
-cd ~/projects/zmk-layer-hud
-sudo pacman -S python-gobject webkit2gtk-4.1 gtk-layer-shell
-make venv && .venv/bin/pip install websockets   # hidapi + keymap-drawer (+ the WebSocket server)
-sudo cp contrib/udev/60-zmk-layer-hud.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
-```
-
-### 3. Point it at your keymap
-
-```bash
+brew install hidapi && make venv           # macOS (Homebrew Python); Linux: see below
 mkdir -p ~/.config/zmk-layer-hud && cp config/example.yaml ~/.config/zmk-layer-hud/config.yaml
 ```
 
-Edit the one required line:
-
-```yaml
-keymap: ~/path/to/my-keymap.yaml        # the YAML you draw with keymap-drawer
-```
-
-For a file produced by `keymap parse` from your `.keymap`, that is everything: the file's layer
-order is the ZMK layer order. Check it converts:
+Edit the one required line of the config, `keymap:`, to point at your keymap-drawer YAML, check
+it converts, and run:
 
 ```bash
 .venv/bin/python3 host/keymap.py
+host/macos/start.sh                        # macOS;  Linux: bash host/linux/hud.sh
 ```
 
-### 4. Run
+The panel opens on the screen with keyboard focus (drag it anywhere; it remembers). Within two
+seconds the status line disappears and the banner follows your keyboard. `start.sh stop` closes
+it, `start.sh log` tails the logs.
+
+Linux needs the system GTK bindings for the panel and the udev rule for hidraw:
 
 ```bash
-host/macos/start.sh        # macOS: transparent always-on-top panels (PyObjC + WKWebView)
-bash host/linux/hud.sh     # Linux: layer-shell panels on the recording monitor
+sudo pacman -S python-gobject webkit2gtk-4.1 gtk-layer-shell
+make venv && .venv/bin/pip install websockets
+sudo cp contrib/udev/60-zmk-layer-hud.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
-
-macOS opens one always-on-top window, the board with the typed-keys strip below it, on the
-screen that has keyboard focus; drag it anywhere and it reopens there next time
-(`~/.config/zmk-layer-hud/state.json`). The feed runs inside the panel process and writes into
-the page directly. Linux opens the layer-shell panels on the recording monitor and talks to the
-feed over its WebSocket. `stop` closes them, `log` (macOS) tails the panel log. The first run on
-macOS asks for Input Monitoring for the app you launched from (the terminal); grant it once and
-restart.
-
-### 5. Test it
-
-Watch the status line under the board:
-
-1. **"waiting for the keymap…"** for more than a second means the config or the YAML failed;
-   `host/macos/start.sh` already printed the reason, or run `.venv/bin/python3 host/keymap.py`.
-2. **"waiting for the keyboard's layers…"** means the keymap is drawn but no announcement has
-   arrived. Within two seconds of the keyboard being connected (heartbeat) it must flip to
-   **"layers from the keyboard"**. If it does not, `run/hudfeed.log` says whether the keyboard
-   opened at all (`reading <name>`), else see Troubleshooting.
-3. Hold a layer key: the banner names the layer and lists the active ZMK layer names, the key
-   you hold lights blue (activator), and the legends change. Release: back to the base layer.
-4. Type: each key flashes orange on the layer the keyboard reports, and the strip shows the
-   characters. A combo lights all its keys and draws its output in a pill above them. A dashed
-   flash means the character is not on that layer in your YAML (a legend spelled differently).
-   Macros that type several keys (`->`, `=>`, `();`) light the key or combo whose legend spells
-   the sequence, motion keys and hint glyphs aside; accents typed as dead key + letter show as
-   one character (`á`); Option-layer characters (`€`) resolve too.
-5. Hold Shift, or tap a sticky Shift: the keys carrying ⇧ (home-row mods, the sticky key
-   itself) get a green inset until the modifier drops.
-6. Edit a legend in the keymap-drawer YAML and save: the HUD redraws within a second. Break the
-   YAML on purpose: the HUD keeps the last good keymap and `run/hudfeed.log` names the error.
-
-Without the keyboard, `.venv/bin/python3 host/hudfeed.py --stdout --no-ws --debug` prints
-everything the pages would receive; `--raw` adds every report as hex.
 
 ### Try it without a keyboard
 
-Two keymaps from keymap-drawer's own examples ship in `examples/` with ready configs: a 3x5+3
-split (`config/example-3x5.yaml`, layout from the drawer's QMK database, needs the library) and a
-4x12 ortho board with a 2u space bar (`config/example-4x12.yaml`, renders even without it).
+`examples/` holds two keymaps from keymap-drawer's own examples with ready configs: a 3x5+3
+split (`config/example-3x5.yaml`) and a 4x12 ortho board (`config/example-4x12.yaml`).
 
 ```bash
-.venv/bin/python3 host/keymap.py --config config/example-4x12.yaml --dump > hud/keymap.json
-python3 -m http.server -d hud 8765      # open http://localhost:8765/index.html?keymap=keymap.json
+.venv/bin/python3 host/keymap.py --config config/example-3x5.yaml --dump > hud/keymap.json
+python3 -m http.server -d hud 8765         # open http://localhost:8765/index.html?keymap=keymap.json
 ```
 
-In the browser console, `hud.setLayers([1])` switches to the second layer and `hud.pressAt(13)`
-lights ZMK position 13. `ZMKHUD_CONFIG=config/example-4x12.yaml host/macos/start.sh` runs the real
-panel against it. Paths in a config are relative to the config file.
+In the browser console, `hud.setLayers([1])` switches layers and `hud.pressAt(13)` lights a key.
+`docs/make-gif.sh` renders the animation above from this page.
 
-## How the keyboard talks to the host
+## Configuration
 
-There is no spare channel from a keyboard to a host that works over USB and BLE on every OS
-without drivers, except the keyboard report itself. The HID Usage Tables reserve keyboard-page
-usages 0xA5–0xDF: no operating system maps them to a key, so a report carrying them is delivered
-to raw-HID readers and ignored by everything else. The module uses them as a data word:
+`~/.config/zmk-layer-hud/config.yaml` (or `--config` / `ZMKHUD_CONFIG`). Paths may be relative to
+the file. Only `keymap:` is required; [config/diamond.yaml](config/diamond.yaml) shows every key
+with its default and a comment:
 
-- On every layer change (coalesced 3 ms), for each active layer id `L ≥ 1` the usage `0xC0 + L`
-  and then the commit usage `0xDF` are added to the keyboard report, which is sent once; 10 ms
-  later they are removed and the report is sent again. Layer 0 is always active and never sent.
-- A report is a layer announcement if and only if it contains the commit usage, and then it
-  carries the complete set. The host decodes exactly that report and discards every other one,
-  so real keys pressed meanwhile cannot produce a torn state, and a missed report heals on the
-  next change. With `heartbeat-ms` set, the set is repeated while idle so a HUD started
-  mid-session converges.
-- The report is written directly (`zmk_hid_keyboard_press` + `zmk_endpoint_send_report`), not
-  raised as key events, so behaviours that watch key presses (auto-layer, adaptive keys, caps
-  word, sticky keys) do not notice.
-- With `positions;` in the node, every key press also carries its physical position as a pair
-  of usages from 0xA5–0xB5 and 0xB8–0xBF (`(hi − 0xA5) × 8 + (lo − 0xB8)`, up to 136 keys;
-  0xB6/0xB7 are skipped because Linux types Keypad `(` `)` for them), pressed and
-  released within the event so a report never holds two. The HUD then lights the exact key for
-  anything: chords on a shortcut layer, a combo versus a single key with the same output, a
-  macro, a layer or modifier key. Without it the page falls back to matching what the key
-  produced against the legends.
+| key | what |
+|---|---|
+| `keymap`, `drawer_config` | the keymap-drawer YAML, and your drawer config (key sizes, glyphs) |
+| `layers` | how ZMK layer ids map to drawer layers when the YAML is curated (`dtsi` + `map`) |
+| `positions` | ZMK position of each drawer key when the YAML's key order is not the keymap's |
+| `combo_term_ms` | the keymap's combo timeout, so simultaneous presses form a combo |
+| `combos` | layer coverage for combos the drawer lists on fewer layers than the firmware |
+| `keyboard`, `signal` | pick one of several ZMK boards; non-default announcement usages |
+| `title` | corner text (default: the name of the keyboard that is typing) |
+| `hud`, `feed` | every size and timing: panel width and opacity, flash and pill durations, combo slack, dead-key window … |
+| `extras` | inference hints, used only with firmware that reports no positions |
 
-Costs: the report must have room (`CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE=12`), and Linux's evdev
-shows the usages as `KEY_UNKNOWN` events with no keysym. F-keys were considered and rejected:
-they are real keys in many keymaps, macOS has no keycodes above F20, and Linux maps F21–F23 to
-touchpad keysyms.
+For a YAML produced by `keymap parse`, layer order and key order already match the keymap and
+none of the mapping keys are needed.
 
-## The keymap comes from your keymap-drawer file, live
+## How it works
 
-`hudfeed.py` converts the YAML named in the config at start and again whenever the file changes,
-so editing your layout updates the HUD without restarting anything. Positions, sizes and rotation
-of the keys come from keymap-drawer itself, so every layout kind it draws works:
-`cols_thumbs_notation`, `ortho_layout`, `qmk_keyboard` / `zmk_keyboard` / `zmk_shared_layout`
-from its database, `qmk_info_json` and `dts_layout` files. Layers, combos (including
-`trigger_keys`), `$$glyph$$` legends and `▽` transparency are read the same way the drawer reads
-them. Your keymap-drawer config (key sizes, glyphs) can be named with `drawer_config:`.
-`$$glyph$$` legends are drawn as the same SVGs the drawer draws: inline glyphs from your drawer
-config, then keymap-drawer's own glyph cache, then a fetch from the drawer's `glyph_urls`
-(cached there for both tools). Offline, a glyph falls back to its name.
+**The channel.** The HID Usage Tables reserve keyboard-page usages 0xA5–0xDF; no OS maps them
+to a key (macOS emits no event, Linux only `KEY_UNKNOWN`), so a report carrying them reaches
+raw-HID readers and nothing else, over USB and BLE alike. The firmware module writes them straight
+into the keyboard report (behaviours that watch key presses never notice) on every layer change:
+one usage per active layer plus a commit usage that marks the report as a complete set. With
+`positions;` each key press and release also carries its physical position as a usage pair whose
+order tells press from release. Details and limits in [docs/zmk-setup.md](docs/zmk-setup.md).
 
-**Layer ids.** For a YAML produced by `keymap parse`, nothing is needed. A curated file whose
-layers do not match ZMK's one to one (several ZMK layers drawn as one, layers not drawn at all)
-gets a `layers:` section: a `dtsi` with the `#define NAME n` block and, per define, the drawer
-layer that shows it, plus a label and banner class. [config/diamond.yaml](config/diamond.yaml)
-is a complete example; `python3 host/keymap.py` explains what is wrong when a mapping is off.
+**The host.** `host/hudfeed.py` reads the raw reports with hidapi, decodes layers, positions,
+keys and modifiers (US layout, dead keys composed), converts the keymap-drawer YAML with the
+drawer's own layout generators and glyphs, and re-sends it when the file changes. The macOS panel
+(`host/macos/panel.py`, PyObjC) runs it in-process; the Linux panel talks to it over a WebSocket.
 
-All other config keys are optional and documented in the docstring of `host/keymap.py`:
-`keyboard` (pick one of several ZMK boards), `signal` (non-default usages), `base`, `positions`
-(ZMK position of each drawer key), `combo_term_ms` (the keymap's combo timeout), `combos` (combo
-layer coverage the drawer understates), `extras` (inference hints for firmware without the
-module), `title` (default: the keyboard's own name), and every size and timing the HUD and the
-reader use under `hud:` and `feed:` (panel width, flash and pill durations, combo slack, dead-key
-window …), all listed with their defaults in `config/diamond.yaml`. Nothing the HUD does is tuned
-anywhere else. Without keymap-drawer installed, `cols_thumbs_notation` and `ortho_layout` layouts
-still render through built-in ports of the drawer's generators.
-
-## Pages
-
-`hud/index.html` exposes `window.hud`:
-
-- `hud.load(keymap)` — the `{"kind":"keymap", …}` message from `host/keymap.py`: physical layout,
-  layers, combos, the ZMK layer table, hints. Re-sent when the drawer file changes; the page
-  rebuilds the board and keeps the live layer set.
-- `hud.setLayers([ids])` — the keyboard's active ZMK layer ids. From the first call on, the HUD
-  is *live*: the stack is exactly what the keyboard reports (higher ids on top, undrawn layers
-  skipped), the banner names the top layer and lists the set, activator keys light, and a typed
-  key is resolved on that stack, combos included.
-- `hud.pressAt(pos)` — a key press by ZMK position (firmware `positions;`): the exact key
-  lights, positions pressed together that form a combo on the active layers draw its pill, and
-  characters then only feed the strip. `positions:` in the config maps positions to drawer keys
-  when the drawer's key order differs from the keymap's.
-- `hud.key(event)` — `{type: keyDown|keyUp|flagsChanged, name, chars, code, flags, repeat}`,
-  decoded from the same HID reports (`code` is the HID usage, `chars` the US-layout character,
-  `name` spelled like Hammerspoon's `hs.keycodes.map`). Held modifier flags light the keys
-  carrying that modifier (home-row mods, a tapped sticky shift). Without position reports the
-  character is matched against the legends on the live stack, multi-key macros included, and
-  the longest legend wins; a key that matches nothing lights nothing.
-
-A WebSocket host opens the page as `index.html?ws=ws://127.0.0.1:8766` and receives
-`{"kind":"keymap",…}`, `{"kind":"layers","ids":[…]}` and `{"kind":"key",…}`; the ✕ button sends
-`{"kind":"close"}`. `hud/keys.html` is the typed-keys strip (`window.keys.key(event)`). For
-development, `index.html?keymap=keymap.json` loads a dumped message
-(`python3 host/keymap.py --dump > hud/keymap.json`).
-
-## Host feed
-
-`host/hudfeed.py` sends the keymap (and re-sends it on change) and reads the raw HID input
-reports of every matching keyboard with hidapi (any 1d50:615e by default; `keyboard.name` in the
-config narrows it to one, so a USB and a BLE board are both read). From each keyboard report it
-derives the layer set (when the commit usage is present), key presses and releases (the
-difference between consecutive reports) and modifier changes (the modifier byte). Characters
-come from the usage through a US-layout table, which is what a ZMK keymap emits; a
-US-International dead key (`` ` ' ^ ~ " ``) followed within 60 ms by a letter becomes the
-accented character, which is how accent macros type.
-
-The same code runs in-process in the macOS panel (`hudfeed.Feed`), or as a program serving a
-WebSocket on 127.0.0.1:8766 (the Linux panel, a browser) and/or `--stdout` JSON lines.
-
-```
---config PATH        config file (default $ZMKHUD_CONFIG, ~/.config/zmk-layer-hud/config.yaml)
---stdout / --no-ws   output selection               --vid/--pid/--name  override the config's keyboard
---base/--commit      override the config's signal   --no-report-id      firmware without HID report ids
---no-keys            layers only, no key events     --no-keymap         do not send the keymap
---debug              log layer messages             --raw               DEBUG: dump every report as hex
-```
+**The page** (`hud/`) draws the physical layout, lights the exact key for each position while it
+is held, groups positions pressed within the combo term into the combo the drawer defines, keeps
+a one-shot layer on screen through its key's flash, and shows typed characters in a strip below.
 
 ## Troubleshooting
 
-- **`cannot open <keyboard>`** on macOS (`run/hudfeed.log`): the app you launched from needs
-  Input Monitoring (System Settings → Privacy & Security), and
-  Karabiner-Elements must not "modify events" for that keyboard, or it seizes the device.
-  `python3 host/hiddiag.py` prints the raw IOKit code that names the blocker.
-- **`cannot open`** on Linux: hidraw permissions; install `contrib/udev/60-zmk-layer-hud.rules`
-  and replug (BLE: reconnect).
-- **No `layers` lines** although the device opened: the firmware is not announcing. Run with
-  `--raw`: 9-byte reports mean the report size was not raised (6 slots); no `df` byte means the
-  node is missing from the build. Check `CONFIG_ZMK_LAYER_SIGNAL=y` in the build's `.config`.
-- **Keys drawn dashed** while live: the key's usage maps to a character the drawer spells
-  differently (macros, unknown `$$glyph$$` ids). Extend `GLYPHS` in `host/keymap.py` or the legend.
-- **`python3 host/keymap.py` fails**: it says which layer, combo or mapping is wrong.
+- **`cannot open <keyboard>`** (macOS, `run/hudfeed.log`): grant Input Monitoring to the app you
+  launch from, and untick the keyboard under Karabiner-Elements → Devices ("modify events"
+  seizes it). `host/hiddiag.py` prints the raw IOKit code. Linux: hidraw permissions (udev rule).
+- **No `layers` lines**: the firmware isn't announcing. `hudfeed.py --raw` shows the reports:
+  9-byte reports mean the report size was not raised; no `df` byte means the node is missing.
+- **Wrong keys light** on a curated keymap: `positions:` is missing or wrong; the feed logs
+  `key position N is not in the keymap's … drawer keys`.
+- **A key stays lit ~5 s**: the firmware reports presses but not releases (rebuild with the
+  current module).
+- `ZMKHUD_DEBUG=1 host/macos/start.sh` logs every layer and position message with timestamps.
 
-## Tests
+## Development
 
 ```bash
-make test            # firmware encode/decode policy (C) + host decoder and keymap conversion (Python)
-make keymap          # check the configured keymap-drawer YAML converts
+make test        # firmware encode/decode policy (C) + host decoder and keymap conversion (Python)
+make keymap      # check the configured keymap-drawer YAML converts
 ```
 
-The C and Python decoder tests share their vectors; `firmware/src/layer_signal_policy.h` is the
-one definition of the wire format. Without keymap-drawer installed the conversion tests cover the
-built-in `cols_thumbs_notation` fallback only.
+`firmware/src/layer_signal_policy.h` is the single definition of the wire format; the C and
+Python tests share its vectors.
 
-## Known limits
+## Limits
 
-- Layer ids must stay below 31 (30 with the default usages).
-- Without `positions;` in the firmware node, keys are located by the character their HID usage
-  maps to (US layout), on the layer the keyboard reports; a macro is recognised when the keys it
-  types, within 200 ms, spell a legend on the active layers, and chords on icon-only layers
-  cannot be located.
-- Without keymap-drawer installed only `cols_thumbs_notation` and `ortho_layout` layouts render,
+- Layer ids below 31, key positions below 136.
+- Without keymap-drawer installed, only `cols_thumbs_notation` and `ortho_layout` layouts render
   and combos given as `trigger_keys` are skipped.
-- The Linux host is ported from an earlier kit and not yet run on hardware; the macOS panel is
-  new and needs its first run on a real display (window levels, transparency, Input Monitoring).
+- The Linux panel is ported from an earlier kit and not yet run on hardware.

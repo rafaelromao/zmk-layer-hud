@@ -1,9 +1,10 @@
-# From keymap-drawer's examples (caksoylar/keymap-drawer, examples/3x5.yaml), unchanged:
-# a 3x5+3 split with home-row mods, four layers and nine combos. Its physical layout comes from
-# keymap-drawer's QMK layout database (corne_rotated), so it needs the library installed.
+# From keymap-drawer's examples (caksoylar/keymap-drawer, examples/3x5.yaml): a 3x5+3 split with
+# home-row mods, four layers and nine combos. One change: the original takes its physical layout
+# from keymap-drawer's QMK database (`qmk_keyboard: corne_rotated`, `layout_name:
+# LAYOUT_split_3x5_3`), which needs the library; the equivalent cols+thumbs notation below
+# renders everywhere. Swap the two lines back if you have keymap-drawer installed.
 layout:
-  qmk_keyboard: corne_rotated
-  layout_name: LAYOUT_split_3x5_3
+  cols_thumbs_notation: "33333+3 3+33333"
 layers:
   DEF:
     - [Q, W, E, R, T, Y, U, I, O, P]
