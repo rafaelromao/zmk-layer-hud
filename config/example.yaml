@@ -1,0 +1,27 @@
+# zmk-layer-hud config for any ZMK keyboard whose keymap-drawer YAML came from
+#   keymap parse -z my.keymap > my-keymap.yaml
+# There the YAML layer order is the ZMK layer order, so nothing else is needed:
+# layer id n is the n-th layer of the file.
+#
+# Copy to ~/.config/zmk-layer-hud/config.yaml.
+
+keymap: ~/path/to/my-keymap.yaml
+
+# Optional: the keymap-drawer config you draw with (key sizes, glyphs).
+# drawer_config: ~/path/to/keymap-drawer-config.yaml
+
+# Optional: pick one keyboard when several ZMK boards are connected (substring of the product name).
+# keyboard: { vid: 0x1d50, pid: 0x615e, name: Corne }
+
+# Optional: only when the firmware node uses non-default usages.
+# signal: { base: 0xC0, commit: 0xDF }
+
+# Optional: refine what the banner shows per layer id or name.
+# layers:
+#   map:
+#     3: { label: Navigation }
+#     4: { drawer: null, label: Adjust }     # a layer the YAML does not draw
+
+# Optional: layers entered for one key (sticky-key style), shown as one-shot while inferring.
+# extras:
+#   sticky: [Sym]

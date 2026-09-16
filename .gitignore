@@ -1,10 +1,13 @@
-# generated from the keyboards repo by hud/keymap/build.py
-hud/keymap.json
-hud/keymap.js
-
 # runtime
 run/
 build/
 __pycache__/
 *.pyc
 .DS_Store
+
+# local dumps of the keymap message (python3 host/keymap.py --dump > hud/keymap.json for browser tests)
+hud/keymap.json
+hud/keymap.js
+
+# editor/agent local config
+.claude/

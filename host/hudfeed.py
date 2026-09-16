@@ -8,6 +8,9 @@ here. On macOS, Hammerspoon (host/macos/hud.lua) runs this script with `--stdout
 --layers-only` and injects each line into its webviews itself.
 
 Messages (one JSON object per message or line):
+  {"kind":"keymap", ...}                  the keymap (layout, layers, combos, ZMK layer table), built
+                                          from the keymap-drawer YAML named in the config by host/keymap.py;
+                                          re-sent whenever that file, the config or the layer dtsi changes
   {"kind":"layers","ids":[2,22]}          active ZMK layer ids, layer 0 omitted (always active)
   {"kind":"key","type":"keyDown","name":"space","chars":" ","code":57,
    "flags":{"cmd":false,"ctrl":false,"alt":false,"shift":false,"fn":false},"repeat":false}
@@ -43,6 +46,9 @@ import subprocess
 import sys
 import threading
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import keymap as keymap_mod  # noqa: E402  (host/keymap.py)
 
 ZMK_VID, ZMK_PID = 0x1D50, 0x615E
 BASE_USAGE, COMMIT_USAGE = 0xC0, 0xDF
@@ -169,6 +175,30 @@ class LayerReader:
             except Exception:
                 pass
             self._open.pop(path, None)
+
+
+# ---------- keymap (config + keymap-drawer YAML, live reload) ----------
+
+class KeymapFeed:
+    """Sends the keymap message on start and whenever one of its source files changes. A broken
+    edit is logged and the last good keymap stays on screen."""
+
+    def __init__(self, source, send, log=print, poll=1.0):
+        self.source, self.send, self.log, self.poll = source, send, log, poll
+
+    async def run(self):
+        while True:
+            if self.source.changed():
+                try:
+                    msg = self.source.load()
+                    self.log(f"hudfeed: keymap {msg['source']}: {len(msg['layout']['keys'])} keys, "
+                             f"{len(msg['layers'])} drawer layers, {len(msg['zmk_layers'])} ZMK layers")
+                    await self.send(msg)
+                except keymap_mod.KeymapError as e:
+                    self.log(f"hudfeed: keymap not (re)loaded: {e}")
+                except Exception as e:  # a half-saved YAML, a typo in the config
+                    self.log(f"hudfeed: keymap not (re)loaded: {type(e).__name__}: {e}")
+            await asyncio.sleep(self.poll)
 
 
 # ---------- key events (Linux evdev) ----------
@@ -311,15 +341,15 @@ class Hub:
     def __init__(self, stdout=False, debug=False):
         self.stdout, self.debug = stdout, debug
         self.clients = set()
-        self.cache = {}  # kind -> last message, for "layers" and "mode"
+        self.cache = {}  # kind -> last message, for "keymap", "layers" and "mode" (replayed to new clients)
 
     def log(self, *a):
         print(*a, file=sys.stderr, flush=True)
 
     async def send(self, msg):
-        if msg["kind"] in ("layers", "mode"):
+        if msg["kind"] in ("keymap", "layers", "mode"):
             self.cache[msg["kind"]] = msg
-        if self.debug and msg["kind"] != "key":
+        if self.debug and msg["kind"] not in ("key", "keymap"):
             self.log("hudfeed:", json.dumps(msg, ensure_ascii=False))
         data = json.dumps(msg, ensure_ascii=False)
         if self.stdout:
@@ -348,15 +378,18 @@ def parse_args(argv=None):
     p.add_argument("--stdout", action="store_true", help="print messages as JSON lines (macOS host)")
     p.add_argument("--no-ws", action="store_true", help="do not serve the WebSocket")
     p.add_argument("--port", type=int, default=int(os.environ.get("ZMKHUD_PORT", "8766")))
-    p.add_argument("--layers-only", action="store_true", help="only the raw-HID layer feed (no keys, no mode)")
+    p.add_argument("--config", help=f"zmk-layer-hud config (default: $ZMKHUD_CONFIG or {keymap_mod.DEFAULT_CONFIG})")
+    p.add_argument("--layers-only", action="store_true",
+                   help="only what comes from the keyboard: keymap + raw-HID layers (no OS key feed, no daemon mode)")
     p.add_argument("--no-keys", action="store_true", help="skip the evdev key feed")
     p.add_argument("--no-mode", action="store_true", help="skip the daemon decision feed")
     p.add_argument("--no-layers", action="store_true", help="skip the raw-HID layer feed")
-    p.add_argument("--vid", type=lambda s: int(s, 0), default=ZMK_VID)
-    p.add_argument("--pid", type=lambda s: int(s, 0), default=ZMK_PID)
-    p.add_argument("--name", help="substring of the HID product string to select one keyboard")
-    p.add_argument("--base", type=lambda s: int(s, 0), default=BASE_USAGE, help="base-usage of the firmware node")
-    p.add_argument("--commit", type=lambda s: int(s, 0), default=COMMIT_USAGE, help="commit-usage of the firmware node")
+    p.add_argument("--no-keymap", action="store_true", help="skip the keymap feed (pages keep whatever they have)")
+    p.add_argument("--vid", type=lambda s: int(s, 0), help="keyboard vendor id (default: config `keyboard.vid`, else ZMK's)")
+    p.add_argument("--pid", type=lambda s: int(s, 0), help="keyboard product id (default: config `keyboard.pid`, else ZMK's)")
+    p.add_argument("--name", help="substring of the HID product string to select one keyboard (default: config `keyboard.name`)")
+    p.add_argument("--base", type=lambda s: int(s, 0), help="base-usage of the firmware node (default: config `signal.base`, else 0xC0)")
+    p.add_argument("--commit", type=lambda s: int(s, 0), help="commit-usage of the firmware node (default: config `signal.commit`, else 0xDF)")
     p.add_argument("--no-report-id", action="store_true", help="firmware without HID report ids")
     p.add_argument("--debug", action="store_true", help="log layer and mode messages to stderr")
     p.add_argument("--raw", action="store_true", help="DEBUG ONLY: dump every HID report as hex (includes your typing)")
@@ -368,11 +401,33 @@ async def main(args):
     loop = asyncio.get_running_loop()
     tasks = []
 
+    # The config names the keymap and, optionally, the keyboard and the signal usages.
+    source, cfg = None, {}
+    try:
+        source = keymap_mod.KeymapSource(args.config)
+        source.load()  # fail early with a readable reason; KeymapFeed sends it and watches the files
+        cfg = source.cfg
+    except keymap_mod.KeymapError as e:
+        hub.log(f"hudfeed: {e}")
+        if not args.no_keymap:
+            hub.log("hudfeed: continuing without a keymap; the pages show nothing until one arrives")
+    except Exception as e:
+        hub.log(f"hudfeed: config/keymap failed: {type(e).__name__}: {e}")
+    if source is not None and not args.no_keymap:
+        tasks.append(KeymapFeed(source, hub.send, hub.log).run())
+    kb = cfg.get("keyboard") or {}
+    sig = cfg.get("signal") or {}
+    vid = args.vid if args.vid is not None else int(kb.get("vid", ZMK_VID))
+    pid = args.pid if args.pid is not None else int(kb.get("pid", ZMK_PID))
+    name = args.name if args.name is not None else kb.get("name")
+    base = args.base if args.base is not None else int(sig.get("base", BASE_USAGE))
+    commit = args.commit if args.commit is not None else int(sig.get("commit", COMMIT_USAGE))
+
     if not args.no_layers:
         def on_layers(ids):
             loop.call_soon_threadsafe(lambda: asyncio.ensure_future(hub.send({"kind": "layers", "ids": ids})))
-        reader = LayerReader(on_layers, vid=args.vid, pid=args.pid, name=args.name, base=args.base,
-                             commit=args.commit, report_id=None if args.no_report_id else KEYBOARD_REPORT_ID,
+        reader = LayerReader(on_layers, vid=vid, pid=pid, name=name, base=base,
+                             commit=commit, report_id=None if args.no_report_id else KEYBOARD_REPORT_ID,
                              log=hub.log, raw=args.raw)
         reader.start()
 

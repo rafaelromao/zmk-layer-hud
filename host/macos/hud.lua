@@ -11,9 +11,10 @@
 --   hs -c "zmkhud.stop()"            -- or the ✕ button on the panel
 --
 -- Feeds:
---   * layers    host/hudfeed.py --stdout --layers-only, run as an hs.task: it reads the keyboard's
---               raw HID reports (python-hidapi) and prints {"kind":"layers","ids":[…]} whenever
---               the firmware's layer signal changes. Hammerspoon injects hud.setLayers(ids).
+--   * keymap    host/hudfeed.py --stdout --layers-only, run as an hs.task, converts the keymap-drawer
+--   * layers    YAML named in ~/.config/zmk-layer-hud/config.yaml into {"kind":"keymap",…} (re-sent
+--               when the file changes) and reads the keyboard's raw HID reports (python-hidapi) for
+--               {"kind":"layers","ids":[…]}. Hammerspoon injects hud.load(...) / hud.setLayers(ids).
 --               Input Monitoring: the task inherits Hammerspoon's grant (it already taps keys).
 --   * keys      hs.eventtap on keyDown/keyUp/flagsChanged, forwarded to both pages.
 --   * vim mode  the zmk-vim-mode daemon log (~/Library/Logs/zmk-vim-mode.log, launchd's stderr):
@@ -83,6 +84,10 @@ local function onFeedLine(line)
     M.lastLayers = os.date("%H:%M:%S ") .. line
     -- An empty Lua table encodes as [] here, which is what setLayers wants.
     js("hud.setLayers(" .. hs.json.encode(msg.ids) .. ")")
+  elseif msg.kind == "keymap" then
+    -- The line is already JSON: hand it to the page verbatim (hudfeed re-sends it on edits).
+    M.lastKeymap = os.date("%H:%M:%S ") .. tostring(msg.source)
+    js("hud.load(" .. line .. ")")
   end
 end
 
@@ -321,9 +326,9 @@ end
 -- zmkhud.selftest(): what the HUD sees — for `hs -c "print(zmkhud.selftest())"`.
 function M.selftest()
   local size = hs.fs.attributes(LOG, "size")
-  return string.format("ready=%s tap=%s feed=%s python=%s layers=%s log=%s size=%s last=%s",
+  return string.format("ready=%s tap=%s feed=%s python=%s keymap=%s layers=%s log=%s size=%s last=%s",
     tostring(ready), tostring(tap and tap:isEnabled()), tostring(feed and feed:isRunning()),
-    tostring(M.python), tostring(M.lastLayers), LOG, tostring(size), tostring(lastLine))
+    tostring(M.python), tostring(M.lastKeymap), tostring(M.lastLayers), LOG, tostring(size), tostring(lastLine))
 end
 
 -- KeyCastr draws its own stacking bubbles wherever it was last placed; the strip replaces it.

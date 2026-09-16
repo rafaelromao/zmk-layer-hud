@@ -44,19 +44,22 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 .chip.provisional { outline: 2px dashed rgba(255,255,255,0.45); outline-offset: -2px; }
 #reason { margin-left: 8px; padding-left: 12px; border-left: 1px solid #3b4261; font-size: 12px; color: #aab0c0; white-space: nowrap; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; line-height: 14px; padding-top: 3px; }
 #reason:empty { display: none; }
-#board { display: flex; gap: 34px; align-items: flex-start; position: relative; }
-.hand { position: relative; }
+/* The board is the keymap-drawer physical layout scaled to the panel width; every key is
+   positioned (and rotated) from the drawer's coordinates, so any keyboard renders. */
+#board { position: relative; width: 100%; min-height: 40px; }
 .key {
-  position: absolute; width: var(--key); height: var(--key);
+  position: absolute;
   box-sizing: border-box; border-radius: 9px;
   background: var(--key-bg); color: var(--key-fg); border: 1px solid var(--key-border);
-  display: grid; grid-template-rows: 14px 1fr 14px; align-items: center; justify-items: center;
+  display: grid; grid-template-rows: calc(var(--kh, 62px) * 0.23) 1fr calc(var(--kh, 62px) * 0.23);
+  align-items: center; justify-items: center;
   transition: background 90ms ease, transform 90ms ease, box-shadow 90ms ease;
 }
-.key .tap { font-size: 20px; font-weight: 600; line-height: 1; max-width: 100%; overflow: hidden; white-space: nowrap; }
-.key .tap.long { font-size: 12px; }
-.key .tap.mid { font-size: 15px; }
-.key .hold, .key .shifted { font-size: 9px; color: #5b6172; line-height: 1; max-width: 100%; overflow: hidden; white-space: nowrap; }
+/* Legends scale with the key height (--kh, set by hud.js from the drawn layout). */
+.key .tap { font-size: calc(var(--kh, 62px) * 0.32); font-weight: 600; line-height: 1; max-width: 100%; overflow: hidden; white-space: nowrap; }
+.key .tap.long { font-size: calc(var(--kh, 62px) * 0.19); }
+.key .tap.mid { font-size: calc(var(--kh, 62px) * 0.24); }
+.key .hold, .key .shifted { font-size: calc(var(--kh, 62px) * 0.145); color: #5b6172; line-height: 1; max-width: 100%; overflow: hidden; white-space: nowrap; }
 .key.trans { background: #e6e8ef; }
 .key.trans .tap, .key.trans .hold, .key.trans .shifted { color: var(--key-dim); }
 .key.blank { background: #dcdfe8; border-style: dashed; }

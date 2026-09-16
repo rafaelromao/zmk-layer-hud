@@ -23,7 +23,8 @@ fi
 
 case "${1:-start}" in
   start)
-    "$PYTHON" "$ROOT/hud/keymap/build.py"
+    # Fails early with a readable reason if the config or the keymap-drawer YAML is off.
+    "$PYTHON" "$ROOT/host/keymap.py" ${ZMKHUD_CONFIG:+--config "$ZMKHUD_CONFIG"}
     if ! "$PYTHON" -c 'import hid' 2>/dev/null; then
       cat >&2 <<MSG
 warning: $PYTHON has no 'hid' module, so the keyboard's layer signal cannot be read and the HUD

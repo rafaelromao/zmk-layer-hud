@@ -1,51 +1,52 @@
 /* zmk-layer-hud — renderer + keymap resolver.
  *
- * Data comes from keymap.json (built from the keyboards repo by keymap/build.py).
- * The host drives it through window.hud:
- *   hud.load(data)                     keymap.json contents
+ * The page carries no keymap: the host sends one, built at runtime from a keymap-drawer YAML by
+ * host/keymap.py (physical layout, layers, combos, the ZMK layer id table, optional hints), and
+ * sends it again whenever that file changes. The host drives the page through window.hud:
+ *   hud.load(keymap)                   the {"kind":"keymap", ...} message
  *   hud.setLayers([ids])               the keyboard's active ZMK layer ids (ground truth; the
  *                                      firmware's layer signal, decoded by host/hudfeed.py)
  *   hud.setMode(code, mode, reason)    the zmk-vim-mode daemon's decision (banner reason; also the
- *                                      vim layers while no layer signal has arrived yet)
+ *                                      vim layers while no layer signal has arrived yet, if the
+ *                                      keymap config defines `codes`)
  *   hud.key({type, chars, name, flags}) one keyboard event from the host's key feed
  *   hud.press([idx...])                light keys directly (tests)
  *
  * Two modes:
  *   live      after the first setLayers: the stack is exactly what the keyboard reports; a key is
  *             resolved on that stack (combos included). A key that cannot be placed there is
- *             attributed by the old inference and drawn dashed ("inferred").
+ *             attributed by inference and drawn dashed ("inferred").
  *   emulated  before any setLayers (old firmware, or a rehearsal typing synthesized keys): the
- *             daemon's code gives the vim layers and everything else is inferred from the typed
- *             characters, as the showcase HUD did.
+ *             daemon's code gives the base layers and everything else is inferred from the typed
+ *             characters, guided by the config's `extras`.
  *
- * In a browser (http://) it accepts real key events, so the page can be developed without a host.
+ * In a browser (http://) it accepts real key events and `?keymap=keymap.json` loads a dumped
+ * message, so the page can be developed without a host.
  */
 (function () {
   "use strict";
 
-  const KEY = 62, GAP = 6;
+  const GAP = 6;             // px between keys at the drawn scale
   const PRESS_MS = 320;
   const MOMENTARY_MS = 700;
 
-  // Layers searched when a key is not on the active stack, in order of likelihood.
-  const SEARCH_ORDER = ["alpha2", "shifted1", "shifted2", "numbers", "symbols", "nav", "shortcuts",
-    "media", "text", "func", "macros", "toggles", "ç-extension"];
-  const ONE_SHOT = new Set(["alpha2", "shifted1", "shifted2", "ç-extension"]);
-
-  // Named keys → the legend text the drawer YAML uses for them.
+  // Named keys → the legend text keymap-drawer keymaps usually use for them.
   const NAMED = {
     space: "␣", return: "↵", escape: "⎋", delete: "⌫", forwarddelete: "⌦", tab: "⇥",
     left: "←", right: "→", up: "↑", down: "↓", home: "⇱", end: "⇲",
     pagedown: "⇟", pageup: "⇞",
   };
-  const ESC_LEGENDS = new Set(["⎋"]);
+  // Alternative spellings a drawer file may use for the same named key.
+  const ALIASES = { "␣": ["space", "spc", "SPACE"], "↵": ["⏎", "enter", "ret", "RET"], "⎋": ["esc", "ESC"],
+    "⌫": ["bspc", "BSPC", "backspace"], "⌦": ["del", "DEL"], "⇥": ["tab", "TAB"] };
+  const ESC_LEGENDS = new Set(["⎋", "esc", "ESC"]);
   // Modifier flags → the glyph a hold legend uses for them (home-row mods light while held).
   const MOD_GLYPH = { shift: "⇧", ctrl: "⌃", alt: "⌥", cmd: "⌘" };
 
   const state = {
     data: null,
     code: 0, mode: "off", reason: "", provisional: false,
-    baseLayers: ["alpha1"],   // emulated mode: from the daemon's code
+    baseLayers: [],           // emulated mode: from the daemon's code (or just the base layer)
     live: null,               // {ids: [..], at} once the keyboard has reported its layers
     inferred: false,          // last key was placed by inference while live
     momentary: [],            // [{layer, until}]  (inference only)
@@ -53,7 +54,12 @@
     mods: {},                 // flag -> true while held
     keyEls: [],
     timers: new Map(),
+    scale: 1,
   };
+
+  const $ = id => document.getElementById(id);
+  const base = () => state.data ? state.data.base : null;
+  const extras = () => (state.data && state.data.extras) || {};
 
   // ---------- rendering ----------
 
@@ -64,37 +70,49 @@
     return e;
   }
 
+  // Keys are placed from keymap-drawer's physical layout (centre x/y, width, height, rotation in
+  // the drawer's units), scaled so the whole board spans the panel width.
   function buildBoard() {
     const lay = state.data.layout;
-    for (const hand of ["L", "R"]) {
-      const host = document.getElementById("hand-" + hand);
-      host.innerHTML = "";
-      const cols = hand === "L" ? lay.left_cols : lay.right_cols;
-      host.style.width = (cols * (KEY + GAP) - GAP) + "px";
-      host.style.height = ((lay.rows + 1) * (KEY + GAP) - GAP + 8) + "px";
-    }
+    const board = $("board");
+    board.innerHTML = "";
     state.keyEls = [];
-    for (const k of lay.keys) {
-      const host = document.getElementById("hand-" + k.hand);
+    const width = board.clientWidth || 570;
+    const scale = width / lay.width;
+    state.scale = scale;
+    board.style.height = Math.ceil(lay.height * scale) + "px";
+    // Legends scale with the typical key height (see --kh in hud.css).
+    const kh = Math.min(...lay.keys.map(k => k.h)) * scale - GAP;
+    board.style.setProperty("--kh", Math.max(20, kh) + "px");
+    lay.keys.forEach((k, idx) => {
       const e = el("div", "key");
-      e.dataset.idx = k.idx;
-      e.title = `#${k.idx} ${k.name} (ZMK ${k.zmk})`;
-      const y = k.row * (KEY + GAP) + (k.thumb ? 8 : 0);
-      e.style.left = (k.col * (KEY + GAP)) + "px";
-      e.style.top = y + "px";
+      e.dataset.idx = idx;
+      e.title = `#${idx}`;
+      const w = k.w * scale - GAP, h = k.h * scale - GAP;
+      e.style.left = (k.x * scale - w / 2) + "px";
+      e.style.top = (k.y * scale - h / 2) + "px";
+      e.style.width = w + "px";
+      e.style.height = h + "px";
+      if (k.r) e.style.transform = `rotate(${k.r}deg)`;
+      if (h < 50) e.classList.add("short");
       e.appendChild(el("div", "shifted"));
       e.appendChild(el("div", "tap"));
       e.appendChild(el("div", "hold"));
-      host.appendChild(e);
-      state.keyEls[k.idx] = e;
-    }
+      board.appendChild(e);
+      state.keyEls[idx] = e;
+    });
   }
 
-  // ZMK layer id → keymap.json entry ({name, drawer, label, cls}).
-  function zl(id) { return (state.data.zmk_layers || {})[String(id)] || null; }
+  // ZMK layer id → keymap entry ({name, drawer, label, cls}); falls back to the YAML order.
+  function zl(id) {
+    const t = state.data.zmk_layers || {};
+    if (t[String(id)]) return t[String(id)];
+    const name = state.data.layer_order[id];
+    return name ? { id, name, drawer: name, label: name, cls: id === 0 ? "off" : "momentary" } : null;
+  }
 
-  // The live stack as drawer layer names, top first: higher ZMK ids win, transparent/undrawn
-  // layers are skipped, duplicates (NUM and NUM_CP both show "numbers") collapse.
+  // The live stack as drawer layer names, top first: higher ZMK ids win, undrawn layers are
+  // skipped, duplicates (two ids drawn by one layer) collapse; the base layer is always last.
   function liveStack() {
     const names = [];
     const ids = state.live.ids.slice().sort((a, b) => b - a);
@@ -102,7 +120,7 @@
       const z = zl(id);
       if (z && z.drawer && !names.includes(z.drawer)) names.push(z.drawer);
     }
-    if (!names.includes("alpha1")) names.push("alpha1");
+    if (!names.includes(base())) names.push(base());
     return names;
   }
 
@@ -111,6 +129,7 @@
     if (state.live) return liveStack();
     const s = [];
     for (let i = state.baseLayers.length - 1; i >= 0; i--) s.push(state.baseLayers[i]);
+    if (!s.includes(base())) s.push(base());
     return s;
   }
 
@@ -125,7 +144,7 @@
   // The binding that wins at idx, walking the stack through transparent keys.
   function resolveBinding(idx, layersTopFirst) {
     for (const name of layersTopFirst) {
-      const k = state.data.layers[name][idx];
+      const k = state.data.layers[name] && state.data.layers[name][idx];
       if (!k) continue;
       if (k.type === "trans") continue;
       return { key: k, layer: name };
@@ -140,6 +159,10 @@
     else if (text.length > 2) tapEl.classList.add("mid");
   }
 
+  function activatorsOf(layer) {
+    return state.data.activators.filter(a => a.layer === layer).map(a => a.idx);
+  }
+
   function renderKeys() {
     const layers = stack();
     const activators = new Set();
@@ -147,48 +170,46 @@
     if (state.oneShot) for (const a of activatorsOf(state.oneShot)) activators.add(a);
     if (state.live) {
       // The thumbs (or sticky keys) that reach the live layers light as activators too.
-      for (const name of liveStack()) if (name !== "alpha1") for (const a of activatorsOf(name)) activators.add(a);
+      for (const name of liveStack()) if (name !== base()) for (const a of activatorsOf(name)) activators.add(a);
     }
     const heldMods = Object.keys(state.mods).filter(f => state.mods[f]).map(f => MOD_GLYPH[f]).filter(Boolean);
-    for (const k of state.data.layout.keys) {
-      const e = state.keyEls[k.idx];
-      const r = resolveBinding(k.idx, layers);
+    state.data.layout.keys.forEach((k, idx) => {
+      const e = state.keyEls[idx];
+      const r = resolveBinding(idx, layers);
       e.classList.remove("trans", "blank", "held", "activator", "mod");
       if (!r) {
         e.classList.add("blank");
         fit(e.querySelector(".tap"), "");
         e.querySelector(".hold").textContent = "";
         e.querySelector(".shifted").textContent = "";
-        continue;
+        return;
       }
       const top = layers[0];
-      if (r.layer !== top && state.data.layers[top][k.idx].type === "trans") e.classList.add("trans");
+      const topKey = state.data.layers[top] && state.data.layers[top][idx];
+      if (r.layer !== top && topKey && topKey.type === "trans") e.classList.add("trans");
       if (r.key.type === "blank") e.classList.add("blank");
       if (r.key.type.startsWith("held")) e.classList.add("held");
-      if (activators.has(k.idx)) e.classList.add("activator");
+      if (activators.has(idx)) e.classList.add("activator");
       if (heldMods.length && r.key.hold && heldMods.some(g => r.key.hold.includes(g))) e.classList.add("mod");
       fit(e.querySelector(".tap"), r.key.tap || "");
       e.querySelector(".hold").textContent = r.key.hold || "";
       e.querySelector(".shifted").textContent = r.key.shifted || "";
-    }
+    });
   }
 
-  const LAYER_LABEL = { alpha1: "Alpha 1", alpha2: "Alpha 2", shifted1: "Shift", shifted2: "Shift · Alpha 2",
-    "ç-extension": "Ç extension", vim: "Vim", numbers: "Numbers", symbols: "Symbols", nav: "Navigation",
-    shortcuts: "Shortcuts", media: "Media / mouse", text: "Text navigation", func: "Function keys",
-    macros: "Macros", toggles: "Toggles", mehs: "Mehs" };
+  // A drawer layer's banner label: the ZMK table's label when one id is drawn by it, else its name.
+  function layerLabel(name) {
+    const t = state.data.zmk_layers || {};
+    for (const z of Object.values(t)) if (z.drawer === name) return z.label;
+    return name;
+  }
 
-  // Emulated mode: the layer the daemon's code puts the keyboard in.
+  // Emulated mode: the daemon's code (when the config defines codes), else the base layer.
   function codeSummary() {
-    switch (state.code) {
-      case 1: return { name: "Vim normal", cls: "vim", sub: "VIM_NORMAL" };
-      case 3: return { name: "Vim visual", cls: "vim", sub: "VIM_VISUAL over VIM_NORMAL" };
-      case 4: case 7: return { name: "Vim normal", cls: "vim", sub: "inferred by the keyboard (legacy)" };
-      case 2: return { name: "Vim insert", cls: "vim-insert", sub: "VIM_INSERT is transparent: alpha 1 shows through" };
-      case 5: return { name: "Vim cmdline", cls: "vim-cmdline", sub: "VIM_CMDLINE is transparent: alpha 1 shows through" };
-      case 6: return { name: "Raw", cls: "raw", sub: "no vim layers: keys pass through untouched" };
-      default: return { name: "Alpha 1", cls: "off", sub: "no vim editor focused" };
-    }
+    const codes = state.data.codes;
+    const spec = codes && (codes[String(state.code)] || codes["0"]);
+    if (spec) return { name: spec.label, cls: spec.cls || "off", sub: spec.sub || spec.layers.join(" · ") };
+    return { name: layerLabel(base()), cls: "off", sub: "" };
   }
 
   // Live mode: the highest active layer names the banner; the sub line lists the whole set.
@@ -196,11 +217,11 @@
     const ids = state.live.ids.slice().sort((a, b) => b - a);
     const entries = ids.map(zl).filter(Boolean);
     const names = entries.map(z => z.name);
-    if (!entries.length) return { name: "Alpha 1", cls: "off", sub: "ALPHA1 only" };
+    if (!entries.length) return { name: layerLabel(base()), cls: "off", sub: (zl(0) || {}).name || base() };
     // A vim layer under a held layer keeps the vim tint on the board; the banner names the top.
     const top = entries[0];
-    const vim = entries.find(z => z.cls.startsWith("vim"));
-    const cls = top.cls === "momentary" && vim ? "momentary" : top.cls;
+    const vim = entries.find(z => (z.cls || "").startsWith("vim"));
+    const cls = top.cls === "momentary" && vim ? "momentary" : (top.cls || "momentary");
     const sub = names.join(" · ") + (vim && top !== vim ? " · over " + vim.label.toLowerCase() : "");
     return { name: top.label, cls, sub };
   }
@@ -209,43 +230,39 @@
 
   // What to print on the banner: an inferred held/one-shot layer on top of the base, else the base.
   function activeSummary() {
-    const base = baseSummary();
+    const b = baseSummary();
     const top = state.oneShot || (state.momentary.length ? state.momentary[state.momentary.length - 1].layer : null);
-    if (!top) return base;
-    return { name: LAYER_LABEL[top] || top, cls: "momentary",
-      sub: (state.oneShot ? "one shot" : "held") + (state.live ? " (inferred)" : "") + " · over " + base.name.toLowerCase() };
+    if (!top) return b;
+    return { name: layerLabel(top), cls: "momentary",
+      sub: (state.oneShot ? "one shot" : "held") + (state.live ? " (inferred)" : "") + " · over " + b.name.toLowerCase() };
   }
 
   function renderBanner() {
     const a = activeSummary();
-    const layer = document.getElementById("layer");
-    layer.className = a.cls + (state.provisional ? " provisional" : "") + (state.inferred ? " inferred" : "");
-    document.getElementById("layerName").textContent = a.name;
-    document.getElementById("layerSub").textContent = a.sub;
-    document.getElementById("reason").textContent = state.reason || "";
-    document.getElementById("board").className = a.cls;
+    $("layer").className = a.cls + (state.provisional ? " provisional" : "") + (state.inferred ? " inferred" : "");
+    $("layerName").textContent = a.name;
+    $("layerSub").textContent = a.sub;
+    $("reason").textContent = state.reason || "";
+    $("board").className = a.cls;
   }
 
   function renderFeed() {
-    const f = document.getElementById("feed");
+    const f = $("feed");
     if (!f) return;
+    if (!state.data) { f.textContent = "waiting for the keymap…"; f.className = ""; return; }
     if (state.live) { f.textContent = "layers from the keyboard"; f.className = "live"; }
     else { f.textContent = "waiting for the keyboard's layers…"; f.className = ""; }
   }
 
-  function render() { renderBanner(); renderKeys(); renderFeed(); }
+  function render() { if (!state.data) { renderFeed(); return; } renderBanner(); renderKeys(); renderFeed(); }
 
   // ---------- resolver ----------
-
-  function activatorsOf(layer) {
-    return state.data.activators.filter(a => a.layer === layer).map(a => a.idx);
-  }
 
   // A combo is drawn the way keymap-drawer draws it: a pill with the combo's legend at the
   // midpoint of its keys, on top of the flashed keys, fading after a moment.
   const COMBO_MS = 1000;
   function showCombo(positions, key) {
-    const board = document.getElementById("board");
+    const board = $("board");
     const bb = board.getBoundingClientRect();
     const centers = positions.map(idx => {
       const r = state.keyEls[idx].getBoundingClientRect();
@@ -282,7 +299,7 @@
   }
 
   function comboFor(layer, token) {
-    return state.data.combos.find(c => c.layers.includes(layer) && c.key.tap === token) || null;
+    return state.data.combos.find(c => c.layers.includes(layer) && legendMatches(c.key.tap, token)) || null;
   }
 
   function flash(indices, cls) {
@@ -290,27 +307,36 @@
       const e = state.keyEls[idx];
       if (!e) continue;
       e.classList.add("pressed");
-      if (cls) for (const c of cls.split(" ")) e.classList.add(c);
+      if (cls) for (const c of cls.split(" ")) if (c) e.classList.add(c);
       clearTimeout(state.timers.get(idx));
       state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo", "inferred"), PRESS_MS));
     }
   }
 
-  // Letter combos on alpha1 (ns=q, mg=k, …) are vim commands, never typing: outside the vim
-  // layer they are ignored, so a typed q/x/z/… is attributed to the sticky alpha2 layer.
-  function findOnLayer(layer, token, letterCombos) {
+  // A legend matches a typed token exactly, through the alias table, or as one side of an
+  // "a|b" legend (a key that produces either).
+  function legendMatches(legend, token) {
+    if (!legend) return false;
+    if (legend === token) return true;
+    if (legend.includes("|") && legend.split("|").some(part => part.trim() === token)) return true;
+    const alts = ALIASES[token];
+    return !!(alts && alts.includes(legend));
+  }
+
+  const isLetter = t => /^[\p{L}]$/u.test(t);
+
+  // Letter-producing combos on the base layer are commands (e.g. vim motions) rather than typing
+  // when `extras.letter_combos_on` is set: outside those layers they are ignored, so a typed
+  // letter missing from the base is attributed to the secondary alpha layer instead.
+  function findOnLayer(layer, token, commandLayersActive) {
     const keys = state.data.layers[layer];
-    for (let i = 0; i < keys.length; i++) if (keys[i].tap === token && keys[i].type !== "trans") return [i];
-    const isLetter = /^[a-zA-ZçÇ]$/.test(token);
+    if (!keys) return null;
+    for (let i = 0; i < keys.length; i++) if (keys[i].type !== "trans" && legendMatches(keys[i].tap, token)) return [i];
+    const gate = extras().letter_combos_on;
     for (const c of state.data.combos) {
-      if (!c.layers.includes(layer) || c.key.tap !== token) continue;
-      if (isLetter && layer === "alpha1" && !letterCombos) continue;
+      if (!c.layers.includes(layer) || !legendMatches(c.key.tap, token)) continue;
+      if (gate && gate.length && isLetter(token) && layer === base() && !commandLayersActive) continue;
       return c.positions.slice();
-    }
-    // magic key: the drawer legend is "h|v"; either letter lights it
-    if (layer === "alpha1" && (token === "h" || token === "v")) {
-      const i = keys.findIndex(k => k.tap === "h|v");
-      if (i >= 0) return [i];
     }
     return null;
   }
@@ -335,11 +361,13 @@
     if (state.momentary.length !== before) render();
   }
 
-  // Emulated mode only: the transitions the firmware itself performs, so the banner moves on the
-  // keystroke; the daemon's decision replaces it a moment later. Live mode gets them from the keyboard.
+  // Emulated mode only, and only with zmk-vim-mode codes configured: the transitions the vim
+  // firmware itself performs, so the banner moves on the keystroke; the daemon's decision replaces
+  // it a moment later. Live mode gets them from the keyboard.
   function inferVim(token) {
-    if (state.live) return;
-    if (!state.data.codes[String(state.code)].vim) return;
+    if (state.live || !state.data.codes) return;
+    const cur = state.data.codes[String(state.code)];
+    if (!cur || !cur.vim) return;
     const inNormal = state.code === 1 || state.code === 4 || state.code === 7;
     if (inNormal || state.code === 3) {
       if ("iaosc".includes(token)) return provisional(2);
@@ -351,10 +379,12 @@
   }
 
   function provisional(code) {
+    const spec = state.data.codes[String(code)];
+    if (!spec) return;
     state.code = code;
-    state.mode = state.data.codes[String(code)].mode;
+    state.mode = spec.mode || "";
     state.provisional = true;
-    state.baseLayers = state.data.codes[String(code)].layers.slice();
+    state.baseLayers = spec.layers.slice();
     render();
   }
 
@@ -365,13 +395,20 @@
   }
 
   // Resolve a typed token on the given stack (top first). Returns {hit, layer} or null.
-  function resolveOnStack(token, layers, vimActive) {
-    const searchStack = /^[A-ZÀ-Ý]$/.test(token) && !layers.includes("shifted1") ? ["shifted1", ...layers] : layers;
+  // An uppercase letter may live on a shifted layer the config names among the sticky ones.
+  function resolveOnStack(token, layers, commandLayersActive) {
+    const shiftLayers = (extras().sticky || []).filter(l => /shift/i.test(l) && !layers.includes(l));
+    const searchStack = /^\p{Lu}$/u.test(token) ? [...shiftLayers, ...layers] : layers;
     for (const layer of searchStack) {
-      const hit = findOnLayer(layer, token, vimActive);
-      if (hit) return { hit, layer };
+      const hit = findOnLayer(layer, token, commandLayersActive);
+      if (hit) return { hit, layer, viaShift: shiftLayers.includes(layer) };
     }
     return null;
+  }
+
+  function commandLayersActive(layers) {
+    const gate = extras().letter_combos_on;
+    return !gate || !gate.length || gate.some(l => layers.includes(l));
   }
 
   function handleKey(ev) {
@@ -385,13 +422,13 @@
     if (!token) return;
 
     const layers = stack();
-    const vimActive = layers.includes("vim");
+    const cmdActive = commandLayersActive(layers);
 
     // Live: the keyboard told us the stack; the key must be on it (combos included).
     if (state.live) {
-      const r = resolveOnStack(token, layers, vimActive);
+      const r = resolveOnStack(token, layers, cmdActive);
       if (r) {
-        const extra = r.layer === "shifted1" && !layers.includes("shifted1") ? activatorsOf("shifted1") : [];
+        const extra = r.viaShift ? activatorsOf(r.layer) : [];
         flash(r.hit.concat(extra), r.hit.length > 1 ? "combo" : null);
         if (r.hit.length > 1) { const c = comboFor(r.layer, token); if (c) showCombo(r.hit, c.key); }
         setInferred(false);
@@ -404,28 +441,30 @@
       setInferred(true);
     }
 
-    // 0. Typing goes through the two alpha layers: a letter that is not a plain alpha1 key
-    //    comes from the sticky alpha2 layer (one shot), never from an alpha1 letter combo.
     const inferredCls = state.live ? "inferred" : "";
-    if (/^[a-zçA-ZÇ]$/.test(token) && !vimActive && !state.oneShot) {
+    const ex = extras();
+    const sticky = new Set(ex.sticky || []);
+    // 0. Typing goes through two alpha layers when the config names a secondary one: a letter
+    //    that is not a plain base-layer key comes from the sticky alpha2 layer (one shot).
+    if (ex.alpha2 && isLetter(token) && !cmdActive && !state.oneShot) {
       const lower = token.toLowerCase();
-      const onAlpha1 = state.data.layers.alpha1.some(k => k.tap === lower && k.type !== "trans");
-      const direct = state.data.layers.alpha2.findIndex(k => k.tap === lower && k.type !== "trans");
-      if (!onAlpha1 && direct >= 0) {
-        state.oneShot = "alpha2";
+      const onBase = state.data.layers[base()].some(k => k.type !== "trans" && legendMatches(k.tap, lower));
+      const direct = state.data.layers[ex.alpha2].findIndex(k => k.type !== "trans" && legendMatches(k.tap, lower));
+      if (!onBase && direct >= 0) {
+        state.oneShot = ex.alpha2;
         render();
-        const extra = activatorsOf("alpha2").concat(/^[A-ZÇ]$/.test(token) ? activatorsOf("shifted1") : []);
+        const shiftLayer = (ex.sticky || []).find(l => /shift/i.test(l));
+        const extra = activatorsOf(ex.alpha2).concat(/^\p{Lu}$/u.test(token) && shiftLayer ? activatorsOf(shiftLayer) : []);
         flash([direct].concat(extra), inferredCls);
         inferVim(token);
         afterKey();
         return;
       }
     }
-    // 1. the active stack, top first (uppercase letters live on shifted1)
-    const r = resolveOnStack(token, layers, vimActive);
+    // 1. the active stack, top first
+    const r = resolveOnStack(token, layers, cmdActive);
     if (r) {
-      const extra = [];
-      if (r.layer === "shifted1" && !layers.includes("shifted1")) extra.push(...activatorsOf("shifted1"));
+      const extra = r.viaShift ? activatorsOf(r.layer) : [];
       flash(r.hit.concat(extra), [r.hit.length > 1 ? "combo" : "", inferredCls].join(" ").trim() || null);
       if (r.hit.length > 1) { const c = comboFor(r.layer, token); if (c) showCombo(r.hit, c.key); }
       touchLayer(r.layer);
@@ -433,18 +472,17 @@
       afterKey();
       return;
     }
-    // 2. any other layer → a momentary or one-shot activation the host could not see.
-    //    Letters most likely came from the sticky alpha2 layer; anything else from a held
-    //    numbers/symbols thumb (":" in normal mode is the symbols layer's th_colon_vim, not
-    //    alpha2's combo).
-    const order = /^[a-zA-ZçÇ]$/.test(token)
-      ? SEARCH_ORDER
-      : SEARCH_ORDER.filter(l => !ONE_SHOT.has(l)).concat(SEARCH_ORDER.filter(l => ONE_SHOT.has(l)));
+    // 2. any other layer → a momentary or one-shot activation the host could not see. Letters
+    //    most likely came from a sticky layer; anything else from a held one.
+    const search = ex.search || state.data.layer_order.filter(l => l !== base());
+    const order = isLetter(token)
+      ? search
+      : search.filter(l => !sticky.has(l)).concat(search.filter(l => sticky.has(l)));
     for (const layer of order) {
-      if (!state.data.layers[layer]) continue;
-      const hit = findOnLayer(layer, token, vimActive);
+      if (layers.includes(layer)) continue;
+      const hit = findOnLayer(layer, token, cmdActive);
       if (hit) {
-        if (ONE_SHOT.has(layer)) state.oneShot = layer; else armMomentary(layer);
+        if (sticky.has(layer)) state.oneShot = layer; else armMomentary(layer);
         render();
         flash(hit.concat(activatorsOf(layer)), [hit.length > 1 ? "combo" : "", inferredCls].join(" ").trim() || null);
         if (hit.length > 1) { const c = comboFor(layer, token); if (c) showCombo(hit, c.key); }
@@ -474,17 +512,28 @@
   // ---------- public API ----------
 
   const hud = {
+    // The keymap message. Re-sent by the host when the drawer file changes: geometry and legends
+    // are rebuilt, the live layer set and the daemon code are kept.
     load(data) {
+      if (typeof data === "string") data = JSON.parse(data);
+      if (!data || !data.layout || !data.layers) return;
       state.data = data;
+      state.momentary = []; state.oneShot = null;
+      if (!state.baseLayers.length) state.baseLayers = [data.base];
       buildBoard();
+      const t = $("title");
+      if (t) t.textContent = data.title || (data.source ? data.source.split("/").pop().replace(/\.ya?ml$/, "") : "");
       hud.setMode(state.code, state.mode, state.reason);
     },
     setMode(code, mode, reason) {
       code = Number(code) || 0;
-      const spec = state.data.codes[String(code)] || state.data.codes["0"];
-      state.code = code; state.mode = mode || spec.mode; state.reason = reason || "";
+      state.code = code; state.mode = mode || ""; state.reason = reason || "";
       state.provisional = false;
-      state.baseLayers = spec.layers.slice();
+      if (!state.data) return;
+      const codes = state.data.codes;
+      const spec = codes && (codes[String(code)] || codes["0"]);
+      state.baseLayers = spec ? spec.layers.slice() : [state.data.base];
+      if (spec && !mode) state.mode = spec.mode || "";
       render();
     },
     // The keyboard's active ZMK layer ids (layer 0 omitted). Clears every inference: from now on
@@ -506,23 +555,28 @@
 
   // ✕: tell the host to close. Hammerspoon listens on a user-content controller; a
   // WebSocket host receives {"kind":"close"}.
-  const closeBtn = document.getElementById("close");
+  const closeBtn = $("close");
   if (closeBtn) closeBtn.addEventListener("click", () => {
     try { window.webkit.messageHandlers.zmkhud.postMessage("close"); } catch (e) { /* not WebKit */ }
     if (hud.socket && hud.socket.readyState === 1) hud.socket.send(JSON.stringify({ kind: "close" }));
   });
 
+  // Rebuild the geometry when the panel is resized (zoom, moveTo another screen).
+  window.addEventListener("resize", () => { if (state.data) { buildBoard(); render(); } });
+
   // Generic host: index.html?ws=ws://127.0.0.1:8766 — messages are
-  //   {"kind":"key", ...event}  {"kind":"mode","code":N,"mode":"…","reason":"…"}  {"kind":"layers","ids":[…]}
-  // (host/hudfeed.py speaks this).
-  const wsUrl = new URLSearchParams(location.search).get("ws");
+  //   {"kind":"keymap",…}  {"kind":"key", ...event}  {"kind":"mode","code":N,"mode":"…","reason":"…"}
+  //   {"kind":"layers","ids":[…]}     (host/hudfeed.py speaks this).
+  const params = new URLSearchParams(location.search);
+  const wsUrl = params.get("ws");
   if (wsUrl) {
     const connect = () => {
       const s = new WebSocket(wsUrl);
       hud.socket = s;
       s.onmessage = e => {
         const m = JSON.parse(e.data);
-        if (m.kind === "key") hud.key(m);
+        if (m.kind === "keymap") hud.load(m);
+        else if (m.kind === "key") hud.key(m);
         else if (m.kind === "mode") hud.setMode(m.code, m.mode, m.reason);
         else if (m.kind === "layers") hud.setLayers(m.ids);
       };
@@ -531,13 +585,13 @@
     connect();
   }
 
-  // Data is inlined by keymap/build.py as keymap.js. Real key events are accepted too, so the
-  // page can be exercised in a browser; inside the Hammerspoon webview the window never has
-  // focus, so only the host's feed reaches it.
-  if (window.KEYMAP) hud.load(window.KEYMAP);
-  if (location.protocol.startsWith("http")) window.addEventListener("keydown", e => {   // dev only
+  // Dev: index.html?keymap=keymap.json (python3 host/keymap.py --dump > hud/keymap.json) and real
+  // key events, so the page can be exercised in a browser without a host.
+  if (params.get("keymap")) fetch(params.get("keymap")).then(r => r.json()).then(hud.load).catch(e => console.error(e));
+  if (location.protocol.startsWith("http")) window.addEventListener("keydown", e => {
     const name = e.key.length === 1 ? null : e.key.toLowerCase().replace("arrow", "").replace("backspace", "delete").replace("enter", "return");
     hud.key({ type: "keyDown", chars: e.key.length === 1 ? e.key : "", name, flags: {} });
     if (e.key !== "F5" && !e.metaKey) e.preventDefault();
   });
+  render();
 })();

@@ -1,0 +1,75 @@
+# zmk-layer-hud config for Rafael's Diamond (rafaelromao/keyboards).
+# Copy to ~/.config/zmk-layer-hud/config.yaml and adjust the paths.
+
+keymap: ~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawer.yaml
+drawer_config: ~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawer-config.yaml
+title: Magic Romak
+
+keyboard: { vid: 0x1d50, pid: 0x615e, name: Diamond }
+signal: { base: 0xC0, commit: 0xDF }
+
+# The drawer YAML is a curated view (six vim layers drawn as one, copy layers folded into
+# their originals), so the ZMK layer ids come from config.dtsi and each define says which
+# drawer layer shows it. null = transparent or not drawn.
+layers:
+  dtsi: ~/projects/keyboards/src/definitions/config.dtsi
+  map:
+    ALPHA1:      { drawer: alpha1, label: Alpha 1, class: off }
+    ALT_OS:      { drawer: null, label: Alt OS }
+    VIM_NORMAL:  { drawer: vim, label: Vim normal, class: vim }
+    VIM_VISUAL:  { drawer: vim, label: Vim visual, class: vim }
+    VIM_CHANGE:  { drawer: vim, label: Vim change, class: vim }
+    VIM_INSERT:  { drawer: null, label: Vim insert, class: vim-insert }
+    VIM_REPLACE: { drawer: vim, label: Vim replace, class: vim }
+    VIM_CMDLINE: { drawer: null, label: Vim cmdline, class: vim-cmdline }
+    CASE_A1:     { drawer: shifted1, label: Caps word }
+    CPLK_A1:     { drawer: shifted1, label: Caps line }
+    SHORTS:      { drawer: shortcuts, label: Shortcuts }
+    TOGS:        { drawer: toggles, label: Toggles }
+    MEHS:        { drawer: mehs, label: Mehs }
+    ALPHA2:      { drawer: alpha2, label: Alpha 2 }
+    NUM:         { drawer: numbers, label: Numbers }
+    SYM:         { drawer: symbols, label: Symbols }
+    SEN_CASE:    { drawer: shifted1, label: Sentence case }
+    CCEDIL:      { drawer: ç-extension, label: Ç extension }
+    SFT_A2:      { drawer: shifted2, label: Shift · Alpha 2 }
+    CASE_A2:     { drawer: shifted2, label: Caps · Alpha 2 }
+    CASE_CCEDIL: { drawer: ç-extension, label: Caps · Ç }
+    ALTREP2:     { drawer: null, label: Alt repeat }
+    NAV:         { drawer: nav, label: Navigation }
+    NUM_CP:      { drawer: numbers, label: Numbers }
+    SYM_CP:      { drawer: symbols, label: Symbols }
+    MEDIA:       { drawer: media, label: Media / mouse }
+    NAV_CP:      { drawer: nav, label: Navigation }
+    TEXT:        { drawer: text, label: Text navigation }
+    FUN:         { drawer: func, label: Function keys }
+    MACROS:      { drawer: macros, label: Macros }
+
+base: alpha1
+
+# zmk-vim-mode daemon codes (3 LED bits): what the keyboard is in before its own layers arrive.
+codes:
+  0: { layers: [alpha1], label: Alpha 1, class: off, sub: no vim editor focused, mode: off }
+  1: { layers: [alpha1, vim], label: Vim normal, class: vim, sub: VIM_NORMAL, vim: true, mode: normal }
+  2: { layers: [alpha1], label: Vim insert, class: vim-insert, sub: "VIM_INSERT is transparent: alpha 1 shows through", vim: true, mode: insert }
+  3: { layers: [alpha1, vim], label: Vim visual, class: vim, sub: VIM_VISUAL over VIM_NORMAL, vim: true, mode: visual }
+  4: { layers: [alpha1, vim], label: Vim normal, class: vim, sub: inferred by the keyboard (legacy), vim: true, mode: legacy }
+  5: { layers: [alpha1], label: Vim cmdline, class: vim-cmdline, sub: "VIM_CMDLINE is transparent: alpha 1 shows through", vim: true, mode: cmdline }
+  6: { layers: [alpha1], label: Raw, class: raw, sub: "no vim layers: keys pass through untouched", mode: raw }
+  7: { layers: [alpha1, vim], label: Vim normal, class: vim, sub: inferred by the keyboard (legacy), vim: true, mode: legacy }
+
+# The drawer lists Enter and Tab under "shortcuts" only (drawn separately), but the firmware
+# has them on nearly every layer (cb_enter RHM RHR R0, cb_tab RTM RTR R0 in combos.dtsi).
+combos:
+  - positions: [11, 12, 22]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, nav, media, text, shortcuts, mehs, func, macros, toggles]
+  - positions: [4, 5, 22]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, nav, media, text, shortcuts, mehs, func, macros, toggles]
+
+# Inference hints, used only for a key the keyboard's live stack cannot explain (synthesized
+# keys in a rehearsal, legends the drawer spells differently).
+extras:
+  sticky: [alpha2, shifted1, shifted2, ç-extension]
+  alpha2: alpha2
+  letter_combos_on: [vim]
+  search: [alpha2, shifted1, shifted2, numbers, symbols, nav, shortcuts, media, text, func, macros, toggles, ç-extension]

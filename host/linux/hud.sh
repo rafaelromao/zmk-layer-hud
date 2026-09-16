@@ -24,7 +24,7 @@ if [ "${1:-start}" = stop ]; then
   exit 0
 fi
 python3 -c "import hid, evdev, websockets, gi; gi.require_version('Gtk', '3.0'); gi.require_version('WebKit2', '4.1'); gi.require_version('GtkLayerShell', '0.1')"
-python3 "$ROOT/hud/keymap/build.py"
+python3 "$ROOT/host/keymap.py"   # validates the config + keymap-drawer YAML before the panel opens
 stop
 sleep 0.5
 nohup python3 -u "$HERE/panel.py" >"$RUN/panel.log" 2>&1 &
