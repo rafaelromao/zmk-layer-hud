@@ -2,7 +2,9 @@
 # keyboards repo (west, inside its container); see docs/keyboards-repo.md.
 
 CC ?= cc
-PYTHON ?= python3
+# keymap-drawer needs Python >= 3.10; Apple's /usr/bin/python3 is 3.9, so prefer Homebrew's or
+# a versioned interpreter. Override with PYTHON=/path/to/python3.
+PYTHON ?= $(shell command -v /opt/homebrew/bin/python3 || command -v python3.13 || command -v python3.12 || command -v python3.11 || command -v python3.10 || command -v python3)
 
 .PHONY: all test test-firmware test-host keymap venv clean help
 
@@ -15,9 +17,12 @@ VENV_PKGS += pyobjc-framework-Cocoa pyobjc-framework-WebKit
 endif
 
 venv: ## create .venv with hidapi, keymap-drawer, websockets (+ pyobjc on macOS; brew install hidapi first)
-	$(PYTHON) -m venv .venv
-	.venv/bin/python3 -m pip install --quiet --upgrade pip $(VENV_PKGS)
-	@echo "venv ready: .venv/bin/python3 (the host scripts pick it up)"
+	@$(PYTHON) -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' || \
+	  { echo "need Python >= 3.10 (found $$($(PYTHON) --version) at $(PYTHON)); brew install python or pass PYTHON=" >&2; exit 1; }
+	$(PYTHON) -m venv --clear .venv
+	.venv/bin/python3 -m pip install --quiet --upgrade pip
+	.venv/bin/python3 -m pip install --quiet $(VENV_PKGS)
+	@echo "venv ready: .venv/bin/python3 ($$(.venv/bin/python3 --version)); the host scripts pick it up"
 
 test: test-firmware test-host ## run every test suite
 
