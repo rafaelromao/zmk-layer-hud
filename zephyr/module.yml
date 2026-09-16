@@ -1,0 +1,6 @@
+name: zmk-layer-hud
+build:
+  cmake: firmware
+  kconfig: firmware/Kconfig
+  settings:
+    dts_root: firmware

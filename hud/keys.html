@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>typed keys</title>
+<style>
+  :root { --font: "Hack Nerd Font", Menlo, monospace; }
+  html, body { margin: 0; background: transparent; overflow: hidden; }
+  #keys { display: flex; align-items: flex-end; gap: 10px; padding: 8px 12px; height: 56px; font-family: var(--font); }
+  .chip {
+    padding: 8px 14px; border-radius: 12px; background: rgba(20, 22, 30, 0.88); color: #e6e8ef;
+    border: 1px solid rgba(255,255,255,0.1);
+    font-size: 26px; font-weight: 700; line-height: 1; white-space: pre; letter-spacing: 0.02em;
+    opacity: 0; transform: translateY(6px); transition: opacity 120ms ease, transform 120ms ease;
+  }
+  .chip.show { opacity: 1; transform: none; }
+  .chip.special { color: #7aa2f7; }
+  .chip.chord { color: #e0af68; }
+  .chip.fade { opacity: 0; transition: opacity 500ms ease; }
+</style>
+</head>
+<body>
+<div id="keys"></div>
+<script>
+(function () {
+  const host = document.getElementById("keys");
+  const NAMED = { space: "␣", return: "⏎", escape: "⎋", delete: "⌫", forwarddelete: "⌦", tab: "⇥",
+    left: "←", right: "→", up: "↑", down: "↓", home: "⇱", end: "⇲", pageup: "⇞", pagedown: "⇟",
+    f1: "F1", f2: "F2", f3: "F3", f4: "F4", f5: "F5", f6: "F6", f7: "F7", f8: "F8", f9: "F9", f10: "F10", f11: "F11", f12: "F12" };
+  const MODS = [["cmd", "⌘"], ["ctrl", "⌃"], ["alt", "⌥"], ["shift", "⇧"]];
+  const IDLE_MS = 1800, MAX_CHIPS = 5;
+  let current = null, lastAt = 0, timer = null;
+
+  function newChip(text, cls) {
+    const c = document.createElement("div");
+    c.className = "chip " + (cls || "");
+    c.textContent = text;
+    host.appendChild(c);
+    requestAnimationFrame(() => c.classList.add("show"));
+    while (host.children.length > MAX_CHIPS) host.firstChild.remove();
+    return c;
+  }
+  function armFade() {
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      for (const c of host.children) c.classList.add("fade");
+      setTimeout(() => { host.innerHTML = ""; current = null; }, 520);
+    }, IDLE_MS);
+  }
+  window.keys = {
+    key(ev) {
+      if (typeof ev === "string") ev = JSON.parse(ev);
+      if (ev.type !== "keyDown" || ev.repeat) return;
+      // An empty Lua table arrives as [] and arrays have a method named "shift": normalise.
+      const flags = (ev.flags && !Array.isArray(ev.flags)) ? ev.flags : {};
+      const mods = MODS.filter(([k]) => flags[k]).map(([, sym]) => sym).join("");
+      const chord = flags.cmd || flags.ctrl || flags.alt;
+      const named = ev.name && NAMED[ev.name];
+      const now = Date.now();
+      if (!chord && !named && ev.chars && ev.chars.length === 1 && ev.chars >= " ") {
+        if (current && now - lastAt < 1200 && current.textContent.length < 22) {
+          current.textContent += ev.chars;
+        } else {
+          current = newChip(ev.chars);
+        }
+      } else {
+        const label = mods + (named || (ev.chars && ev.chars >= " " ? ev.chars.toUpperCase() : (ev.name || "?").toUpperCase()));
+        newChip(label, chord ? "chord" : "special");
+        current = null;
+      }
+      lastAt = now;
+      armFade();
+    },
+  };
+  const wsUrl = new URLSearchParams(location.search).get("ws");   // keys.html?ws=ws://127.0.0.1:8766
+  if (wsUrl) {
+    const connect = () => {
+      const s = new WebSocket(wsUrl);
+      s.onmessage = e => { const m = JSON.parse(e.data); if (m.kind === "key") window.keys.key(m); };
+      s.onclose = () => setTimeout(connect, 1000);
+    };
+    connect();
+  }
+  if (location.protocol.startsWith("http") && !wsUrl) window.addEventListener("keydown", e => {   // dev only
+    const name = e.key.length === 1 ? null : e.key.toLowerCase().replace("arrow", "").replace("backspace", "delete").replace("enter", "return");
+    window.keys.key({ type: "keyDown", chars: e.key.length === 1 ? e.key : "", name,
+      flags: { cmd: e.metaKey, ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey } });
+  });
+})();
+</script>
+</body>
+</html>

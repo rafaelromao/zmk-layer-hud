@@ -1,0 +1,160 @@
+/*
+ * Copyright (c) 2026 Rafael Romão
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Announce the active layers to the host inside the keyboard HID report.
+ *
+ * Every layer change is coalesced for settle-ms, then the set of active layers
+ * is written into the report as reserved keyboard-page usages (base + id) with
+ * a commit usage last, sent once, and released after tap-ms with a second send.
+ * The host (zmk-layer-hud/host/hudfeed.py) decodes only the report carrying the
+ * commit usage, so partial reports caused by real keys pressed meanwhile are
+ * harmless: they still contain the full set or no commit at all.
+ *
+ * The report is written directly through zmk_hid_keyboard_press/release and
+ * zmk_endpoints_send_report, the same calls hid_listener.c makes. Raising
+ * zmk_keycode_state_changed instead would show the fake usages to every keycode
+ * listener: auto-layer would end num-word, adaptive keys would record them as
+ * antecedent, caps word and sticky keys would react.
+ *
+ * Everything runs on the system workqueue: the listener only marks state and
+ * reschedules one k_work_delayable that alternates between press and release.
+ */
+
+#define DT_DRV_COMPAT zmk_layer_signal
+
+#include <zephyr/kernel.h>
+#include <zephyr/logging/log.h>
+#include <zephyr/sys/util.h>
+
+#include <zmk/endpoints.h>
+#include <zmk/event_manager.h>
+#include <zmk/events/endpoint_changed.h>
+#include <zmk/events/layer_state_changed.h>
+#include <zmk/hid.h>
+#include <zmk/keymap.h>
+
+#include "layer_signal_policy.h"
+
+LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
+
+#if DT_HAS_COMPAT_STATUS_OKAY(DT_DRV_COMPAT)
+
+#define BASE_USAGE DT_INST_PROP(0, base_usage)
+#define COMMIT_USAGE DT_INST_PROP(0, commit_usage)
+#define TAP_MS DT_INST_PROP(0, tap_ms)
+#define SETTLE_MS DT_INST_PROP(0, settle_ms)
+#define HEARTBEAT_MS DT_INST_PROP(0, heartbeat_ms)
+
+BUILD_ASSERT(BASE_USAGE >= 0xA5 && COMMIT_USAGE > BASE_USAGE && COMMIT_USAGE <= 0xFF,
+             "base-usage must be >= 0xA5 and below commit-usage (<= 0xFF)");
+BUILD_ASSERT(ZMK_KEYMAP_LAYERS_LEN <= 31, "layer ids above 31 cannot be signalled");
+BUILD_ASSERT(CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE >= 2,
+             "the report must hold at least one layer usage and the commit usage");
+
+/* Usages currently in the report (press phase) and how many. */
+static uint8_t usages[CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE];
+static int n_usages;
+static bool pressed; /* usages are in the report; next work run releases them */
+static bool dirty;   /* a layer change arrived since the last burst started */
+
+static void work_cb(struct k_work *work);
+static K_WORK_DELAYABLE_DEFINE(work, work_cb);
+
+static void rearm_idle(void) {
+    if (dirty) {
+        k_work_reschedule(&work, K_MSEC(SETTLE_MS));
+    } else if (HEARTBEAT_MS > 0) {
+        k_work_reschedule(&work, K_MSEC(HEARTBEAT_MS));
+    }
+}
+
+static void release_all(bool send) {
+    for (int i = 0; i < n_usages; i++) {
+        zmk_hid_keyboard_release(usages[i]);
+    }
+    n_usages = 0;
+    pressed = false;
+    if (send) {
+        int err = zmk_endpoints_send_report(HID_USAGE_KEY);
+        if (err < 0) {
+            LOG_WRN("layer signal release report failed (%d)", err);
+        }
+    }
+}
+
+static void burst(void) {
+    dirty = false;
+    int n = zls_encode(zmk_keymap_layer_state(), BASE_USAGE, COMMIT_USAGE, usages,
+                       ARRAY_SIZE(usages));
+    if (n < 0) {
+        LOG_WRN("layer signal skipped: active layers do not fit a %d-key report; raise "
+                "CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE",
+                CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE);
+        return;
+    }
+    for (int i = 0; i < n; i++) {
+        int err = zmk_hid_keyboard_press(usages[i]);
+        if (err < 0) {
+            /* Real keys already fill the report. Undo without sending: nothing
+             * left the keyboard, and a report without the commit usage would be
+             * ignored by the host anyway. Try again on the next change. */
+            LOG_DBG("layer signal deferred: report full (%d)", err);
+            n_usages = i;
+            release_all(false);
+            dirty = true;
+            return;
+        }
+    }
+    n_usages = n;
+    pressed = true;
+    int err = zmk_endpoints_send_report(HID_USAGE_KEY);
+    if (err < 0) {
+        LOG_WRN("layer signal report failed (%d)", err);
+    }
+    LOG_DBG("layer signal: %d usages, state 0x%08x", n, zmk_keymap_layer_state());
+    k_work_reschedule(&work, K_MSEC(TAP_MS));
+}
+
+static void work_cb(struct k_work *work_item) {
+    ARG_UNUSED(work_item);
+    if (pressed) {
+        release_all(true);
+        rearm_idle();
+        return;
+    }
+    burst();
+    if (!pressed) {
+        rearm_idle();
+    }
+}
+
+static int layer_signal_listener(const zmk_event_t *eh) {
+    if (as_zmk_layer_state_changed(eh) != NULL || as_zmk_endpoint_changed(eh) != NULL) {
+        dirty = true;
+        /* Mid-burst the release run picks the change up (rearm_idle). */
+        if (!pressed) {
+            k_work_reschedule(&work, K_MSEC(SETTLE_MS));
+        }
+    }
+    return ZMK_EV_EVENT_BUBBLE;
+}
+
+ZMK_LISTENER(layer_signal, layer_signal_listener);
+ZMK_SUBSCRIPTION(layer_signal, zmk_layer_state_changed);
+ZMK_SUBSCRIPTION(layer_signal, zmk_endpoint_changed);
+
+static int layer_signal_init(void) {
+    /* Announce the boot state once the endpoints are up; the heartbeat, when
+     * enabled, keeps repeating it. */
+    dirty = true;
+    k_work_reschedule(&work, K_MSEC(1000));
+    LOG_DBG("layer signal: usages 0x%02x+id, commit 0x%02x, report size %d", BASE_USAGE,
+            COMMIT_USAGE, CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE);
+    return 0;
+}
+
+SYS_INIT(layer_signal_init, APPLICATION, CONFIG_APPLICATION_INIT_PRIORITY);
+
+#endif /* DT_HAS_COMPAT_STATUS_OKAY */

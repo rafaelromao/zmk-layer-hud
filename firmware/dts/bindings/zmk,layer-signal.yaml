@@ -1,0 +1,71 @@
+# Copyright (c) 2026 Rafael Romão
+# SPDX-License-Identifier: MIT
+
+description: |
+  Reports the keyboard's active layers to the host through the ordinary
+  keyboard HID report, using keyboard-page usages no operating system maps to
+  a key (0xA5-0xDF are reserved in the HID Usage Tables).
+
+  On every layer change the module adds usage (base-usage + layer id) for each
+  active layer with id >= 1 and then commit-usage to the keyboard report, sends
+  it once, waits tap-ms, removes them and sends again. The report that contains
+  commit-usage always carries the complete set, so the host decodes exactly
+  that report and ignores every other one. Layer 0 is never sent: it is always
+  active.
+
+  Nothing is raised on ZMK's event bus: the report is written directly, so
+  behaviours that watch key presses (auto-layer, adaptive keys, caps word,
+  sticky keys) do not react to the signal.
+
+  Example:
+
+    / {
+        layer_signal {
+            compatible = "zmk,layer-signal";
+            heartbeat-ms = <2000>;
+        };
+    };
+
+  With the defaults, layer ids 1..30 are representable. Set
+  CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE=12 on the central/dongle so the active
+  layers, the commit usage and held keys fit one report; when they do not, the
+  burst is skipped and logged rather than sent truncated.
+
+compatible: "zmk,layer-signal"
+
+properties:
+  base-usage:
+    type: int
+    default: 192
+    description: |
+      Keyboard-page usage sent for layer id 0 (0xC0). Layer L is sent as
+      base-usage + L. Keep base-usage >= 0xA5 so no usage below it collides
+      with a real key; the host must use the same value.
+
+  commit-usage:
+    type: int
+    default: 223
+    description: |
+      Usage (0xDF) added last to the report that carries the full layer set.
+      Must be greater than base-usage; layers whose usage would reach it are
+      not representable and are dropped from the report.
+
+  tap-ms:
+    type: int
+    default: 10
+    description: Time the usages stay in the report before they are released.
+
+  settle-ms:
+    type: int
+    default: 3
+    description: |
+      Delay between a layer change and the burst, so a group of changes (a host
+      vim code switching two layers, a layer-tap roll) becomes one burst.
+
+  heartbeat-ms:
+    type: int
+    default: 0
+    description: |
+      When non-zero, re-send the current set this often while idle, so a host
+      that starts mid-session learns the state without a resync channel. Two
+      small reports per period; 2000 is a good value for a HUD. 0 disables it.

@@ -1,0 +1,121 @@
+/* zmk-layer-hud panel. Visual language borrowed from keymap-drawer:
+   rounded light keys, tap legend centred, hold legend at the bottom, shifted legend
+   at the top, held keys tinted blue. Dark translucent panel so it reads on any editor. */
+:root {
+  --key: 62px;
+  --gap: 6px;
+  --panel: rgba(20, 22, 30, 0.86);
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --key-bg: #f5f6fa;
+  --key-fg: #1f2430;
+  --key-dim: #9aa0ad;
+  --key-border: #c9ccd6;
+  --held: #c5d6ff;
+  --pressed: #ffb454;
+  --combo: #ffd68a;
+  --chip: #2a2f3d;
+  --chip-fg: #e6e8ef;
+  --chip-vim: #7aa2f7;
+  --chip-insert: #9ece6a;
+  --chip-raw: #f7768e;
+  --chip-off: #565f89;
+  --chip-layer: #bb9af7;
+  --font: "Hack Nerd Font", "JetBrains Mono", Menlo, monospace;
+}
+html, body { margin: 0; background: transparent; }
+body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
+#hud {
+  display: flex; flex-direction: column; gap: 10px; width: 100%; box-sizing: border-box;
+  padding: 12px 14px 14px; border-radius: 16px;
+  background: var(--panel); border: 1px solid var(--panel-border);
+}
+.chip {
+  padding: 3px 10px; border-radius: 999px; background: var(--chip);
+  font-size: 14px; font-weight: 700; letter-spacing: 0.04em; line-height: 20px;
+  transition: background 120ms ease, color 120ms ease;
+}
+.chip.base { background: var(--chip); color: var(--chip-fg); }
+.chip.layer { background: var(--chip-layer); color: #1f1f2e; }
+.chip.vim { background: var(--chip-vim); color: #101420; }
+.chip.insert { background: var(--chip-insert); color: #101420; }
+.chip.cmdline { background: #e0af68; color: #101420; }
+.chip.raw { background: var(--chip-raw); color: #101420; }
+.chip.off { background: var(--chip-off); color: #dfe3f0; }
+.chip.provisional { outline: 2px dashed rgba(255,255,255,0.45); outline-offset: -2px; }
+#reason { margin-left: 8px; padding-left: 12px; border-left: 1px solid #3b4261; font-size: 12px; color: #aab0c0; white-space: nowrap; max-width: 34ch; overflow: hidden; text-overflow: ellipsis; line-height: 14px; padding-top: 3px; }
+#reason:empty { display: none; }
+#board { display: flex; gap: 34px; align-items: flex-start; position: relative; }
+.hand { position: relative; }
+.key {
+  position: absolute; width: var(--key); height: var(--key);
+  box-sizing: border-box; border-radius: 9px;
+  background: var(--key-bg); color: var(--key-fg); border: 1px solid var(--key-border);
+  display: grid; grid-template-rows: 14px 1fr 14px; align-items: center; justify-items: center;
+  transition: background 90ms ease, transform 90ms ease, box-shadow 90ms ease;
+}
+.key .tap { font-size: 20px; font-weight: 600; line-height: 1; max-width: 100%; overflow: hidden; white-space: nowrap; }
+.key .tap.long { font-size: 12px; }
+.key .tap.mid { font-size: 15px; }
+.key .hold, .key .shifted { font-size: 9px; color: #5b6172; line-height: 1; max-width: 100%; overflow: hidden; white-space: nowrap; }
+.key.trans { background: #e6e8ef; }
+.key.trans .tap, .key.trans .hold, .key.trans .shifted { color: var(--key-dim); }
+.key.blank { background: #dcdfe8; border-style: dashed; }
+.key.held { background: var(--held); }
+.key.activator { background: var(--held); box-shadow: inset 0 0 0 2px #7aa2f7; }
+.key.pressed { background: var(--pressed); transform: translateY(2px); box-shadow: 0 0 0 3px rgba(255,180,84,0.55); }
+.key.pressed.combo { background: var(--combo); }
+.key.combo-key { box-shadow: 0 0 0 3px #7aa2f7, 0 0 18px rgba(122,162,247,0.6); z-index: 2; }
+.key.mod { box-shadow: inset 0 0 0 2px #9ece6a; }
+/* A key the HUD could not place on the keyboard's real layer stack (host-only inference,
+   e.g. synthesized keys in a rehearsal): same flash, dashed edge. */
+.key.pressed.inferred { border: 2px dashed #a86a1a; }
+#layer.inferred { border-bottom-style: dashed; }
+#status { font-size: 12px; color: #aab0c0; min-height: 16px; display: flex; }
+#feed { color: #e0af68; }
+#feed.live { color: #9ece6a; }
+#title { font-size: 13px; color: #aab0c0; margin-left: auto; letter-spacing: 0.04em; }
+
+/* Active layer banner: the one thing to read at a glance. */
+#layer { display: flex; align-items: center; gap: 12px; padding: 2px 4px 5px; border-bottom: 3px solid var(--chip); transition: border-color 120ms ease; min-height: 30px; }
+#layer.provisional { border-bottom-style: dashed; }
+#layerName { font-size: 24px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; line-height: 28px; }
+#layerSub { font-size: 12px; color: #aab0c0; line-height: 14px; padding-top: 3px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#layer.vim { border-color: var(--chip-vim); } #layer.vim #layerName { color: var(--chip-vim); }
+#layer.insert { border-color: var(--chip-insert); } #layer.insert #layerName { color: var(--chip-insert); }
+#layer.cmdline { border-color: #e0af68; } #layer.cmdline #layerName { color: #e0af68; }
+#layer.raw { border-color: var(--chip-raw); } #layer.raw #layerName { color: var(--chip-raw); }
+#layer.off { border-color: var(--chip-off); } #layer.off #layerName { color: #c0c6d6; }
+#layer.momentary { border-color: var(--chip-layer); } #layer.momentary #layerName { color: var(--chip-layer); }
+/* Chips: the topmost active layer is bright, the rest muted. */
+.chip.muted { opacity: 0.45; }
+/* Whole board takes the layer's tint so the switch is visible even from far away. */
+#board.vim .key { background: #e3ebff; border-color: #b7c7f2; }
+#board.momentary .key { background: #efe6ff; border-color: #d0bff0; }
+#board.raw .key, #board.off .key { background: #ececf0; }
+
+/* Vim insert / cmdline: still a vim layer (transparent), so the board keeps the vim tint. */
+#layer.vim-insert { border-color: var(--chip-insert); } #layer.vim-insert #layerName { color: var(--chip-insert); }
+#layer.vim-cmdline { border-color: #e0af68; } #layer.vim-cmdline #layerName { color: #e0af68; }
+#board.vim-insert .key, #board.vim-cmdline .key { background: #e3ebff; border-color: #b7c7f2; }
+
+/* Combo pill (keymap-drawer style): appears at the midpoint of the combo's keys when typed. */
+.combo-pill {
+  position: absolute; transform: translate(-50%, -50%) scale(0.6); z-index: 5;
+  min-width: 44px; padding: 4px 8px; border-radius: 8px; text-align: center;
+  background: var(--held); color: var(--key-fg); border: 2px solid #7aa2f7;
+  opacity: 0; pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+  display: flex; flex-direction: column; align-items: center; line-height: 1;
+}
+.combo-pill.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.combo-pill .combo-label { font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; color: #3b4261; margin-bottom: 1px; }
+.combo-pill .combo-tap { font-size: 22px; font-weight: 800; }
+.combo-pill .combo-sub { font-size: 9px; color: #3b4261; margin-top: 2px; }
+.combo-links { position: absolute; left: 0; top: 0; z-index: 4; pointer-events: none; opacity: 0; transition: opacity 120ms ease; }
+.combo-links.show { opacity: 1; }
+.combo-links line { stroke: #7aa2f7; stroke-width: 3; stroke-linecap: round; }
+
+/* Close button: closes both overlays (Hammerspoon: zmkhud.stop(); WebSocket hosts: "close"). */
+#close { margin-left: 10px; width: 22px; height: 22px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06); color: #aab0c0; font: 13px/1 var(--font); cursor: pointer; padding: 0; }
+#close:hover { background: var(--chip-raw); color: #101420; }

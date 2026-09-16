@@ -1,0 +1,32 @@
+# zmk-layer-hud: let the active seat user read the ZMK keyboard's raw HID reports
+# (host/hudfeed.py decodes the layer signal from them). Identical to zmk-vim-mode's
+# 60-zmk-vim-mode.rules; installing either one is enough.
+#
+# Install:
+#   sudo cp contrib/udev/60-zmk-layer-hud.rules /etc/udev/rules.d/
+#   sudo udevadm control --reload-rules && sudo udevadm trigger
+#   (BLE keyboards: re-pair or re-connect so the rule applies to the new nodes)
+#
+# The file must sort before systemd's 73-seat-late.rules, which is what turns
+# TAG+="uaccess" into an ACL for the user of the active logind session.
+#
+# 1D50:615E is ZMK's default VID:PID and is shared by every stock ZMK board.
+# If you run several ZMK keyboards and want only one driven, use the daemon's
+# --device-name flag instead of narrowing these rules.
+#
+# uaccess needs an active local (seat) session. On a headless or SSH-only box
+# use the group form instead:
+#   SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="615e", GROUP="input", MODE="0660"
+# and add yourself to the input group (a permanent, broader grant).
+
+# The HID parent's name is bus:VID:PID.NNNN, with bus 0003 = USB, 0005 = Bluetooth.
+# This form needs no ancestor attributes, so it covers both transports.
+SUBSYSTEM=="hidraw", KERNELS=="0003:1D50:615E.*", TAG+="uaccess"
+SUBSYSTEM=="hidraw", KERNELS=="0005:1D50:615E.*", TAG+="uaccess"
+
+# USB again via the usb_device ancestor, in case the HID parent is named differently.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="615e", TAG+="uaccess"
+
+# The matching evdev node is read (never written) for EV_LED echoes, which is
+# how the daemon learns the kernel overwrote the indicator bits.
+SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/vendor}=="1d50", ATTRS{id/product}=="615e", TAG+="uaccess"

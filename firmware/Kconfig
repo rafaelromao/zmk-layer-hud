@@ -1,0 +1,30 @@
+# Copyright (c) 2026 Rafael Romão
+# SPDX-License-Identifier: MIT
+
+# Kconfig functions split their arguments on commas, so the compatible (which
+# contains one) must go through a variable first. Same pattern as ZMK itself.
+DT_COMPAT_ZMK_LAYER_SIGNAL := zmk,layer-signal
+
+config ZMK_LAYER_SIGNAL
+    bool "Report the active layers to the host as reserved HID keyboard usages"
+    default $(dt_compat_enabled,$(DT_COMPAT_ZMK_LAYER_SIGNAL))
+    depends on !ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL
+    depends on ZMK_HID_REPORT_TYPE_HKRO
+    help
+      On every layer change, put one reserved keyboard-page usage per active
+      layer (base-usage + layer id) plus a commit usage into the keyboard HID
+      report, send it, and release them a few milliseconds later. No operating
+      system maps these usages to a key, so applications never see them; a host
+      program reading the raw HID reports (zmk-layer-hud's hudfeed.py) decodes
+      the layer set from the report that carries the commit usage.
+
+      Enabled automatically when a zmk,layer-signal node is present in the
+      keymap. Only built on the central/unibody side, where HID reports are
+      sent. Needs the HKRO report type: the NKRO bitmap stops at usage 0x67.
+
+      Raise CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE (default 6) so the active
+      layers, the commit usage and any held keys fit in one report; 12 is the
+      largest value whose USB report still fits the 16-byte interrupt endpoint.
+
+# Logging goes through ZMK's own log module (LOG_MODULE_DECLARE(zmk, ...)) and
+# follows CONFIG_ZMK_LOG_LEVEL. Set CONFIG_ZMK_LOG_LEVEL_DBG=y to see bursts.

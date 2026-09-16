@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ZMK layer HUD</title>
+<link rel="stylesheet" href="hud.css">
+</head>
+<body>
+<div id="hud">
+  <div id="layer"><span id="layerName"></span><span id="layerSub"></span><span id="reason"></span><button id="close" title="close the HUD" aria-label="close">✕</button></div>
+  <div id="board"><div class="hand" id="hand-L"></div><div class="hand" id="hand-R"></div></div>
+  <div id="status"><span id="feed">waiting for the keyboard's layers…</span><span id="title">Magic Romak</span></div>
+</div>
+<script src="keymap.js"></script>
+<script src="hud.js"></script>
+</body>
+</html>

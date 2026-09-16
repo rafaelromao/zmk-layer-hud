@@ -1,0 +1,10 @@
+# generated from the keyboards repo by hud/keymap/build.py
+hud/keymap.json
+hud/keymap.js
+
+# runtime
+run/
+build/
+__pycache__/
+*.pyc
+.DS_Store
