@@ -7,6 +7,8 @@
  *   hud.setLayers([ids])               the keyboard's active ZMK layer ids (ground truth; the
  *                                      firmware's layer signal, decoded by host/hudfeed.py)
  *   hud.key({type, chars, name, flags}) one key or modifier event, decoded from the same reports
+ *   hud.pressAt(pos)                   a key press by ZMK position (firmware `positions;`): the
+ *                                      exact key lights; characters then only feed the strip
  *   hud.press([idx...])                light keys directly (tests)
  *
  * Two modes:
@@ -25,6 +27,9 @@
   const GAP = 6;             // px between keys at the drawn scale
   const PRESS_MS = 320;
   const MOMENTARY_MS = 700;
+  const COMBO_TERM_MS = 80;          // positions pressed within this form a combo
+  const POSITIONS_FRESH_MS = 3000;   // after a position report, characters do not light keys
+  const recentPos = [];
 
   // Named keys → the legend text keymap-drawer keymaps usually use for them.
   const NAMED = {
@@ -322,6 +327,8 @@
       for (const idx of positions) state.keyEls[idx].classList.remove("combo-key");
       setTimeout(() => { pill.remove(); svg.remove(); }, 200);
     }, COMBO_MS);
+    // A handle to take the pill down early when a longer legend supersedes it.
+    return { remove() { pill.remove(); svg.remove(); } };
   }
 
   function comboFor(layer, token) {
@@ -414,10 +421,10 @@
   // Recent keyDown tokens with the keys they lit, for multi-key legends ("->", "=>", "&&", "()").
   const SEQUENCE_MS = 200, SEQUENCE_MAX = 6;
   const recent = [];
-  function remember(token, lit) {
+  function remember(token, lit, pill) {
     const now = Date.now();
     while (recent.length && now - recent[0].t > SEQUENCE_MS) recent.shift();
-    recent.push({ token, t: now, lit: lit || [] });
+    recent.push({ token, t: now, lit: lit || [], pill: pill || null });
     if (recent.length > SEQUENCE_MAX) recent.shift();
   }
   function matchSequence(token, layers, cmdActive) {
@@ -428,19 +435,27 @@
       const seq = parts.map(p => p.token).join("") + token;
       const r = resolveOnStack(seq, layers, cmdActive);
       if (!r) continue;
-      // The single keys lit so far were the macro's steps, not presses: unlight them.
-      for (const p of parts) for (const idx of p.lit) {
-        const e = state.keyEls[idx];
-        if (e) { e.classList.remove("pressed", "combo", "inferred"); clearTimeout(state.timers.get(idx)); }
-      }
+      // The keys lit so far were the macro's steps (or a shorter legend that matched first, like
+      // "()" inside "();"): unlight them, pill included, and light the longer match.
+      for (const p of parts) unlight(p);
       flash(r.hit, r.hit.length > 1 ? "combo" : null);
-      if (r.hit.length > 1) { const c = comboFor(r.layer, seq); if (c) showCombo(r.hit, c.key); }
+      let pill = null;
+      if (r.hit.length > 1) { const c = comboFor(r.layer, seq); if (c) pill = showCombo(r.hit, c.key); }
       setInferred(false);
-      recent.length = 0;
+      // Keep the tokens: a still longer legend may follow (";" after "()", "⏎" after "do {").
+      remember(token, r.hit, pill);
       afterKey();
       return true;
     }
     return false;
+  }
+  function unlight(entry) {
+    for (const idx of entry.lit) {
+      const e = state.keyEls[idx];
+      if (e) { e.classList.remove("pressed", "combo", "inferred", "combo-key"); clearTimeout(state.timers.get(idx)); }
+    }
+    if (entry.pill) entry.pill.remove();
+    entry.lit = []; entry.pill = null;
   }
 
   function commandLayersActive(layers) {
@@ -455,6 +470,10 @@
       return;
     }
     if (ev.type !== "keyDown" || ev.repeat) return;
+    state.lastKeyAt = Date.now();
+    // With key positions coming from the firmware, the board is lit from them; the character
+    // only feeds the strip (hud.key forwards it).
+    if (state.posAt && Date.now() - state.posAt < POSITIONS_FRESH_MS) return;
     const token = tokenFor(ev);
     if (!token) return;
 
@@ -578,9 +597,42 @@
     setLayers(ids) {
       if (typeof ids === "string") ids = JSON.parse(ids);
       if (!Array.isArray(ids)) return;
-      state.live = { ids: ids.map(Number).filter(n => Number.isInteger(n) && n > 0), at: Date.now() };
+      ids = ids.map(Number).filter(n => Number.isInteger(n) && n > 0);
+      clearTimeout(state.layersTimer);
+      // A one-shot layer leaves right after the key it served. Keep the board on that layer
+      // while the key's flash is visible (only when layers are removed, and a key just landed),
+      // otherwise the flash appears under the wrong legends.
+      const shrink = state.live && ids.every(i => state.live.ids.includes(i)) && ids.length < state.live.ids.length;
+      const since = Date.now() - (state.lastKeyAt || 0);
+      if (shrink && since < PRESS_MS) {
+        state.layersTimer = setTimeout(() => hud.setLayers(ids), PRESS_MS - since);
+        return;
+      }
+      state.live = { ids, at: Date.now() };
       state.momentary = []; state.oneShot = null; state.inferred = false;
       render();
+    },
+    // Firmware `positions;`: the physical key at ZMK position `pos` was pressed. The one exact
+    // source for what to light, whatever the key produced (chords, combos, macros, modifiers,
+    // layer keys). Two or more positions within a combo term that form a combo on the live
+    // stack draw that combo's pill.
+    pressAt(pos) {
+      if (!state.data) return;
+      const map = state.data.positions || {};
+      const idx = map[String(pos)] !== undefined ? map[String(pos)] : Number(pos);
+      const now = Date.now();
+      state.posAt = now; state.lastKeyAt = now;
+      if (!state.keyEls[idx]) return;
+      flash([idx]);
+      recentPos.push({ idx, t: now });
+      while (recentPos.length && now - recentPos[0].t > COMBO_TERM_MS) recentPos.shift();
+      const pressedSet = recentPos.map(p => p.idx);
+      if (pressedSet.length > 1) {
+        const layers = stack();
+        const combo = state.data.combos.find(c => c.positions.length === pressedSet.length
+          && c.positions.every(p => pressedSet.includes(p)) && c.layers.some(l => layers.includes(l)));
+        if (combo) { flash(combo.positions, "combo"); showCombo(combo.positions, combo.key); recentPos.length = 0; }
+      }
     },
     // Leave live mode (tests, or a host that lost the keyboard).
     clearLayers() { state.live = null; render(); },
@@ -621,6 +673,7 @@
         else if (m.kind === "key") hud.key(m);
         else if (m.kind === "layers") hud.setLayers(m.ids);
         else if (m.kind === "device") hud.setDevice(m.name);
+        else if (m.kind === "press") hud.pressAt(m.pos);
       };
       s.onclose = () => setTimeout(connect, 1000);
     };

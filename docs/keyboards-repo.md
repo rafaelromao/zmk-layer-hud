@@ -32,6 +32,7 @@ A general-purpose feature file (the signal is not vim-related), included from
     layer_signal {
         compatible = "zmk,layer-signal";
         heartbeat-ms = <2000>;   /* a HUD started mid-session converges within 2 s */
+        positions;               /* announce key positions: exact highlighting */
         /* defaults: base-usage 0xC0, commit-usage 0xDF, tap-ms 10, settle-ms 3 */
     };
 };

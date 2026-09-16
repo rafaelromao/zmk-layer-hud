@@ -123,6 +123,29 @@ class Decoder(unittest.TestCase):
         self.assertEqual(d.feed([]), [])
 
 
+class Positions(unittest.TestCase):
+    """Firmware `positions;`: a hi+lo usage pair in a report names the pressed key."""
+
+    def test_position_report(self):
+        d = ReportDecoder()
+        self.assertEqual(d.feed(R(0, 0xA6, 0xB5)), [{"kind": "press", "pos": 13}])
+        self.assertEqual(d.feed(R(0)), [])                                # the pair's release: nothing
+
+    def test_position_next_to_the_key_it_produced(self):
+        d = ReportDecoder()
+        msgs = d.feed(R(0, 0x04, 0xA5, 0xB4), now_ms=0)
+        self.assertEqual([(m["kind"], m.get("pos", m.get("chars"))) for m in msgs], [("press", 0), ("key", "a")])
+
+    def test_position_and_layers_in_one_report(self):
+        d = ReportDecoder()
+        msgs = d.feed(R(0, 0xC2, C, 0xA5, 0xB6))
+        self.assertEqual(msgs, [{"kind": "layers", "ids": [2]}, {"kind": "press", "pos": 2}])
+
+    def test_ambiguous_pair_ignored(self):
+        d = ReportDecoder()
+        self.assertEqual(d.feed(R(0, 0xA5, 0xA6, 0xB4)), [])
+
+
 class DeadKeys(unittest.TestCase):
     """Accent macros type a US-International dead key then the letter, back to back."""
 

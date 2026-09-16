@@ -10,6 +10,7 @@ pages, over a WebSocket (Linux panel) or on stdout (macOS Hammerspoon host):
   {"kind":"layers","ids":[2,22]}          active ZMK layer ids (layer 0 omitted: always active), from
                                           the firmware module's announcement inside the report
   {"kind":"device","name":"Diamond"}      a keyboard was opened (its HID product name; the page's title)
+  {"kind":"press","pos":13}               a key at ZMK position 13 was pressed (firmware `positions;`)
   {"kind":"key","type":"keyDown","name":"space","chars":" ","code":44,
    "flags":{"cmd":false,"ctrl":false,"alt":false,"shift":false,"fn":false},"repeat":false}
                                           every key press/release and modifier change, straight from
@@ -108,6 +109,19 @@ def decode_report(report, base=BASE_USAGE, commit=COMMIT_USAGE, report_id=KEYBOA
     if len(data) < 2:
         return None
     return decode_keys(data[2:], base, commit)
+
+
+POS_HI, POS_LO, POS_LO_N = 0xA5, 0xB4, 12
+
+
+def decode_position(keys):
+    """Key bytes -> physical key position when exactly one hi (0xA5..0xB3) and one lo
+    (0xB4..0xBF) usage are present (firmware `positions;`), else None."""
+    hi = [k - POS_HI for k in keys if POS_HI <= k < POS_LO]
+    lo = [k - POS_LO for k in keys if POS_LO <= k < POS_LO + POS_LO_N]
+    if len(hi) != 1 or len(lo) != 1:
+        return None
+    return hi[0] * POS_LO_N + lo[0]
 
 
 def split_report(report, report_id=KEYBOARD_REPORT_ID):
@@ -210,7 +224,10 @@ class ReportDecoder:
         if ids is not None and ids != self.layers:
             self.layers = ids
             out.append({"kind": "layers", "ids": ids})
-        real = [k for k in keys if k and not (self.base <= k <= self.commit)]
+        pos = decode_position(keys)
+        if pos is not None:
+            out.append({"kind": "press", "pos": pos})
+        real = [k for k in keys if k and not (self.base <= k <= self.commit) and not (POS_HI <= k < POS_LO + POS_LO_N)]
         if mods != self.mods:
             self.mods = mods
             flags = flags_of(mods)

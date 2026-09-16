@@ -23,6 +23,7 @@ description: |
         layer_signal {
             compatible = "zmk,layer-signal";
             heartbeat-ms = <2000>;
+            positions;
         };
     };
 
@@ -61,6 +62,17 @@ properties:
     description: |
       Delay between a layer change and the burst, so a group of changes (a host
       vim code switching two layers, a layer-tap roll) becomes one burst.
+
+  positions:
+    type: boolean
+    description: |
+      Also announce the physical position of every key press: one usage from
+      0xA5..0xB3 and one from 0xB4..0xBF in the same report encode
+      position = (hi - 0xA5) * 12 + (lo - 0xB4), up to 180 keys, pressed and
+      released within the event so a report never carries two positions. The
+      HUD then lights the exact key for chords, combos, macros, layer and
+      modifier keys, whatever they produce. Costs two extra reports per press.
+      Requires base-usage >= 0xC0 (the default).
 
   heartbeat-ms:
     type: int

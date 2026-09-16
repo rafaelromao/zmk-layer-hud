@@ -25,6 +25,8 @@ Config keys (all paths may use ~):
       map:   per layer (by define name or id): a drawer layer name, null for a layer that is
              transparent or not drawn, or {drawer, label, class}.
   base:           the drawer layer that is always active (default: the layer for id 0)         (optional)
+  positions:      ZMK key position of each drawer key, in drawer order, when the drawer does not
+                  list the keys in the keymap's binding order (firmware `positions;`)            (optional)
   combos:         [{positions, layers}] overrides for combos the drawer lists on fewer layers
                   than the firmware has them                                                    (optional)
   extras:         inference hints used only while a key cannot be placed on the live stack:
@@ -458,12 +460,22 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None
     signal.update({k: int(v) for k, v in (cfg.get("signal") or {}).items()})
     glyphs = resolve_glyphs(glyph_names(layers, combos), drawer_cfg, log=log, fetch=fetch_glyphs)
     hud_cfg = dict(cfg.get("hud") or {})
+    # ZMK key position -> drawer key index (firmware `positions;`). Default: the drawer's key
+    # order is the keymap's binding order (true for a YAML from `keymap parse`).
+    positions = cfg.get("positions")
+    if positions is None:
+        pos_to_idx = {str(i): i for i in range(n)}
+    else:
+        if len(positions) != n:
+            raise KeymapError(f"positions: {len(positions)} entries for {n} drawer keys")
+        pos_to_idx = {str(int(p)): i for i, p in enumerate(positions)}
     return {
         "kind": "keymap",
         "source": source,
         "title": cfg.get("title") or "",
         "hud": {"width": int(hud_cfg.get("width", 598))},
         "glyphs": glyphs,
+        "positions": pos_to_idx,
         "layout": layout,
         "layers": layers,
         "layer_order": layer_names,

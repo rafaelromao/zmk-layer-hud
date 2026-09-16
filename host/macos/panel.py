@@ -182,6 +182,8 @@ class Host:
             js = f"hud.key({data})"  # hud.key forwards to the strip on the same page
         elif msg["kind"] == "device":
             js = f"hud.setDevice({json.dumps(msg['name'])})"
+        elif msg["kind"] == "press":
+            js = f"hud.pressAt({int(msg['pos'])})"
         else:
             return
         if self.ready:

@@ -32,6 +32,7 @@
 #include <zmk/event_manager.h>
 #include <zmk/events/endpoint_changed.h>
 #include <zmk/events/layer_state_changed.h>
+#include <zmk/events/position_state_changed.h>
 #include <zmk/hid.h>
 #include <zmk/keymap.h>
 
@@ -46,9 +47,12 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #define TAP_MS DT_INST_PROP(0, tap_ms)
 #define SETTLE_MS DT_INST_PROP(0, settle_ms)
 #define HEARTBEAT_MS DT_INST_PROP(0, heartbeat_ms)
+#define POSITIONS DT_INST_PROP(0, positions)
 
 BUILD_ASSERT(BASE_USAGE >= 0xA5 && COMMIT_USAGE > BASE_USAGE && COMMIT_USAGE <= 0xFF,
              "base-usage must be >= 0xA5 and below commit-usage (<= 0xFF)");
+BUILD_ASSERT(!POSITIONS || BASE_USAGE >= ZLS_POS_LO + ZLS_POS_LO_N,
+             "with positions, base-usage must be >= 0xC0 (0xA5..0xBF carry the positions)");
 BUILD_ASSERT(ZMK_KEYMAP_LAYERS_LEN <= 31, "layer ids above 31 cannot be signalled");
 BUILD_ASSERT(CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE >= 2,
              "the report must hold at least one layer usage and the commit usage");
@@ -130,6 +134,27 @@ static void work_cb(struct k_work *work_item) {
     }
 }
 
+/* A key press: its position goes out as a hi+lo usage pair in one report and is released in
+ * the next, synchronously, so no other press can interleave and a report never holds two
+ * positions. The key's own report is sent by ZMK's HID listener as usual. */
+static void announce_position(uint32_t position) {
+    uint8_t pair[2];
+    if (!zls_encode_position(position, pair)) {
+        return;
+    }
+    if (zmk_hid_keyboard_press(pair[0]) < 0) {
+        return; /* report full of real keys: skip this one */
+    }
+    if (zmk_hid_keyboard_press(pair[1]) < 0) {
+        zmk_hid_keyboard_release(pair[0]);
+        return;
+    }
+    zmk_endpoint_send_report(HID_USAGE_KEY);
+    zmk_hid_keyboard_release(pair[0]);
+    zmk_hid_keyboard_release(pair[1]);
+    zmk_endpoint_send_report(HID_USAGE_KEY);
+}
+
 static int layer_signal_listener(const zmk_event_t *eh) {
     if (as_zmk_layer_state_changed(eh) != NULL || as_zmk_endpoint_changed(eh) != NULL) {
         dirty = true;
@@ -137,13 +162,23 @@ static int layer_signal_listener(const zmk_event_t *eh) {
         if (!pressed) {
             k_work_reschedule(&work, K_MSEC(SETTLE_MS));
         }
+        return ZMK_EV_EVENT_BUBBLE;
     }
+#if POSITIONS
+    const struct zmk_position_state_changed *pos_ev = as_zmk_position_state_changed(eh);
+    if (pos_ev != NULL && pos_ev->state) {
+        announce_position(pos_ev->position);
+    }
+#endif
     return ZMK_EV_EVENT_BUBBLE;
 }
 
 ZMK_LISTENER(layer_signal, layer_signal_listener);
 ZMK_SUBSCRIPTION(layer_signal, zmk_layer_state_changed);
 ZMK_SUBSCRIPTION(layer_signal, zmk_endpoint_changed);
+#if POSITIONS
+ZMK_SUBSCRIPTION(layer_signal, zmk_position_state_changed);
+#endif
 
 static int layer_signal_init(void) {
     /* Announce the boot state once the endpoints are up; the heartbeat, when

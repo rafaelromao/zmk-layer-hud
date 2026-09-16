@@ -41,18 +41,22 @@ Anywhere at the root of your `.keymap` (or a `.dtsi` it includes):
     layer_signal {
         compatible = "zmk,layer-signal";
         heartbeat-ms = <2000>;
+        positions;
     };
 };
 ```
 
 That is the whole integration: the module listens to ZMK's layer-state events, so every way of
 switching layers (`&mo`, `&lt`, `&sl`, `&to`, `&tog`, conditional layers, auto-layers, other
-modules) is reported. No binding changes.
+modules) is reported. With `positions;` it also announces the physical position of every key
+press, so the HUD lights the exact key whatever it produced (a chord, a combo, a macro, a
+modifier or layer key). No binding changes.
 
 Properties (all optional):
 
 | property | default | meaning |
 |---|---|---|
+| `positions` | off | announce key positions too (two extra reports per press); needs `base-usage` ≥ 0xC0 |
 | `heartbeat-ms` | 0 (off) | re-send the current set while idle, so a HUD started mid-session converges; 2000 is good |
 | `tap-ms` | 10 | how long the usages stay in the report before release |
 | `settle-ms` | 3 | coalesce a burst of layer changes into one announcement |
@@ -60,8 +64,11 @@ Properties (all optional):
 | `commit-usage` | 0xDF | usage marking the report that carries the full set |
 
 With the defaults, layer ids 1–30 are representable (layer 0 is always active and never sent).
-If your keymap has more layers, lower `base-usage` (0xA5 is the lowest reserved usage) and keep
-the host config's `signal:` in sync.
+If your keymap has more layers, lower `base-usage` (0xA5 is the lowest reserved usage, and
+0xA5–0xBF carry the positions when `positions;` is set) and keep the host config's `signal:` in
+sync. Positions 0–179 are representable; a key's position is its index in the keymap's binding
+list, which is also the drawer's key order for a YAML from `keymap parse`. A curated drawer file
+with a different key order lists each drawer key's position in the host config (`positions:`).
 
 ## 3. Make room in the keyboard report
 

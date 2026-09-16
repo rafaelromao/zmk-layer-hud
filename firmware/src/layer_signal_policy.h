@@ -70,4 +70,42 @@ static inline bool zls_decode(const uint8_t *keys, size_t n, uint8_t base, uint8
     return true;
 }
 
+/* Key positions ride on the same wire, below the layer usages: one usage from the "hi" range
+ * (0xA5..0xB3, 15 values) plus one from the "lo" range (0xB4..0xBF, 12 values) in the same
+ * report encode position = hi * 12 + lo, so up to 180 keys. The pair is pressed and released
+ * within one event, so a report never carries more than one position. */
+#define ZLS_POS_HI 0xA5
+#define ZLS_POS_LO 0xB4
+#define ZLS_POS_LO_N 12
+#define ZLS_POS_MAX (15 * ZLS_POS_LO_N)
+
+static inline bool zls_encode_position(uint32_t pos, uint8_t out[2]) {
+    if (pos >= ZLS_POS_MAX) {
+        return false;
+    }
+    out[0] = (uint8_t)(ZLS_POS_HI + pos / ZLS_POS_LO_N);
+    out[1] = (uint8_t)(ZLS_POS_LO + pos % ZLS_POS_LO_N);
+    return true;
+}
+
+/* Returns true and sets *pos when the key bytes hold exactly one hi and one lo usage. */
+static inline bool zls_decode_position(const uint8_t *keys, size_t n, uint32_t *pos) {
+    int hi = -1, lo = -1, n_hi = 0, n_lo = 0;
+    for (size_t i = 0; i < n; i++) {
+        uint8_t k = keys[i];
+        if (k >= ZLS_POS_HI && k < ZLS_POS_LO) {
+            hi = k - ZLS_POS_HI;
+            n_hi++;
+        } else if (k >= ZLS_POS_LO && k < ZLS_POS_LO + ZLS_POS_LO_N) {
+            lo = k - ZLS_POS_LO;
+            n_lo++;
+        }
+    }
+    if (n_hi != 1 || n_lo != 1) {
+        return false;
+    }
+    *pos = (uint32_t)hi * ZLS_POS_LO_N + (uint32_t)lo;
+    return true;
+}
+
 #endif /* ZMK_LAYER_HUD_LAYER_SIGNAL_POLICY_H */

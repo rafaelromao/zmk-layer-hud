@@ -38,6 +38,7 @@ your keymap, set `CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE=12` on the central/dongle,
     layer_signal {
         compatible = "zmk,layer-signal";
         heartbeat-ms = <2000>;
+        positions;
     };
 };
 ```
@@ -140,6 +141,12 @@ to raw-HID readers and ignored by everything else. The module uses them as a dat
 - The report is written directly (`zmk_hid_keyboard_press` + `zmk_endpoint_send_report`), not
   raised as key events, so behaviours that watch key presses (auto-layer, adaptive keys, caps
   word, sticky keys) do not notice.
+- With `positions;` in the node, every key press also carries its physical position as a pair
+  of usages from 0xA5–0xBF (`(hi − 0xA5) × 12 + (lo − 0xB4)`, up to 180 keys), pressed and
+  released within the event so a report never holds two. The HUD then lights the exact key for
+  anything: chords on a shortcut layer, a combo versus a single key with the same output, a
+  macro, a layer or modifier key. Without it the page falls back to matching what the key
+  produced against the legends.
 
 Costs: the report must have room (`CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE=12`), and Linux's evdev
 shows the usages as `KEY_UNKNOWN` events with no keysym. F-keys were considered and rejected:
@@ -182,14 +189,16 @@ follows the layout, so a 3x5+2, a 60% or a rotated layout all fit).
   is *live*: the stack is exactly what the keyboard reports (higher ids on top, undrawn layers
   skipped), the banner names the top layer and lists the set, activator keys light, and a typed
   key is resolved on that stack, combos included.
+- `hud.pressAt(pos)` — a key press by ZMK position (firmware `positions;`): the exact key
+  lights, positions pressed together that form a combo on the active layers draw its pill, and
+  characters then only feed the strip. `positions:` in the config maps positions to drawer keys
+  when the drawer's key order differs from the keymap's.
 - `hud.key(event)` — `{type: keyDown|keyUp|flagsChanged, name, chars, code, flags, repeat}`,
   decoded from the same HID reports (`code` is the HID usage, `chars` the US-layout character,
-  `name` spelled like Hammerspoon's `hs.keycodes.map`). Held modifier flags light the keys whose
-  hold legend carries that modifier (home-row mods).
-- A key that cannot be placed on the live stack lights nothing: a chord whose legend is an icon
-  or a label (shortcut layers) cannot be located from the keys it sends. Spelling the legend or
-  its `shifted` field with the chord (`⌘c`) makes it match. Before the first `setLayers`
-  (firmware without the module) the page falls back to character-based inference, drawn dashed.
+  `name` spelled like Hammerspoon's `hs.keycodes.map`). Held modifier flags light the keys
+  carrying that modifier (home-row mods, a tapped sticky shift). Without position reports the
+  character is matched against the legends on the live stack, multi-key macros included, and
+  the longest legend wins; a key that matches nothing lights nothing.
 
 A WebSocket host opens the page as `index.html?ws=ws://127.0.0.1:8766` and receives
 `{"kind":"keymap",…}`, `{"kind":"layers","ids":[…]}` and `{"kind":"key",…}`; the ✕ button sends
@@ -248,10 +257,10 @@ built-in `cols_thumbs_notation` fallback only.
 ## Known limits
 
 - Layer ids must stay below 31 (30 with the default usages).
-- Keys are located by the character their HID usage maps to (US layout), on the layer the
-  keyboard reports; key positions themselves are not transmitted. A macro is recognised when the
-  keys it types, within 200 ms, spell a legend on the active layers; otherwise each key it types
-  lights on its own.
+- Without `positions;` in the firmware node, keys are located by the character their HID usage
+  maps to (US layout), on the layer the keyboard reports; a macro is recognised when the keys it
+  types, within 200 ms, spell a legend on the active layers, and chords on icon-only layers
+  cannot be located.
 - Without keymap-drawer installed only `cols_thumbs_notation` layouts render, and combos given
   as `trigger_keys` are skipped.
 - The Linux host is ported from an earlier kit and not yet run on hardware; the macOS panel is

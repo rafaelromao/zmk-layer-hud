@@ -49,6 +49,11 @@ layers:
 
 base: alpha1
 
+# The Diamond's 24 drawer keys in ZMK's 36-position matrix (config.dtsi), so the firmware's
+# key-position announcements (`positions;` in the node) light the right key. Rows top to
+# bottom, left hand then right hand, thumbs last.
+positions: [1, 2, 3, 6, 7, 8, 10, 11, 12, 13, 16, 17, 18, 19, 21, 22, 23, 26, 27, 28, 31, 32, 33, 34]
+
 # The drawer lists Enter and Tab under "shortcuts" only (drawn separately), but the firmware
 # has them on nearly every layer (cb_enter RHM RHR R0, cb_tab RTM RTR R0 in combos.dtsi).
 combos:
