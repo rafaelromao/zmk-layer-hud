@@ -26,10 +26,6 @@ Config keys (all paths may use ~):
              `keymap parse` produces from a .keymap).
       map:   per layer (by name, by id, or by position in ZMK layer order): a drawer layer name,
              null for a layer that is transparent or not drawn, or {drawer, label, class}.
-
-An `imported.yaml` beside the config — written by `zmk-layer-hud import` out of the keyboard's own
-ZMK keymap — supplies the layer ids and the combos' real layer coverage. It is a floor, never a
-ceiling: anything the config says wins over it.
   base:           the drawer layer that is always active (default: the layer for id 0)         (optional)
   positions:      ZMK key position of each drawer key, in drawer order, when the drawer does not
                   list the keys in the keymap's binding order (firmware `positions;`)            (optional)
@@ -42,6 +38,10 @@ ceiling: anything the config says wins over it.
       alpha2:            a secondary alpha layer typed letters may come from
       letter_combos_on:  layers on which letter-producing base-layer combos count
       search:            layer search order for unplaced keys (default: YAML order)
+
+A `<config>.imported.yaml` beside the config — written by `zmk-layer-hud import` out of the
+keyboard's own ZMK keymap — supplies the layer ids, the combos' real layer coverage and the
+keyboard's combo term. It is a floor, never a ceiling: anything the config says wins over it.
 
 `python3 host/keymap.py [--config PATH] [--dump]` prints the message (or an error) for checking.
 """
@@ -106,6 +106,7 @@ GLYPHS = {
     "mdi:toggle-switch": "⏻", "mdi:controller": "🎮", "mdi:wrench": "🔧", "mdi:camera-flip": "📷⇄",
     "mdi:window-maximize": "⛶", "mdi:window-restore": "❐", "mdi:monitor": "🖥", "mdi:keyboard": "⌨",
     "mdi:brightness-6": "☼", "mdi:music": "♫", "mdi:clock-outline": "⏱", "mdi:calendar": "📅",
+    "mdi:database-search-outline": "🔍",
 }
 GLYPH_RE = re.compile(r"^\$\$(.+?)\$\$$")
 GLYPH_IN_TEXT_RE = re.compile(r"\$\$(.+?)\$\$")
@@ -137,12 +138,12 @@ def legend(value):
     if m:
         gid = m.group(1)
         return GLYPHS.get(gid, gid.split(":")[-1]), gid
-    # A glyph inside a longer legend ($$mdi:magnify$$l is a search icon and the letter l): keep
-    # the first glyph and leave the rest as text, which the page draws after it. Without this the
-    # marker reaches the key as the literal characters $$mdi:magnify$$.
-    found = GLYPH_IN_TEXT_RE.search(s)
-    if found:
-        return GLYPH_IN_TEXT_RE.sub("", s).strip(), found.group(1)
+    # A glyph inside a longer legend ($$mdi:magnify$$l is a search icon and the letter l). The
+    # message carries one glyph per legend and the glyph replaces the text, so an embedded one
+    # becomes its text spelling instead — otherwise the marker reaches the key as the literal
+    # characters $$mdi:magnify$$.
+    if "$$" in s:
+        s = GLYPH_IN_TEXT_RE.sub(lambda g: GLYPHS.get(g.group(1), g.group(1).split(":")[-1]), s)
     return s, None
 
 
@@ -672,6 +673,8 @@ def merge_imported(cfg, imported):
     layers = imported.get("layers") or {}
     if layers:
         cfg["_imported_layers"] = {str(k): v for k, v in layers.items()}
+    if imported.get("combo_term_ms") and "combo_term_ms" not in cfg:
+        cfg["combo_term_ms"] = int(imported["combo_term_ms"])
     named = {tuple(sorted(c.get("positions") or [])) for c in (cfg.get("combos") or [])}
     inherited = [c for c in (imported.get("combos") or [])
                  if tuple(sorted(c.get("positions") or [])) not in named]

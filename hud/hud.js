@@ -159,13 +159,12 @@
     return null;
   }
 
-  // A legend is text, the SVG keymap-drawer draws for a $$glyph$$ (sent with the keymap), or a
-  // glyph with text after it ($$mdi:magnify$$l — a search icon and the letter l).
-  const escapeHTML = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  // A legend is text, or the SVG keymap-drawer draws for a $$glyph$$ (sent with the keymap). The
+  // glyph replaces the text rather than joining it: a key's `tap` carries the glyph's own text
+  // spelling so something still shows when the SVG could not be resolved.
   function legendHTML(text, glyph) {
     const svg = glyph && state.data.glyphs && state.data.glyphs[glyph];
-    if (!svg) return null;
-    return `<span class="glyph">${svg}</span>` + (text ? escapeHTML(text) : "");
+    return svg ? `<span class="glyph">${svg}</span>` : null;
   }
   function setLegend(el, text, glyph) {
     const html = legendHTML(text, glyph);

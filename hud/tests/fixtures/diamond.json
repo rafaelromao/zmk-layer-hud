@@ -3428,10 +3428,9 @@
 "type": "key"
 },
 {
-"glyph": "mdi:database-search-outline",
 "hold": "everything",
 "shifted": "search",
-"tap": "l",
+"tap": "🔍l",
 "type": "key"
 },
 {

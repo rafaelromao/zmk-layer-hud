@@ -90,6 +90,33 @@ class FindKeymap(unittest.TestCase):
             self.assertTrue(sync.find_keymap(d).endswith("/only.keymap"))
 
 
+class ComboTerm(unittest.TestCase):
+    def test_a_literal_timeout_is_read(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = write(d, "board.keymap", "combos { timeout-ms = <45>; };\n")
+            self.assertEqual(sync.combo_term(path), 45)
+
+    def test_a_timeout_defined_in_another_file_is_resolved(self):
+        # The Diamond writes it through a macro: `timeout-ms = <COMBO_TERM>` in one header,
+        # `#define COMBO_TERM 30` in another, both reached through the keymap's includes.
+        with tempfile.TemporaryDirectory() as d:
+            write(d, "defs/config.dtsi", "#define COMBO_TERM 30\n")
+            write(d, "defs/helpers.h", "#define COMBO(N) N { timeout-ms = <COMBO_TERM>; };\n")
+            path = write(d, "board.keymap", '#include "defs/config.dtsi"\n#include "defs/helpers.h"\n')
+            self.assertEqual(sync.combo_term(path), 30)
+
+    def test_the_commonest_wins_when_combos_disagree(self):
+        # ZMK allows a timeout per combo; the HUD groups presses with one number.
+        with tempfile.TemporaryDirectory() as d:
+            path = write(d, "board.keymap",
+                         "a { timeout-ms = <30>; }; b { timeout-ms = <30>; }; c { timeout-ms = <80>; };\n")
+            self.assertEqual(sync.combo_term(path), 30)
+
+    def test_a_keymap_that_never_says_gives_nothing(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(sync.combo_term(write(d, "board.keymap", KEYMAP)))
+
+
 class Mapping(unittest.TestCase):
     DRAWN = ["alpha1", "numbers", "nav"]
 

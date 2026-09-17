@@ -103,11 +103,14 @@
   /* A legend is the glyph markup when the message carries one for it, else the plain text
    * (hud.js:159). Comparing the markup rather than a parsed id keeps this exact for a real MDI
    * SVG and for the placeholder the fixture uses. */
-  const escapeHTML = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  /* A glyph legend is the SVG and nothing else — the glyph replaces the text rather than joining
+   * it, and a key's `tap` carries the glyph's own text spelling only so something shows when the
+   * SVG could not be resolved. Stated here rather than borrowed from the renderer: an expectation
+   * that calls the code under test agrees with it however wrong it is, which is exactly how every
+   * glyph key came to be drawn with its spelling stuck beside it and the sweep stayed green. */
   function legendText(data, text, glyph) {
     const svg = glyph && data.glyphs && data.glyphs[glyph];
-    if (!svg) return text || "";
-    return '<span class="glyph">' + svg + "</span>" + (text ? escapeHTML(text) : "");
+    return svg ? '<span class="glyph">' + svg + "</span>" : (text || "");
   }
   const expectedLegends = (data, key) => ({
     tap: legendText(data, key.tap, key.glyph),

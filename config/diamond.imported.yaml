@@ -6,6 +6,10 @@
 #   source:   github.com/rafaelromao/keyboards
 #   keyboard: diamond
 
+# The keyboard's own combo timeout: presses within it are one chord, and the HUD has
+# to group them the same way or it draws chords that were never struck.
+combo_term_ms: 30
+
 layers:
   0: { name: DEFAULT, drawer: alpha1, label: Alpha 1 }
   1: { name: ALT OS, drawer: null, label: Alt OS }    # not drawn — set one in config.yaml if it should be

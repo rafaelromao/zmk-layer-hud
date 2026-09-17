@@ -137,6 +137,54 @@ def layer_names(keymap_path, depth=6):
     return names
 
 
+DEFINE_RE = re.compile(r"^\s*#define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(\d+)\s*$", re.M)
+TIMEOUT_RE = re.compile(r"timeout-ms\s*=\s*<\s*([A-Za-z_][A-Za-z0-9_]*|\d+)\s*>")
+
+
+def reachable(keymap_path, depth=8):
+    """Every file the keymap pulls in, itself first. Whatever is being looked for may be several
+    includes away — the combo term is written in one file and defined in another."""
+    seen, out = set(), []
+
+    def walk(path, left):
+        path = os.path.abspath(path)
+        if left < 0 or path in seen or not os.path.isfile(path):
+            return
+        seen.add(path)
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        out.append((path, text))
+        for rel in INCLUDE_RE.findall(text):
+            walk(os.path.join(os.path.dirname(path), rel), left - 1)
+
+    walk(keymap_path, depth)
+    return out
+
+
+def combo_term(keymap_path):
+    """The keyboard's combo timeout in ms, or None when the keymap does not say.
+
+    The HUD groups the presses that arrive within this into one combo, so it has to be the
+    keyboard's own number: too short and a real chord is missed, too long and two quick keystrokes
+    become one. ZMK allows a timeout per combo; the HUD has one, so the commonest wins.
+    """
+    files = reachable(keymap_path)
+    defines = {}
+    for _, text in files:
+        for m in DEFINE_RE.finditer(text):
+            defines.setdefault(m.group(1), int(m.group(2)))
+    found = {}
+    for _, text in files:
+        for m in TIMEOUT_RE.finditer(text):
+            token = m.group(1)
+            value = int(token) if token.isdigit() else defines.get(token)
+            if value:
+                found[value] = found.get(value, 0) + 1
+    if not found:
+        return None
+    return max(found.items(), key=lambda kv: (kv[1], -kv[0]))[0]
+
+
 def parse_keymap(keymap_path):
     """keymap-drawer's own ZMK parser: combos with the layers they really fire on."""
     exe = shutil.which("keymap", path=os.path.dirname(sys.executable)) or shutil.which("keymap")
@@ -224,6 +272,10 @@ def render(data, undecided):
     if undecided:
         L += [f"# {len(undecided)} layer(s) below have no drawing: set `drawer:` for them in config.yaml",
               "# under `layers:`, or leave them null if nothing draws them.", ""]
+    if data.get("combo_term_ms"):
+        L += ["# The keyboard's own combo timeout: presses within it are one chord, and the HUD has",
+              "# to group them the same way or it draws chords that were never struck.",
+              f"combo_term_ms: {data['combo_term_ms']}", ""]
     L.append("layers:")
     for lid, entry in sorted(data["layers"].items(), key=lambda kv: int(kv[0])):
         drawer = entry["drawer"]
@@ -248,6 +300,9 @@ def yq(s):
 def delta(before, after):
     """What changed, as lines a human can read. Empty when nothing did."""
     out = []
+    was, now = (before or {}).get("combo_term_ms"), after.get("combo_term_ms")
+    if before is not None and was != now:
+        out.append(f"  ~ combo term: {was} ms became {now} ms")
     ol, nl = (before or {}).get("layers", {}), after["layers"]
     for lid in sorted(set(ol) | set(nl), key=int):
         a, b = ol.get(lid), nl.get(lid)
@@ -288,6 +343,7 @@ def read_imported(path):
     with open(path, encoding="utf-8") as f:
         got = yaml.safe_load(f) or {}
     return {"layers": {str(k): v for k, v in (got.get("layers") or {}).items()},
+            "combo_term_ms": got.get("combo_term_ms"),
             "combos": got.get("combos") or []}
 
 
@@ -315,6 +371,7 @@ def do_import(source, keyboard, config_path, quiet=False):
     layers, undecided = draft_layers(names, drawn, previous)
     data = {"source": source if kind == "url" else os.path.abspath(os.path.expanduser(source)),
             "keyboard": board, "layers": layers,
+            "combo_term_ms": combo_term(keymap_path),
             "combos": combo_coverage(parsed, layers, positions, drawn, drawn_combos)}
 
     before = read_imported(out_path)

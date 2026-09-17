@@ -74,11 +74,11 @@ base: alpha1
 # bottom, left hand then right hand, thumbs last.
 positions: [1, 2, 3, 6, 7, 8, 10, 11, 12, 13, 16, 17, 18, 19, 21, 22, 23, 26, 27, 28, 31, 32, 33, 34]
 
-# COMBO_TERM in config.dtsi: key positions pressed within it are one combo.
-combo_term_ms: 30
+# The keyboard's combo timeout — key positions pressed within it are one chord — comes from the
+# keymap too, so it cannot drift from the firmware. Set `combo_term_ms:` here to override it.
 
-# Which layers each combo really fires on lives in imported.yaml beside this file, taken out of
-# the keyboard's own keymap by `zmk-layer-hud import` and kept up to date by `zmk-layer-hud sync`.
+# Which layers each combo really fires on lives in diamond.imported.yaml beside this file, taken
+# out of the keyboard's own keymap by `zmk-layer-hud import`, kept current by `zmk-layer-hud sync`.
 # A combo's `layers:` in the drawer file is a drawing choice — draw it once, on the diagram that
 # explains it — where the HUD needs the firmware's gate, and without the gate it would have to
 # guess: 💾 really does save on every layer, and the digits really do not.
