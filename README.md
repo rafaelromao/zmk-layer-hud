@@ -145,12 +145,32 @@ a one-shot layer on screen through its key's flash, and shows typed characters i
 ## Development
 
 ```bash
-make test        # firmware encode/decode policy (C) + host decoder and keymap conversion (Python)
+make test        # firmware wire policy (C) + host decoder and keymap conversion (Python) + the page (node)
+make test-hud    # just the page; KEYMAP=hud/keymap.json runs it against your own board
 make keymap      # check the configured keymap-drawer YAML converts
+make fixture     # rebuild the committed test keymap from the configured one
 ```
 
 `firmware/src/layer_signal_policy.h` is the single definition of the wire format; the C and
 Python tests share its vectors.
+
+`make test-hud` sweeps the page: every key on every layer it can be shown on, every combo on every
+layer it is declared on and in four press orders, every press that must draw no combo, and the
+typed-keys strip against what a keyboard would have sent to type each legend. Over 5000 checks in
+about a third of a second. The cases are generated from the keymap message, so pointing it at
+another board sweeps that board.
+
+`hud/tests/dom.js` is a browser small enough to read — the DOM the page touches and a clock the
+test drives by hand — so `hud/hud.js` and `hud/keys.js` run under node exactly as they ship, with
+no npm and nothing to build. A DOM that small can also be wrong, so the same cases run in the real
+page: serve `hud/`, open `index.html?keymap=tests/fixtures/diamond.json`, and
+
+```js
+await import("./tests/browser.js"); await hudBrowserSweep("tests/fixtures/diamond.json")
+```
+
+prints the same count and the same failure digest that `node hud/tests/hud_test.js --signature`
+does. A case the two disagree about is a hole in the shim.
 
 ## Limits
 
