@@ -226,7 +226,8 @@
           checked++;
           await driver.reset(null, false);
           const held = [];
-          if (order.act !== null) { await driver.press(zmkPos(order.act)); held.push(order.act); }
+          // The thumb's position and the layer it turned on are two separate HID reports.
+          if (order.act !== null) { await driver.press(zmkPos(order.act)); held.push(order.act); await driver.advance(2); }
           await driver.setLayers(layer === data.base ? [] : [ids]);
           if (order.gap) await driver.advance(order.gap);
           for (const idx of positions) await driver.press(zmkPos(idx));

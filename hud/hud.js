@@ -55,6 +55,8 @@
     mods: {},                 // flag -> true while held
     device: "",               // the keyboard's HID product name
     activatorOf: {},          // drawn layer -> the key idx that brought it in (positions)
+    layersAt: 0,              // when the keyboard last reported its layer set
+    held: new Set(),          // key idx currently down, by reported position
     keyEls: [],
     timers: new Map(),
     scale: 1,
@@ -607,6 +609,9 @@
       if (typeof ids === "string") ids = JSON.parse(ids);
       if (!Array.isArray(ids)) return;
       ids = ids.map(Number).filter(n => Number.isInteger(n) && n > 0);
+      // When the keyboard spoke, not when the board caught up: the set below may be held back for
+      // a key's flash, and the combo grouping needs the moment the report arrived.
+      state.layersAt = Date.now();
       clearTimeout(state.layersTimer);
       // A one-shot layer leaves right after the key it served (and may enter another, undrawn
       // one). Keep the board on the drawn layers while the key's flash is visible, otherwise the
@@ -652,6 +657,7 @@
       const now = Date.now();
       state.posAt = now; state.lastKeyAt = now;
       if (!state.keyEls[idx]) return;
+      state.held.add(idx);
       flash([idx]);
       // Stay lit until the release arrives (a safety timeout covers a lost report).
       clearTimeout(state.timers.get(idx));
@@ -662,8 +668,20 @@
       // the trailing run of presses that started within the term of this one.
       while (recentPos.length && now - recentPos[0].t > T('activator_ms')) recentPos.shift();
       recentPos.push({ idx, t: now });
+      // ZMK releases a combo's own positions together, so they arrive as one burst. A key that
+      // was already down when the current layer set arrived, and is what holds one of those
+      // layers, is a thumb — not half of the chord that followed it. Without this it joins the
+      // burst and the combo is either missed or drawn as whichever larger combo happens to
+      // contain the thumb (holding Alpha 2 and chording backspace drew Tab).
+      const layerAt = state.layersAt || 0;
+      const holdsALayer = idx => state.held.has(idx) && Object.values(state.activatorOf).includes(idx);
       let start = recentPos.length - 1;
-      while (start > 0 && now - recentPos[start - 1].t <= term) start--;
+      while (start > 0) {
+        const prev = recentPos[start - 1];
+        if (now - prev.t > term) break;
+        if (prev.t <= layerAt && holdsALayer(prev.idx)) break;
+        start--;
+      }
       if (start === recentPos.length - 1) state.comboShown = null; // a new group begins
       // Only presses within the keymap's combo term form a combo: ZMK's combo module releases the
       // captured positions together when a combo completes, so they arrive within the term. A key
@@ -702,6 +720,7 @@
       const idx = map[String(pos)] !== undefined ? map[String(pos)] : Number(pos);
       const e = state.keyEls[idx];
       if (!e) return;
+      state.held.delete(idx);
       clearTimeout(state.timers.get(idx));
       state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo", "inferred"), T('release_ms')));
     },
