@@ -164,6 +164,8 @@ static void work_cb(struct k_work *work_item) {
     }
 }
 
+#if POSITIONS
+
 /* Key presses: each position goes out as a hi+lo usage pair in one report and is released in
  * the next. The pairs are sent from this module's own queue, not from the key-press event
  * handler and not from the system workqueue: a USB send can block for tens of milliseconds,
@@ -213,6 +215,8 @@ static void announce_position(uint32_t position, bool released) {
     pos_tail = next;
     k_work_submit_to_queue(&signal_q, &pos_work);
 }
+
+#endif /* POSITIONS */
 
 static int layer_signal_listener(const zmk_event_t *eh) {
     if (as_zmk_layer_state_changed(eh) != NULL || as_zmk_endpoint_changed(eh) != NULL) {
