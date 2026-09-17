@@ -2,20 +2,15 @@
 # SPDX-License-Identifier: MIT
 
 description: |
-  Reports the keyboard's active layers to the host through the ordinary
-  keyboard HID report, using keyboard-page usages no operating system maps to
-  a key (0xA5-0xDF are reserved in the HID Usage Tables).
+  Reports the keyboard's active layers to a host program over a carrier of this
+  module's own: a CDC-ACM serial interface over USB, notifications on our own
+  GATT service over BLE. Nothing it sends can be read by the operating system
+  as a key.
 
-  On every layer change the module adds usage (base-usage + layer id) for each
-  active layer with id >= 1 and then commit-usage to the keyboard report, sends
-  it once, waits tap-ms, removes them and sends again. The report that contains
-  commit-usage always carries the complete set, so the host decodes exactly
-  that report and ignores every other one. Layer 0 is never sent: it is always
-  active.
-
-  Nothing is raised on ZMK's event bus: the report is written directly, so
-  behaviours that watch key presses (auto-layer, adaptive keys, caps word,
-  sticky keys) do not react to the signal.
+  On every layer change the module sends one frame carrying a bitmap of the
+  active layers. With positions, it also sends one frame per key press and
+  release. The frame format is in firmware/src/signal_frame.h, which the host
+  mirrors.
 
   Example:
 
@@ -27,62 +22,46 @@ description: |
         };
     };
 
-  With the defaults, layer ids 1..30 are representable. Set
-  CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE=12 on the central/dongle so the active
-  layers, the commit usage and held keys fit one report; when they do not, the
-  burst is skipped and logged rather than sent truncated.
+  Over USB the carrier needs a UART: build with the layer-hud-usb-uart snippet,
+  which adds a cdc-acm-uart and points the zmk,layer-hud-uart chosen at it.
+
+    build ... -n layer-hud-usb-uart
+
+  Nothing needs to be set on the keyboard report any more. Earlier versions
+  required CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE=12 and the HKRO report type
+  because the signal shared the report with real keys; it no longer does.
 
 compatible: "zmk,layer-signal"
 
 properties:
-  base-usage:
-    type: int
-    default: 192
-    description: |
-      Keyboard-page usage sent for layer id 0 (0xC0). Layer L is sent as
-      base-usage + L. Keep base-usage >= 0xA5 so no usage below it collides
-      with a real key; the host must use the same value.
-
-  commit-usage:
-    type: int
-    default: 223
-    description: |
-      Usage (0xDF) added last to the report that carries the full layer set.
-      Must be greater than base-usage; layers whose usage would reach it are
-      not representable and are dropped from the report.
-
-  tap-ms:
-    type: int
-    default: 10
-    description: Time the usages stay in the report before they are released.
-
   settle-ms:
     type: int
     default: 3
     description: |
-      Delay between a layer change and the burst, so a group of changes (a host
-      vim code switching two layers, a layer-tap roll) becomes one burst.
+      Delay between a layer change and the frame, so a group of changes (a host
+      vim mode switching two layers, a layer-tap roll) becomes one frame.
 
   positions:
     type: boolean
     description: |
-      Also announce the physical position of every key press: one usage from
-      0xA5..0xB5 and one from 0xB8..0xBF in the same report encode
-      position = (hi - 0xA5) * 8 + (lo - 0xB8), up to 136 keys, pressed and
-      released within the event so a report never carries two positions
-      (0xB6/0xB7 are skipped: Linux types Keypad ( ) for them). The pair is
-      sent for the key's press (hi before lo in the report) and for its
-      release (lo before hi), so the host can show keys as held. The
-      HUD then lights the exact key for chords, combos, macros, layer and
-      modifier keys, whatever they produce. Costs two extra reports per press.
-      Requires base-usage >= 0xC0 (the default).
+      Also send the physical position of every key press and release, so the
+      HUD can light the exact key for chords, combos, macros, layer and
+      modifier keys, whatever they produce.
+
+      Safe to enable now. In the report-based version this cost two blocking
+      HID sends per press on the system work queue -- the queue ZMK scans the
+      matrix on -- which pushed the next press's timestamp past the combo term
+      and stopped combos firing. The carriers here drop rather than block, so a
+      press cannot be delayed by the signal.
 
   heartbeat-ms:
     type: int
     default: 0
     description: |
-      When non-zero, re-send the current set this often while idle, so a host
-      that starts mid-session learns the state without a resync channel. Two
-      small reports per period; 2000 is a good value for a HUD. 0 disables it.
-      Skipped while a real key is held, so it never interrupts a host's
-      auto-repeat of that key.
+      When non-zero, re-send the current layer set this often, so a host that
+      starts mid-session learns the state without a resync channel. 2000 is a
+      good value for a HUD. 0 disables it.
+
+      Unlike the report-based version this does not have to wait for held keys:
+      that deferral existed because the old usages reached the host as key
+      events and interrupted its auto-repeat.

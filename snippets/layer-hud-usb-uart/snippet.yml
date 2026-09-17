@@ -1,0 +1,7 @@
+# Copyright (c) 2026 Rafael Romão
+# SPDX-License-Identifier: MIT
+
+name: layer-hud-usb-uart
+append:
+  EXTRA_DTC_OVERLAY_FILE: layer-hud-usb-uart.overlay
+  EXTRA_CONF_FILE: layer-hud-usb-uart.conf

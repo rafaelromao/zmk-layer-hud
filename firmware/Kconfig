@@ -4,55 +4,69 @@
 # Kconfig functions split their arguments on commas, so the compatible (which
 # contains one) must go through a variable first. Same pattern as ZMK itself.
 DT_COMPAT_ZMK_LAYER_SIGNAL := zmk,layer-signal
+DT_CHOSEN_ZMK_LAYER_HUD_UART := zmk,layer-hud-uart
 
 config ZMK_LAYER_SIGNAL
-    bool "Report the active layers to the host as reserved HID keyboard usages"
+    bool "Report the active layers to a host program"
     default $(dt_compat_enabled,$(DT_COMPAT_ZMK_LAYER_SIGNAL))
     depends on !ZMK_SPLIT || ZMK_SPLIT_ROLE_CENTRAL
-    depends on ZMK_HID_REPORT_TYPE_HKRO
     help
-      On every layer change, put one reserved keyboard-page usage per active
-      layer (base-usage + layer id) plus a commit usage into the keyboard HID
-      report, send it, and release them a few milliseconds later. No operating
-      system maps these usages to a key, so applications never see them; a host
-      program reading the raw HID reports (zmk-layer-hud's hudfeed.py) decodes
-      the layer set from the report that carries the commit usage.
+      On every layer change, send the set of active layers to a host program
+      (zmk-layer-hud's hudfeed.py) as a small framed message on a carrier of
+      this module's own: a CDC-ACM serial interface over USB, notifications on
+      our own GATT service over BLE.
 
       Enabled automatically when a zmk,layer-signal node is present in the
-      keymap. Only built on the central/unibody side, where HID reports are
-      sent. Needs the HKRO report type: the NKRO bitmap stops at usage 0x67.
+      keymap. Only built on the central/unibody side, where the host is.
 
-      Raise CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE (default 6) so the active
-      layers, the commit usage and any held keys fit in one report; 12 is the
-      largest value whose USB report still fits the 16-byte interrupt endpoint.
+      Earlier versions smuggled the signal through the keyboard HID report as
+      reserved keyboard-page usages. Linux maps that whole range to
+      KEY_UNKNOWN, so every layer change arrived as a phantom key press
+      carrying whatever modifiers were held, and a compositor could act on it.
+      Nothing on these carriers can be read as a key, and the report type no
+      longer matters -- the HKRO dependency this config used to carry is gone,
+      as is the raised CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE it needed.
 
-config ZMK_LAYER_SIGNAL_WORKQUEUE_STACK_SIZE
-    int "Stack size for the layer signal work queue"
-    default 2048
-    depends on ZMK_LAYER_SIGNAL
+if ZMK_LAYER_SIGNAL
+
+config ZMK_LAYER_SIGNAL_UART
+    bool "Carry the signal on a CDC-ACM serial interface"
+    default y if $(dt_chosen_enabled,$(DT_CHOSEN_ZMK_LAYER_HUD_UART))
+    depends on SERIAL
+    select UART_INTERRUPT_DRIVEN
+    select RING_BUFFER
     help
-      The module runs its sends on its own queue rather than the system
-      workqueue, which is where ZMK debounces the matrix and raises position
-      events. zmk_endpoint_send_report blocks for as long as the transport
-      takes, and anything blocking on that queue delays the next key press's
-      event; combo.c compares those timestamps against the combo term, so a
-      short term (30 ms is common) simply stops matching.
+      Needs a UART pointed at by the zmk,layer-hud-uart chosen node. The
+      layer-hud-usb-uart snippet adds a cdc-acm-uart under zephyr_udc0 and sets
+      that chosen, which is all most builds need:
 
-      This stack has to carry a USB or BLE HID send. 2048 is comfortable; lower
-      it if RAM is tight, but watch for stack overflows rather than guessing.
+        build ... -n layer-hud-usb-uart
 
-      With this queue in place CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE no longer
-      needs headroom for the signal, and any bump added for it can come back
-      out.
+      Interrupt-driven because the alternative, uart_poll_out, blocks on
+      CDC-ACM once the host stops reading, and this module must never be able
+      to delay a keystroke.
 
-config ZMK_LAYER_SIGNAL_WORKQUEUE_PRIORITY
-    int "Thread priority for the layer signal work queue"
-    default 10
-    depends on ZMK_LAYER_SIGNAL
+config ZMK_LAYER_SIGNAL_UART_TX_BUF
+    int "Outgoing buffer for the serial carrier, in bytes"
+    default 128
+    depends on ZMK_LAYER_SIGNAL_UART
     help
-      Preemptible (>= 0) on purpose. The signal is cosmetic, so it must always
-      yield to scanning and HID; a cooperative priority here would be able to
-      starve the matrix scan exactly the way the system workqueue did.
+      Frames are 11 bytes at most, so this holds a dozen of them. It only fills
+      when the host is not reading, and a frame that does not fit is dropped:
+      the next layer change or the heartbeat corrects the HUD, and dropping
+      costs nothing a keystroke can feel. Raise it if you enable positions on a
+      board that types faster than the host drains.
+
+config ZMK_LAYER_SIGNAL_GATT
+    bool "Carry the signal as notifications on our own GATT service"
+    default y
+    depends on BT_PERIPHERAL
+    help
+      A primary service with one notify characteristic, beside ZMK's
+      HID-over-GATT rather than inside it. Encryption is required to subscribe,
+      so the signal only flows to a bonded host.
+
+endif # ZMK_LAYER_SIGNAL
 
 # Logging goes through ZMK's own log module (LOG_MODULE_DECLARE(zmk, ...)) and
-# follows CONFIG_ZMK_LOG_LEVEL. Set CONFIG_ZMK_LOG_LEVEL_DBG=y to see bursts.
+# follows CONFIG_ZMK_LOG_LEVEL. Set CONFIG_ZMK_LOG_LEVEL_DBG=y to see frames.

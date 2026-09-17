@@ -9,6 +9,7 @@
  */
 
 #include "../src/layer_signal_policy.h"
+#include "../src/signal_frame.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -152,10 +153,47 @@ static void test_positions(void) {
     check(ok, "all 136 positions round-trip and avoid 0xB6/0xB7");
 }
 
+
+/* The frame format is the contract with the host: host/hudfeed_test.py asserts
+ * these same bytes, so a change here that is not mirrored there fails both. */
+static void test_frames(void) {
+    uint8_t buf[ZLS_FRAME_MAX_LEN];
+
+    size_t n = zls_frame_layers(0x00400001u, buf, sizeof(buf));
+    eq_bytes(buf, (int)n,
+             (const uint8_t[]){0xA5, 0x5A, 0x01, 0x01, 0x04, 0x01, 0x00, 0x40, 0x00,
+                               zls_crc8((const uint8_t[]){0x01, 0x01, 0x04, 0x01, 0x00, 0x40, 0x00}, 7)},
+             10, "layer frame carries the bitmap little-endian");
+
+    n = zls_frame_layers(0, buf, sizeof(buf));
+    check(n == 10 && buf[4] == 4 && buf[5] == 0 && buf[6] == 0 && buf[7] == 0 && buf[8] == 0,
+          "no layers is a value, not an absent frame");
+
+    n = zls_frame_position(34, 1, buf, sizeof(buf));
+    check(n == 8 && buf[3] == ZLS_KIND_POSITION && buf[4] == 2 && buf[5] == 34 && buf[6] == 1,
+          "position frame carries position and press");
+
+    n = zls_frame_position(34, 0, buf, sizeof(buf));
+    check(n == 8 && buf[6] == 0, "release is the same frame with the flag clear");
+
+    /* A reader that joins mid-stream resyncs on the magic and validates with the
+     * CRC, so the CRC must cover everything after it. */
+    n = zls_frame_layers(0xDEADBEEFu, buf, sizeof(buf));
+    check(buf[n - 1] == zls_crc8(buf + 2, n - 3), "crc covers version through payload");
+
+    uint8_t corrupt[ZLS_FRAME_MAX_LEN];
+    memcpy(corrupt, buf, n);
+    corrupt[6] ^= 0x01;
+    check(corrupt[n - 1] != zls_crc8(corrupt + 2, n - 3), "a flipped payload bit fails the crc");
+
+    check(zls_frame_layers(0, buf, 9) == 0, "encoding refuses a buffer that cannot hold the frame");
+}
+
 int main(void) {
     test_encode();
     test_decode();
     test_positions();
+    test_frames();
     printf("%d checks, %d failures\n", checks, failures);
     return failures ? 1 : 0;
 }

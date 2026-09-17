@@ -1,0 +1,21 @@
+/*
+ * Copyright (c) 2026 Rafael Romão
+ *
+ * SPDX-License-Identifier: MIT
+ *
+ * Give the layer signal a CDC-ACM serial interface to travel on. The keyboard
+ * enumerates one extra serial port beside its HID interfaces; the HUD host
+ * opens it and reads frames.
+ */
+
+/ {
+    chosen {
+        zmk,layer-hud-uart = &snippet_layer_hud_usb_uart;
+    };
+};
+
+&zephyr_udc0 {
+    snippet_layer_hud_usb_uart: snippet_layer_hud_usb_uart {
+        compatible = "zephyr,cdc-acm-uart";
+    };
+};
