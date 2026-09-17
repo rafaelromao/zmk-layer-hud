@@ -1,0 +1,10 @@
+#!/bin/sh
+# zmk-layer-hud — the command line. Picks the venv's Python (keymap-drawer lives there) and falls
+# back to whatever python3 is around, the same way the panel scripts do.
+set -e
+here=$(cd "$(dirname "$0")" && pwd)
+for py in "$here/.venv/bin/python3" /opt/homebrew/bin/python3 python3; do
+  if command -v "$py" >/dev/null 2>&1; then exec "$py" "$here/host/sync.py" "$@"; fi
+done
+echo "zmk-layer-hud: no python3 found" >&2
+exit 1

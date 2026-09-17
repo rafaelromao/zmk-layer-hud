@@ -21,10 +21,15 @@ Config keys (all paths may use ~):
   signal:         {base, commit} usages of the firmware node                        (optional)
   layers:         how ZMK layer ids map to drawer layers                            (optional)
       dtsi:  a devicetree header whose `// Layers` block has `#define NAME n` lines; the names
-             become the ids' names. Without it, id n is the n-th layer of the YAML (what
+             become the ids' names. Superseded by `zmk-layer-hud import`, which takes the ids from
+             the keymap itself. Without either, id n is the n-th layer of the YAML (what
              `keymap parse` produces from a .keymap).
-      map:   per layer (by define name or id): a drawer layer name, null for a layer that is
-             transparent or not drawn, or {drawer, label, class}.
+      map:   per layer (by name, by id, or by position in ZMK layer order): a drawer layer name,
+             null for a layer that is transparent or not drawn, or {drawer, label, class}.
+
+An `imported.yaml` beside the config — written by `zmk-layer-hud import` out of the keyboard's own
+ZMK keymap — supplies the layer ids and the combos' real layer coverage. It is a floor, never a
+ceiling: anything the config says wins over it.
   base:           the drawer layer that is always active (default: the layer for id 0)         (optional)
   positions:      ZMK key position of each drawer key, in drawer order, when the drawer does not
                   list the keys in the keymap's binding order (firmware `positions;`)            (optional)
@@ -372,29 +377,45 @@ def parse_layers_and_combos(doc, n_keys):
     return layers, combos
 
 
-def zmk_layer_table(layers_cfg, layer_names, dtsi_text):
-    """ZMK layer id -> {id, name, drawer, label, cls}. Ids come from the dtsi when given, else from
-    the YAML order (name = drawer layer). The config's `map` refines drawer/label/class."""
-    if dtsi_text:
-        ids = parse_layer_ids(dtsi_text)
+def zmk_layer_table(layers_cfg, layer_names, dtsi_text, imported=None):
+    """ZMK layer id -> {id, name, drawer, label, cls}. Ids come from an import when there is one,
+    else from the dtsi when given, else from the YAML order (name = drawer layer). The config's
+    `map` refines drawer/label/class and wins over all of them."""
+    if imported:
+        # A list, not a mapping: two layers may share a display name (a copy of a layer reached
+        # another way), and a mapping would drop one and shift every id after it.
+        pairs = [(v["name"], int(k)) for k, v in sorted(imported.items(), key=lambda kv: int(kv[0]))]
+        seed = {str(k): v for k, v in imported.items()}
+    elif dtsi_text:
+        pairs, seed = sorted(parse_layer_ids(dtsi_text).items(), key=lambda kv: kv[1]), {}
     else:
-        ids = {name: i for i, name in enumerate(layer_names)}
+        pairs, seed = [(name, i) for i, name in enumerate(layer_names)], {}
     lower = {n.lower(): n for n in layer_names}
-    overrides = {}
+    overrides, by_position = {}, []
     for key, val in ((layers_cfg or {}).get("map") or {}).items():
         overrides[str(key)] = val
+        by_position.append(val)
     table = {}
-    for name, lid in sorted(ids.items(), key=lambda kv: kv[1]):
+    for name, lid in pairs:
+        # By the keyboard's own name for the layer, by its id, or — since the map is written in ZMK
+        # layer order — by position, which is what lets a map keyed by the names in a devicetree
+        # header keep working once the ids come from the keymap itself.
         spec = overrides.get(name, overrides.get(str(lid), "__unset__"))
-        drawer = lower.get(name.lower())
-        label, cls = prettify(name), ("off" if lid == 0 else "momentary")
+        if spec == "__unset__" and lid < len(by_position):
+            spec = by_position[lid]
+        base = seed.get(str(lid)) or {}
+        drawer = base.get("drawer", lower.get(name.lower()))
+        label = base.get("label") or prettify(name)
+        cls = "off" if lid == 0 else "momentary"
         if spec != "__unset__":
             if spec is None or isinstance(spec, str):
                 drawer = spec
             elif isinstance(spec, dict):
                 drawer = spec.get("drawer", drawer)
                 label = spec.get("label", label)
-                cls = spec.get("class", spec.get("cls", cls))
+                # `class: off` is the word, not the boolean YAML reads it as.
+                got = spec.get("class", spec.get("cls", cls))
+                cls = {True: "on", False: "off"}.get(got, got) if isinstance(got, bool) else got
             else:
                 raise KeymapError(f"layers.map.{name}: expected a layer name, null or a mapping")
         if drawer is not None and drawer not in layer_names:
@@ -550,7 +571,7 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None
         if unknown:
             raise KeymapError(f"combos: positions {override.get('positions')}: unknown layers {unknown}")
         hits[0]["layers"] = [l for l in layers if l in named]
-    zmk_layers = zmk_layer_table(cfg.get("layers"), layer_names, dtsi_text)
+    zmk_layers = zmk_layer_table(cfg.get("layers"), layer_names, dtsi_text, cfg.get("_imported_layers"))
     base = cfg.get("base") or (zmk_layers.get("0") or {}).get("drawer") or layer_names[0]
     if base not in layers:
         raise KeymapError(f"base layer {base!r} is not in the keymap YAML")
@@ -628,6 +649,37 @@ def load_yaml(path):
     return json.loads(res.stdout) or {}
 
 
+def imported_path(config_path):
+    """Where `zmk-layer-hud import` writes what it took out of the keymap, for this config.
+
+    Named after the config rather than fixed, because several configs can share a directory (the
+    examples in this repo do) and what was imported belongs to exactly one of them.
+    """
+    stem = os.path.splitext(os.path.abspath(config_path))[0]
+    return f"{stem}.imported.yaml"
+
+
+def merge_imported(cfg, imported):
+    """Fold what `zmk-layer-hud import` took out of the keyboard's own keymap into the config.
+
+    It is a floor, never a ceiling: the config is where a human writes things down, so anything set
+    there wins. Layer ids and names come from the import (the config's `layers.map` still refines
+    which drawing each one shows), and a combo's real layer coverage likewise, unless the config
+    names that combo itself.
+    """
+    if not isinstance(imported, dict):
+        return cfg
+    layers = imported.get("layers") or {}
+    if layers:
+        cfg["_imported_layers"] = {str(k): v for k, v in layers.items()}
+    named = {tuple(sorted(c.get("positions") or [])) for c in (cfg.get("combos") or [])}
+    inherited = [c for c in (imported.get("combos") or [])
+                 if tuple(sorted(c.get("positions") or [])) not in named]
+    if inherited:
+        cfg["combos"] = inherited + list(cfg.get("combos") or [])
+    return cfg
+
+
 def find_config(path=None):
     for candidate in (path, os.environ.get("ZMKHUD_CONFIG"), DEFAULT_CONFIG):
         if candidate and os.path.exists(expand(candidate)):
@@ -657,6 +709,10 @@ class KeymapSource:
             paths.append(expand(cfg["drawer_config"], base))
         if (cfg.get("layers") or {}).get("dtsi"):
             paths.append(expand(cfg["layers"]["dtsi"], base))
+        imported = imported_path(self.config_path)
+        if os.path.exists(imported):
+            paths.append(imported)
+            merge_imported(cfg, load_yaml(imported))
         return cfg, paths
 
     def changed(self):

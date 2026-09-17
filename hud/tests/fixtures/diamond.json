@@ -6719,32 +6719,32 @@
 "title": "",
 "zmk_layers": {
 "0": {
-"cls": false,
+"cls": "off",
 "drawer": "alpha1",
 "id": 0,
 "label": "Alpha 1",
-"name": "ALPHA1"
+"name": "DEFAULT"
 },
 "1": {
 "cls": "momentary",
 "drawer": null,
 "id": 1,
 "label": "Alt OS",
-"name": "ALT_OS"
+"name": "ALT OS"
 },
 "10": {
 "cls": "momentary",
 "drawer": "shortcuts",
 "id": 10,
 "label": "Shortcuts",
-"name": "SHORTS"
+"name": "SHORTCUTS"
 },
 "11": {
 "cls": "momentary",
 "drawer": "toggles",
 "id": 11,
 "label": "Toggles",
-"name": "TOGS"
+"name": "TOGGLES"
 },
 "12": {
 "cls": "momentary",
@@ -6765,112 +6765,112 @@
 "drawer": "numbers",
 "id": 14,
 "label": "Numbers",
-"name": "NUM"
+"name": "NUMBERS"
 },
 "15": {
 "cls": "momentary",
 "drawer": "symbols",
 "id": 15,
 "label": "Symbols",
-"name": "SYM"
+"name": "SYMBOLS"
 },
 "16": {
 "cls": "momentary",
 "drawer": "shifted1",
 "id": 16,
 "label": "Sentence case",
-"name": "SEN_CASE"
+"name": "SENTENCE CASE"
 },
 "17": {
 "cls": "momentary",
 "drawer": "ç-extension",
 "id": 17,
 "label": "Ç extension",
-"name": "CCEDIL"
+"name": "Ç EXTENSION"
 },
 "18": {
 "cls": "momentary",
 "drawer": "shifted2",
 "id": 18,
 "label": "Shift · Alpha 2",
-"name": "SFT_A2"
+"name": "SHIFTED ALPHA2"
 },
 "19": {
 "cls": "momentary",
 "drawer": "shifted2",
 "id": 19,
 "label": "Caps · Alpha 2",
-"name": "CASE_A2"
+"name": "CASE ALPHA2"
 },
 "2": {
 "cls": "vim",
 "drawer": "vim",
 "id": 2,
 "label": "Vim normal",
-"name": "VIM_NORMAL"
+"name": "NORMAL"
 },
 "20": {
 "cls": "momentary",
 "drawer": "ç-extension",
 "id": 20,
 "label": "Caps · Ç",
-"name": "CASE_CCEDIL"
+"name": "CASE Ç EXTENSION"
 },
 "21": {
 "cls": "momentary",
 "drawer": null,
 "id": 21,
 "label": "Alt repeat",
-"name": "ALTREP2"
+"name": "ALT REP 2"
 },
 "22": {
 "cls": "momentary",
 "drawer": "nav",
 "id": 22,
 "label": "Navigation",
-"name": "NAV"
+"name": "NAVIGATION"
 },
 "23": {
 "cls": "momentary",
 "drawer": "numbers",
 "id": 23,
 "label": "Numbers",
-"name": "NUM_CP"
+"name": "NUMBERS"
 },
 "24": {
 "cls": "momentary",
 "drawer": "symbols",
 "id": 24,
 "label": "Symbols",
-"name": "SYM_CP"
+"name": "SYMBOLS"
 },
 "25": {
 "cls": "momentary",
 "drawer": "media",
 "id": 25,
 "label": "Media / mouse",
-"name": "MEDIA"
+"name": "MOUSE"
 },
 "26": {
 "cls": "momentary",
 "drawer": "nav",
 "id": 26,
 "label": "Navigation",
-"name": "NAV_CP"
+"name": "NAVIGATION"
 },
 "27": {
 "cls": "momentary",
 "drawer": "text",
 "id": 27,
 "label": "Text navigation",
-"name": "TEXT"
+"name": "TEXT NAVIGATION"
 },
 "28": {
 "cls": "momentary",
 "drawer": "func",
 "id": 28,
 "label": "Function keys",
-"name": "FUN"
+"name": "FUNCTIONS"
 },
 "29": {
 "cls": "momentary",
@@ -6884,49 +6884,49 @@
 "drawer": "vim",
 "id": 3,
 "label": "Vim visual",
-"name": "VIM_VISUAL"
+"name": "VISUAL"
 },
 "4": {
 "cls": "vim",
 "drawer": "vim",
 "id": 4,
 "label": "Vim change",
-"name": "VIM_CHANGE"
+"name": "CHANGE"
 },
 "5": {
 "cls": "vim-insert",
 "drawer": null,
 "id": 5,
 "label": "Vim insert",
-"name": "VIM_INSERT"
+"name": "INSERT"
 },
 "6": {
 "cls": "vim",
 "drawer": "vim",
 "id": 6,
 "label": "Vim replace",
-"name": "VIM_REPLACE"
+"name": "REPLACE"
 },
 "7": {
 "cls": "vim-cmdline",
 "drawer": null,
 "id": 7,
 "label": "Vim cmdline",
-"name": "VIM_CMDLINE"
+"name": "CMDLINE"
 },
 "8": {
 "cls": "momentary",
 "drawer": "shifted1",
 "id": 8,
 "label": "Caps word",
-"name": "CASE_A1"
+"name": "CAPSWORD"
 },
 "9": {
 "cls": "momentary",
 "drawer": "shifted1",
 "id": 9,
 "label": "Caps line",
-"name": "CPLK_A1"
+"name": "CAPSLINE"
 }
 }
 }

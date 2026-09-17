@@ -30,13 +30,13 @@ feed:
 keyboard: { vid: 0x1d50, pid: 0x615e }
 signal: { base: 0xC0, commit: 0xDF }
 
-# The drawer YAML is a curated view (six vim layers drawn as one, copy layers folded into
-# their originals), so the ZMK layer ids come from config.dtsi and each define says which
-# drawer layer shows it. null = transparent or not drawn.
+# The drawer YAML is a curated view (six vim layers drawn as one, copy layers folded into their
+# originals), so which drawing shows which ZMK layer has to be said. The ids and the keyboard's own
+# name for each come from imported.yaml; this is in the same order, and says what to draw for each.
+# null = transparent or not drawn.
 layers:
-  dtsi: ~/projects/keyboards/src/definitions/config.dtsi
   map:
-    ALPHA1:      { drawer: alpha1, label: Alpha 1, class: off }
+    ALPHA1:      { drawer: alpha1, label: Alpha 1, class: "off" }
     ALT_OS:      { drawer: null, label: Alt OS }
     VIM_NORMAL:  { drawer: vim, label: Vim normal, class: vim }
     VIM_VISUAL:  { drawer: vim, label: Vim visual, class: vim }
@@ -77,86 +77,19 @@ positions: [1, 2, 3, 6, 7, 8, 10, 11, 12, 13, 16, 17, 18, 19, 21, 22, 23, 26, 27
 # COMBO_TERM in config.dtsi: key positions pressed within it are one combo.
 combo_term_ms: 30
 
-# Which layers each combo really fires on.
-#
+# Which layers each combo really fires on lives in imported.yaml beside this file, taken out of
+# the keyboard's own keymap by `zmk-layer-hud import` and kept up to date by `zmk-layer-hud sync`.
 # A combo's `layers:` in the drawer file is a drawing choice — draw it once, on the diagram that
-# explains it — where the HUD needs the firmware's gate. Say so here wherever the two differ.
-# Without this the HUD would have to guess, and the guess is wrong often enough to notice: 💾
-# really does save on every layer, and the digits really do not.
+# explains it — where the HUD needs the firmware's gate, and without the gate it would have to
+# guess: 💾 really does save on every layer, and the digits really do not.
 #
-# A combo is named by its key positions, in any order, and by `tap:` as well when several combos
-# share them. An entry matching nothing is an error, not a no-op, so these go stale loudly.
-combos:
-  - positions: [0, 1, 21]    # 💾✓
-    layers: &everywhere [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
-  - positions: [1, 21]    # {
-    layers: *everywhere
-  - positions: [2, 21]    # }
-    layers: *everywhere
-  - positions: [3, 22]    # 7
-    layers: *everywhere
-  - positions: [4, 5, 22]    # ⇥
-    layers: *everywhere
-  - positions: [4, 22]    # 8
-    layers: *everywhere
-  - positions: [5, 22]    # 9
-    layers: *everywhere
-  - positions: [7, 8, 21]    # 💾
-    layers: *everywhere
-  - positions: [8, 9, 21]    # ⛶
-    layers: *everywhere
-  - positions: [8, 21]    # (
-    layers: *everywhere
-  - positions: [9, 21]    # )
-    layers: *everywhere
-  - positions: [10, 11, 12, 22]    # ⎘
-    layers: *everywhere
-  - positions: [10, 11, 22]    # ⎘
-    layers: *everywhere
-  - positions: [10, 22]    # 4
-    layers: *everywhere
-  - positions: [10, 23]    # ←
-    layers: *everywhere
-  - positions: [11, 12, 22]    # ↵
-    layers: &but_shortcuts [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, nav, media, text]
-  - positions: [11, 22]    # 5
-    layers: *everywhere
-  - positions: [11, 23]    # ↓
-    layers: *everywhere
-  - positions: [12, 22]    # 6
-    layers: *everywhere
-  - positions: [12, 23]    # ↑
-    layers: *everywhere
-  - positions: [13, 23]    # →
-    layers: *everywhere
-  - positions: [14, 15, 21]    # ↶
-    layers: *everywhere
-  - positions: [15, 16, 21]    # 🔍
-    layers: *everywhere
-  - positions: [15, 21]    # [
-    layers: *everywhere
-  - positions: [16, 21]    # ]
-    layers: *everywhere
-  - positions: [17, 18, 19, 22]    # 📋
-    layers: *everywhere
-  - positions: [17, 18, 22]    # 📋
-    layers: *everywhere
-  - positions: [17, 22]    # 1
-    layers: *everywhere
-  - positions: [17, 23]    # ⌦
-    layers: *everywhere
-  - positions: [18, 19, 22]    # ⊞
-    layers: *everywhere
-  - positions: [18, 22]    # 2
-    layers: *everywhere
-  - positions: [18, 23]    # ⇱
-    layers: *everywhere
-  - positions: [19, 22]    # 3
-    layers: *everywhere
-  - positions: [19, 23]    # ⇲
-    layers: *everywhere
-  - positions: [22, 23]    # 0
-    layers: *everywhere
+# Anything written here wins over what was imported, for a combo the import gets wrong. Name it by
+# its key positions, in any order, and by `tap:` as well when several combos share them. An entry
+# matching nothing is an error rather than a no-op, so these go stale loudly.
+# combos:
+#   - positions: [11, 12, 22]
+#     tap: "↵"
+#     layers: [alpha1, vim]
 
 # Inference hints, used only for a key the keyboard's live stack cannot explain (synthesized
 # keys in a rehearsal, legends the drawer spells differently).

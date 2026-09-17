@@ -98,10 +98,10 @@ with its default and a comment:
 | key | what |
 |---|---|
 | `keymap`, `drawer_config` | the keymap-drawer YAML, and your drawer config (key sizes, glyphs) |
-| `layers` | how ZMK layer ids map to drawer layers when the YAML is curated (`dtsi` + `map`) |
+| `layers` | which drawer layer shows which ZMK layer, when the YAML is curated (`map`) |
 | `positions` | ZMK position of each drawer key when the YAML's key order is not the keymap's |
 | `combo_term_ms` | the keymap's combo timeout, so simultaneous presses form a combo |
-| `combos` | layer coverage for combos the drawer lists on fewer layers than the firmware |
+| `combos` | layer coverage for a combo the import gets wrong |
 | `keyboard`, `signal` | pick one of several ZMK boards; non-default announcement usages |
 | `title` | corner text (default: the name of the keyboard that is typing) |
 | `hud`, `feed` | every size and timing: panel width and opacity, flash and pill durations, combo slack, dead-key window … |
@@ -109,6 +109,29 @@ with its default and a comment:
 
 For a YAML produced by `keymap parse`, layer order and key order already match the keymap and
 none of the mapping keys are needed.
+
+### Taking it from your keyboard's repo
+
+A keymap-drawer file does not carry three things the HUD needs: the id of each ZMK layer, the key
+position of each drawn key, and which layers a combo really fires on — a combo's `layers:` there is
+a drawing choice, drawn once on the diagram that explains it, where the HUD needs the firmware's
+gate. `import` takes them out of the keyboard's own ZMK keymap, once:
+
+```bash
+./zmk-layer-hud import github.com/you/keyboards          # or a path to a working copy
+./zmk-layer-hud import ~/projects/keyboards --keyboard diamond
+./zmk-layer-hud sync                                     # read it again, and say what changed
+```
+
+What it derives goes in a file named after the config (`config.yaml` → `config.imported.yaml`), so
+the config stays yours: anything set there wins, and a sync never touches it. The one thing import
+cannot know is which drawn layer shows which ZMK layer — your names, not the keymap's — so it
+drafts that mapping and marks the lines it had to leave undecided. Correct them once in
+`config.yaml`; sync will not overwrite them.
+
+A URL is cloned into `~/.cache/zmk-layer-hud` (`$ZMKHUD_CACHE` moves it) and fetched on every
+later sync, so a sync sees what you pushed; a path is read where it is, so it sees what you have
+not pushed yet. [config/diamond.imported.yaml](config/diamond.imported.yaml) is what it writes for the Diamond.
 
 ## How it works
 

@@ -1,0 +1,111 @@
+# Written by `zmk-layer-hud import`. Do not edit: `zmk-layer-hud sync` rewrites it.
+#
+# What the keyboard's own ZMK keymap says, which the keymap-drawer file does not carry:
+# the id of every layer, and the layers each combo really fires on. Anything you set in
+# config.yaml wins over what is here, so corrections belong there and survive a sync.
+#   source:   github.com/rafaelromao/keyboards
+#   keyboard: diamond
+
+layers:
+  0: { name: DEFAULT, drawer: alpha1, label: Alpha 1 }
+  1: { name: ALT OS, drawer: null, label: Alt OS }    # not drawn — set one in config.yaml if it should be
+  2: { name: NORMAL, drawer: vim, label: Vim normal }
+  3: { name: VISUAL, drawer: vim, label: Vim visual }
+  4: { name: CHANGE, drawer: vim, label: Vim change }
+  5: { name: INSERT, drawer: null, label: Vim insert }    # not drawn — set one in config.yaml if it should be
+  6: { name: REPLACE, drawer: vim, label: Vim replace }
+  7: { name: CMDLINE, drawer: null, label: Vim cmdline }    # not drawn — set one in config.yaml if it should be
+  8: { name: CAPSWORD, drawer: shifted1, label: Caps word }
+  9: { name: CAPSLINE, drawer: shifted1, label: Caps line }
+  10: { name: SHORTCUTS, drawer: shortcuts, label: Shortcuts }
+  11: { name: TOGGLES, drawer: toggles, label: Toggles }
+  12: { name: MEHS, drawer: mehs, label: Mehs }
+  13: { name: ALPHA2, drawer: alpha2, label: Alpha 2 }
+  14: { name: NUMBERS, drawer: numbers, label: Numbers }
+  15: { name: SYMBOLS, drawer: symbols, label: Symbols }
+  16: { name: SENTENCE CASE, drawer: shifted1, label: Sentence case }
+  17: { name: "Ç EXTENSION", drawer: "ç-extension", label: "Ç extension" }
+  18: { name: SHIFTED ALPHA2, drawer: shifted2, label: "Shift · Alpha 2" }
+  19: { name: CASE ALPHA2, drawer: shifted2, label: "Caps · Alpha 2" }
+  20: { name: "CASE Ç EXTENSION", drawer: "ç-extension", label: "Caps · Ç" }
+  21: { name: ALT REP 2, drawer: null, label: Alt repeat }    # not drawn — set one in config.yaml if it should be
+  22: { name: NAVIGATION, drawer: nav, label: Navigation }
+  23: { name: NUMBERS, drawer: numbers, label: Numbers }
+  24: { name: SYMBOLS, drawer: symbols, label: Symbols }
+  25: { name: MOUSE, drawer: media, label: "Media / mouse" }
+  26: { name: NAVIGATION, drawer: nav, label: Navigation }
+  27: { name: TEXT NAVIGATION, drawer: text, label: Text navigation }
+  28: { name: FUNCTIONS, drawer: func, label: Function keys }
+  29: { name: MACROS, drawer: macros, label: Macros }
+
+combos:
+  - positions: [11, 12, 22]    # &lm_ent_vim
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, nav, media, text]
+  - positions: [0, 1, 21]    # &mc_save_esc_vim
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [7, 8, 21]    # &mc_save
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [8, 9, 21]    # &mc_fullscr
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [15, 16, 21]    # &mc_find
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [14, 15, 21]    # &mc_undo
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [4, 5, 22]    # TAB
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [17, 18, 22]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [10, 11, 22]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [18, 19, 22]    # &mc_selall
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [10, 11, 12, 22]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [17, 18, 19, 22]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [10, 23]    # LEFT
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [11, 23]    # DOWN
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [12, 23]    # UP
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [13, 23]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [17, 23]    # DELETE
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [18, 23]    # HOME
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [19, 23]    # END
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [1, 21]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [2, 21]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [8, 21]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [9, 21]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [15, 21]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [16, 21]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [3, 22]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [4, 22]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [5, 22]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [10, 22]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [11, 22]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [12, 22]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [17, 22]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [18, 22]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [19, 22]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
+  - positions: [22, 23]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
