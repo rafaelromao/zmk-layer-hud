@@ -37,11 +37,14 @@
   const NAMED = {
     space: "␣", return: "↵", escape: "⎋", delete: "⌫", forwarddelete: "⌦", tab: "⇥",
     left: "←", right: "→", up: "↑", down: "↓", home: "⇱", end: "⇲",
-    pagedown: "⇟", pageup: "⇞",
+    pagedown: "⇟", pageup: "⇞", insert: "⎀", capslock: "⇪",
   };
+  // The function keys the decoder names (f1..f24): without them a keymap's F5 resolves to no
+  // token at all and the key never lights when the firmware reports no positions.
+  for (let i = 1; i <= 24; i++) NAMED["f" + i] = "F" + i;
   // Alternative spellings a drawer file may use for the same named key.
   const ALIASES = { "␣": ["space", "spc", "SPACE"], "↵": ["⏎", "enter", "ret", "RET"], "⎋": ["esc", "ESC"],
-    "⌫": ["bspc", "BSPC", "backspace"], "⌦": ["del", "DEL"], "⇥": ["tab", "TAB"] };
+    "⌫": ["bspc", "BSPC", "backspace"], "⌦": ["del", "DEL"], "⇥": ["tab", "TAB", "↹"] };
   // Modifier flags → the glyph a hold legend uses for them (home-row mods light while held).
   const MOD_GLYPH = { shift: "⇧", ctrl: "⌃", alt: "⌥", cmd: "⌘" };
 

@@ -40,7 +40,8 @@ test-hud: ## the HUD page: every key on every layer, every combo, the typed-keys
 	@if [ -z "$(NODE)" ]; then \
 	  echo "test-hud: node not found, skipping (brew install node)"; \
 	else \
-	  $(NODE) hud/tests/hud_test.js $(if $(KEYMAP),--keymap $(KEYMAP)); \
+	  $(NODE) hud/tests/hud_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
+	  PYTHON="$(PYTHON)" $(NODE) hud/tests/strip_test.js $(if $(KEYMAP),--keymap $(KEYMAP)); \
 	fi
 
 fixture: ## rebuild hud/tests/fixtures/diamond.json from the configured keymap (glyphs placeheld)
