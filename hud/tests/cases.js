@@ -63,9 +63,9 @@
     return null;
   }
 
-  // What the drawer file says these keys do on that stack (hud.js:677): the topmost layer that
-  // declares a combo on exactly this position set. No combo declared there means no pill.
-  function expectedCombo(data, positions, stack) {
+  // The combo the drawer file says this set produces on that stack: the topmost layer declaring
+  // one on exactly these positions.
+  function comboOn(data, positions, stack) {
     const want = new Set(positions);
     const same = c => c.positions.length === want.size && c.positions.every(p => want.has(p));
     for (const name of stack) {
@@ -73,6 +73,19 @@
       if (hit) return hit;
     }
     return null;
+  }
+
+  /* What should be on screen once the keys have gone down one after another. A chord is not
+   * atomic: the group grows with each press, so a two-key combo can fire and a third key follow
+   * it, which is what ZMK does too. The pill that stays up is the one for the longest run from
+   * the start that any layer on the stack declares — and no pill when none of them does. */
+  function expectedCombo(data, positions, stack) {
+    let best = null;
+    for (let n = 2; n <= positions.length; n++) {
+      const hit = comboOn(data, positions.slice(0, n), stack);
+      if (hit) best = hit;
+    }
+    return best;
   }
 
   // Every distinct position set any combo uses.
@@ -251,8 +264,9 @@
             const sub = e.hold || e.shifted;
             if (pills[0].tap !== e.tap) add("combo-label", where, e.tap, pills[0].tap);
             if (pills[0].sub !== sub) add("combo-sub", where, sub, pills[0].sub);
-            // The activator stays lit while it is held: that is the key the user is pressing.
-            const expectLit = list([...want.positions, ...held]);
+            // Every key that went down is lit by its own press, combo member or not, and the
+            // activator stays lit while it is held.
+            const expectLit = list([...positions, ...held]);
             if (list(lit) !== expectLit) add("combo-keys", where, expectLit, list(lit));
             // Nothing has been released: a chord still held must still be lit. A key goes out
             // when its release is reported, not on a timer.

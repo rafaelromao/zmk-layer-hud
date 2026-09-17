@@ -533,10 +533,23 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None
     layers, combos = parse_layers_and_combos(doc, n)
     layer_names = list(layers)
     for override in cfg.get("combos") or []:
-        positions = list(override.get("positions", []))
-        for c in combos:
-            if c["positions"] == positions:
-                c["layers"] = [l for l in override.get("layers", []) if l in layers]
+        want = sorted(override.get("positions") or [])
+        tap = override.get("tap")
+        # Positions are a set: the drawer lists them in whatever order the combo was written in.
+        hits = [c for c in combos if sorted(c["positions"]) == want and (tap is None or c["key"]["tap"] == tap)]
+        if not hits:
+            raise KeymapError(f"combos: no combo on positions {override.get('positions')}"
+                              + (f" with tap {tap!r}" if tap else "")
+                              + " (the drawer file may have moved it)")
+        if len(hits) > 1:
+            taps = ", ".join(repr(c["key"]["tap"]) for c in hits)
+            raise KeymapError(f"combos: positions {override.get('positions')} carry {len(hits)} combos "
+                              f"({taps}); add `tap:` to say which one")
+        named = override.get("layers") or []
+        unknown = [l for l in named if l not in layers]
+        if unknown:
+            raise KeymapError(f"combos: positions {override.get('positions')}: unknown layers {unknown}")
+        hits[0]["layers"] = [l for l in layers if l in named]
     zmk_layers = zmk_layer_table(cfg.get("layers"), layer_names, dtsi_text)
     base = cfg.get("base") or (zmk_layers.get("0") or {}).get("drawer") or layer_names[0]
     if base not in layers:

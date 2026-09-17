@@ -1043,7 +1043,18 @@
 "type": "key"
 },
 "layers": [
-"shortcuts"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 0,
@@ -1060,7 +1071,18 @@
 "type": "key"
 },
 "layers": [
-"shortcuts"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 7,
@@ -1085,14 +1107,10 @@
 "vim",
 "numbers",
 "symbols",
+"shortcuts",
 "nav",
 "media",
-"text",
-"shortcuts",
-"mehs",
-"func",
-"macros",
-"toggles"
+"text"
 ],
 "positions": [
 4,
@@ -1119,12 +1137,7 @@
 "symbols",
 "nav",
 "media",
-"text",
-"shortcuts",
-"mehs",
-"func",
-"macros",
-"toggles"
+"text"
 ],
 "positions": [
 11,
@@ -1141,7 +1154,18 @@
 "type": "key"
 },
 "layers": [
-"shortcuts"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 14,
@@ -1158,7 +1182,18 @@
 "type": "key"
 },
 "layers": [
-"shortcuts"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 8,
@@ -1175,7 +1210,18 @@
 "type": "key"
 },
 "layers": [
-"shortcuts"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 10,
@@ -1192,7 +1238,18 @@
 "type": "key"
 },
 "layers": [
-"shortcuts"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 17,
@@ -1209,7 +1266,18 @@
 "type": "key"
 },
 "layers": [
-"shortcuts"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 15,
@@ -1226,7 +1294,18 @@
 "type": "key"
 },
 "layers": [
-"shortcuts"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 18,
@@ -1244,7 +1323,18 @@
 "type": "key"
 },
 "layers": [
-"shortcuts"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 10,
@@ -1263,7 +1353,18 @@
 "type": "key"
 },
 "layers": [
-"shortcuts"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 17,
@@ -1328,7 +1429,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 23,
@@ -1343,7 +1455,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 17,
@@ -1358,7 +1481,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 18,
@@ -1373,7 +1507,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 19,
@@ -1388,7 +1533,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 10,
@@ -1403,7 +1559,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 11,
@@ -1418,7 +1585,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 12,
@@ -1433,7 +1611,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 3,
@@ -1448,7 +1637,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 4,
@@ -1463,7 +1663,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 5,
@@ -1478,7 +1689,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 1,
@@ -1493,7 +1715,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 2,
@@ -1508,7 +1741,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 8,
@@ -1523,7 +1767,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 9,
@@ -1538,7 +1793,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 15,
@@ -1553,7 +1819,18 @@
 "type": "key"
 },
 "layers": [
-"numbers"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 16,
@@ -1569,7 +1846,18 @@
 "type": "key"
 },
 "layers": [
-"nav"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 10,
@@ -1585,7 +1873,18 @@
 "type": "key"
 },
 "layers": [
-"nav"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 11,
@@ -1601,7 +1900,18 @@
 "type": "key"
 },
 "layers": [
-"nav"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 12,
@@ -1617,7 +1927,18 @@
 "type": "key"
 },
 "layers": [
-"nav"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 13,
@@ -1633,7 +1954,18 @@
 "type": "key"
 },
 "layers": [
-"nav"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 17,
@@ -1649,7 +1981,18 @@
 "type": "key"
 },
 "layers": [
-"nav"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 18,
@@ -1665,7 +2008,18 @@
 "type": "key"
 },
 "layers": [
-"nav"
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"nav",
+"media",
+"text"
 ],
 "positions": [
 19,

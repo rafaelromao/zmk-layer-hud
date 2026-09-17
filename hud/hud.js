@@ -722,12 +722,6 @@
           combo = state.data.combos.find(c => c.layers.includes(layer) && samePositions(c));
           if (combo) break;
         }
-        if (!combo) {
-          // The drawer may file a held-key combo under the layer it produces rather than the one
-          // it is pressed on (thumb + key = "5" drawn on numbers): accept it when unambiguous.
-          const any = state.data.combos.filter(samePositions);
-          if (any.length === 1) combo = any[0];
-        }
         if (combo) {
           // A third key within the term makes a bigger combo: take the smaller one's pill down.
           if (state.comboShown) state.comboShown.remove();
