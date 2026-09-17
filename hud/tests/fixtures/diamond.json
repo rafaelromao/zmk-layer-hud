@@ -3074,9 +3074,10 @@
 "type": "key"
 },
 {
+"glyph": "mdi:database-search-outline",
 "hold": "everything",
 "shifted": "search",
-"tap": "$$mdi:database-search-outline$$l",
+"tap": "l",
 "type": "key"
 },
 {

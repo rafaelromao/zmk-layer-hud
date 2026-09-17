@@ -157,10 +157,13 @@
     return null;
   }
 
-  // A legend is text, or the SVG keymap-drawer draws for a $$glyph$$ (sent with the keymap).
+  // A legend is text, the SVG keymap-drawer draws for a $$glyph$$ (sent with the keymap), or a
+  // glyph with text after it ($$mdi:magnify$$l — a search icon and the letter l).
+  const escapeHTML = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
   function legendHTML(text, glyph) {
     const svg = glyph && state.data.glyphs && state.data.glyphs[glyph];
-    return svg ? `<span class="glyph">${svg}</span>` : null;
+    if (!svg) return null;
+    return `<span class="glyph">${svg}</span>` + (text ? escapeHTML(text) : "");
   }
   function setLegend(el, text, glyph) {
     const html = legendHTML(text, glyph);
@@ -172,6 +175,16 @@
     if (legendHTML(text, glyph)) return;
     if (text.length > 4) tapEl.classList.add("long");
     else if (text.length > 2) tapEl.classList.add("mid");
+  }
+
+  // The drawer key at a reported ZMK position. A position the keymap does not place lights
+  // nothing: lighting the key that happens to share the number is worse than lighting none, and
+  // the feed already says so ("key position N is not in the keymap's … drawer keys"). A message
+  // with no map at all (a hand-written demo) still means position = index.
+  function idxAt(pos) {
+    const map = (state.data && state.data.positions) || {};
+    if (map[String(pos)] !== undefined) return map[String(pos)];
+    return Object.keys(map).length ? -1 : Number(pos);
   }
 
   function activatorsOf(layer) {
@@ -652,8 +665,7 @@
     // stack draw that combo's pill.
     pressAt(pos) {
       if (!state.data) return;
-      const map = state.data.positions || {};
-      const idx = map[String(pos)] !== undefined ? map[String(pos)] : Number(pos);
+      const idx = idxAt(pos);
       const now = Date.now();
       state.posAt = now; state.lastKeyAt = now;
       if (!state.keyEls[idx]) return;
@@ -716,8 +728,7 @@
     // The key at ZMK position `pos` went up: the flash fades out from now.
     releaseAt(pos) {
       if (!state.data) return;
-      const map = state.data.positions || {};
-      const idx = map[String(pos)] !== undefined ? map[String(pos)] : Number(pos);
+      const idx = idxAt(pos);
       const e = state.keyEls[idx];
       if (!e) return;
       state.held.delete(idx);

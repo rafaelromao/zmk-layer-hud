@@ -103,6 +103,7 @@ GLYPHS = {
     "mdi:brightness-6": "☼", "mdi:music": "♫", "mdi:clock-outline": "⏱", "mdi:calendar": "📅",
 }
 GLYPH_RE = re.compile(r"^\$\$(.+?)\$\$$")
+GLYPH_IN_TEXT_RE = re.compile(r"\$\$(.+?)\$\$")
 DEFINE_RE = re.compile(r"^\s*#define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(\d+)\s*$")
 
 
@@ -131,6 +132,12 @@ def legend(value):
     if m:
         gid = m.group(1)
         return GLYPHS.get(gid, gid.split(":")[-1]), gid
+    # A glyph inside a longer legend ($$mdi:magnify$$l is a search icon and the letter l): keep
+    # the first glyph and leave the rest as text, which the page draws after it. Without this the
+    # marker reaches the key as the literal characters $$mdi:magnify$$.
+    found = GLYPH_IN_TEXT_RE.search(s)
+    if found:
+        return GLYPH_IN_TEXT_RE.sub("", s).strip(), found.group(1)
     return s, None
 
 

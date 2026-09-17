@@ -41,6 +41,11 @@ class Keys(unittest.TestCase):
     def test_unknown_glyph_uses_its_name(self):
         self.assertEqual(km.legend("$$mdi:something-new$$")[0], "something-new")
 
+    def test_glyph_inside_a_longer_legend_keeps_both(self):
+        # "$$mdi:magnify$$l" is a search icon and the letter l, not the literal characters.
+        self.assertEqual(km.legend("$$mdi:magnify$$l"), ("l", "mdi:magnify"))
+        self.assertEqual(km.legend("go $$mdi:magnify$$"), ("go", "mdi:magnify"))
+
 
 class Layout(unittest.TestCase):
     def test_cpt_fallback_geometry(self):

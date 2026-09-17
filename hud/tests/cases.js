@@ -90,9 +90,11 @@
   /* A legend is the glyph markup when the message carries one for it, else the plain text
    * (hud.js:159). Comparing the markup rather than a parsed id keeps this exact for a real MDI
    * SVG and for the placeholder the fixture uses. */
+  const escapeHTML = s => s.replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
   function legendText(data, text, glyph) {
     const svg = glyph && data.glyphs && data.glyphs[glyph];
-    return svg ? '<span class="glyph">' + svg + "</span>" : (text || "");
+    if (!svg) return text || "";
+    return '<span class="glyph">' + svg + "</span>" + (text ? escapeHTML(text) : "");
   }
   const expectedLegends = (data, key) => ({
     tap: legendText(data, key.tap, key.glyph),
