@@ -249,12 +249,41 @@
             // The activator stays lit while it is held: that is the key the user is pressing.
             const expectLit = list([...want.positions, ...held]);
             if (list(lit) !== expectLit) add("combo-keys", where, expectLit, list(lit));
+            // Nothing has been released: a chord still held must still be lit. A key goes out
+            // when its release is reported, not on a timer.
+            await driver.advance(T(data, "press_ms") + 50);
+            const still = await driver.lit();
+            if (list(still) !== expectLit) add("combo-held", where, expectLit, list(still));
           }
           for (const idx of positions) await driver.release(zmkPos(idx));
           for (const idx of held) await driver.release(zmkPos(idx));
           await driver.advance(settle);
         }
       }
+    }
+
+    // 4b. The key that brought a layer in is drawn as its activator. A key that was tapped and
+    //     let go is not holding anything, so it must not keep that mark — least of all for the
+    //     rest of the session.
+    for (const layer of live) {
+      if (layer === data.base) continue;
+      const declared = new Set((data.activators || []).filter(a => a.layer === layer).map(a => a.idx));
+      const tapped = [...Array(nKeys).keys()].find(i => !declared.has(i));
+      if (tapped === undefined) continue;
+      checked++;
+      await driver.reset(null, false);
+      await driver.press(zmkPos(tapped));
+      await driver.advance(10);
+      await driver.release(zmkPos(tapped));
+      await driver.advance(80);
+      await driver.setLayers([idsOf.get(layer)[0]]);
+      await driver.advance(T(data, "press_ms") + 100);
+      const marked = await driver.activators();
+      if (marked.includes(tapped)) {
+        add("stale-activator", `${layer} after key ${tapped} was tapped and released`,
+            `key ${tapped} not marked`, `marked [${list(marked)}]`);
+      }
+      await driver.advance(settle);
     }
 
     // 5. Two layers live at once. Which combo wins is liveStack()'s call (the highest ZMK id), and

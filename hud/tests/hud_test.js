@@ -76,6 +76,11 @@ function nodeDriver(page) {
       page.hud.state.keyEls.forEach((e, i) => { if (e.classList.contains("pressed")) out.push(i); });
       return out;
     },
+    async activators() {
+      const out = [];
+      page.hud.state.keyEls.forEach((e, i) => { if (e.classList.contains("activator")) out.push(i); });
+      return out;
+    },
     async pills() {
       return page.board.querySelectorAll(".combo-pill").map(p => ({
         tap: legend(p.querySelector(".combo-tap")),

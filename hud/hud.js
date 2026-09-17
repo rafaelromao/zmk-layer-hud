@@ -201,7 +201,7 @@
       // before the layer appeared when positions are reported, else every key that can reach it.
       for (const name of liveStack()) {
         if (name === base()) continue;
-        if (state.activatorOf[name] !== undefined) activators.add(state.activatorOf[name]);
+        if (state.activatorOf[name] !== undefined) { if (state.activatorOf[name] !== null) activators.add(state.activatorOf[name]); }
         else for (const a of activatorsOf(name)) activators.add(a);
       }
     }
@@ -608,6 +608,7 @@
       if (!data || !data.layout || !data.layers) return;
       state.data = data;
       state.momentary = []; state.oneShot = null;
+      state.activatorOf = {}; state.held.clear(); state.comboShown = null;
       state.baseLayers = [data.base];
       document.documentElement.style.setProperty("--panel-alpha", String(T("opacity") / 100));
       buildBoard();
@@ -645,11 +646,13 @@
       const wasDrawn = state.live ? new Set(state.live.ids.map(id => (zl(id) || {}).drawer).filter(Boolean)) : new Set();
       for (const id of ids) {
         const name = (zl(id) || {}).drawer;
-        if (!name || wasDrawn.has(name) || state.activatorOf[name] !== undefined) continue;
+        if (!name || wasDrawn.has(name) || state.activatorOf[name] != null) continue;
         // Prefer a key the drawer marks as reaching this layer; else the key pressed right
         // before the layer appeared is the one holding it (a thumb whose legend says otherwise).
         const candidates = activatorsOf(name);
-        const fresh = [...recentPos].reverse().filter(p => now - p.t < T('activator_ms'));
+        // Still down: a key that was tapped and let go is not what is holding this layer, even
+        // if it was the last thing pressed before the layer arrived.
+        const fresh = [...recentPos].reverse().filter(p => now - p.t < T('activator_ms') && state.held.has(p.idx));
         const press = fresh.find(p => candidates.includes(p.idx)) || fresh[0];
         if (press) state.activatorOf[name] = press.idx;
       }
@@ -717,7 +720,11 @@
         if (combo) {
           // A third key within the term makes a bigger combo: take the smaller one's pill down.
           if (state.comboShown) state.comboShown.remove();
-          flash(combo.positions, "combo");
+          // Not flash(): these keys are down, and it is their release that unlights them. flash's
+          // press_ms timer would replace the held timer each key got from its own press and take
+          // the chord out from under the user's fingers after a third of a second — along with
+          // the safety net that covers a lost release.
+          for (const p of combo.positions) { const e = state.keyEls[p]; if (e) e.classList.add("pressed", "combo"); }
           state.comboShown = showCombo(combo.positions, combo.key);
         }
       }
@@ -732,6 +739,7 @@
       const e = state.keyEls[idx];
       if (!e) return;
       state.held.delete(idx);
+      for (const name of Object.keys(state.activatorOf)) if (state.activatorOf[name] === idx) state.activatorOf[name] = null;
       clearTimeout(state.timers.get(idx));
       state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo", "inferred"), T('release_ms')));
     },
