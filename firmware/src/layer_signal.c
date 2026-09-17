@@ -18,8 +18,14 @@
  * listener: auto-layer would end num-word, adaptive keys would record them as
  * antecedent, caps word and sticky keys would react.
  *
- * Everything runs on the system workqueue: the listener only marks state and
- * reschedules one k_work_delayable that alternates between press and release.
+ * The listener only marks state and reschedules work; the sends happen on this
+ * module's own queue, never on the system workqueue. zmk_endpoint_send_report
+ * blocks for as long as the transport takes, and the system workqueue is where
+ * ZMK debounces the matrix and raises zmk_position_state_changed. Anything
+ * blocking there delays the next press's event, and combo.c decides a combo by
+ * comparing those timestamps against the combo term -- a 30 ms term does not
+ * survive a USB send queued ahead of the scan. A separate preemptible thread
+ * keeps the blocking off that path entirely.
  */
 
 #define DT_DRV_COMPAT zmk_layer_signal
@@ -63,14 +69,20 @@ static int n_usages;
 static bool pressed; /* usages are in the report; next work run releases them */
 static bool dirty;   /* a layer change arrived since the last burst started */
 
+/* Our own queue, so a blocking send never sits in front of the matrix scan.
+ * The priority is preemptible on purpose: this work is cosmetic, and anything
+ * cooperative here would be able to starve the scan again. */
+static struct k_work_q signal_q;
+static K_THREAD_STACK_DEFINE(signal_q_stack, CONFIG_ZMK_LAYER_SIGNAL_WORKQUEUE_STACK_SIZE);
+
 static void work_cb(struct k_work *work);
 static K_WORK_DELAYABLE_DEFINE(work, work_cb);
 
 static void rearm_idle(void) {
     if (dirty) {
-        k_work_reschedule(&work, K_MSEC(SETTLE_MS));
+        k_work_reschedule_for_queue(&signal_q, &work, K_MSEC(SETTLE_MS));
     } else if (HEARTBEAT_MS > 0) {
-        k_work_reschedule(&work, K_MSEC(HEARTBEAT_MS));
+        k_work_reschedule_for_queue(&signal_q, &work, K_MSEC(HEARTBEAT_MS));
     }
 }
 
@@ -118,7 +130,7 @@ static void burst(void) {
         LOG_WRN("layer signal report failed (%d)", err);
     }
     LOG_DBG("layer signal: %d usages, state 0x%08x", n, zmk_keymap_layer_state());
-    k_work_reschedule(&work, K_MSEC(TAP_MS));
+    k_work_reschedule_for_queue(&signal_q, &work, K_MSEC(TAP_MS));
 }
 
 /* Any real key currently in the report? Hosts stop auto-repeating a held key when another key
@@ -142,7 +154,8 @@ static void work_cb(struct k_work *work_item) {
         return;
     }
     if (!dirty && real_key_held()) {
-        k_work_reschedule(&work, K_MSEC(250)); /* heartbeat: try again once the key is up */
+        /* heartbeat: try again once the key is up */
+        k_work_reschedule_for_queue(&signal_q, &work, K_MSEC(250));
         return;
     }
     burst();
@@ -152,10 +165,11 @@ static void work_cb(struct k_work *work_item) {
 }
 
 /* Key presses: each position goes out as a hi+lo usage pair in one report and is released in
- * the next. The pairs are sent from the system work queue, not from the key-press event
- * handler: a USB send can block for tens of milliseconds, which would delay the keymap's own
- * processing of the press (combo terms, tapping terms). The queue is drained one position at a
- * time, so no two positions ever share a report. */
+ * the next. The pairs are sent from this module's own queue, not from the key-press event
+ * handler and not from the system workqueue: a USB send can block for tens of milliseconds,
+ * and on either of those it would delay the keymap's own processing of the press (combo
+ * terms, tapping terms). The queue is drained one position at a time, so no two positions
+ * ever share a report. */
 #define POS_QUEUE_LEN 16
 #define POS_RELEASE_FLAG 0x80000000u
 static uint32_t pos_queue[POS_QUEUE_LEN];
@@ -197,7 +211,7 @@ static void announce_position(uint32_t position, bool released) {
     }
     pos_queue[pos_tail] = position | (released ? POS_RELEASE_FLAG : 0);
     pos_tail = next;
-    k_work_submit(&pos_work);
+    k_work_submit_to_queue(&signal_q, &pos_work);
 }
 
 static int layer_signal_listener(const zmk_event_t *eh) {
@@ -205,7 +219,7 @@ static int layer_signal_listener(const zmk_event_t *eh) {
         dirty = true;
         /* Mid-burst the release run picks the change up (rearm_idle). */
         if (!pressed) {
-            k_work_reschedule(&work, K_MSEC(SETTLE_MS));
+            k_work_reschedule_for_queue(&signal_q, &work, K_MSEC(SETTLE_MS));
         }
         return ZMK_EV_EVENT_BUBBLE;
     }
@@ -226,10 +240,16 @@ ZMK_SUBSCRIPTION(layer_signal, zmk_position_state_changed);
 #endif
 
 static int layer_signal_init(void) {
+    /* Before anything is scheduled: every k_work_*_for_queue call below targets
+     * this queue, and submitting to one that has not been started is undefined. */
+    static const struct k_work_queue_config signal_q_cfg = {.name = "layer_signal"};
+    k_work_queue_start(&signal_q, signal_q_stack, K_THREAD_STACK_SIZEOF(signal_q_stack),
+                       CONFIG_ZMK_LAYER_SIGNAL_WORKQUEUE_PRIORITY, &signal_q_cfg);
+
     /* Announce the boot state once the endpoints are up; the heartbeat, when
      * enabled, keeps repeating it. */
     dirty = true;
-    k_work_reschedule(&work, K_MSEC(1000));
+    k_work_reschedule_for_queue(&signal_q, &work, K_MSEC(1000));
     LOG_DBG("layer signal: usages 0x%02x+id, commit 0x%02x, report size %d", BASE_USAGE,
             COMMIT_USAGE, CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE);
     return 0;

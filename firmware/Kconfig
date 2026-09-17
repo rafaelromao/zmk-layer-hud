@@ -26,5 +26,33 @@ config ZMK_LAYER_SIGNAL
       layers, the commit usage and any held keys fit in one report; 12 is the
       largest value whose USB report still fits the 16-byte interrupt endpoint.
 
+config ZMK_LAYER_SIGNAL_WORKQUEUE_STACK_SIZE
+    int "Stack size for the layer signal work queue"
+    default 2048
+    depends on ZMK_LAYER_SIGNAL
+    help
+      The module runs its sends on its own queue rather than the system
+      workqueue, which is where ZMK debounces the matrix and raises position
+      events. zmk_endpoint_send_report blocks for as long as the transport
+      takes, and anything blocking on that queue delays the next key press's
+      event; combo.c compares those timestamps against the combo term, so a
+      short term (30 ms is common) simply stops matching.
+
+      This stack has to carry a USB or BLE HID send. 2048 is comfortable; lower
+      it if RAM is tight, but watch for stack overflows rather than guessing.
+
+      With this queue in place CONFIG_SYSTEM_WORKQUEUE_STACK_SIZE no longer
+      needs headroom for the signal, and any bump added for it can come back
+      out.
+
+config ZMK_LAYER_SIGNAL_WORKQUEUE_PRIORITY
+    int "Thread priority for the layer signal work queue"
+    default 10
+    depends on ZMK_LAYER_SIGNAL
+    help
+      Preemptible (>= 0) on purpose. The signal is cosmetic, so it must always
+      yield to scanning and HID; a cooperative priority here would be able to
+      starve the matrix scan exactly the way the system workqueue did.
+
 # Logging goes through ZMK's own log module (LOG_MODULE_DECLARE(zmk, ...)) and
 # follows CONFIG_ZMK_LOG_LEVEL. Set CONFIG_ZMK_LOG_LEVEL_DBG=y to see bursts.
