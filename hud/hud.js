@@ -58,7 +58,6 @@
     mods: {},                 // flag -> true while held
     device: "",               // the keyboard's HID product name
     activatorOf: {},          // drawn layer -> the key idx that brought it in (positions)
-    layersAt: 0,              // when the keyboard last reported its layer set
     held: new Set(),          // key idx currently down, by reported position
     keyEls: [],
     timers: new Map(),
@@ -626,9 +625,6 @@
       if (typeof ids === "string") ids = JSON.parse(ids);
       if (!Array.isArray(ids)) return;
       ids = ids.map(Number).filter(n => Number.isInteger(n) && n > 0);
-      // When the keyboard spoke, not when the board caught up: the set below may be held back for
-      // a key's flash, and the combo grouping needs the moment the report arrived.
-      state.layersAt = Date.now();
       clearTimeout(state.layersTimer);
       // A one-shot layer leaves right after the key it served (and may enter another, undrawn
       // one). Keep the board on the drawn layers while the key's flash is visible, otherwise the
@@ -676,6 +672,15 @@
       state.posAt = now; state.lastKeyAt = now;
       if (!state.keyEls[idx]) return;
       state.held.add(idx);
+      // The layer set and the key that brought it up are two reports, in no promised order. When
+      // the key comes second, setLayers had nothing to attribute the layer to: if the drawer says
+      // this key reaches a live layer and nothing is recorded as holding it, this is what did.
+      if (state.live) {
+        for (const name of liveStack()) {
+          if (name === base() || state.activatorOf[name] != null) continue;
+          if (activatorsOf(name).includes(idx)) state.activatorOf[name] = idx;
+        }
+      }
       flash([idx]);
       // Stay lit until the release arrives (a safety timeout covers a lost report).
       clearTimeout(state.timers.get(idx));
@@ -686,18 +691,21 @@
       // the trailing run of presses that started within the term of this one.
       while (recentPos.length && now - recentPos[0].t > T('activator_ms')) recentPos.shift();
       recentPos.push({ idx, t: now });
-      // ZMK releases a combo's own positions together, so they arrive as one burst. A key that
-      // was already down when the current layer set arrived, and is what holds one of those
-      // layers, is a thumb — not half of the chord that followed it. Without this it joins the
-      // burst and the combo is either missed or drawn as whichever larger combo happens to
-      // contain the thumb (holding Alpha 2 and chording backspace drew Tab).
-      const layerAt = state.layersAt || 0;
+      // The keyboard has already decided. A key still down that is what brought one of the live
+      // layers up was treated by ZMK as a layer hold, not as part of a chord — had it been half
+      // of a combo, the combo would have fired and the layer would not have changed. So the group
+      // stops there, however recently it was pressed. Without this the thumb joins the burst and
+      // the chord after it is either missed or drawn as whichever larger combo happens to contain
+      // that thumb: holding Alpha 2 and chording backspace drew Tab ([4,5] became [4,5,22]).
+      // …but only a key pressed before this burst. ZMK releases a combo's captured positions
+      // together, so they arrive in the same report and share a timestamp; a key that a combo
+      // both holds a layer with and uses as one of its own (a sticky layer's own key) is still
+      // part of the chord it arrived with.
       const holdsALayer = idx => state.held.has(idx) && Object.values(state.activatorOf).includes(idx);
       let start = recentPos.length - 1;
       while (start > 0) {
         const prev = recentPos[start - 1];
-        if (now - prev.t > term) break;
-        if (prev.t <= layerAt && holdsALayer(prev.idx)) break;
+        if (now - prev.t > term || (prev.t < now && holdsALayer(prev.idx))) break;
         start--;
       }
       if (start === recentPos.length - 1) state.comboShown = null; // a new group begins

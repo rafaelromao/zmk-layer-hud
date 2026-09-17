@@ -15,6 +15,7 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
+const crypto = require("node:crypto");
 const { loadPage } = require("./dom.js");
 const cases = require("./cases.js");
 
@@ -22,13 +23,14 @@ const REPO = path.join(__dirname, "..", "..");
 const FIXTURE = path.join(__dirname, "fixtures", "diamond.json");
 
 function parseArgs(argv) {
-  const opt = { keymap: FIXTURE, verbose: false, max: 40, layer: null };
+  const opt = { keymap: FIXTURE, verbose: false, max: 40, layer: null, signature: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--keymap") opt.keymap = argv[++i];
     else if (a === "--verbose" || a === "-v") opt.verbose = true;
     else if (a === "--max") opt.max = Number(argv[++i]);
     else if (a === "--layer") opt.layer = argv[++i];
+    else if (a === "--signature") opt.signature = true;
     else if (a === "--help" || a === "-h") { console.log(fs.readFileSync(__filename, "utf8").split("*/")[0]); process.exit(0); }
     else if (!a.startsWith("-")) opt.keymap = a;
   }
@@ -40,7 +42,9 @@ function parseArgs(argv) {
  * which is the page's own handle on the board. */
 function nodeDriver(page) {
   const held = new Set();
-  const legend = e => (e ? (e.innerHTML || e.textContent) : "");
+  // Markup for a glyph, plain text otherwise — the same read the browser runner makes, so the
+  // two can be compared without one of them escaping < and & and the other not.
+  const legend = e => (!e ? "" : (e.children.length ? e.innerHTML : e.textContent));
   return {
     async load(data) { page.hud.load(data); },
     async setLayers(ids) { page.hud.setLayers(ids); },
@@ -116,6 +120,15 @@ async function main() {
   const started = Date.now();
   const r = await cases.sweep(nodeDriver(page), data, opt);
   const ms = Date.now() - started;
+
+  // The same sweep runs in a real browser (hud/tests/browser.js). Comparing the two by this
+  // digest is what says the DOM in hud/tests/dom.js is telling the truth.
+  const signature = r.fail.map(f => `${f.check}|${f.where}|${f.expected}|${f.actual}`).sort();
+  if (opt.signature) {
+    console.log(`${r.checked} checks, ${r.fail.length} failures, signature ` +
+                crypto.createHash("sha256").update(signature.join("\n")).digest("hex").slice(0, 32));
+    process.exit(0);
+  }
 
   const byCheck = new Map();
   for (const f of r.fail) byCheck.set(f.check, (byCheck.get(f.check) || 0) + 1);

@@ -112,7 +112,15 @@ class El {
   get textContent() { return this._text; }
   set textContent(v) { this._text = v == null ? "" : String(v); this._html = ""; this.childNodes = []; }
   get innerHTML() { return this._html; }
-  set innerHTML(v) { this._html = v == null ? "" : String(v); this._text = ""; this.childNodes = []; }
+  /* The markup is stored, not parsed — nothing here needs to walk inside a glyph's SVG. What does
+   * matter is that an element holding markup reports children, the way a browser's would: that is
+   * how a caller tells "this legend is a glyph" from "this legend is text", and getting it wrong
+   * made the two runners disagree about every legend containing < or &. */
+  set innerHTML(v) {
+    this._html = v == null ? "" : String(v);
+    this._text = "";
+    this.childNodes = this._html ? [new El("#raw")] : [];
+  }
 
   setAttribute(name, value) {
     this.attributes.set(name, String(value));

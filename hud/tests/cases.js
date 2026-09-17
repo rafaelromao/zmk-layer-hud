@@ -212,6 +212,9 @@
       if (act !== null) {
         list.push({ name: "held+" + (term + 10) + "ms", act, gap: term + 10 });
         list.push({ name: "held+20ms", act, gap: 20 });
+        // The position and the layer are two reports and nothing promises their order; the demo
+        // frames assert the layer first. A combo must resolve the same way either way round.
+        list.push({ name: "held+20ms layer first", act, gap: 20, layerFirst: true });
       }
       return list;
     };
@@ -229,8 +232,10 @@
           await driver.reset(null, false);
           const held = [];
           // The thumb's position and the layer it turned on are two separate HID reports.
+          const layers = layer === data.base ? [] : [ids];
+          if (order.layerFirst) await driver.setLayers(layers);
           if (order.act !== null) { await driver.press(zmkPos(order.act)); held.push(order.act); await driver.advance(2); }
-          await driver.setLayers(layer === data.base ? [] : [ids]);
+          if (!order.layerFirst) await driver.setLayers(layers);
           if (order.gap) await driver.advance(order.gap);
           for (const idx of positions) await driver.press(zmkPos(idx));
 
