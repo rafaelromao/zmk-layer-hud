@@ -38,9 +38,16 @@
  * than losing sync, so new kinds do not need a version bump. */
 #define ZLS_KIND_LAYERS 0x01   /* payload: uint32 little-endian layer bitmap */
 #define ZLS_KIND_POSITION 0x02 /* payload: uint8 position, uint8 non-zero if pressed */
+#define ZLS_KIND_KEYS 0x03     /* payload: uint8 modifiers, then the held usages */
 
 #define ZLS_FRAME_HEADER_LEN 5 /* magic0 magic1 version kind len */
-#define ZLS_FRAME_MAX_PAYLOAD 4
+
+/* The keys frame is the widest: one modifier byte plus the held usages. 16
+ * usages covers HKRO at any report size and ordinary NKRO chording; a report
+ * with more than that loses the tail rather than the frame, because a HUD that
+ * shows fifteen of sixteen keys is better than one that shows none. */
+#define ZLS_KEYS_MAX 16
+#define ZLS_FRAME_MAX_PAYLOAD (1 + ZLS_KEYS_MAX)
 #define ZLS_FRAME_MAX_LEN (ZLS_FRAME_HEADER_LEN + ZLS_FRAME_MAX_PAYLOAD + 1)
 
 /* CRC-8, polynomial 0x07, init 0x00. Written out rather than taken from
@@ -95,6 +102,25 @@ static inline size_t zls_frame_position(uint8_t position, int pressed, uint8_t *
                                         size_t out_len) {
     const uint8_t payload[2] = {position, (uint8_t)(pressed ? 1 : 0)};
     return zls_frame_encode(ZLS_KIND_POSITION, payload, sizeof(payload), out, out_len);
+}
+
+/* A snapshot of what is held: the modifier byte and the usages, exactly what the
+ * keyboard report used to hand the host when it read the report directly. The
+ * host diffs successive snapshots to get presses and releases, so it keeps the
+ * character derivation -- layout tables, dead-key composition -- unchanged. */
+static inline size_t zls_frame_keys(uint8_t modifiers, const uint8_t *keys, size_t n_keys,
+                                    uint8_t *out, size_t out_len) {
+    uint8_t payload[ZLS_FRAME_MAX_PAYLOAD];
+    uint8_t n = 0;
+
+    payload[n++] = modifiers;
+    for (size_t i = 0; i < n_keys && n <= ZLS_KEYS_MAX; i++) {
+        if (keys[i] != 0) {
+            payload[n++] = keys[i];
+        }
+    }
+
+    return zls_frame_encode(ZLS_KIND_KEYS, payload, n, out, out_len);
 }
 
 #endif /* ZMK_LAYER_HUD_SIGNAL_FRAME_H */

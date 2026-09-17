@@ -21,9 +21,11 @@ VERSION = 1
 
 KIND_LAYERS = 0x01
 KIND_POSITION = 0x02
+KIND_KEYS = 0x03
 
 HEADER_LEN = 5  # magic0 magic1 version kind len
-MAX_PAYLOAD = 4
+KEYS_MAX = 16
+MAX_PAYLOAD = 1 + KEYS_MAX  # the keys frame is the widest: modifiers, then usages
 MAX_LEN = HEADER_LEN + MAX_PAYLOAD + 1
 
 
@@ -64,6 +66,11 @@ def decode_frame(frame):
 
     if kind == KIND_POSITION and payload_len == 2:
         return {"kind": "press" if payload[1] else "release", "pos": payload[0]}
+
+    if kind == KIND_KEYS and payload_len >= 1:
+        # The same (modifiers, usages) split_report() used to return, so the
+        # decoder above this can diff snapshots exactly as it always did.
+        return {"kind": "keys", "mods": payload[0], "keys": list(payload[1:])}
 
     return None
 

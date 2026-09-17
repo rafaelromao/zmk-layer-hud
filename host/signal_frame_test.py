@@ -8,6 +8,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from signal_frame import (  # noqa: E402
+    KIND_KEYS,
     KIND_LAYERS,
     KIND_POSITION,
     Decoder,
@@ -54,6 +55,15 @@ class DecodeFrame(unittest.TestCase):
         bad = bytearray(LAYERS_1_22)
         bad[6] ^= 0x01
         self.assertIsNone(decode_frame(bytes(bad)))
+
+    def test_keys_snapshot(self):
+        # Shift held, A and B down -- what split_report() used to return.
+        self.assertEqual(decode_frame(frame(KIND_KEYS, [0x02, 0x04, 0x05])),
+                         {"kind": "keys", "mods": 0x02, "keys": [0x04, 0x05]})
+
+    def test_keys_with_nothing_held(self):
+        self.assertEqual(decode_frame(frame(KIND_KEYS, [0x00])),
+                         {"kind": "keys", "mods": 0, "keys": []})
 
     def test_unknown_kind_is_skipped_not_raised(self):
         self.assertIsNone(decode_frame(frame(0x7F, [1, 2])))
