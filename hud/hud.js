@@ -725,7 +725,10 @@
   });
 
   // Rebuild the geometry when the panel is resized (zoom, moveTo another screen).
-  window.addEventListener("resize", () => { if (state.data) { buildBoard(); render(); postSize(); } });
+  // A demo frame is final once drawn: buildBoard() empties #board, which would take the lit keys
+  // and the combo pill with it. Headless browsers fire a resize after the first layout, which is
+  // why a screenshot could come back with the board drawn but nothing on it.
+  window.addEventListener("resize", () => { if (state.data && !state.demoShown) { buildBoard(); render(); postSize(); } });
 
   // Generic host: index.html?ws=ws://127.0.0.1:8766 — messages are
   //   {"kind":"keymap",…}  {"kind":"key", ...event}  {"kind":"layers","ids":[…]}   (host/hudfeed.py speaks this).
@@ -752,7 +755,65 @@
 
   // Dev: index.html?keymap=keymap.json (python3 host/keymap.py --dump > hud/keymap.json) and real
   // key events, so the page can be exercised in a browser without a host.
-  if (params.get("keymap")) fetch(params.get("keymap")).then(r => r.json()).then(hud.load).catch(e => console.error(e));
+  //
+  // Dev: &demo=N renders step N of a scripted demo and stops there — no timers to race, so a
+  // headless browser can screenshot one frame per step (docs/make-gif.sh assembles them). The
+  // script comes from &script=<url>, or from demo.json beside the page; make-gif.sh copies the
+  // one it was given there. Every step is absolute — it re-asserts the whole state — so the
+  // frames are independent and render in any order:
+  //   { "device": "Diamond",        // the panel's title, on every frame (each is a fresh load)
+  //     "opacity": 100,             // override the config's hud.opacity for the rendering
+  //     "steps": [
+  //       { "layers": [2, 3],       // the keyboard's active ZMK layer ids -> hud.setLayers
+  //         "press":  [17, 18],     // ZMK positions -> hud.pressAt: two of them inside the combo
+  //                                 // term draw that combo's pill, exactly as a real chord does
+  //         "keys":   ["y"] } ] }   // chips for the typed-keys strip: a string or a key event
+  function demoFrame(script, n) {
+    const steps = script.steps || [];
+    const step = steps[Math.max(0, Math.min(steps.length - 1, n))];
+    if (!step) return;
+    if (script.opacity !== undefined) {
+      document.documentElement.style.setProperty("--panel-alpha", String(script.opacity / 100));
+    }
+    const device = step.device || script.device;
+    if (device) hud.setDevice(device);
+    // A still, not a moment in an animation. Transitions go first: a headless browser's virtual
+    // clock does not advance them, so a key that has just been lit would paint with its old
+    // background and the combo pill at opacity 0 — the classes are all there in the DOM, they
+    // simply never arrive anywhere. Without transitions every element paints its final style.
+    const frozen = document.createElement("style");
+    frozen.textContent = "*, *::before, *::after { transition: none !important; animation: none !important; }";
+    document.head.appendChild(frozen);
+    // Then the teardowns the HUD schedules — a key unlighting after press_ms, the combo pill
+    // after combo_pill_ms, the strip's fade — which would otherwise fire before the screenshot.
+    // Timeouts are dropped while the frame is built, so what it draws stays drawn.
+    const schedule = window.setTimeout;
+    window.setTimeout = () => 0;
+    try {
+      hud.setLayers(step.layers || []);
+      // pressAt is the firmware's own path: it lights the exact key and resolves a combo on the
+      // topmost active layer by itself — no second, shorter-lived flash on top of it.
+      for (const p of step.press || []) hud.pressAt(p);
+      // The strip only, so a frame shows the chips it scripts and nothing that inference adds.
+      for (const k of step.keys || []) {
+        if (window.keys) window.keys.key(Object.assign({ type: "keyDown", chars: "", name: null, flags: {} },
+                                                       typeof k === "string" ? { chars: k } : k));
+      }
+    } finally {
+      window.setTimeout = schedule;
+    }
+    // Pill, links and chips fade in on the next animation frame; a screenshot may not wait.
+    document.querySelectorAll(".combo-pill, .combo-links, #keys .chip").forEach(e => e.classList.add("show"));
+    state.demoShown = true;                       // nothing may rebuild the board from here on
+  }
+  if (params.get("keymap")) {
+    const demo = params.get("demo");
+    const script = demo === null ? Promise.resolve(null)
+                                 : fetch(params.get("script") || "demo.json").then(r => r.json());
+    Promise.all([fetch(params.get("keymap")).then(r => r.json()), script])
+      .then(([data, script]) => { hud.load(data); if (script) demoFrame(script, Number(demo)); })
+      .catch(e => console.error(e));
+  }
   if (location.protocol.startsWith("http")) window.addEventListener("keydown", e => {
     const name = e.key.length === 1 ? null : e.key.toLowerCase().replace("arrow", "").replace("backspace", "delete").replace("enter", "return");
     hud.key({ type: "keyDown", chars: e.key.length === 1 ? e.key : "", name, flags: {} });

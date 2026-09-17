@@ -1,0 +1,15 @@
+{
+  "device": "3x5 example",
+  "opacity": 100,
+  "steps": [
+    { "layers": [] },
+    { "layers": [], "press": [1], "keys": ["w"] },
+    { "layers": [], "press": [1, 10, 12], "keys": [{ "chars": "w", "flags": { "ctrl": true, "shift": true } }] },
+    { "layers": [], "press": [12, 13], "keys": ["("] },
+    { "layers": [2], "press": [32] },
+    { "layers": [2], "press": [32, 16], "keys": [{ "name": "down" }] },
+    { "layers": [1], "press": [33] },
+    { "layers": [1], "press": [33, 7], "keys": ["8"] },
+    { "layers": [] }
+  ]
+}

@@ -4,6 +4,13 @@ An on-screen HUD for ZMK keyboards. It shows the layer you are on and lights the
 and macros as you press them, drawn from the same keymap-drawer file you document your layout
 with. The keyboard itself reports its layers and key positions, so nothing is guessed.
 
+![The HUD following a keyboard through its vim layers: typing on the base layer, a combo, then
+NORMAL with h j k l lit one at a time, a yank combo, v into VISUAL, Esc back, i into
+INSERT](docs/hud.gif)
+
+*A Diamond running [zmk-vim-mode](https://github.com/rafaelromao/zmk-vim-mode), whose daemon moves
+the keyboard between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`.*
+
 - **One source**: the keyboard's HID reports. No OS event tap, no daemon, no per-app plugin.
 - **Any ZMK keyboard**: a small ZMK module on the keyboard, a keymap-drawer YAML on the host.
 - **Live**: edit the YAML and the HUD redraws; every size and timing lives in one config file.
@@ -66,6 +73,20 @@ python3 -m http.server -d hud 8765         # open http://localhost:8765/index.ht
 
 In the browser console, `hud.setLayers([1])` switches layers, `hud.pressAt(13)` lights a key and
 `hud.releaseAt(13)` lets it go, so the whole page can be exercised without hardware.
+
+The same calls can be scripted: `&demo=N` renders step N of a JSON demo script (`&script=<url>`,
+or `demo.json` beside the page) and stops there, and `bash docs/make-gif.sh` screenshots every
+step with a headless browser and assembles a GIF:
+
+```bash
+bash docs/make-gif.sh --config config/diamond.yaml --script docs/demo-vim.json --out docs/hud.gif
+```
+
+That is the animation at the top of this page; `docs/demo-3x5.json` is the default and renders the
+3x5 sample instead. Both show the script's shape, which is documented above `demoFrame` in
+`hud/hud.js`. It needs a Chromium-family browser and cannot run inside a sandbox that denies unix
+sockets. Headless `--screenshot` is uneven across browsers — Brave exits without writing a frame,
+Edge writes one and keeps running — so the script waits for each file and stops the browser itself.
 
 ## Configuration
 

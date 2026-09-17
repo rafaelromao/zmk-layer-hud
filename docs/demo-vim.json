@@ -1,0 +1,56 @@
+{
+  "device": "Diamond",
+  "opacity": 100,
+  "steps": [
+    { "note": "typing: no vim layers, the base layer's letters",
+      "layers": [], "press": [18], "keys": ["n", "o", "t", "e"] },
+
+    { "note": "the combo that puts the editor in vim mode",
+      "layers": [], "press": [1, 2, 3] },
+
+    { "note": "NORMAL: the board flips to commands",
+      "layers": [2] },
+
+    { "note": "h — left, on the right index home",
+      "layers": [2], "press": [16], "keys": ["h"] },
+
+    { "note": "j — down",
+      "layers": [2], "press": [17], "keys": ["h", "j"] },
+
+    { "note": "k — up",
+      "layers": [2], "press": [18], "keys": ["h", "j", "k"] },
+
+    { "note": "l — right; h j k l under four fingers, not QWERTY's accident",
+      "layers": [2], "press": [19], "keys": ["h", "j", "k", "l"] },
+
+    { "note": "w — word motion, on the other hand",
+      "layers": [2], "press": [3], "keys": ["h", "j", "k", "l", "w"] },
+
+    { "note": "y — yank, a combo on j and k",
+      "layers": [2], "press": [17, 18], "keys": ["y"] },
+
+    { "note": "v — the combo on i and a; still NORMAL while it is pressed",
+      "layers": [2], "press": [26, 27], "keys": ["v"] },
+
+    { "note": "VISUAL stacks on NORMAL: the motions still fall through",
+      "layers": [2, 3], "press": [19], "keys": ["l"] },
+
+    { "note": "Esc — b and e on the vim layer — ends the selection",
+      "layers": [2, 3], "press": [1, 2], "keys": [{ "name": "escape" }] },
+
+    { "note": "back in NORMAL; i opens INSERT (a would too)",
+      "layers": [2], "press": [26], "keys": ["i"] },
+
+    { "note": "INSERT: the vim layers step aside, the letters come back",
+      "layers": [5], "press": [26], "keys": ["h", "e", "l", "l", "o"] },
+
+    { "note": "Esc again — b and m now, the same two keys on Alpha 1",
+      "layers": [5], "press": [1, 2], "keys": [{ "name": "escape" }] },
+
+    { "note": "NORMAL once more",
+      "layers": [2] },
+
+    { "note": "out of the editor: no vim layers at all",
+      "layers": [] }
+  ]
+}
