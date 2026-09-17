@@ -4,12 +4,13 @@ An on-screen HUD for ZMK keyboards. It shows the layer you are on and lights the
 and macros as you press them, drawn from the same keymap-drawer file you document your layout
 with. The keyboard itself reports its layers and key positions, so nothing is guessed.
 
-![The HUD following a keyboard through its vim layers: typing on the base layer, a combo, then
-NORMAL with h j k l lit one at a time, a yank combo, v into VISUAL, Esc back, i into
-INSERT](docs/hud.gif)
+![The HUD following a keyboard through its vim layers: typing on the base layer, a combo into vim
+mode, NORMAL with h j k l lit one at a time, v into VISUAL to select a word, yank and put it back,
+then i into INSERT and Esc out](docs/hud.gif)
 
-*A Diamond running [zmk-vim-mode](https://github.com/rafaelromao/zmk-vim-mode), whose daemon moves
-the keyboard between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`.*
+*A [Diamond](https://github.com/rafaelromao/keyboards) running
+[zmk-vim-mode](https://github.com/rafaelromao/zmk-vim-mode), whose daemon moves the keyboard
+between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`.*
 
 - **One source**: the keyboard's HID reports. No OS event tap, no daemon, no per-app plugin.
 - **Any ZMK keyboard**: a small ZMK module on the keyboard, a keymap-drawer YAML on the host.

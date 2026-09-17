@@ -2,8 +2,14 @@
   "device": "Diamond",
   "opacity": 100,
   "steps": [
-    { "note": "typing: no vim layers, the base layer's letters",
-      "layers": [], "press": [18], "keys": ["n", "o", "t", "e"] },
+    { "note": "typing on the base layer: one key per frame, like every keystroke here",
+      "layers": [], "press": [11], "keys": ["n"] },
+
+    { "layers": [], "press": [7], "keys": ["n", "o"] },
+
+    { "layers": [], "press": [13], "keys": ["n", "o", "t"] },
+
+    { "layers": [], "press": [18], "keys": ["n", "o", "t", "e"] },
 
     { "note": "the combo that puts the editor in vim mode",
       "layers": [], "press": [1, 2, 3] },
@@ -23,28 +29,27 @@
     { "note": "l — right; h j k l under four fingers, not QWERTY's accident",
       "layers": [2], "press": [19], "keys": ["h", "j", "k", "l"] },
 
-    { "note": "w — word motion, on the other hand",
-      "layers": [2], "press": [3], "keys": ["h", "j", "k", "l", "w"] },
-
-    { "note": "y — yank, a combo on j and k",
-      "layers": [2], "press": [17, 18], "keys": ["y"] },
-
     { "note": "v — the combo on i and a; still NORMAL while it is pressed",
       "layers": [2], "press": [26, 27], "keys": ["v"] },
 
-    { "note": "VISUAL stacks on NORMAL: the motions still fall through",
-      "layers": [2, 3], "press": [19], "keys": ["l"] },
+    { "note": "VISUAL: e takes the selection to the end of the word",
+      "layers": [2, 3], "press": [2], "keys": ["e"] },
 
-    { "note": "Esc — b and e on the vim layer — ends the selection",
-      "layers": [2, 3], "press": [1, 2], "keys": [{ "name": "escape" }] },
+    { "note": "y — yank the selection, a combo on j and k; vim leaves VISUAL with it",
+      "layers": [2, 3], "press": [17, 18], "keys": ["y"] },
 
-    { "note": "back in NORMAL; i opens INSERT (a would too)",
+    { "note": "back in NORMAL: p puts the word back, the combo one key to the left",
+      "layers": [2], "press": [16, 17], "keys": ["p"] },
+
+    { "note": "i opens INSERT (a would too)",
       "layers": [2], "press": [26], "keys": ["i"] },
 
-    { "note": "INSERT: the vim layers step aside, the letters come back",
-      "layers": [5], "press": [26], "keys": ["h", "e", "l", "l", "o"] },
+    { "note": "INSERT: the vim layers step aside and the letters come back",
+      "layers": [5], "press": [26], "keys": ["h"] },
 
-    { "note": "Esc again — b and m now, the same two keys on Alpha 1",
+    { "layers": [5], "press": [19], "keys": ["h", "i"] },
+
+    { "note": "Esc — b and m on Alpha 1, the same two positions as b and e on the vim layer",
       "layers": [5], "press": [1, 2], "keys": [{ "name": "escape" }] },
 
     { "note": "NORMAL once more",
