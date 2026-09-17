@@ -5,8 +5,10 @@ CC ?= cc
 # keymap-drawer needs Python >= 3.10; Apple's /usr/bin/python3 is 3.9, so prefer Homebrew's or
 # a versioned interpreter. Override with PYTHON=/path/to/python3.
 PYTHON ?= $(shell command -v /opt/homebrew/bin/python3 || command -v python3.13 || command -v python3.12 || command -v python3.11 || command -v python3.10 || command -v python3)
+# The HUD page's own suite runs hud.js under node with a small DOM shim; no npm, no package.json.
+NODE ?= $(shell command -v node)
 
-.PHONY: all test test-firmware test-host keymap venv clean help
+.PHONY: all test test-firmware test-host test-hud fixture keymap venv clean help
 
 all: test
 
@@ -24,7 +26,7 @@ venv: ## create .venv with hidapi, keymap-drawer, websockets (+ pyobjc on macOS;
 	.venv/bin/python3 -m pip install --quiet $(VENV_PKGS)
 	@echo "venv ready: .venv/bin/python3 ($$(.venv/bin/python3 --version)); the host scripts pick it up"
 
-test: test-firmware test-host ## run every test suite
+test: test-firmware test-host test-hud ## run every test suite
 
 test-firmware: ## host-side tests for the module's pure encode/decode policy
 	@mkdir -p build
@@ -33,6 +35,16 @@ test-firmware: ## host-side tests for the module's pure encode/decode policy
 
 test-host: ## Python tests: raw-HID decoder and keymap-drawer conversion
 	$(PYTHON) -m unittest discover -s host -p '*_test.py' -v
+
+test-hud: ## the HUD page: every key on every layer, every combo, the typed-keys strip
+	@if [ -z "$(NODE)" ]; then \
+	  echo "test-hud: node not found, skipping (brew install node)"; \
+	else \
+	  $(NODE) hud/tests/hud_test.js $(if $(KEYMAP),--keymap $(KEYMAP)); \
+	fi
+
+fixture: ## rebuild hud/tests/fixtures/diamond.json from the configured keymap (glyphs placeheld)
+	$(PYTHON) host/keymap.py --dump | $(PYTHON) hud/tests/fixtures/make.py > hud/tests/fixtures/diamond.json
 
 keymap: ## check the configured keymap-drawer YAML converts (ZMKHUD_CONFIG or ~/.config/zmk-layer-hud/config.yaml)
 	$(PYTHON) host/keymap.py

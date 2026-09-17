@@ -1,0 +1,6577 @@
+{
+"activators": [
+{
+"idx": 6,
+"kind": "hold",
+"layer": "shortcuts"
+},
+{
+"idx": 13,
+"kind": "hold",
+"layer": "shortcuts"
+},
+{
+"idx": 20,
+"kind": "hold",
+"layer": "nav"
+},
+{
+"idx": 21,
+"kind": "hold",
+"layer": "numbers"
+},
+{
+"idx": 22,
+"kind": "hold",
+"layer": "symbols"
+},
+{
+"idx": 22,
+"kind": "sticky",
+"layer": "alpha2"
+},
+{
+"idx": 23,
+"kind": "hold",
+"layer": "media"
+},
+{
+"idx": 15,
+"kind": "auto-sticky",
+"layer": "ç-extension"
+},
+{
+"idx": 6,
+"kind": "auto-sticky",
+"layer": "shortcuts"
+},
+{
+"idx": 13,
+"kind": "auto-sticky",
+"layer": "shortcuts"
+},
+{
+"idx": 20,
+"kind": "auto-sticky",
+"layer": "nav"
+},
+{
+"idx": 21,
+"kind": "auto-sticky",
+"layer": "numbers"
+},
+{
+"idx": 22,
+"kind": "auto-sticky",
+"layer": "symbols"
+},
+{
+"idx": 22,
+"kind": "sticky",
+"layer": "shifted2"
+},
+{
+"idx": 23,
+"kind": "auto-sticky",
+"layer": "media"
+},
+{
+"idx": 20,
+"kind": "sticky",
+"layer": "alpha2"
+},
+{
+"idx": 6,
+"kind": "hold",
+"layer": "func"
+},
+{
+"idx": 13,
+"kind": "hold",
+"layer": "macros"
+},
+{
+"idx": 7,
+"kind": "hold",
+"layer": "toggles"
+},
+{
+"idx": 12,
+"kind": "hold",
+"layer": "toggles"
+},
+{
+"idx": 20,
+"kind": "hold",
+"layer": "text"
+},
+{
+"idx": 21,
+"kind": "hold",
+"layer": "func"
+},
+{
+"idx": 22,
+"kind": "hold",
+"layer": "macros"
+},
+{
+"idx": 23,
+"kind": "hold",
+"layer": "text"
+},
+{
+"idx": 6,
+"kind": "hold",
+"layer": "toggles"
+},
+{
+"idx": 13,
+"kind": "hold",
+"layer": "toggles"
+},
+{
+"idx": 6,
+"kind": "hold",
+"layer": "text"
+},
+{
+"idx": 23,
+"kind": "hold",
+"layer": "nav"
+},
+{
+"idx": 13,
+"kind": "hold",
+"layer": "text"
+},
+{
+"idx": 7,
+"kind": "hold",
+"layer": "left-meh-morphs"
+},
+{
+"idx": 8,
+"kind": "hold",
+"layer": "left-meh-morphs"
+},
+{
+"idx": 9,
+"kind": "hold",
+"layer": "left-meh-morphs"
+},
+{
+"idx": 10,
+"kind": "hold",
+"layer": "right-meh-morphs"
+},
+{
+"idx": 11,
+"kind": "hold",
+"layer": "right-meh-morphs"
+},
+{
+"idx": 12,
+"kind": "hold",
+"layer": "right-meh-morphs"
+},
+{
+"idx": 7,
+"kind": "hold",
+"layer": "desktop-management"
+},
+{
+"idx": 8,
+"kind": "hold",
+"layer": "desktop-management"
+},
+{
+"idx": 20,
+"kind": "hold",
+"layer": "desktop-management"
+},
+{
+"idx": 7,
+"kind": "hold",
+"layer": "window-management"
+},
+{
+"idx": 8,
+"kind": "hold",
+"layer": "window-management"
+},
+{
+"idx": 16,
+"kind": "hold",
+"layer": "window-management"
+},
+{
+"idx": 20,
+"kind": "hold",
+"layer": "window-management"
+}
+],
+"base": "alpha1",
+"combo_term": 30,
+"combos": [
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "⎋",
+"type": "key"
+},
+"layers": [
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"mehs"
+],
+"positions": [
+0,
+1
+]
+},
+{
+"key": {
+"glyph": "mdi:backspace-outline",
+"hold": "",
+"shifted": "",
+"tap": "⌫",
+"type": "key"
+},
+"layers": [
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"nav",
+"media",
+"numbers",
+"symbols"
+],
+"positions": [
+4,
+5
+]
+},
+{
+"key": {
+"glyph": "mdi:backspace-outline",
+"hold": "word",
+"shifted": "",
+"tap": "⌫",
+"type": "key"
+},
+"layers": [
+"text"
+],
+"positions": [
+4,
+5
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "cancel",
+"type": "key"
+},
+"layers": [
+"alpha1",
+"numbers",
+"mehs",
+"nav",
+"media",
+"func",
+"vim"
+],
+"positions": [
+3,
+4,
+5
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "k",
+"type": "key"
+},
+"layers": [
+"alpha1"
+],
+"positions": [
+1,
+2
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "x",
+"type": "key"
+},
+"layers": [
+"alpha1"
+],
+"positions": [
+3,
+4
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "q",
+"type": "key"
+},
+"layers": [
+"alpha1"
+],
+"positions": [
+7,
+8
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "w",
+"type": "key"
+},
+"layers": [
+"alpha1"
+],
+"positions": [
+8,
+9
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "z",
+"type": "key"
+},
+"layers": [
+"alpha1"
+],
+"positions": [
+10,
+11
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "y",
+"type": "key"
+},
+"layers": [
+"alpha1"
+],
+"positions": [
+11,
+12
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "v",
+"type": "key"
+},
+"layers": [
+"alpha1"
+],
+"positions": [
+15,
+16
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "j",
+"type": "key"
+},
+"layers": [
+"alpha1"
+],
+"positions": [
+17,
+18
+]
+},
+{
+"key": {
+"hold": "⇥ ;",
+"shifted": "",
+"tap": ";",
+"type": "key"
+},
+"layers": [
+"alpha1",
+"numbers"
+],
+"positions": [
+18,
+19
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "K",
+"type": "key"
+},
+"layers": [
+"shifted1"
+],
+"positions": [
+1,
+2
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "X",
+"type": "key"
+},
+"layers": [
+"shifted1"
+],
+"positions": [
+3,
+4
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "Q",
+"type": "key"
+},
+"layers": [
+"shifted1"
+],
+"positions": [
+7,
+8
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "W",
+"type": "key"
+},
+"layers": [
+"shifted1"
+],
+"positions": [
+8,
+9
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "Z",
+"type": "key"
+},
+"layers": [
+"shifted1"
+],
+"positions": [
+10,
+11
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "Y",
+"type": "key"
+},
+"layers": [
+"shifted1"
+],
+"positions": [
+11,
+12
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "V",
+"type": "key"
+},
+"layers": [
+"shifted1"
+],
+"positions": [
+15,
+16
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "J",
+"type": "key"
+},
+"layers": [
+"shifted1"
+],
+"positions": [
+17,
+18
+]
+},
+{
+"key": {
+"hold": "⇥ :",
+"shifted": "",
+"tap": ":",
+"type": "key"
+},
+"layers": [
+"shifted1"
+],
+"positions": [
+18,
+19
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "vim mode",
+"type": "key"
+},
+"layers": [
+"alpha1",
+"vim"
+],
+"positions": [
+0,
+1,
+2
+]
+},
+{
+"key": {
+"hold": "normal",
+"shifted": "",
+"tap": "⎋",
+"type": "key"
+},
+"layers": [
+"vim"
+],
+"positions": [
+0,
+1
+]
+},
+{
+"key": {
+"hold": "jump",
+"shifted": "",
+"tap": "`",
+"type": "key"
+},
+"layers": [
+"vim"
+],
+"positions": [
+1,
+2
+]
+},
+{
+"key": {
+"hold": "cut",
+"shifted": "",
+"tap": "x",
+"type": "key"
+},
+"layers": [
+"vim"
+],
+"positions": [
+3,
+4
+]
+},
+{
+"key": {
+"hold": "delete",
+"shifted": "",
+"tap": "d",
+"type": "key"
+},
+"layers": [
+"vim"
+],
+"positions": [
+4,
+5
+]
+},
+{
+"key": {
+"hold": "viewport",
+"shifted": "",
+"tap": "z",
+"type": "key"
+},
+"layers": [
+"vim"
+],
+"positions": [
+7,
+8
+]
+},
+{
+"key": {
+"hold": "mark",
+"shifted": "",
+"tap": "m",
+"type": "key"
+},
+"layers": [
+"vim"
+],
+"positions": [
+8,
+9
+]
+},
+{
+"key": {
+"hold": "paste",
+"shifted": "",
+"tap": "p",
+"type": "key"
+},
+"layers": [
+"vim"
+],
+"positions": [
+10,
+11
+]
+},
+{
+"key": {
+"hold": "yank",
+"shifted": "",
+"tap": "y",
+"type": "key"
+},
+"layers": [
+"vim"
+],
+"positions": [
+11,
+12
+]
+},
+{
+"key": {
+"hold": "play again",
+"shifted": "",
+"tap": "@@",
+"type": "key"
+},
+"layers": [
+"vim"
+],
+"positions": [
+14,
+15
+]
+},
+{
+"key": {
+"hold": "play",
+"shifted": "",
+"tap": "@",
+"type": "key"
+},
+"layers": [
+"vim"
+],
+"positions": [
+15,
+16
+]
+},
+{
+"key": {
+"hold": "visual",
+"shifted": "",
+"tap": "v",
+"type": "key"
+},
+"layers": [
+"vim"
+],
+"positions": [
+17,
+18
+]
+},
+{
+"key": {
+"hold": "next/prev",
+"shifted": ",",
+"tap": ";",
+"type": "key"
+},
+"layers": [
+"vim"
+],
+"positions": [
+18,
+19
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "dead \"",
+"type": "key"
+},
+"layers": [
+"alpha2",
+"shifted2"
+],
+"positions": [
+1,
+2
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "-",
+"type": "key"
+},
+"layers": [
+"alpha2",
+"shifted2"
+],
+"positions": [
+3,
+4
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "dead ^",
+"type": "key"
+},
+"layers": [
+"alpha2",
+"shifted2"
+],
+"positions": [
+7,
+8
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "dead '",
+"type": "key"
+},
+"layers": [
+"alpha2",
+"shifted2"
+],
+"positions": [
+8,
+9
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "?",
+"type": "key"
+},
+"layers": [
+"alpha2",
+"shifted2"
+],
+"positions": [
+10,
+11
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "à",
+"type": "key"
+},
+"layers": [
+"alpha2"
+],
+"positions": [
+11,
+12
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "À",
+"type": "key"
+},
+"layers": [
+"shifted2"
+],
+"positions": [
+11,
+12
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "dead `",
+"type": "key"
+},
+"layers": [
+"alpha2",
+"shifted2"
+],
+"positions": [
+14,
+15
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "dead ~",
+"type": "key"
+},
+"layers": [
+"alpha2",
+"shifted2"
+],
+"positions": [
+15,
+16
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "!",
+"type": "key"
+},
+"layers": [
+"alpha2",
+"shifted2"
+],
+"positions": [
+17,
+18
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": ":",
+"type": "key"
+},
+"layers": [
+"alpha2",
+"shifted2"
+],
+"positions": [
+18,
+19
+]
+},
+{
+"key": {
+"glyph": "mdi:loupe",
+"hold": "",
+"shifted": "100%",
+"tap": "⌕",
+"type": "key"
+},
+"layers": [
+"shortcuts"
+],
+"positions": [
+7,
+8
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "auto-layer",
+"tap": "numbers",
+"type": "key"
+},
+"layers": [
+"alpha1",
+"shifted1"
+],
+"positions": [
+14,
+15
+]
+},
+{
+"key": {
+"hold": "meh",
+"shifted": "",
+"tap": "meh ␣",
+"type": "key"
+},
+"layers": [
+"shortcuts"
+],
+"positions": [
+7,
+8,
+9
+]
+},
+{
+"key": {
+"hold": "meh",
+"shifted": "",
+"tap": "meh ⏎",
+"type": "key"
+},
+"layers": [
+"shortcuts"
+],
+"positions": [
+10,
+11,
+12
+]
+},
+{
+"key": {
+"hold": "hyper",
+"shifted": "",
+"tap": "hyper ␣",
+"type": "key"
+},
+"layers": [
+"shortcuts"
+],
+"positions": [
+14,
+15,
+16
+]
+},
+{
+"key": {
+"hold": "hyper",
+"shifted": "",
+"tap": "hyper ⏎",
+"type": "key"
+},
+"layers": [
+"shortcuts"
+],
+"positions": [
+17,
+18,
+19
+]
+},
+{
+"key": {
+"glyph": "mdi:content-save-check",
+"hold": "esc save",
+"shifted": "",
+"tap": "💾✓",
+"type": "key"
+},
+"layers": [
+"shortcuts"
+],
+"positions": [
+0,
+1,
+21
+]
+},
+{
+"key": {
+"glyph": "mdi:content-save",
+"hold": "save",
+"shifted": "",
+"tap": "💾",
+"type": "key"
+},
+"layers": [
+"shortcuts"
+],
+"positions": [
+7,
+8,
+21
+]
+},
+{
+"key": {
+"glyph": "mdi:keyboard-tab",
+"hold": "tab",
+"shifted": "",
+"tap": "⇥",
+"type": "key"
+},
+"layers": [
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"nav",
+"media",
+"text",
+"shortcuts",
+"mehs",
+"func",
+"macros",
+"toggles"
+],
+"positions": [
+4,
+5,
+22
+]
+},
+{
+"key": {
+"glyph": "mdi:keyboard-return",
+"hold": "enter",
+"shifted": "",
+"tap": "↵",
+"type": "key"
+},
+"layers": [
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"nav",
+"media",
+"text",
+"shortcuts",
+"mehs",
+"func",
+"macros",
+"toggles"
+],
+"positions": [
+11,
+12,
+22
+]
+},
+{
+"key": {
+"glyph": "mdi:undo",
+"hold": "undo",
+"shifted": "",
+"tap": "↶",
+"type": "key"
+},
+"layers": [
+"shortcuts"
+],
+"positions": [
+14,
+15,
+21
+]
+},
+{
+"key": {
+"glyph": "mdi:fullscreen",
+"hold": "full screen",
+"shifted": "",
+"tap": "⛶",
+"type": "key"
+},
+"layers": [
+"shortcuts"
+],
+"positions": [
+8,
+9,
+21
+]
+},
+{
+"key": {
+"glyph": "mdi:content-copy",
+"hold": "copy",
+"shifted": "",
+"tap": "⎘",
+"type": "key"
+},
+"layers": [
+"shortcuts"
+],
+"positions": [
+10,
+11,
+22
+]
+},
+{
+"key": {
+"glyph": "mdi:content-paste",
+"hold": "paste",
+"shifted": "",
+"tap": "📋",
+"type": "key"
+},
+"layers": [
+"shortcuts"
+],
+"positions": [
+17,
+18,
+22
+]
+},
+{
+"key": {
+"glyph": "mdi:magnify",
+"hold": "find",
+"shifted": "",
+"tap": "🔍",
+"type": "key"
+},
+"layers": [
+"shortcuts"
+],
+"positions": [
+15,
+16,
+21
+]
+},
+{
+"key": {
+"glyph": "mdi:select-all",
+"hold": "select all",
+"shifted": "",
+"tap": "⊞",
+"type": "key"
+},
+"layers": [
+"shortcuts"
+],
+"positions": [
+18,
+19,
+22
+]
+},
+{
+"key": {
+"glyph": "mdi:content-copy",
+"glyph_shifted": "mdi:select-all",
+"hold": "sel. copy",
+"shifted": "⊞",
+"tap": "⎘",
+"type": "key"
+},
+"layers": [
+"shortcuts"
+],
+"positions": [
+10,
+11,
+12,
+22
+]
+},
+{
+"key": {
+"glyph": "mdi:content-paste",
+"glyph_shifted": "mdi:select-all",
+"hold": "sel. paste",
+"shifted": "⊞",
+"tap": "📋",
+"type": "key"
+},
+"layers": [
+"shortcuts"
+],
+"positions": [
+17,
+18,
+19,
+22
+]
+},
+{
+"key": {
+"glyph": "mdi:hand-back-right-outline",
+"hold": "",
+"shifted": "hand",
+"tap": "✋",
+"type": "key"
+},
+"layers": [
+"media"
+],
+"positions": [
+3,
+4
+]
+},
+{
+"key": {
+"glyph": "mdi:mouse-left-click",
+"hold": "",
+"shifted": "left",
+"tap": "🖱L",
+"type": "key"
+},
+"layers": [
+"media"
+],
+"positions": [
+10,
+11
+]
+},
+{
+"key": {
+"glyph": "mdi:mouse-right-click",
+"hold": "",
+"shifted": "right",
+"tap": "🖱R",
+"type": "key"
+},
+"layers": [
+"media"
+],
+"positions": [
+11,
+12
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "0",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+23,
+22
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "1",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+17,
+22
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "2",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+18,
+22
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "3",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+19,
+22
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "4",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+10,
+22
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "5",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+11,
+22
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "6",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+12,
+22
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "7",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+3,
+22
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "8",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+4,
+22
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "9",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+5,
+22
+]
+},
+{
+"key": {
+"hold": "⇥ {",
+"shifted": "",
+"tap": "{",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+1,
+21
+]
+},
+{
+"key": {
+"hold": "⇥ }",
+"shifted": "",
+"tap": "}",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+2,
+21
+]
+},
+{
+"key": {
+"hold": "⇥ (",
+"shifted": "",
+"tap": "(",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+8,
+21
+]
+},
+{
+"key": {
+"hold": "⇥ )",
+"shifted": "",
+"tap": ")",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+9,
+21
+]
+},
+{
+"key": {
+"hold": "⇥ [",
+"shifted": "",
+"tap": "[",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+15,
+21
+]
+},
+{
+"key": {
+"hold": "⇥ ]",
+"shifted": "",
+"tap": "]",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+16,
+21
+]
+},
+{
+"key": {
+"glyph": "mdi:arrow-left",
+"hold": "left",
+"shifted": "",
+"tap": "←",
+"type": "key"
+},
+"layers": [
+"nav"
+],
+"positions": [
+10,
+23
+]
+},
+{
+"key": {
+"glyph": "mdi:arrow-down",
+"hold": "down",
+"shifted": "",
+"tap": "↓",
+"type": "key"
+},
+"layers": [
+"nav"
+],
+"positions": [
+11,
+23
+]
+},
+{
+"key": {
+"glyph": "mdi:arrow-up",
+"hold": "up",
+"shifted": "",
+"tap": "↑",
+"type": "key"
+},
+"layers": [
+"nav"
+],
+"positions": [
+12,
+23
+]
+},
+{
+"key": {
+"glyph": "mdi:arrow-right",
+"hold": "right",
+"shifted": "",
+"tap": "→",
+"type": "key"
+},
+"layers": [
+"nav"
+],
+"positions": [
+13,
+23
+]
+},
+{
+"key": {
+"glyph": "mdi:backspace-reverse-outline",
+"hold": "del",
+"shifted": "",
+"tap": "⌦",
+"type": "key"
+},
+"layers": [
+"nav"
+],
+"positions": [
+17,
+23
+]
+},
+{
+"key": {
+"glyph": "mdi:format-horizontal-align-left",
+"hold": "home",
+"shifted": "",
+"tap": "⇱",
+"type": "key"
+},
+"layers": [
+"nav"
+],
+"positions": [
+18,
+23
+]
+},
+{
+"key": {
+"glyph": "mdi:format-horizontal-align-right",
+"hold": "end",
+"shifted": "",
+"tap": "⇲",
+"type": "key"
+},
+"layers": [
+"nav"
+],
+"positions": [
+19,
+23
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "⇥{ ⏎",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+0,
+1
+]
+},
+{
+"key": {
+"hold": "⇥ {}",
+"shifted": "",
+"tap": "{}",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+1,
+2
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "vim",
+"tap": "G",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+3,
+4
+]
+},
+{
+"key": {
+"hold": "⇥ []",
+"shifted": "",
+"tap": "[]",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+15,
+16
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "vim",
+"tap": "j",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+10,
+11
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "vim",
+"tap": "k",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+11,
+12
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "vim",
+"tap": "|",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+17,
+18
+]
+},
+{
+"key": {
+"hold": "⇥ ()",
+"shifted": "",
+"tap": "()",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+8,
+9
+]
+},
+{
+"key": {
+"hold": "→ &&",
+"shifted": "",
+"tap": "&&",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+7,
+8
+]
+},
+{
+"key": {
+"hold": "→ ||",
+"shifted": "",
+"tap": "||",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+14,
+15
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "⇥do ⏎",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+0,
+1,
+2
+]
+},
+{
+"key": {
+"hold": "⇥();⏎",
+"shifted": "",
+"tap": "⇥();",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+7,
+8,
+9
+]
+},
+{
+"key": {
+"hold": "⇥<>();",
+"shifted": "",
+"tap": "<>()",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+14,
+15,
+16
+]
+},
+{
+"key": {
+"hold": "ª",
+"shifted": "",
+"tap": "º",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+10,
+11,
+12
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "°",
+"type": "key"
+},
+"layers": [
+"numbers"
+],
+"positions": [
+17,
+18,
+19
+]
+},
+{
+"key": {
+"hold": "EUR",
+"shifted": "",
+"tap": "€",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+3,
+4,
+5
+]
+},
+{
+"key": {
+"hold": "BRL",
+"shifted": "",
+"tap": "R$",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+10,
+11,
+12
+]
+},
+{
+"key": {
+"hold": "USD",
+"shifted": "",
+"tap": "US$",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+17,
+18,
+19
+]
+},
+{
+"key": {
+"hold": "→ =>",
+"shifted": "",
+"tap": "=>",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+0,
+1
+]
+},
+{
+"key": {
+"hold": "→ ->",
+"shifted": "",
+"tap": "->",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+7,
+8
+]
+},
+{
+"key": {
+"hold": "→ <>",
+"shifted": "",
+"tap": "<>",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+14,
+15
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "${",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+8,
+9
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "#{",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+1,
+2
+]
+},
+{
+"key": {
+"hold": "\\'",
+"shifted": "",
+"tap": "\\\"",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+0,
+1,
+2
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "\"\"\"",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+7,
+8,
+9
+]
+},
+{
+"key": {
+"hold": "⇥ ⏎ |>",
+"shifted": "",
+"tap": "|>",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+15,
+16
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "```",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+14,
+15,
+16
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "%{",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+3,
+4
+]
+},
+{
+"key": {
+"hold": "→ <-",
+"shifted": "",
+"tap": "<-",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+10,
+11
+]
+},
+{
+"key": {
+"hold": "→ ==",
+"shifted": "",
+"tap": "==",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+11,
+12
+]
+},
+{
+"key": {
+"hold": "→ ::",
+"shifted": "",
+"tap": "::",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+17,
+18
+]
+},
+{
+"key": {
+"hold": "→ !=",
+"shifted": "",
+"tap": "!=",
+"type": "key"
+},
+"layers": [
+"symbols"
+],
+"positions": [
+18,
+19
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "F12",
+"type": "key"
+},
+"layers": [
+"func"
+],
+"positions": [
+3,
+4
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "F11",
+"type": "key"
+},
+"layers": [
+"func"
+],
+"positions": [
+10,
+11
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "F14",
+"type": "key"
+},
+"layers": [
+"func"
+],
+"positions": [
+11,
+12
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "F15",
+"type": "key"
+},
+"layers": [
+"func"
+],
+"positions": [
+4,
+5
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "F10",
+"type": "key"
+},
+"layers": [
+"func"
+],
+"positions": [
+17,
+18
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "F13",
+"type": "key"
+},
+"layers": [
+"func"
+],
+"positions": [
+18,
+19
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "↑⇥ ⌦",
+"type": "key"
+},
+"layers": [
+"nav"
+],
+"positions": [
+3,
+4
+]
+},
+{
+"key": {
+"glyph": "mdi:arrow-down-bold-outline",
+"hold": "",
+"shifted": "page",
+"tap": "⇟",
+"type": "key"
+},
+"layers": [
+"nav"
+],
+"positions": [
+10,
+11
+]
+},
+{
+"key": {
+"glyph": "mdi:arrow-up-bold-outline",
+"hold": "",
+"shifted": "page",
+"tap": "⇞",
+"type": "key"
+},
+"layers": [
+"nav"
+],
+"positions": [
+11,
+12
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "↓ ⇥",
+"type": "key"
+},
+"layers": [
+"nav"
+],
+"positions": [
+17,
+18
+]
+},
+{
+"key": {
+"glyph": "mdi:numeric",
+"hold": "numbers",
+"shifted": "",
+"tap": "#",
+"type": "key"
+},
+"layers": [
+"nav"
+],
+"positions": [
+18,
+19
+]
+},
+{
+"key": {
+"hold": "mode",
+"shifted": "enter",
+"tap": "vim",
+"type": "key"
+},
+"layers": [
+"macros"
+],
+"positions": [
+3,
+4
+]
+},
+{
+"key": {
+"hold": "mode",
+"shifted": "leave",
+"tap": "vim",
+"type": "key"
+},
+"layers": [
+"macros"
+],
+"positions": [
+4,
+5
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "⎋",
+"type": "key"
+},
+"layers": [
+"mehs"
+],
+"positions": [
+4,
+5
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "meh k",
+"type": "key"
+},
+"layers": [
+"mehs"
+],
+"positions": [
+1,
+2
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "meh x",
+"type": "key"
+},
+"layers": [
+"mehs"
+],
+"positions": [
+3,
+4
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "auto-layer",
+"tap": "numbers",
+"type": "key"
+},
+"layers": [
+"mehs"
+],
+"positions": [
+14,
+15
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "meh v",
+"type": "key"
+},
+"layers": [
+"mehs"
+],
+"positions": [
+15,
+16
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "meh j",
+"type": "key"
+},
+"layers": [
+"mehs"
+],
+"positions": [
+17,
+18
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "auto-layer",
+"tap": "numbers",
+"type": "key"
+},
+"layers": [
+"mehs"
+],
+"positions": [
+18,
+19
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "meh w",
+"type": "key"
+},
+"layers": [
+"mehs"
+],
+"positions": [
+8,
+9
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "meh z",
+"type": "key"
+},
+"layers": [
+"mehs"
+],
+"positions": [
+10,
+11
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "meh q",
+"type": "key"
+},
+"layers": [
+"mehs"
+],
+"positions": [
+7,
+8
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "meh y",
+"type": "key"
+},
+"layers": [
+"mehs"
+],
+"positions": [
+11,
+12
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "to impl",
+"type": "key"
+},
+"layers": [
+"coding-meh"
+],
+"positions": [
+11,
+12
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "go to",
+"type": "key"
+},
+"layers": [
+"coding-hyper"
+],
+"positions": [
+11,
+12
+]
+}
+],
+"extras": {
+"alpha2": "alpha2",
+"base": "alpha1",
+"letter_combos_on": [
+"vim"
+],
+"search": [
+"alpha2",
+"shifted1",
+"shifted2",
+"numbers",
+"symbols",
+"nav",
+"shortcuts",
+"media",
+"text",
+"func",
+"macros",
+"toggles",
+"ç-extension"
+],
+"sticky": [
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension"
+]
+},
+"glyphs": {
+"mdi:apple-keyboard-command": "<svg data-glyph=\"mdi:apple-keyboard-command\"></svg>",
+"mdi:apple-keyboard-control": "<svg data-glyph=\"mdi:apple-keyboard-control\"></svg>",
+"mdi:apple-keyboard-option": "<svg data-glyph=\"mdi:apple-keyboard-option\"></svg>",
+"mdi:apple-keyboard-shift": "<svg data-glyph=\"mdi:apple-keyboard-shift\"></svg>",
+"mdi:apps": "<svg data-glyph=\"mdi:apps\"></svg>",
+"mdi:arrow-down": "<svg data-glyph=\"mdi:arrow-down\"></svg>",
+"mdi:arrow-down-bold-outline": "<svg data-glyph=\"mdi:arrow-down-bold-outline\"></svg>",
+"mdi:arrow-down-circle": "<svg data-glyph=\"mdi:arrow-down-circle\"></svg>",
+"mdi:arrow-down-circle-outline": "<svg data-glyph=\"mdi:arrow-down-circle-outline\"></svg>",
+"mdi:arrow-left": "<svg data-glyph=\"mdi:arrow-left\"></svg>",
+"mdi:arrow-left-bold-outline": "<svg data-glyph=\"mdi:arrow-left-bold-outline\"></svg>",
+"mdi:arrow-left-circle": "<svg data-glyph=\"mdi:arrow-left-circle\"></svg>",
+"mdi:arrow-right": "<svg data-glyph=\"mdi:arrow-right\"></svg>",
+"mdi:arrow-right-bold-outline": "<svg data-glyph=\"mdi:arrow-right-bold-outline\"></svg>",
+"mdi:arrow-right-circle": "<svg data-glyph=\"mdi:arrow-right-circle\"></svg>",
+"mdi:arrow-up": "<svg data-glyph=\"mdi:arrow-up\"></svg>",
+"mdi:arrow-up-bold-outline": "<svg data-glyph=\"mdi:arrow-up-bold-outline\"></svg>",
+"mdi:arrow-up-circle": "<svg data-glyph=\"mdi:arrow-up-circle\"></svg>",
+"mdi:arrow-up-circle-outline": "<svg data-glyph=\"mdi:arrow-up-circle-outline\"></svg>",
+"mdi:backspace-outline": "<svg data-glyph=\"mdi:backspace-outline\"></svg>",
+"mdi:backspace-reverse-outline": "<svg data-glyph=\"mdi:backspace-reverse-outline\"></svg>",
+"mdi:backup-restore": "<svg data-glyph=\"mdi:backup-restore\"></svg>",
+"mdi:bluetooth": "<svg data-glyph=\"mdi:bluetooth\"></svg>",
+"mdi:bluetooth-off": "<svg data-glyph=\"mdi:bluetooth-off\"></svg>",
+"mdi:book-open-outline": "<svg data-glyph=\"mdi:book-open-outline\"></svg>",
+"mdi:book-open-variant-outline": "<svg data-glyph=\"mdi:book-open-variant-outline\"></svg>",
+"mdi:bookmark-box": "<svg data-glyph=\"mdi:bookmark-box\"></svg>",
+"mdi:brain": "<svg data-glyph=\"mdi:brain\"></svg>",
+"mdi:bug-play": "<svg data-glyph=\"mdi:bug-play\"></svg>",
+"mdi:calculator": "<svg data-glyph=\"mdi:calculator\"></svg>",
+"mdi:camera": "<svg data-glyph=\"mdi:camera\"></svg>",
+"mdi:chat-processing-outline": "<svg data-glyph=\"mdi:chat-processing-outline\"></svg>",
+"mdi:circle": "<svg data-glyph=\"mdi:circle\"></svg>",
+"mdi:circle-multiple": "<svg data-glyph=\"mdi:circle-multiple\"></svg>",
+"mdi:close": "<svg data-glyph=\"mdi:close\"></svg>",
+"mdi:code-array": "<svg data-glyph=\"mdi:code-array\"></svg>",
+"mdi:code-block-braces": "<svg data-glyph=\"mdi:code-block-braces\"></svg>",
+"mdi:code-block-parentheses": "<svg data-glyph=\"mdi:code-block-parentheses\"></svg>",
+"mdi:cog": "<svg data-glyph=\"mdi:cog\"></svg>",
+"mdi:console-line": "<svg data-glyph=\"mdi:console-line\"></svg>",
+"mdi:content-copy": "<svg data-glyph=\"mdi:content-copy\"></svg>",
+"mdi:content-cut": "<svg data-glyph=\"mdi:content-cut\"></svg>",
+"mdi:content-paste": "<svg data-glyph=\"mdi:content-paste\"></svg>",
+"mdi:content-save": "<svg data-glyph=\"mdi:content-save\"></svg>",
+"mdi:content-save-check": "<svg data-glyph=\"mdi:content-save-check\"></svg>",
+"mdi:debug-step-into": "<svg data-glyph=\"mdi:debug-step-into\"></svg>",
+"mdi:debug-step-out": "<svg data-glyph=\"mdi:debug-step-out\"></svg>",
+"mdi:debug-step-over": "<svg data-glyph=\"mdi:debug-step-over\"></svg>",
+"mdi:delete": "<svg data-glyph=\"mdi:delete\"></svg>",
+"mdi:dock-window": "<svg data-glyph=\"mdi:dock-window\"></svg>",
+"mdi:docker": "<svg data-glyph=\"mdi:docker\"></svg>",
+"mdi:emoticon-happy-outline": "<svg data-glyph=\"mdi:emoticon-happy-outline\"></svg>",
+"mdi:feather": "<svg data-glyph=\"mdi:feather\"></svg>",
+"mdi:feature-search-outline": "<svg data-glyph=\"mdi:feature-search-outline\"></svg>",
+"mdi:file-code-outline": "<svg data-glyph=\"mdi:file-code-outline\"></svg>",
+"mdi:file-multiple": "<svg data-glyph=\"mdi:file-multiple\"></svg>",
+"mdi:flash": "<svg data-glyph=\"mdi:flash\"></svg>",
+"mdi:folder-open": "<svg data-glyph=\"mdi:folder-open\"></svg>",
+"mdi:form-select": "<svg data-glyph=\"mdi:form-select\"></svg>",
+"mdi:format-horizontal-align-left": "<svg data-glyph=\"mdi:format-horizontal-align-left\"></svg>",
+"mdi:format-horizontal-align-right": "<svg data-glyph=\"mdi:format-horizontal-align-right\"></svg>",
+"mdi:format-indent-increase": "<svg data-glyph=\"mdi:format-indent-increase\"></svg>",
+"mdi:fullscreen": "<svg data-glyph=\"mdi:fullscreen\"></svg>",
+"mdi:fullscreen-exit": "<svg data-glyph=\"mdi:fullscreen-exit\"></svg>",
+"mdi:gesture-tap": "<svg data-glyph=\"mdi:gesture-tap\"></svg>",
+"mdi:hand-back-right-outline": "<svg data-glyph=\"mdi:hand-back-right-outline\"></svg>",
+"mdi:history": "<svg data-glyph=\"mdi:history\"></svg>",
+"mdi:keyboard-return": "<svg data-glyph=\"mdi:keyboard-return\"></svg>",
+"mdi:keyboard-space": "<svg data-glyph=\"mdi:keyboard-space\"></svg>",
+"mdi:keyboard-tab": "<svg data-glyph=\"mdi:keyboard-tab\"></svg>",
+"mdi:layers-search-outline": "<svg data-glyph=\"mdi:layers-search-outline\"></svg>",
+"mdi:lock": "<svg data-glyph=\"mdi:lock\"></svg>",
+"mdi:loupe": "<svg data-glyph=\"mdi:loupe\"></svg>",
+"mdi:magnify": "<svg data-glyph=\"mdi:magnify\"></svg>",
+"mdi:magnify-minus-outline": "<svg data-glyph=\"mdi:magnify-minus-outline\"></svg>",
+"mdi:magnify-plus-outline": "<svg data-glyph=\"mdi:magnify-plus-outline\"></svg>",
+"mdi:microphone": "<svg data-glyph=\"mdi:microphone\"></svg>",
+"mdi:microsoft-visual-studio-code": "<svg data-glyph=\"mdi:microsoft-visual-studio-code\"></svg>",
+"mdi:monitor": "<svg data-glyph=\"mdi:monitor\"></svg>",
+"mdi:monitor-eye": "<svg data-glyph=\"mdi:monitor-eye\"></svg>",
+"mdi:monitor-shimmer": "<svg data-glyph=\"mdi:monitor-shimmer\"></svg>",
+"mdi:monitor-star": "<svg data-glyph=\"mdi:monitor-star\"></svg>",
+"mdi:mouse-left-click": "<svg data-glyph=\"mdi:mouse-left-click\"></svg>",
+"mdi:mouse-right-click": "<svg data-glyph=\"mdi:mouse-right-click\"></svg>",
+"mdi:note-multiple-outline": "<svg data-glyph=\"mdi:note-multiple-outline\"></svg>",
+"mdi:numeric": "<svg data-glyph=\"mdi:numeric\"></svg>",
+"mdi:open-in-new": "<svg data-glyph=\"mdi:open-in-new\"></svg>",
+"mdi:page-next": "<svg data-glyph=\"mdi:page-next\"></svg>",
+"mdi:page-next-outline": "<svg data-glyph=\"mdi:page-next-outline\"></svg>",
+"mdi:page-previous": "<svg data-glyph=\"mdi:page-previous\"></svg>",
+"mdi:page-previous-outline": "<svg data-glyph=\"mdi:page-previous-outline\"></svg>",
+"mdi:play": "<svg data-glyph=\"mdi:play\"></svg>",
+"mdi:play-pause": "<svg data-glyph=\"mdi:play-pause\"></svg>",
+"mdi:poll": "<svg data-glyph=\"mdi:poll\"></svg>",
+"mdi:power-sleep": "<svg data-glyph=\"mdi:power-sleep\"></svg>",
+"mdi:ray-start-arrow": "<svg data-glyph=\"mdi:ray-start-arrow\"></svg>",
+"mdi:refresh": "<svg data-glyph=\"mdi:refresh\"></svg>",
+"mdi:remote-desktop": "<svg data-glyph=\"mdi:remote-desktop\"></svg>",
+"mdi:repeat": "<svg data-glyph=\"mdi:repeat\"></svg>",
+"mdi:select-all": "<svg data-glyph=\"mdi:select-all\"></svg>",
+"mdi:select-compare": "<svg data-glyph=\"mdi:select-compare\"></svg>",
+"mdi:sine-wave": "<svg data-glyph=\"mdi:sine-wave\"></svg>",
+"mdi:skip-backward": "<svg data-glyph=\"mdi:skip-backward\"></svg>",
+"mdi:skip-forward": "<svg data-glyph=\"mdi:skip-forward\"></svg>",
+"mdi:stop": "<svg data-glyph=\"mdi:stop\"></svg>",
+"mdi:tab-search": "<svg data-glyph=\"mdi:tab-search\"></svg>",
+"mdi:text-box-search-outline": "<svg data-glyph=\"mdi:text-box-search-outline\"></svg>",
+"mdi:undo": "<svg data-glyph=\"mdi:undo\"></svg>",
+"mdi:variable": "<svg data-glyph=\"mdi:variable\"></svg>",
+"mdi:view-compact": "<svg data-glyph=\"mdi:view-compact\"></svg>",
+"mdi:volume-high": "<svg data-glyph=\"mdi:volume-high\"></svg>",
+"mdi:volume-medium": "<svg data-glyph=\"mdi:volume-medium\"></svg>",
+"mdi:web": "<svg data-glyph=\"mdi:web\"></svg>",
+"mdi:wrench": "<svg data-glyph=\"mdi:wrench\"></svg>",
+"mdi:wrench-outline": "<svg data-glyph=\"mdi:wrench-outline\"></svg>",
+"shift_command": "<svg data-glyph=\"shift_command\"></svg>"
+},
+"hud": {
+"activator_ms": 400,
+"combo_pill_ms": 1000,
+"combo_slack_ms": 20,
+"held_timeout_ms": 5000,
+"momentary_ms": 700,
+"one_shot_ms": 450,
+"opacity": 86,
+"positions_fresh_ms": 3000,
+"press_ms": 320,
+"release_ms": 60,
+"sequence_max": 6,
+"sequence_ms": 200,
+"width": 598
+},
+"kind": "keymap",
+"layer_order": [
+"alpha1",
+"alpha2",
+"shifted1",
+"shifted2",
+"ç-extension",
+"vim",
+"numbers",
+"symbols",
+"shortcuts",
+"toggles",
+"nav",
+"media",
+"text",
+"mehs",
+"func",
+"macros",
+"left-meh-morphs",
+"right-meh-morphs",
+"coding-meh",
+"coding-hyper",
+"desktop-management",
+"window-management"
+],
+"layers": {
+"alpha1": [
+{
+"hold": "",
+"shifted": "",
+"tap": "b",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "m",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "g",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "l",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "o",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "u",
+"type": "key"
+},
+{
+"hold": "shortcuts",
+"shifted": "",
+"tap": "d",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-control",
+"hold": "⌃",
+"shifted": "",
+"tap": "n",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-option",
+"hold": "⌥",
+"shifted": "",
+"tap": "s",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-shift",
+"hold": "⇧",
+"shifted": "",
+"tap": "t",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-shift",
+"hold": "⇧",
+"shifted": "",
+"tap": "r",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-option",
+"hold": "⌥",
+"shifted": "",
+"tap": "a",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-control",
+"hold": "⌃",
+"shifted": "",
+"tap": "e",
+"type": "key"
+},
+{
+"hold": "shortcuts",
+"shifted": "",
+"tap": "i",
+"type": "key"
+},
+{
+"glyph_hold": "shift_command",
+"hold": "⇧⌘",
+"shifted": "",
+"tap": "f",
+"type": "key"
+},
+{
+"glyph_hold": "shift_command",
+"hold": "⇧⌘",
+"shifted": "",
+"tap": "c",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "",
+"tap": "p",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "magic",
+"tap": "h|v",
+"type": "key"
+},
+{
+"hold": "→ ,",
+"shifted": "",
+"tap": ",",
+"type": "key"
+},
+{
+"hold": "→ .",
+"shifted": "",
+"tap": ".",
+"type": "key"
+},
+{
+"glyph": "mdi:repeat",
+"hold": "nav",
+"shifted": "repeat",
+"tap": "↻",
+"type": "key"
+},
+{
+"glyph": "mdi:keyboard-space",
+"hold": "numbers",
+"shifted": "",
+"tap": "␣",
+"type": "key"
+},
+{
+"hold": "symbols",
+"shifted": "sticky",
+"tap": "alpha2",
+"type": "key"
+},
+{
+"glyph": "mdi:apple-keyboard-shift",
+"hold": "media",
+"shifted": "sticky",
+"tap": "⇧",
+"type": "key"
+}
+],
+"alpha2": [
+{
+"hold": "",
+"shifted": "",
+"tap": "q",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "qu",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "k",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ô",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ó",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ú",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "y",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "z",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "x",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "w",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ã",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "á",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "é",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "í",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "j",
+"type": "key"
+},
+{
+"hold": "ç-extension",
+"shifted": "auto-sticky",
+"tap": "ç",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "magic",
+"tap": "v|h",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "õ",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "â",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ê",
+"type": "key"
+},
+{
+"glyph": "mdi:repeat",
+"hold": "",
+"shifted": "repeat",
+"tap": "↻",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "_",
+"type": "key"
+},
+{
+"glyph": "mdi:keyboard-space",
+"hold": "",
+"shifted": "",
+"tap": "␣",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "'",
+"type": "key"
+}
+],
+"coding-hyper": [
+{
+"glyph": "mdi:form-select",
+"hold": "",
+"shifted": "select in",
+"tap": "form-select",
+"type": "key"
+},
+{
+"glyph": "mdi:wrench-outline",
+"hold": "",
+"shifted": "rebuild",
+"tap": "wrench-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:sine-wave",
+"hold": "code",
+"shifted": "analyze",
+"tap": "sine-wave",
+"type": "key"
+},
+{
+"hold": "everything",
+"shifted": "search",
+"tap": "$$mdi:database-search-outline$$l",
+"type": "key"
+},
+{
+"glyph": "mdi:text-box-search-outline",
+"hold": "symbol",
+"shifted": "go to",
+"tap": "text-box-search-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:feature-search-outline",
+"hold": "action",
+"shifted": "find",
+"tap": "feature-search-outline",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:code-block-parentheses",
+"hold": "complete",
+"shifted": "code",
+"tap": "code-block-parentheses",
+"type": "key"
+},
+{
+"glyph": "mdi:file-code-outline",
+"hold": "this",
+"shifted": "refactor",
+"tap": "file-code-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:view-compact",
+"hold": "scheme",
+"shifted": "switch",
+"tap": "view-compact",
+"type": "key"
+},
+{
+"glyph": "mdi:stop",
+"hold": "",
+"shifted": "stop",
+"tap": "stop",
+"type": "key"
+},
+{
+"glyph": "mdi:play-pause",
+"hold": "",
+"shifted": "resume",
+"tap": "⏯",
+"type": "key"
+},
+{
+"glyph": "mdi:circle-multiple",
+"hold": "breakpoints",
+"shifted": "view",
+"tap": "circle-multiple",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:code-array",
+"hold": "code",
+"shifted": "generate",
+"tap": "code-array",
+"type": "key"
+},
+{
+"hold": "block",
+"shifted": "comment",
+"tap": "/**/",
+"type": "key"
+},
+{
+"glyph": "mdi:book-open-variant-outline",
+"hold": "usages",
+"shifted": "find",
+"tap": "book-open-variant-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:bookmark-box",
+"hold": "bookmark",
+"shifted": "toggle",
+"tap": "bookmark-box",
+"type": "key"
+},
+{
+"glyph": "mdi:page-previous",
+"hold": "bookmark",
+"shifted": "previous",
+"tap": "page-previous",
+"type": "key"
+},
+{
+"glyph": "mdi:page-next",
+"hold": "bookmark",
+"shifted": "next",
+"tap": "page-next",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+}
+],
+"coding-meh": [
+{
+"glyph": "mdi:file-multiple",
+"hold": "",
+"shifted": "project",
+"tap": "file-multiple",
+"type": "key"
+},
+{
+"glyph": "mdi:wrench",
+"hold": "",
+"shifted": "build",
+"tap": "🔧",
+"type": "key"
+},
+{
+"glyph": "mdi:format-indent-increase",
+"hold": "code",
+"shifted": "format",
+"tap": "format-indent-increase",
+"type": "key"
+},
+{
+"glyph": "mdi:debug-step-out",
+"hold": "out",
+"shifted": "step",
+"tap": "debug-step-out",
+"type": "key"
+},
+{
+"glyph": "mdi:debug-step-over",
+"hold": "over",
+"shifted": "step",
+"tap": "debug-step-over",
+"type": "key"
+},
+{
+"glyph": "mdi:debug-step-into",
+"hold": "into",
+"shifted": "step",
+"tap": "debug-step-into",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:code-block-braces",
+"hold": "match",
+"shifted": "type",
+"tap": "code-block-braces",
+"type": "key"
+},
+{
+"hold": "statement",
+"shifted": "complete",
+"tap": "()",
+"type": "key"
+},
+{
+"glyph": "mdi:history",
+"hold": "files",
+"shifted": "recent",
+"tap": "history",
+"type": "key"
+},
+{
+"glyph": "mdi:play",
+"hold": "run",
+"shifted": "",
+"tap": "play",
+"type": "key"
+},
+{
+"glyph": "mdi:bug-play",
+"hold": "debug",
+"shifted": "",
+"tap": "bug-play",
+"type": "key"
+},
+{
+"glyph": "mdi:circle",
+"hold": "breakpoint",
+"shifted": "toggle",
+"tap": "circle",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:variable",
+"hold": "expression",
+"shifted": "evaluate",
+"tap": "variable",
+"type": "key"
+},
+{
+"hold": "line",
+"shifted": "comment",
+"tap": "//",
+"type": "key"
+},
+{
+"glyph": "mdi:feather",
+"hold": "def",
+"shifted": "quick",
+"tap": "feather",
+"type": "key"
+},
+{
+"glyph": "mdi:book-open-outline",
+"hold": "docs",
+"shifted": "quick",
+"tap": "book-open-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:page-previous-outline",
+"hold": "error",
+"shifted": "previous",
+"tap": "page-previous-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:page-next-outline",
+"hold": "error",
+"shifted": "next",
+"tap": "page-next-outline",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"glyph": "mdi:brain",
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "ai chat",
+"tap": "brain",
+"type": "key"
+},
+{
+"glyph": "mdi:gesture-tap",
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "actions",
+"tap": "gesture-tap",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+}
+],
+"desktop-management": [
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:monitor-shimmer",
+"hold": "desktops",
+"shifted": "show",
+"tap": "monitor-shimmer",
+"type": "key"
+},
+{
+"glyph": "mdi:dock-window",
+"hold": "window",
+"shifted": "prev",
+"tap": "dock-window",
+"type": "key"
+},
+{
+"glyph": "mdi:dock-window",
+"hold": "window",
+"shifted": "next",
+"tap": "dock-window",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:remote-desktop",
+"hold": "desktop",
+"shifted": "prev",
+"tap": "remote-desktop",
+"type": "key"
+},
+{
+"glyph": "mdi:monitor",
+"hold": "display",
+"shifted": "prev",
+"tap": "🖥",
+"type": "key"
+},
+{
+"glyph": "mdi:monitor",
+"hold": "display",
+"shifted": "next",
+"tap": "🖥",
+"type": "key"
+},
+{
+"glyph": "mdi:remote-desktop",
+"hold": "desktop",
+"shifted": "next",
+"tap": "remote-desktop",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:monitor-eye",
+"hold": "scratchpad",
+"shifted": "toggle",
+"tap": "monitor-eye",
+"type": "key"
+},
+{
+"glyph": "mdi:arrow-left-bold-outline",
+"hold": "horizontal",
+"shifted": "shrink",
+"tap": "arrow-left-bold-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:arrow-right-bold-outline",
+"hold": "horizontal",
+"shifted": "expand",
+"tap": "arrow-right-bold-outline",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+}
+],
+"func": [
+{
+"hold": "",
+"shifted": "",
+"tap": "F13",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F14",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F15",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F7",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F8",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F9",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"glyph": "mdi:apple-keyboard-control",
+"hold": "",
+"shifted": "sticky",
+"tap": "⌃",
+"type": "key"
+},
+{
+"glyph": "mdi:apple-keyboard-option",
+"hold": "",
+"shifted": "sticky",
+"tap": "⌥",
+"type": "key"
+},
+{
+"glyph": "mdi:apple-keyboard-shift",
+"hold": "",
+"shifted": "sticky",
+"tap": "⇧",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F4",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F5",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F6",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F12",
+"type": "key"
+},
+{
+"glyph": "shift_command",
+"hold": "",
+"shifted": "sticky",
+"tap": "⇧⌘",
+"type": "key"
+},
+{
+"glyph": "shift_command",
+"hold": "",
+"shifted": "sticky",
+"tap": "⇧⌘",
+"type": "key"
+},
+{
+"glyph": "mdi:apple-keyboard-command",
+"hold": "",
+"shifted": "sticky",
+"tap": "⌘",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F1",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F2",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F3",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F10",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F11",
+"type": "key"
+}
+],
+"left-meh-morphs": [
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"glyph": "mdi:apple-keyboard-control",
+"hold": "",
+"shifted": "",
+"tap": "⌃",
+"type": "held"
+},
+{
+"glyph": "mdi:apple-keyboard-option",
+"hold": "",
+"shifted": "",
+"tap": "⌥",
+"type": "held"
+},
+{
+"glyph": "mdi:apple-keyboard-shift",
+"hold": "",
+"shifted": "",
+"tap": "⇧",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"glyph": "mdi:apple-keyboard-command",
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "sticky",
+"tap": "⌘",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+}
+],
+"macros": [
+{
+"hold": "",
+"shifted": "",
+"tap": "~/",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "./",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "../",
+"type": "key"
+},
+{
+"hold": "replace",
+"shifted": "search",
+"tap": ":%s/",
+"type": "key"
+},
+{
+"hold": "below",
+"shifted": "newline",
+"tap": "o⎋",
+"type": "key"
+},
+{
+"hold": "above",
+"shifted": "newline",
+"tap": "O⎋",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "terminal",
+"tap": "exit⏎",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "hugs",
+"tap": "[]'s",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "open ref",
+"tap": "[[",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "new task",
+"tap": "-␣[␣]␣",
+"type": "key"
+},
+{
+"hold": "line",
+"shifted": "visual",
+"tap": "⇧v",
+"type": "key"
+},
+{
+"hold": "last yank",
+"shifted": "paste",
+"tap": "\"0p",
+"type": "key"
+},
+{
+"hold": "last delete",
+"shifted": "paste",
+"tap": "\"1p",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Print OS",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "comment",
+"tap": "⌘/|⌃/",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "laugh",
+"tap": "haha",
+"type": "key"
+},
+{
+"hold": "block",
+"shifted": "visual",
+"tap": "⌃v",
+"type": "key"
+},
+{
+"hold": "clipboard",
+"shifted": "paste",
+"tap": "\"+p",
+"type": "key"
+},
+{
+"hold": "clipboard",
+"shifted": "yank",
+"tap": "\"+y",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:keyboard-space",
+"hold": "normal",
+"shifted": "vim",
+"tap": "␣",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+}
+],
+"media": [
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:mouse-left-click",
+"hold": "",
+"shifted": "left",
+"tap": "🖱L",
+"type": "key"
+},
+{
+"glyph": "mdi:mouse-right-click",
+"hold": "",
+"shifted": "right",
+"tap": "🖱R",
+"type": "key"
+},
+{
+"hold": "⇧ ↹",
+"shifted": "",
+"tap": "↹",
+"type": "key"
+},
+{
+"hold": "⇥ ↵",
+"shifted": "",
+"tap": "↵",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "⎋",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:arrow-left-circle",
+"hold": "",
+"shifted": "mouse",
+"tap": "arrow-left-circle",
+"type": "key"
+},
+{
+"glyph": "mdi:arrow-up-circle",
+"hold": "",
+"shifted": "mouse",
+"tap": "arrow-up-circle",
+"type": "key"
+},
+{
+"glyph": "mdi:arrow-right-circle",
+"hold": "",
+"shifted": "mouse",
+"tap": "arrow-right-circle",
+"type": "key"
+},
+{
+"glyph": "mdi:microphone",
+"hold": "",
+"shifted": "mic",
+"tap": "🎤",
+"type": "key"
+},
+{
+"glyph": "mdi:volume-medium",
+"hold": "",
+"shifted": "vol-",
+"tap": "🔉",
+"type": "key"
+},
+{
+"glyph": "mdi:volume-high",
+"hold": "",
+"shifted": "vol+",
+"tap": "🔊",
+"type": "key"
+},
+{
+"glyph": "mdi:camera",
+"hold": "text",
+"shifted": "cam",
+"tap": "📷",
+"type": "key"
+},
+{
+"glyph": "mdi:arrow-down-circle-outline",
+"hold": "",
+"shifted": "scroll",
+"tap": "",
+"type": "trans"
+},
+{
+"glyph": "mdi:arrow-down-circle",
+"hold": "",
+"shifted": "mouse",
+"tap": "arrow-down-circle",
+"type": "key"
+},
+{
+"glyph": "mdi:arrow-up-circle-outline",
+"hold": "",
+"shifted": "scroll",
+"tap": "arrow-up-circle-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:play-pause",
+"hold": "",
+"shifted": "play",
+"tap": "⏯",
+"type": "key"
+},
+{
+"glyph": "mdi:skip-backward",
+"hold": "",
+"shifted": "previous",
+"tap": "⏮",
+"type": "key"
+},
+{
+"glyph": "mdi:skip-forward",
+"hold": "",
+"shifted": "next",
+"tap": "⏭",
+"type": "key"
+},
+{
+"hold": "nav",
+"shifted": "",
+"tap": "",
+"type": "key"
+},
+{
+"glyph": "mdi:keyboard-space",
+"hold": "",
+"shifted": "",
+"tap": "␣",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+}
+],
+"mehs": [
+{
+"hold": "",
+"shifted": "",
+"tap": "meh b",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh m",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh g",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh l",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh o",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh u",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh d",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh n",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh s",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh t",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh r",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh a",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh e",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh i",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh f",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh c",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh p",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh h",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh '",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "meh \\",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "",
+"tap": "meh ␣",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "",
+"tap": "meh ↵",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+}
+],
+"nav": [
+{
+"glyph": "mdi:apps",
+"hold": "",
+"shifted": "swapper",
+"tap": "⊞",
+"type": "key"
+},
+{
+"glyph": "mdi:tab-search",
+"hold": "",
+"shifted": "tabs",
+"tap": "⌕⇥",
+"type": "key"
+},
+{
+"glyph": "mdi:layers-search-outline",
+"hold": "",
+"shifted": "launcher",
+"tap": "⌕▤",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "↹",
+"type": "key"
+},
+{
+"glyph": "mdi:keyboard-return",
+"hold": "",
+"shifted": "",
+"tap": "↵",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "⎋",
+"type": "key"
+},
+{
+"glyph": "mdi:cog",
+"hold": "text",
+"shifted": "system",
+"tap": "⚙",
+"type": "key"
+},
+{
+"glyph": "mdi:numeric",
+"glyph_hold": "mdi:apple-keyboard-control",
+"hold": "⌃",
+"shifted": "sticky",
+"tap": "#",
+"type": "key"
+},
+{
+"glyph": "mdi:numeric",
+"glyph_hold": "mdi:apple-keyboard-option",
+"hold": "⌥",
+"shifted": "sticky",
+"tap": "#",
+"type": "key"
+},
+{
+"glyph": "mdi:numeric",
+"glyph_hold": "mdi:apple-keyboard-shift",
+"hold": "⇧",
+"shifted": "sticky",
+"tap": "#",
+"type": "key"
+},
+{
+"glyph": "mdi:arrow-left",
+"hold": "",
+"shifted": "left",
+"tap": "←",
+"type": "key"
+},
+{
+"glyph": "mdi:arrow-down",
+"hold": "",
+"shifted": "down",
+"tap": "↓",
+"type": "key"
+},
+{
+"glyph": "mdi:arrow-up",
+"hold": "",
+"shifted": "up",
+"tap": "↑",
+"type": "key"
+},
+{
+"glyph": "mdi:arrow-right",
+"hold": "",
+"shifted": "right",
+"tap": "→",
+"type": "key"
+},
+{
+"glyph": "mdi:numeric",
+"glyph_hold": "shift_command",
+"hold": "⇧⌘",
+"shifted": "sticky",
+"tap": "#",
+"type": "key"
+},
+{
+"glyph": "mdi:numeric",
+"glyph_hold": "shift_command",
+"hold": "⇧⌘",
+"shifted": "sticky",
+"tap": "#",
+"type": "key"
+},
+{
+"glyph": "mdi:numeric",
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "sticky",
+"tap": "#",
+"type": "key"
+},
+{
+"glyph": "mdi:backspace-reverse-outline",
+"hold": "",
+"shifted": "del",
+"tap": "⌦",
+"type": "key"
+},
+{
+"glyph": "mdi:format-horizontal-align-left",
+"hold": "",
+"shifted": "home",
+"tap": "⇱",
+"type": "key"
+},
+{
+"glyph": "mdi:format-horizontal-align-right",
+"hold": "",
+"shifted": "end",
+"tap": "⇲",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"glyph": "mdi:keyboard-space",
+"hold": "symbols",
+"shifted": "",
+"tap": "␣",
+"type": "key"
+},
+{
+"hold": "media",
+"shifted": "insert",
+"tap": "⎀",
+"type": "held alternate"
+}
+],
+"numbers": [
+{
+"hold": "",
+"shifted": "",
+"tap": "\\",
+"type": "key"
+},
+{
+"hold": "⇥ {",
+"shifted": "",
+"tap": "{",
+"type": "key"
+},
+{
+"hold": "⇥ }",
+"shifted": "",
+"tap": "}",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "7",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "8",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "9",
+"type": "key"
+},
+{
+"hold": "func",
+"shifted": "",
+"tap": ",",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "&",
+"type": "key"
+},
+{
+"hold": "⇥ (",
+"shifted": "",
+"tap": "(",
+"type": "key"
+},
+{
+"hold": "⇥ )",
+"shifted": "",
+"tap": ")",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "4",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "5",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "6",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": ".",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "|",
+"type": "key"
+},
+{
+"hold": "→ [",
+"shifted": "",
+"tap": "[",
+"type": "key"
+},
+{
+"hold": "→ ]",
+"shifted": "",
+"tap": "]",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "1",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "2",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "3",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"glyph": "mdi:keyboard-space",
+"hold": "symbols",
+"shifted": "",
+"tap": "␣",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "0",
+"type": "key"
+}
+],
+"right-meh-morphs": [
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"glyph": "mdi:apple-keyboard-shift",
+"hold": "",
+"shifted": "",
+"tap": "⇧",
+"type": "held"
+},
+{
+"glyph": "mdi:apple-keyboard-option",
+"hold": "",
+"shifted": "",
+"tap": "⌥",
+"type": "held"
+},
+{
+"glyph": "mdi:apple-keyboard-control",
+"hold": "",
+"shifted": "",
+"tap": "⌃",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"glyph": "mdi:apple-keyboard-command",
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "sticky",
+"tap": "⌘",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+}
+],
+"shifted1": [
+{
+"hold": "",
+"shifted": "",
+"tap": "B",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "M",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "G",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "L",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "O",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "U",
+"type": "ghost"
+},
+{
+"hold": "shortcuts",
+"shifted": "",
+"tap": "D",
+"type": "ghost"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-control",
+"hold": "⌃",
+"shifted": "",
+"tap": "N",
+"type": "ghost"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-option",
+"hold": "⌥",
+"shifted": "",
+"tap": "S",
+"type": "ghost"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-shift",
+"hold": "⇧",
+"shifted": "",
+"tap": "T",
+"type": "ghost"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-shift",
+"hold": "⇧",
+"shifted": "",
+"tap": "R",
+"type": "ghost"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-option",
+"hold": "⌥",
+"shifted": "",
+"tap": "A",
+"type": "ghost"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-control",
+"hold": "⌃",
+"shifted": "",
+"tap": "E",
+"type": "ghost"
+},
+{
+"hold": "shortcuts",
+"shifted": "",
+"tap": "I",
+"type": "ghost"
+},
+{
+"glyph_hold": "shift_command",
+"hold": "⇧⌘",
+"shifted": "",
+"tap": "F",
+"type": "ghost"
+},
+{
+"glyph_hold": "shift_command",
+"hold": "⇧⌘",
+"shifted": "",
+"tap": "C",
+"type": "ghost"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "",
+"tap": "P",
+"type": "ghost"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "magic",
+"tap": "H|V",
+"type": "ghost"
+},
+{
+"hold": "→ ,",
+"shifted": "",
+"tap": ",",
+"type": "key"
+},
+{
+"hold": "→ .",
+"shifted": "",
+"tap": ".",
+"type": "key"
+},
+{
+"hold": "nav",
+"shifted": "",
+"tap": "CAPS LINE",
+"type": "ghost"
+},
+{
+"glyph": "mdi:keyboard-space",
+"hold": "numbers",
+"shifted": "",
+"tap": "␣",
+"type": "ghost"
+},
+{
+"hold": "symbols",
+"shifted": "sticky",
+"tap": "shifted2",
+"type": "ghost"
+},
+{
+"hold": "media",
+"shifted": "",
+"tap": "CAPS word",
+"type": "ghost"
+}
+],
+"shifted2": [
+{
+"hold": "",
+"shifted": "",
+"tap": "Q",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Qu",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "K",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Ô",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Ó",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Ú",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Y",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Z",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "X",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "W",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Ã",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Á",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "É",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Í",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "J",
+"type": "key"
+},
+{
+"hold": "ç-extension",
+"shifted": "auto-sticky",
+"tap": "Ç",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "magic",
+"tap": "V|H",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Õ",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Â",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Ê",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "'",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"glyph": "mdi:keyboard-space",
+"hold": "",
+"shifted": "",
+"tap": "␣",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "'",
+"type": "key"
+}
+],
+"shortcuts": [
+{
+"glyph": "mdi:calculator",
+"hold": "",
+"shifted": "calc",
+"tap": "🧮",
+"type": "key"
+},
+{
+"glyph": "mdi:folder-open",
+"hold": "",
+"shifted": "files",
+"tap": "📁",
+"type": "key"
+},
+{
+"glyph": "mdi:web",
+"hold": "",
+"shifted": "browser",
+"tap": "🌐",
+"type": "key"
+},
+{
+"glyph": "mdi:chat-processing-outline",
+"hold": "",
+"shifted": "voxtype",
+"tap": "chat-processing-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:microsoft-visual-studio-code",
+"hold": "",
+"shifted": "editor",
+"tap": "⌨",
+"type": "key"
+},
+{
+"glyph": "mdi:poll",
+"hold": "",
+"shifted": "activities",
+"tap": "poll",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"glyph": "mdi:magnify-minus-outline",
+"hold": "toggles",
+"shifted": "zoom -",
+"tap": "magnify-minus-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:magnify-plus-outline",
+"hold": "",
+"shifted": "zoom +",
+"tap": "magnify-plus-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:open-in-new",
+"hold": "",
+"shifted": "new",
+"tap": "⧉",
+"type": "key"
+},
+{
+"glyph": "mdi:ray-start-arrow",
+"hold": "",
+"shifted": "leader-key",
+"tap": "⇢",
+"type": "key"
+},
+{
+"glyph": "mdi:docker",
+"hold": "",
+"shifted": "docker",
+"tap": "🐳",
+"type": "key"
+},
+{
+"glyph": "mdi:emoticon-happy-outline",
+"hold": "toggles",
+"shifted": "emojis",
+"tap": "☺",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held alternate"
+},
+{
+"glyph": "mdi:close",
+"hold": "",
+"shifted": "close",
+"tap": "✕",
+"type": "key"
+},
+{
+"glyph": "mdi:refresh",
+"hold": "",
+"shifted": "refresh",
+"tap": "⟳",
+"type": "key"
+},
+{
+"glyph": "mdi:backup-restore",
+"hold": "",
+"shifted": "reopen",
+"tap": "⟲",
+"type": "key"
+},
+{
+"glyph": "mdi:content-cut",
+"hold": "",
+"shifted": "clip",
+"tap": "✂",
+"type": "key"
+},
+{
+"glyph": "mdi:note-multiple-outline",
+"hold": "",
+"shifted": "notes",
+"tap": "🗒",
+"type": "key"
+},
+{
+"glyph": "mdi:console-line",
+"hold": "",
+"shifted": "term",
+"tap": ">_",
+"type": "key"
+},
+{
+"hold": "text",
+"shifted": "",
+"tap": "",
+"type": "key"
+},
+{
+"glyph": "mdi:keyboard-space",
+"hold": "func",
+"shifted": "",
+"tap": "␣",
+"type": "key"
+},
+{
+"glyph": "mdi:keyboard-space",
+"hold": "macros",
+"shifted": "",
+"tap": "␣",
+"type": "key"
+},
+{
+"hold": "text",
+"shifted": "",
+"tap": "",
+"type": "key"
+}
+],
+"symbols": [
+{
+"hold": "",
+"shifted": "",
+"tap": "~",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "#",
+"type": "key"
+},
+{
+"hold": "⇥ '",
+"shifted": "",
+"tap": "'",
+"type": "key"
+},
+{
+"hold": "⇥ %",
+"shifted": "",
+"tap": "%",
+"type": "key"
+},
+{
+"hold": "⇥ =",
+"shifted": "",
+"tap": "=",
+"type": "key"
+},
+{
+"hold": "⇥ :",
+"shifted": "",
+"tap": ":",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "@",
+"type": "key"
+},
+{
+"hold": "0",
+"shifted": "",
+"tap": "^",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "$",
+"type": "key"
+},
+{
+"hold": "⇥ \"",
+"shifted": "",
+"tap": "\"",
+"type": "key"
+},
+{
+"hold": "⇥ ?",
+"shifted": "",
+"tap": "?",
+"type": "key"
+},
+{
+"hold": "→ -",
+"shifted": "",
+"tap": "-",
+"type": "key"
+},
+{
+"hold": "→ +",
+"shifted": "",
+"tap": "+",
+"type": "key"
+},
+{
+"hold": "macros",
+"shifted": "",
+"tap": "_",
+"type": "key"
+},
+{
+"hold": "→ <",
+"shifted": "",
+"tap": "<",
+"type": "key"
+},
+{
+"hold": "→ >",
+"shifted": "",
+"tap": ">",
+"type": "key"
+},
+{
+"hold": "⇥ `",
+"shifted": "",
+"tap": "`",
+"type": "key"
+},
+{
+"hold": "⇥ !",
+"shifted": "",
+"tap": "!",
+"type": "key"
+},
+{
+"hold": "→ /",
+"shifted": "",
+"tap": "/",
+"type": "key"
+},
+{
+"hold": "→ *",
+"shifted": "",
+"tap": "*",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"glyph": "mdi:keyboard-space",
+"hold": "numbers",
+"shifted": "",
+"tap": "␣",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+}
+],
+"text": [
+{
+"glyph": "mdi:select-compare",
+"hold": "home",
+"shifted": "select",
+"tap": "select-compare",
+"type": "key"
+},
+{
+"glyph": "mdi:select-compare",
+"hold": "word",
+"shifted": "select",
+"tap": "select-compare",
+"type": "key"
+},
+{
+"glyph": "mdi:select-compare",
+"hold": "line",
+"shifted": "select",
+"tap": "select-compare",
+"type": "key"
+},
+{
+"hold": "⇤ ↹",
+"shifted": "tab",
+"tap": "↹",
+"type": "key"
+},
+{
+"hold": "⇥ ↵",
+"shifted": "enter",
+"tap": "↵",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "esc",
+"tap": "⎋",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"glyph": "mdi:apple-keyboard-control",
+"hold": "",
+"shifted": "",
+"tap": "⌃",
+"type": "key"
+},
+{
+"glyph": "mdi:apple-keyboard-option",
+"hold": "",
+"shifted": "",
+"tap": "⌥",
+"type": "key"
+},
+{
+"glyph": "mdi:apple-keyboard-shift",
+"hold": "",
+"shifted": "",
+"tap": "⇧",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "word",
+"tap": "← ⓦ",
+"type": "key"
+},
+{
+"glyph": "mdi:arrow-down",
+"hold": "",
+"shifted": "line",
+"tap": "↓",
+"type": "key"
+},
+{
+"glyph": "mdi:arrow-up",
+"hold": "",
+"shifted": "line",
+"tap": "↑",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "word",
+"tap": "→ ⓦ",
+"type": "held alternate"
+},
+{
+"glyph": "shift_command",
+"hold": "",
+"shifted": "",
+"tap": "⇧⌘",
+"type": "key"
+},
+{
+"glyph": "shift_command",
+"hold": "",
+"shifted": "",
+"tap": "⇧⌘",
+"type": "key"
+},
+{
+"glyph": "mdi:apple-keyboard-command",
+"hold": "",
+"shifted": "",
+"tap": "⌘",
+"type": "key"
+},
+{
+"hold": "word",
+"shifted": "delete",
+"tap": "⌦ ⓦ",
+"type": "key"
+},
+{
+"glyph": "mdi:format-horizontal-align-left",
+"hold": "",
+"shifted": "home",
+"tap": "⇱",
+"type": "key"
+},
+{
+"glyph": "mdi:format-horizontal-align-right",
+"hold": "",
+"shifted": "end",
+"tap": "⇲",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held alternate"
+}
+],
+"toggles": [
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:bluetooth",
+"hold": "0",
+"shifted": "",
+"tap": "BT",
+"type": "key"
+},
+{
+"glyph": "mdi:bluetooth-off",
+"glyph_hold": "mdi:delete",
+"hold": "delete",
+"shifted": "",
+"tap": "BT✕",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "nav",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "func",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"glyph": "mdi:bluetooth",
+"glyph_hold": "mdi:arrow-left",
+"hold": "←",
+"shifted": "",
+"tap": "BT",
+"type": "key"
+},
+{
+"glyph": "mdi:bluetooth",
+"glyph_hold": "mdi:arrow-right",
+"hold": "→",
+"shifted": "",
+"tap": "BT",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "numbers",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "media",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held alternate"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held alternate"
+},
+{
+"glyph": "mdi:flash",
+"hold": "",
+"shifted": "boot",
+"tap": "⚡",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "def OS",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "alt OS",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "mehs",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:flash",
+"hold": "",
+"shifted": "boot",
+"tap": "⚡",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "CAPS LOCK",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "NUM LOCK",
+"type": "key"
+},
+{
+"glyph": "mdi:lock",
+"hold": "",
+"shifted": "lock",
+"tap": "🔒",
+"type": "key"
+},
+{
+"glyph": "mdi:power-sleep",
+"hold": "",
+"shifted": "sleep",
+"tap": "zz",
+"type": "key"
+}
+],
+"vim": [
+{
+"hold": "begin",
+"shifted": "",
+"tap": "b",
+"type": "key"
+},
+{
+"hold": "end",
+"shifted": "",
+"tap": "e",
+"type": "key"
+},
+{
+"hold": "word",
+"shifted": "",
+"tap": "w",
+"type": "key"
+},
+{
+"hold": "go to",
+"shifted": "",
+"tap": "g",
+"type": "key"
+},
+{
+"hold": "newline",
+"shifted": "",
+"tap": "o",
+"type": "key"
+},
+{
+"hold": "undo",
+"shifted": "",
+"tap": "u",
+"type": "key"
+},
+{
+"hold": "shortcuts",
+"shifted": "record",
+"tap": "q",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-control",
+"hold": "⌃",
+"shifted": "next/prev",
+"tap": "n",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-option",
+"hold": "⌥",
+"shifted": "surround",
+"tap": "s",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-shift",
+"hold": "⇧",
+"shifted": "replace",
+"tap": "r",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-shift",
+"hold": "⇧",
+"shifted": "left",
+"tap": "h",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-option",
+"hold": "⌥",
+"shifted": "down",
+"tap": "j",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-control",
+"hold": "⌃",
+"shifted": "up",
+"tap": "k",
+"type": "key"
+},
+{
+"hold": "shortcuts",
+"shifted": "right",
+"tap": "l",
+"type": "key"
+},
+{
+"glyph_hold": "shift_command",
+"hold": "⇧⌘",
+"shifted": "find",
+"tap": "f",
+"type": "key"
+},
+{
+"glyph_hold": "shift_command",
+"hold": "⇧⌘",
+"shifted": "change",
+"tap": "c",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "till",
+"tap": "t",
+"type": "key"
+},
+{
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "insert",
+"tap": "i",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "append",
+"tap": "a",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "repeat",
+"tap": ".",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+}
+],
+"window-management": [
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:monitor-star",
+"hold": "windows",
+"shifted": "show app",
+"tap": "monitor-star",
+"type": "key"
+},
+{
+"glyph": "mdi:fullscreen",
+"hold": "full screen",
+"shifted": "toggle",
+"tap": "⛶",
+"type": "key"
+},
+{
+"glyph": "mdi:fullscreen-exit",
+"hold": "pop up",
+"shifted": "toggle",
+"tap": "fullscreen-exit",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:remote-desktop",
+"hold": "desktop",
+"shifted": "to prev",
+"tap": "remote-desktop",
+"type": "key"
+},
+{
+"glyph": "mdi:monitor",
+"hold": "display",
+"shifted": "to prev",
+"tap": "🖥",
+"type": "key"
+},
+{
+"glyph": "mdi:monitor",
+"hold": "display",
+"shifted": "to next",
+"tap": "🖥",
+"type": "key"
+},
+{
+"glyph": "mdi:remote-desktop",
+"hold": "desktop",
+"shifted": "to next",
+"tap": "remote-desktop",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"glyph": "mdi:monitor-eye",
+"hold": "scratchpad",
+"shifted": "move to",
+"tap": "monitor-eye",
+"type": "key"
+},
+{
+"glyph": "mdi:arrow-down-bold-outline",
+"hold": "vertical",
+"shifted": "shrink",
+"tap": "⇟",
+"type": "key"
+},
+{
+"glyph": "mdi:arrow-up-bold-outline",
+"hold": "vertical",
+"shifted": "expand",
+"tap": "⇞",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+}
+],
+"ç-extension": [
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ão",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ã",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ões",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "õ",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "sticky",
+"tap": "alpha2",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+}
+]
+},
+"layout": {
+"height": 272.0,
+"keys": [
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 105.0,
+"y": 34.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 175.0,
+"y": 34.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 245.0,
+"y": 34.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 415.0,
+"y": 34.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 485.0,
+"y": 34.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 555.0,
+"y": 34.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 35.0,
+"y": 102.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 105.0,
+"y": 102.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 175.0,
+"y": 102.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 245.0,
+"y": 102.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 415.0,
+"y": 102.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 485.0,
+"y": 102.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 555.0,
+"y": 102.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 625.0,
+"y": 102.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 105.0,
+"y": 170.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 175.0,
+"y": 170.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 245.0,
+"y": 170.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 415.0,
+"y": 170.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 485.0,
+"y": 170.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 555.0,
+"y": 170.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 210.0,
+"y": 238.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 280.0,
+"y": 238.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 380.0,
+"y": 238.0
+},
+{
+"h": 68.0,
+"r": 0,
+"w": 70.0,
+"x": 450.0,
+"y": 238.0
+}
+],
+"width": 660.0
+},
+"positions": {
+"1": 0,
+"10": 6,
+"11": 7,
+"12": 8,
+"13": 9,
+"16": 10,
+"17": 11,
+"18": 12,
+"19": 13,
+"2": 1,
+"21": 14,
+"22": 15,
+"23": 16,
+"26": 17,
+"27": 18,
+"28": 19,
+"3": 2,
+"31": 20,
+"32": 21,
+"33": 22,
+"34": 23,
+"6": 3,
+"7": 4,
+"8": 5
+},
+"signal": {
+"base": 192,
+"commit": 223
+},
+"source": "examples/diamond.yaml",
+"title": "",
+"zmk_layers": {
+"0": {
+"cls": false,
+"drawer": "alpha1",
+"id": 0,
+"label": "Alpha 1",
+"name": "ALPHA1"
+},
+"1": {
+"cls": "momentary",
+"drawer": null,
+"id": 1,
+"label": "Alt OS",
+"name": "ALT_OS"
+},
+"10": {
+"cls": "momentary",
+"drawer": "shortcuts",
+"id": 10,
+"label": "Shortcuts",
+"name": "SHORTS"
+},
+"11": {
+"cls": "momentary",
+"drawer": "toggles",
+"id": 11,
+"label": "Toggles",
+"name": "TOGS"
+},
+"12": {
+"cls": "momentary",
+"drawer": "mehs",
+"id": 12,
+"label": "Mehs",
+"name": "MEHS"
+},
+"13": {
+"cls": "momentary",
+"drawer": "alpha2",
+"id": 13,
+"label": "Alpha 2",
+"name": "ALPHA2"
+},
+"14": {
+"cls": "momentary",
+"drawer": "numbers",
+"id": 14,
+"label": "Numbers",
+"name": "NUM"
+},
+"15": {
+"cls": "momentary",
+"drawer": "symbols",
+"id": 15,
+"label": "Symbols",
+"name": "SYM"
+},
+"16": {
+"cls": "momentary",
+"drawer": "shifted1",
+"id": 16,
+"label": "Sentence case",
+"name": "SEN_CASE"
+},
+"17": {
+"cls": "momentary",
+"drawer": "ç-extension",
+"id": 17,
+"label": "Ç extension",
+"name": "CCEDIL"
+},
+"18": {
+"cls": "momentary",
+"drawer": "shifted2",
+"id": 18,
+"label": "Shift · Alpha 2",
+"name": "SFT_A2"
+},
+"19": {
+"cls": "momentary",
+"drawer": "shifted2",
+"id": 19,
+"label": "Caps · Alpha 2",
+"name": "CASE_A2"
+},
+"2": {
+"cls": "vim",
+"drawer": "vim",
+"id": 2,
+"label": "Vim normal",
+"name": "VIM_NORMAL"
+},
+"20": {
+"cls": "momentary",
+"drawer": "ç-extension",
+"id": 20,
+"label": "Caps · Ç",
+"name": "CASE_CCEDIL"
+},
+"21": {
+"cls": "momentary",
+"drawer": null,
+"id": 21,
+"label": "Alt repeat",
+"name": "ALTREP2"
+},
+"22": {
+"cls": "momentary",
+"drawer": "nav",
+"id": 22,
+"label": "Navigation",
+"name": "NAV"
+},
+"23": {
+"cls": "momentary",
+"drawer": "numbers",
+"id": 23,
+"label": "Numbers",
+"name": "NUM_CP"
+},
+"24": {
+"cls": "momentary",
+"drawer": "symbols",
+"id": 24,
+"label": "Symbols",
+"name": "SYM_CP"
+},
+"25": {
+"cls": "momentary",
+"drawer": "media",
+"id": 25,
+"label": "Media / mouse",
+"name": "MEDIA"
+},
+"26": {
+"cls": "momentary",
+"drawer": "nav",
+"id": 26,
+"label": "Navigation",
+"name": "NAV_CP"
+},
+"27": {
+"cls": "momentary",
+"drawer": "text",
+"id": 27,
+"label": "Text navigation",
+"name": "TEXT"
+},
+"28": {
+"cls": "momentary",
+"drawer": "func",
+"id": 28,
+"label": "Function keys",
+"name": "FUN"
+},
+"29": {
+"cls": "momentary",
+"drawer": "macros",
+"id": 29,
+"label": "Macros",
+"name": "MACROS"
+},
+"3": {
+"cls": "vim",
+"drawer": "vim",
+"id": 3,
+"label": "Vim visual",
+"name": "VIM_VISUAL"
+},
+"4": {
+"cls": "vim",
+"drawer": "vim",
+"id": 4,
+"label": "Vim change",
+"name": "VIM_CHANGE"
+},
+"5": {
+"cls": "vim-insert",
+"drawer": null,
+"id": 5,
+"label": "Vim insert",
+"name": "VIM_INSERT"
+},
+"6": {
+"cls": "vim",
+"drawer": "vim",
+"id": 6,
+"label": "Vim replace",
+"name": "VIM_REPLACE"
+},
+"7": {
+"cls": "vim-cmdline",
+"drawer": null,
+"id": 7,
+"label": "Vim cmdline",
+"name": "VIM_CMDLINE"
+},
+"8": {
+"cls": "momentary",
+"drawer": "shifted1",
+"id": 8,
+"label": "Caps word",
+"name": "CASE_A1"
+},
+"9": {
+"cls": "momentary",
+"drawer": "shifted1",
+"id": 9,
+"label": "Caps line",
+"name": "CPLK_A1"
+}
+}
+}
