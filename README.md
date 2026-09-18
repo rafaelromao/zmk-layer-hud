@@ -156,6 +156,95 @@ A URL is cloned into `~/.cache/zmk-layer-hud` (`$ZMKHUD_CACHE` moves it) and fet
 later sync, so a sync sees what you pushed; a path is read where it is, so it sees what you have
 not pushed yet. [config/diamond.imported.yaml](config/diamond.imported.yaml) is what it writes for the Diamond.
 
+## Three ways in
+
+Everything on screen comes from one stream of messages, and three things can produce it: the
+keyboard, the command line, and a WebSocket client. They are interchangeable by design — the page
+cannot tell them apart — which is what makes the HUD testable without hardware, and also what to
+keep in mind when reading a HUD that looks right.
+
+### 1. The keyboard
+
+The real one, and the only one that proves anything. It speaks on two channels at once, with
+separate permissions, which is why half the HUD can work while the other half does not:
+
+| channel | carries | needs |
+|---|---|---|
+| the module's own (CDC-ACM over USB, GATT over BLE) | active layers, and each key press/release by position | the tty: `uaccess` from the udev rule, or the `dialout`/`uucp` group |
+| the keyboard's HID reports | what you type, and the modifier flags | macOS: Input Monitoring. Linux: read on `/dev/hidrawN`, from the same udev rule |
+
+Lose the first and the board stops following you; lose the second and the typed-keys strip stays
+empty and shift stops capitalising the legends, while everything else still works. `./start.sh
+status` says which of the two is live. `--no-hid-keys` drops the second channel deliberately, and
+the permission with it.
+
+### 2. The command line
+
+`./start.sh` runs the HUD: `start`, `stop`, `log` (tail both logs), `status` (what it is reading,
+and on Linux which layer-shell surfaces are mapped), and `--reserve` to tile windows beside it
+rather than under it.
+
+`host/hudpoke.py` drives it, by sending the feed the messages a keyboard would have produced:
+
+```bash
+host/hudpoke.py --type "hello, world"   # type it, character by character
+host/hudpoke.py --legend 'á'            # one legend, composed as the decoder would
+host/hudpoke.py --layers 2,22           # set the active layer ids ('' clears)
+host/hudpoke.py --press 13              # light the key at ZMK position 13, then release it
+host/hudpoke.py --stdin < script.jsonl  # raw messages, one JSON per line
+```
+
+`--gap-ms` and `--hold-ms` set the timing, `-v` echoes what it sends, `--url` points it elsewhere.
+Characters go through `host/uskeys.py`, so an accent arrives as the one composed keyDown the real
+decoder would have emitted.
+
+This exercises the page — layout, legends, strip, combo grouping — and nothing below it. The
+keyboard, the firmware and the wire format are never involved, so **a HUD that looks right under
+hudpoke can still be fed wrong by a real keyboard**, and it is worth being clear which of the two
+you have just shown.
+
+### 3. The WebSocket
+
+`host/hudfeed.py` serves `ws://127.0.0.1:8766` (`--port`, or `ZMKHUD_PORT`; `--no-ws` turns it
+off). This is how the Linux panel is fed, and it is what `hudpoke` talks to. Note that the macOS
+panel runs the feed in-process and opens **no socket at all** — to drive that one, use the page's
+own API in a browser, or run `host/hudfeed.py` yourself and point a browser page at it with
+`index.html?ws=ws://127.0.0.1:8766`.
+
+Outbound, every message is one JSON object per frame. A message produced by a keyboard also carries
+`"device"`, its name, so a page can show which keyboard is typing:
+
+| message | when |
+|---|---|
+| `{"kind":"keymap", …}` | on connect, and whenever the config, the keymap YAML or the imported file changes |
+| `{"kind":"layers","ids":[2,22]}` | the active ZMK layer ids changed (layer 0 is omitted: always active) |
+| `{"kind":"device","name":"Diamond"}` | a keyboard was opened |
+| `{"kind":"press","pos":13}` / `{"kind":"release","pos":13}` | a key at that ZMK position went down / up |
+| `{"kind":"key","type":"keyDown","name":"a","chars":"a","code":4,"flags":{"cmd":false,"ctrl":false,"alt":false,"shift":false,"fn":false},"repeat":false}` | a key or modifier change, decoded from the reports |
+
+`type` is `keyDown`, `keyUp` or `flagsChanged`. The last `keymap`, `layers` and `device` are cached
+and replayed to every new client, so a page that connects late — or reconnects — is right
+immediately rather than blank until you touch something.
+
+Inbound, a client may send `layers`, `press`, `release`, `key` and `device`, and each is fanned out
+to every client exactly as a keyboard's would be. That is the whole of how `hudpoke` works, and you
+can do the same from any client:
+
+```bash
+python3 -c 'import asyncio,websockets,json
+async def main():
+    async with websockets.connect("ws://127.0.0.1:8766") as ws:
+        await ws.send(json.dumps({"kind":"layers","ids":[2]}))
+asyncio.run(main())'
+```
+
+After an injected message the feed re-asserts the keyboard's own layer state, so the picture
+returns to the truth by itself within one heartbeat rather than staying wherever you left it.
+`{"kind":"close"}` from any client exits the feed and takes the HUD down with it — that is what the
+page's ✕ sends. `--no-inject` refuses the five cosmetic kinds; it does not disable `close`, which
+the socket accepted long before they did. The keymap is deliberately not injectable: it is large,
+it is built from files the feed already watches, and a page given a wrong one has no way back.
+
 ## How it works
 
 **The channel.** The firmware module has its own: a CDC-ACM serial interface over USB, GATT
@@ -223,21 +312,8 @@ share its vectors, so a change on one side that is not mirrored on the other fai
 (`layer_signal_policy.h` beside it is the superseded encoding, from when the signal travelled
 inside the keyboard report. Nothing in `firmware/src/` includes it.)
 
-`host/hudpoke.py` drives the pages without a keyboard, by sending hudfeed the messages one would
-have produced:
-
-```bash
-host/hudpoke.py --type "hello, world"   # type it, character by character
-host/hudpoke.py --layers 2,22           # set the active layer ids
-host/hudpoke.py --press 13              # light the key at ZMK position 13
-host/hudpoke.py --stdin < script.jsonl  # raw messages, one JSON per line
-```
-
-Characters go through `host/uskeys.py`, so an accent arrives as the one composed keyDown the real
-decoder would have emitted. This exercises the page — layout, legends, strip, combo grouping — and
-nothing below it: the keyboard, the firmware and the wire format are never involved, so a HUD that
-looks right under hudpoke can still be fed wrong by a real keyboard. The feed accepts these because
-its WebSocket already accepted `{"kind":"close"}` from any local client; `--no-inject` closes it.
+`host/hudpoke.py` drives the pages without a keyboard, and the WebSocket it speaks is documented
+under [Three ways in](#three-ways-in) along with the other two.
 
 `make test-hud` sweeps the page: every key on every layer it can be shown on, every combo on every
 layer it is declared on and in four press orders, every press that must draw no combo, and the
@@ -262,4 +338,5 @@ does. A case the two disagree about is a hole in the shim.
 - Layer ids below 31, key positions below 136.
 - Without keymap-drawer installed, only `cols_thumbs_notation` and `ortho_layout` layouts render
   and combos given as `trigger_keys` are skipped.
-- The Linux panel is ported from an earlier kit and not yet run on hardware.
+- The macOS panel runs the feed in-process and serves no WebSocket, so `hudpoke` cannot reach it;
+  drive that one from the page's own API, or run `host/hudfeed.py` separately.
