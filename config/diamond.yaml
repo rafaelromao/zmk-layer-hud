@@ -1,5 +1,9 @@
 # zmk-layer-hud config for Rafael's Diamond (rafaelromao/keyboards).
-# Copy to ~/.config/zmk-layer-hud/config.yaml and adjust the paths.
+# Copy to ~/.config/zmk-layer-hud/config.yaml and adjust the paths -- or, for a config kept in this
+# repo rather than edited in place, link it and let `git pull` do the syncing:
+#   make link-config CONFIG=config/diamond.yaml
+# (that links diamond.imported.yaml too; the two have to travel together.) Copying is what left one
+# machine drawing no combo pill for the meh and hyper chords while the other drew all four.
 
 keymap: ~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawer.yaml
 drawer_config: ~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawer-config.yaml

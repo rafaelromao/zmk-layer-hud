@@ -110,6 +110,23 @@ with its default and a comment:
 For a YAML produced by `keymap parse`, layer order and key order already match the keymap and
 none of the mapping keys are needed.
 
+### Keeping the config in this repo
+
+`make install` copies `config/example.yaml` to `~/.config` once and then leaves your config alone,
+which is what you want for a config you edit in place. If instead you keep your config *here* — as
+[config/diamond.yaml](config/diamond.yaml) is kept — link it rather than copying it, so `git pull`
+is the whole of syncing a second machine:
+
+```sh
+make link-config CONFIG=config/diamond.yaml
+```
+
+Both names are linked, and that is not a convenience: `<config>.imported.yaml` is looked for beside
+the config's own path, not beside whatever that path points at, so linking only `config.yaml` would
+leave a stale imported file in play. The pair also has to travel together — a config and an import
+that disagree about `combo_term_ms` can cancel out while they are in step and silently fall back to
+the 50 ms default the moment one of them moves.
+
 ### Taking it from your keyboard's repo
 
 A keymap-drawer file does not carry three things the HUD needs: the id of each ZMK layer, the key

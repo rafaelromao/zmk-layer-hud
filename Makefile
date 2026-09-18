@@ -8,7 +8,7 @@ PYTHON ?= $(shell command -v /opt/homebrew/bin/python3 || command -v python3.13 
 # The HUD page's own suite runs hud.js under node with a small DOM shim; no npm, no package.json.
 NODE ?= $(shell command -v node)
 
-.PHONY: all install install-Darwin install-Linux install-config test test-firmware test-host test-hud fixture keymap venv clean help
+.PHONY: all install install-Darwin install-Linux install-config link-config test test-firmware test-host test-hud fixture keymap venv clean help
 
 all: test
 
@@ -83,6 +83,29 @@ install-config:
 	  echo "    wrote $(HOME)/.config/zmk-layer-hud/config.yaml from config/example.yaml"; \
 	  echo "    set \`keymap:\` to your keymap-drawer YAML, then: $(PYTHON) host/keymap.py"; \
 	fi
+
+# For a config you keep in this repo rather than one you started from example.yaml: link it
+# instead of copying it, so `git pull` is the whole of syncing a machine. Deliberately not part of
+# `install` -- someone who copied example.yaml and edited it would otherwise find themselves
+# editing a tracked file, dirtying their tree and colliding on every pull.
+#
+# Both names are linked. `<config>.imported.yaml` is found beside the config *path*, not beside
+# whatever that path points at (host/keymap.py's imported_path normalises with abspath and does
+# not resolve symlinks), so linking only config.yaml would leave the machine's stale imported file
+# in play -- and the two files disagree about combo_term_ms in ways that cancel out only while
+# they travel together.
+link-config: ## link ~/.config/zmk-layer-hud at a config kept in this repo (CONFIG=config/diamond.yaml)
+	@[ -n "$(CONFIG)" ] || { echo "link-config: pass CONFIG=<a config in this repo>, e.g. make link-config CONFIG=config/diamond.yaml" >&2; exit 1; }
+	@[ -f "$(CONFIG)" ] || { echo "link-config: no such file: $(CONFIG)" >&2; exit 1; }
+	@mkdir -p "$(HOME)/.config/zmk-layer-hud"
+	@link() { \
+	  if [ ! -e "$$1" ]; then echo "    no $$1, skipped"; return 0; fi; \
+	  if [ -e "$$2" ] && [ ! -L "$$2" ]; then mv "$$2" "$$2.bak"; echo "    kept yours as $$2.bak"; fi; \
+	  ln -sfn "$$1" "$$2"; echo "    $$2 -> $$1"; \
+	}; \
+	link "$(abspath $(CONFIG))" "$(HOME)/.config/zmk-layer-hud/config.yaml"; \
+	link "$(basename $(abspath $(CONFIG))).imported.yaml" "$(HOME)/.config/zmk-layer-hud/config.imported.yaml"
+	@$(PYTHON) host/keymap.py
 
 test: test-firmware test-host test-hud ## run every test suite
 
