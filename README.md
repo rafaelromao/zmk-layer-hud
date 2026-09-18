@@ -172,7 +172,9 @@ as a phantom key press carrying whatever modifiers were held — enough, with Gu
 Wayland compositor change workspace. Details and limits in [docs/zmk-setup.md](docs/zmk-setup.md).
 
 **The host.** `host/hudfeed.py` reads that channel with pyserial (or bleak over BLE) for layers
-and positions, and the keyboard's HID reports with hidapi for what you type. Two sources, because
+and positions, and the keyboard's HID reports for what you type — with hidapi on macOS, and from
+`/dev/hidrawN` directly on Linux, where hidapi's wheel bundles the libusb backend and cannot open
+the node with the access the udev rule grants. Two sources, because
 they fail differently: ZMK emits one report per change, so reading them cannot lose a keystroke,
 while the firmware sending the same snapshot has to defer it to a work queue and coalesces presses
 away. Reading the reports is what needs Input Monitoring on macOS; the signal channel needs nothing.

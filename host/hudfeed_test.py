@@ -11,7 +11,8 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
-from hudfeed import INJECTABLE, SignalDecoder, Stream, hid_scan_note, split_report  # noqa: E402
+from hudfeed import (INJECTABLE, SignalDecoder, Stream, hid_scan_note,  # noqa: E402
+                     hidraw_match, split_report)
 
 
 def K(mods=0, *keys):
@@ -280,6 +281,40 @@ class ScanNote(unittest.TestCase):
     def test_only_linux_is_told_about_the_udev_rule(self):
         self.assertIn("udev", hid_scan_note(0, 0x1D50, 0x615E, platform="linux"))
         self.assertNotIn("udev", hid_scan_note(0, 0x1D50, 0x615E, platform="darwin"))
+
+
+class HidrawNodes(unittest.TestCase):
+    """Which /dev/hidrawN is the keyboard, answered from sysfs without opening anything —
+    the Linux path, because hidapi's wheel there talks libusb and cannot open it at all."""
+
+    USB = ("DRIVER=hid-generic\n"
+           "HID_ID=0003:00001D50:0000615E\n"
+           "HID_NAME=ZMK Project Diamond\n"
+           "HID_PHYS=usb-0000:00:14.0-3/input0\n")
+
+    def test_the_keyboard_is_recognised_and_named(self):
+        self.assertEqual(hidraw_match(self.USB, 0x1D50, 0x615E), "ZMK Project Diamond")
+
+    def test_bluetooth_is_the_same_keyboard(self):
+        # bus 0005 rather than 0003; only the vendor and product decide.
+        ble = self.USB.replace("0003:", "0005:")
+        self.assertEqual(hidraw_match(ble, 0x1D50, 0x615E), "ZMK Project Diamond")
+
+    def test_another_vendors_node_is_not_ours(self):
+        self.assertIsNone(hidraw_match(self.USB.replace("00001D50", "0000046D"), 0x1D50, 0x615E))
+
+    def test_the_name_filter_picks_one_of_several_zmk_boards(self):
+        self.assertEqual(hidraw_match(self.USB, 0x1D50, 0x615E, name="diamond"), "ZMK Project Diamond")
+        self.assertIsNone(hidraw_match(self.USB, 0x1D50, 0x615E, name="Rommana"))
+
+    def test_a_node_with_no_hid_parent_is_skipped(self):
+        # Not every uevent has HID_ID, and a malformed one must not take the scan down.
+        self.assertIsNone(hidraw_match("DEVNAME=hidraw0\n", 0x1D50, 0x615E))
+        self.assertIsNone(hidraw_match("HID_ID=garbage\n", 0x1D50, 0x615E))
+        self.assertIsNone(hidraw_match("HID_ID=0003:zz:yy\n", 0x1D50, 0x615E))
+
+    def test_a_nameless_node_still_counts(self):
+        self.assertEqual(hidraw_match("HID_ID=0003:00001D50:0000615E\n", 0x1D50, 0x615E), "?")
 
 
 class Injectable(unittest.TestCase):

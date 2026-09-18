@@ -47,7 +47,9 @@ fi
 # come from the system python, so the panel runs with that one and hands the venv to hudfeed.
 python3 -c "import gi; gi.require_version('Gtk', '3.0'); gi.require_version('WebKit2', '4.1'); gi.require_version('GtkLayerShell', '0.1')"
 FEED_PYTHON="${ZMKHUD_PYTHON:-$ROOT/.venv/bin/python3}"; [ -x "$FEED_PYTHON" ] || FEED_PYTHON=python3
-"$FEED_PYTHON" -c "import serial, hid, websockets"
+# No hidapi here: what is typed is read from /dev/hidrawN directly (hudfeed.HidrawReader), because
+# the wheel's Linux backend is libusb, which cannot open the node with the access the udev rule grants.
+"$FEED_PYTHON" -c "import serial, websockets"
 export ZMKHUD_PYTHON="$FEED_PYTHON"
 "$FEED_PYTHON" "$ROOT/host/keymap.py"   # validates the config + keymap-drawer YAML before the panel opens
 stop

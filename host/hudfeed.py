@@ -28,7 +28,8 @@ reserved keyboard-page usages, on the premise that no OS maps them; Linux maps t
 KEY_UNKNOWN, so every layer change reached the compositor as a phantom key press carrying whatever
 modifiers were held — Gui held plus a layer change was enough to switch workspace.
 
-What is typed comes from the keyboard's HID reports, read here with hidapi, which is how this
+What is typed comes from the keyboard's HID reports, read here (hidapi on macOS, the kernel's own
+/dev/hidrawN on Linux, where hidapi's wheel talks libusb and cannot), which is how this
 always worked and was never the thing at fault. The firmware used to be able to send the same
 snapshot, and it dropped keys: the report can only be read after ZMK has updated it, so the read
 was deferred to a k_work item, and k_work_submit on an already-queued item does nothing -- a press
@@ -42,8 +43,9 @@ access. The signal channel needs neither — /dev/cu.* is world-readable, and Li
 tty. Both grants are in contrib/udev/60-zmk-layer-hud.rules. --no-hid-keys drops the strip and the
 permission with it. BLE needs the keyboard bonded to this host, because the characteristic requires
 encryption.
-Dependencies: pyserial, hidapi, keymap-drawer (`make venv`); bleak for BLE; python-websockets for
-the WebSocket.
+Dependencies: pyserial, keymap-drawer (`make venv`); bleak for BLE; python-websockets for the
+WebSocket; hidapi on macOS only -- Linux reads /dev/hidrawN itself (HidrawReader), because the
+wheel's Linux backend is libusb, which wants /dev/bus/usb and detaches the kernel HID driver.
 """
 
 from __future__ import annotations
@@ -541,6 +543,149 @@ def split_report(report, report_id=KEYBOARD_REPORT_ID):
     return data[0], data[2:]
 
 
+HIDRAW_SYSFS = "/sys/class/hidraw"
+
+
+def hidraw_match(uevent, vid, pid, name=None):
+    """-> the HID_NAME of this hidraw node when it is the keyboard we want, else None.
+
+    The kernel publishes HID_ID=bus:VVVVVVVV:PPPPPPPP and HID_NAME in the node's parent uevent,
+    and both are world-readable, so which /dev/hidrawN belongs to which keyboard is answerable
+    without opening anything at all.
+    """
+    fields = {}
+    for line in uevent.splitlines():
+        key, _, value = line.partition("=")
+        fields[key.strip()] = value.strip()
+    parts = fields.get("HID_ID", "").split(":")
+    if len(parts) != 3:
+        return None
+    try:
+        if (int(parts[1], 16), int(parts[2], 16)) != (vid, pid):
+            return None
+    except ValueError:
+        return None
+    product = fields.get("HID_NAME") or "?"
+    if name and name.lower() not in product.lower():
+        return None
+    return product
+
+
+class HidrawReader:
+    """Reads what is typed straight from /dev/hidrawN. Linux only, and no hidapi.
+
+    hidapi has two Linux backends and the wheel decides which, silently. The PyPI wheel bundles
+    libusb, whose backend wants /dev/bus/usb -- which no udev rule here grants -- and which
+    detaches the kernel HID driver when it opens a device, so a keyboard being read would stop
+    working as a keyboard. What it reports when that fails is "open failed", with an empty product
+    name, because reading the name needs the same access the open did.
+
+    The kernel's own interface needs none of it: the node is found through sysfs, and reading it is
+    an ordinary file read of one report per read -- the same bytes hidapi would have handed over,
+    so split_report and the decoder below it are untouched. It is opened read-only, which is less
+    than hidapi asks for and exactly what contrib/udev/60-zmk-layer-hud.rules grants."""
+
+    def __init__(self, emit, vid=ZMK_VID, pid=ZMK_PID, name=None, report_id=KEYBOARD_REPORT_ID,
+                 rescan=2.0, log=print, raw=False, dead_key_ms=DEAD_KEY_MS, sysfs=HIDRAW_SYSFS):
+        self.emit, self.vid, self.pid, self.name = emit, vid, pid, name
+        self.report_id, self.rescan, self.log = report_id, rescan, log
+        self.raw = raw  # debug only: dumps every report, i.e. also what you type
+        self.dead_key_ms, self.sysfs = dead_key_ms, sysfs
+        self._open = {}
+        self._streams = set()
+        self._stop = threading.Event()
+
+    def start(self):
+        threading.Thread(target=self._scan_loop, name="hidraw-scan", daemon=True).start()
+
+    def stop(self):
+        self._stop.set()
+
+    def resync(self):
+        pass  # holds no layer state: it only ever reports keys
+
+    def _paths(self):
+        """(node, product name) of every hidraw node that is this keyboard."""
+        out = []
+        try:
+            nodes = sorted(os.listdir(self.sysfs))
+        except OSError:
+            return out
+        for node in nodes:
+            try:
+                with open(os.path.join(self.sysfs, node, "device", "uevent"), encoding="utf-8") as f:
+                    product = hidraw_match(f.read(), self.vid, self.pid, self.name)
+            except OSError:
+                continue
+            if product:
+                out.append((f"/dev/{node}", product))
+        return out
+
+    def _scan_loop(self):
+        said = None
+        while not self._stop.is_set():
+            paths = self._paths()
+            note = hid_scan_note(len(paths), self.vid, self.pid, self.name)
+            if note != said:
+                said = note
+                if note:
+                    self.log(note)
+            live = {p for p, _ in paths}
+            for gone in [p for p, fd in self._open.items() if fd is None and p not in live]:
+                del self._open[gone]
+            for path, product in paths:
+                if path in self._open:
+                    continue
+                try:
+                    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+                except OSError as e:
+                    self.log(f"hudfeed: cannot read what is typed on {product} ({path}): {e}")
+                    self.log(f"hudfeed: `ls -l {path}` and `getfacl {path}` say who may read it; the "
+                             "uaccess tag in contrib/udev/60-zmk-layer-hud.rules grants it to the "
+                             "active seat's user, and applies to nodes created after the rule, so "
+                             "replug the keyboard")
+                    self._open[path] = None  # do not retry every scan
+                    continue
+                self._open[path] = fd
+                self.log(f"hudfeed: reading what is typed on {product} ({path})")
+                threading.Thread(target=self._read_loop, args=(path, fd, product),
+                                 name="hidraw-read", daemon=True).start()
+            self._stop.wait(self.rescan)
+
+    def _read_loop(self, path, fd, product):
+        import select
+        import time
+        stream = Stream(self.emit, product, self.dead_key_ms, self.raw, self.log)
+        self._streams.add(stream)
+        try:
+            while not self._stop.is_set():
+                # Wake early while a dead key waits, so it is released on time when no letter follows.
+                timeout = (self.dead_key_ms if stream.decoder.pending else 500) / 1000
+                ready, _, _ = select.select([fd], [], [], timeout)
+                now = int(time.monotonic() * 1000)
+                if not ready:
+                    stream.idle(now)
+                    continue
+                report = os.read(fd, 64)  # hidraw hands over exactly one report per read
+                if not report:
+                    continue
+                parts = split_report(report, self.report_id)
+                if parts is None:
+                    continue  # a consumer or mouse report: not ours
+                stream.message({"kind": "keys", "mods": parts[0], "keys": list(parts[1])}, now)
+        except OSError as e:
+            if not self._stop.is_set():
+                self.log(f"hudfeed: {product} gone ({e})")
+        finally:
+            try:
+                os.close(fd)
+            except OSError:
+                pass
+            self._open.pop(path, None)
+            self._streams.discard(stream)
+            stream.close()
+
+
 def hid_scan_note(found, vid, pid, name=None, platform=None):
     """The line to log for a scan that turned up `found` keyboards, or None when it found one.
 
@@ -788,7 +933,11 @@ class Feed:
         # report per change, so nothing can be coalesced away.
         self.hid = None
         if keys and hid_keys:
-            self.hid = HidKeysReader(
+            # Linux reads the kernel's hidraw node itself; everywhere else that is hidapi's job.
+            # Not a preference: the PyPI wheel's backend is libusb, which needs an access no rule
+            # here grants and detaches the kernel driver from the keyboard it opens.
+            reader = HidrawReader if sys.platform.startswith("linux") else HidKeysReader
+            self.hid = reader(
                 self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms,
                 vid=vid if vid is not None else int(kb.get('vid', ZMK_VID)),
                 pid=pid if pid is not None else int(kb.get('pid', ZMK_PID)),

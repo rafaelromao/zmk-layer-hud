@@ -13,9 +13,11 @@ NODE ?= $(shell command -v node)
 all: test
 
 UNAME_S := $(shell uname -s)
-VENV_PKGS := pyserial hidapi keymap-drawer websockets bleak
+VENV_PKGS := pyserial keymap-drawer websockets bleak
 ifeq ($(UNAME_S),Darwin)
-VENV_PKGS += pyobjc-framework-Cocoa pyobjc-framework-WebKit
+# hidapi is macOS only: Linux reads /dev/hidrawN itself, and the wheel there bundles the libusb
+# backend, which wants an access no udev rule here grants and detaches the kernel HID driver.
+VENV_PKGS += hidapi pyobjc-framework-Cocoa pyobjc-framework-WebKit
 endif
 
 venv: ## create .venv with pyserial, hidapi, keymap-drawer, websockets, bleak (+ pyobjc on macOS; brew install hidapi first)
