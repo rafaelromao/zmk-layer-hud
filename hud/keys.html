@@ -14,12 +14,21 @@
   // Standalone strip (a second window): fed over the WebSocket like index.html.
   const wsUrl = new URLSearchParams(location.search).get("ws");   // keys.html?ws=ws://127.0.0.1:8766
   if (wsUrl) {
+    // A strip nobody has typed into and a strip with nothing feeding it are both empty, and an
+    // empty strip is transparent: on a layer-shell surface of its own, that is indistinguishable
+    // from a window that never appeared. So say which, once it has been trying for a moment --
+    // the panel shows this surface before it starts the feed, so the first connect always fails
+    // and only a run of them means anything.
+    const strip = document.getElementById("keys");
+    let connected = false;
     const connect = () => {
       const s = new WebSocket(wsUrl);
+      s.onopen = () => { connected = true; strip.classList.remove("nofeed"); };
       s.onmessage = e => { const m = JSON.parse(e.data); if (m.kind === "key") window.keys.key(m); };
-      s.onclose = () => setTimeout(connect, 1000);
+      s.onclose = () => { connected = false; setTimeout(connect, 1000); };
     };
     connect();
+    setInterval(() => { if (!connected) strip.classList.add("nofeed"); }, 3000);
   }
   if (location.protocol.startsWith("http") && !wsUrl) window.addEventListener("keydown", e => {   // dev only
     const name = e.key.length === 1 ? null : e.key.toLowerCase().replace("arrow", "").replace("backspace", "delete").replace("enter", "return");

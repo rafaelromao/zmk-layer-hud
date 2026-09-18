@@ -46,12 +46,18 @@ def surface(monitor, page, namespace, width, height):
     GtkLayerShell.set_layer(window, GtkLayerShell.Layer.TOP)
     GtkLayerShell.set_keyboard_mode(window, GtkLayerShell.KeyboardMode.NONE)
 
+    sheet = ("html, body, #keys { background: transparent !important; }"
+             "html, body { overflow: hidden !important; }"
+             "#hud, #keys .chip { border-color: transparent !important; }")
+    # The strip is a surface of its own here (keys.html), so index.html's own #keys would draw
+    # every chip a second time, in a second place, most of it clipped by this surface's height.
+    # macOS has no second surface and that div is its only strip, so the page keeps it and this is
+    # the one place it goes.
+    if page == "index.html":
+        sheet += "#keys { display: none !important; }"
     manager = WebKit2.UserContentManager()
     manager.add_style_sheet(WebKit2.UserStyleSheet.new(
-        "html, body, #keys { background: transparent !important; }"
-        "html, body { overflow: hidden !important; }"
-        "#hud, #keys .chip { border-color: transparent !important; }",
-        WebKit2.UserContentInjectedFrames.ALL_FRAMES,
+        sheet, WebKit2.UserContentInjectedFrames.ALL_FRAMES,
         WebKit2.UserStyleLevel.USER, None, None))
     view = WebKit2.WebView.new_with_user_content_manager(manager)
     view.set_background_color(Gdk.RGBA(0, 0, 0, 0))

@@ -134,6 +134,11 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 #keys .chip.special { color: #7aa2f7; }
 #keys .chip.chord { color: #e0af68; }
 #keys .chip.fade { opacity: 0; transition: opacity 500ms ease; }
+/* Standalone only (keys.html sets this): nothing is feeding the strip. An empty strip is
+   transparent, so without this a surface with no feed and a surface that never mapped look
+   exactly alike. Dim, because it is a resting state and not an error. */
+#keys.nofeed::before { content: "no feed"; padding: 8px 14px; border-radius: 12px;
+  background: var(--panel); color: var(--chip-off); font-size: 16px; font-weight: 700; line-height: 1; }
 
 /* Close button: closes the HUD (the host receives "close"). */
 #close { margin-left: 10px; width: 22px; height: 22px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12);

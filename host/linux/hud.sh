@@ -1,9 +1,13 @@
 #!/bin/bash
 # zmk-layer-hud Linux host (Hyprland): native transparent layer-shell HUD + typed-keys panel,
-# fed by host/hudfeed.py (the keyboard's own layer signal, evdev keys, daemon decisions).
-#   bash host/linux/hud.sh        start (rebuilds hud/keymap.json first)
+# fed by host/hudfeed.py -- the keyboard's own layer signal on its CDC-ACM channel, and what is
+# typed from the keyboard's HID reports. No evdev, and no daemon: the keyboard is the only source.
+#   bash host/linux/hud.sh        start (validates the config and the keymap YAML first)
 #   bash host/linux/hud.sh stop
-# Arch dependencies: python-gobject webkit2gtk-4.1 gtk-layer-shell python-pyserial python-hidapi python-evdev python-websockets
+# System packages (Arch): python-gobject webkit2gtk-4.1 gtk-layer-shell, which `make install`
+# installs. Everything Python (pyserial, hidapi, websockets, keymap-drawer) lives in the repo's
+# venv from `make venv`, and this script hands that interpreter to hudfeed; the system python is
+# used only for the panel, because the GTK bindings are not in the venv.
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
