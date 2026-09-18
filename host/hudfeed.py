@@ -1,33 +1,40 @@
 #!/usr/bin/env python3
-"""Host feed for the zmk-layer-hud pages. One source: the keyboard's own HID reports.
+"""Host feed for the zmk-layer-hud pages. One source: the keyboard's own signal channel.
 
-Reads the keyboard's raw input reports with hidapi and turns them into JSON messages for the
-pages, over a WebSocket (Linux panel) or on stdout (macOS Hammerspoon host):
+The firmware module sends framed messages (host/signal_frame.py) on a channel of its own — a
+CDC-ACM serial interface over USB, GATT notifications over BLE — and this turns them into JSON
+messages for the pages, over a WebSocket (Linux panel) or on stdout (macOS Hammerspoon host):
 
   {"kind":"keymap", ...}                  the keymap, built from the keymap-drawer YAML named in the
                                           config by host/keymap.py; re-sent whenever that file, the
                                           config or the layer dtsi changes
-  {"kind":"layers","ids":[2,22]}          active ZMK layer ids (layer 0 omitted: always active), from
-                                          the firmware module's announcement inside the report
-  {"kind":"device","name":"Diamond"}      a keyboard was opened (its HID product name; the page's title)
+  {"kind":"layers","ids":[2,22]}          active ZMK layer ids (layer 0 omitted: always active)
+  {"kind":"device","name":"Diamond"}      a keyboard was opened (the page's title)
   {"kind":"press","pos":13}               a key at ZMK position 13 went down (firmware `positions;`)
   {"kind":"release","pos":13}             ... and up again
-Every message from a keyboard carries "device": its HID product name, so the page can show which
-keyboard is typing.
+Every message from a keyboard carries "device": its name, so the page can show which keyboard is
+typing.
   {"kind":"key","type":"keyDown","name":"space","chars":" ","code":44,
    "flags":{"cmd":false,"ctrl":false,"alt":false,"shift":false,"fn":false},"repeat":false}
-                                          every key press/release and modifier change, straight from
-                                          the report: no OS event tap, no evdev, no layout guessing
+                                          every key press/release and modifier change, derived from
+                                          the keyboard's own report snapshot: no OS event tap, no
+                                          evdev, no layout guessing
 A client sending {"kind":"close"} (the ✕ button) makes this script exit.
 
-Access: macOS needs Input Monitoring for the process running this (Hammerspoon when started from
-hud.lua, else your terminal); Linux needs hidraw access (contrib/udev/60-zmk-layer-hud.rules).
-Dependencies: hidapi and keymap-drawer (`make venv`); python-websockets for the WebSocket.
+This used to read the keyboard's raw HID reports with hidapi, and the layer signal travelled inside
+them as reserved keyboard-page usages. Linux maps that whole range to KEY_UNKNOWN rather than to
+nothing, so every layer change arrived at the compositor as a phantom key press carrying whatever
+modifiers were held — Gui held plus a layer change was enough to switch workspace. The signal has
+its own channel now, and the keys frame carries the same (modifiers, usages) snapshot the report
+used to, so everything below the reader — the layout tables, dead-key composition, the strip — is
+unchanged.
 
-The report is ZMK's HKRO keyboard report: [report id 1, modifiers, reserved, key usages...].
-Usages base..commit-1 are the layer announcement (host/keymap.py's `signal`), everything else is
-a real key. Characters are derived from the usage with a US layout table; the keymap-drawer
-legends are matched against them by the page.
+Access: a USB keyboard needs no permission on macOS (/dev/cu.* is world-readable) and no Input
+Monitoring, which also means Karabiner-Elements can no longer seize it out from under us; Linux
+needs read access to the tty (contrib/udev/60-zmk-layer-hud.rules, or the dialout group). BLE needs
+the keyboard bonded to this host, because the characteristic requires encryption.
+Dependencies: pyserial, keymap-drawer (`make venv`); bleak for BLE; python-websockets for the
+WebSocket.
 """
 
 from __future__ import annotations
@@ -36,16 +43,18 @@ import argparse
 import asyncio
 import json
 import os
-import shutil
 import sys
 import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import keymap as keymap_mod  # noqa: E402  (host/keymap.py)
+import signal_frame  # noqa: E402  (host/signal_frame.py)
 
 ZMK_VID, ZMK_PID = 0x1D50, 0x615E
-BASE_USAGE, COMMIT_USAGE = 0xC0, 0xDF
-KEYBOARD_REPORT_ID = 1
+
+# The module's own GATT service; the characteristic notifies one frame at a time.
+BLE_SERVICE_UUID = "d1f0a7c2-5b47-4a1e-9c3d-6f2a8e10b7c1"
+BLE_SIGNAL_UUID = "d1f0a7c3-5b47-4a1e-9c3d-6f2a8e10b7c1"
 
 # HID modifier byte bits -> HUD flag names (left/right collapse).
 MOD_BITS = {0x01: "ctrl", 0x02: "shift", 0x04: "alt", 0x08: "cmd", 0x10: "ctrl", 0x20: "shift", 0x40: "alt", 0x80: "cmd"}
@@ -92,55 +101,6 @@ ALT_CHARS = {
 }
 
 
-def decode_keys(keys, base=BASE_USAGE, commit=COMMIT_USAGE):
-    """Key bytes of one keyboard report -> sorted layer ids, or None when the report does
-    not carry the commit usage (then it is not an announcement and must be ignored)."""
-    if commit not in keys:
-        return None
-    return sorted({k - base for k in keys if base < k < commit and k - base < 32})
-
-
-def decode_report(report, base=BASE_USAGE, commit=COMMIT_USAGE, report_id=KEYBOARD_REPORT_ID):
-    """One raw input report (report id first, as hidapi returns it) -> layer ids or None.
-    ZMK's keyboard report is [id, modifiers, reserved, key...]; pass report_id=None for
-    firmware without report ids ([modifiers, reserved, key...])."""
-    data = bytes(report)
-    if report_id is not None:
-        if len(data) < 3 or data[0] != report_id:
-            return None
-        return decode_keys(data[3:], base, commit)
-    if len(data) < 2:
-        return None
-    return decode_keys(data[2:], base, commit)
-
-
-POS_HI, POS_HI_N, POS_LO, POS_LO_N = 0xA5, 17, 0xB8, 8  # 0xB6/0xB7 skipped: Linux types ( ) for them
-
-
-def decode_position(keys):
-    """Key bytes -> (position, released) when exactly one hi (0xA5..0xB5) and one lo (0xB8..0xBF)
-    usage are present (firmware `positions;`), else None. ZMK fills the slots in press order: the
-    firmware sends hi before lo for a press and lo before hi for a release."""
-    keys = list(keys)
-    hi = [(i, k - POS_HI) for i, k in enumerate(keys) if POS_HI <= k < POS_HI + POS_HI_N]
-    lo = [(i, k - POS_LO) for i, k in enumerate(keys) if POS_LO <= k < POS_LO + POS_LO_N]
-    if len(hi) != 1 or len(lo) != 1:
-        return None
-    return hi[0][1] * POS_LO_N + lo[0][1], lo[0][0] < hi[0][0]
-
-
-def split_report(report, report_id=KEYBOARD_REPORT_ID):
-    """-> (modifiers byte, key usages) of a keyboard report, or None for other reports."""
-    data = bytes(report)
-    if report_id is not None:
-        if len(data) < 3 or data[0] != report_id:
-            return None
-        return data[1], data[3:]
-    if len(data) < 2:
-        return None
-    return data[0], data[2:]
-
-
 def flags_of(mods):
     f = {"cmd": False, "ctrl": False, "alt": False, "shift": False, "fn": False}
     for bit, name in MOD_BITS.items():
@@ -171,21 +131,26 @@ DEAD_KEY_SPECIAL = {("'", "c"): "ç", ("'", "C"): "Ç"}
 DEAD_KEY_MS = 60  # a dead key followed by a letter within this window is one accented character
 
 
-class ReportDecoder:
-    """Turns the stream of keyboard reports into layers / key / flagsChanged messages. Pure and
-    tested: feed(report, now_ms) -> list of messages; flush(now_ms) releases a held dead key.
+class SignalDecoder:
+    """Turns the keyboard's signal messages into the pages' layers / key / flagsChanged messages.
+    Pure and tested: feed(message, now_ms) -> list of messages; flush(now_ms) releases a held dead
+    key. The messages come from signal_frame.Decoder, which owns the wire format; what is decided
+    here is what the HUD should be told.
+
+    A `keys` message is a snapshot of the keyboard report — the modifier byte and the usages held —
+    so presses and releases are the difference between successive snapshots, exactly as they were
+    when this read the report off the wire itself.
 
     A dead key (` ' ^ ~ ") is held back for DEAD_KEY_MS: if a letter follows in time, one keyDown
     with the composed character (á, ç, ñ…) is emitted instead of two, which is what the
     keymap-drawer legend says and what the host displays."""
 
-    def __init__(self, base=BASE_USAGE, commit=COMMIT_USAGE, report_id=KEYBOARD_REPORT_ID, compose=True,
-                 dead_key_ms=DEAD_KEY_MS):
-        self.base, self.commit, self.report_id, self.compose = base, commit, report_id, compose
+    def __init__(self, compose=True, dead_key_ms=DEAD_KEY_MS):
+        self.compose = compose
         self.dead_key_ms = dead_key_ms
         self.layers = None
         self.mods = 0
-        self.held = []  # real usages currently down, in press order
+        self.held = []  # usages currently down, in the order the snapshot lists them
         self.pending = None  # (message, deadline_ms) of a dead key waiting for its letter
 
     def flush(self, now_ms=None):
@@ -225,138 +190,285 @@ class ReportDecoder:
             return []
         return [msg]
 
-    def feed(self, report, now_ms=None):
-        parts = split_report(report, self.report_id)
-        if parts is None:
-            return []
-        mods, keys = parts
+    def _keys(self, mods, keys, now_ms):
         out = []
-        ids = decode_keys(keys, self.base, self.commit)
-        if ids is not None and ids != self.layers:
-            self.layers = ids
-            out.append({"kind": "layers", "ids": ids})
-        pos = decode_position(keys)
-        if pos is not None:
-            out.append({"kind": "release" if pos[1] else "press", "pos": pos[0]})
-        real = [k for k in keys if k and not (self.base <= k <= self.commit)
-                and not (POS_HI <= k < POS_HI + POS_HI_N) and not (POS_LO <= k < POS_LO + POS_LO_N)]
+        held = [k for k in keys if k]
         if mods != self.mods:
             self.mods = mods
-            flags = flags_of(mods)
             out.append({"kind": "key", "type": "flagsChanged", "name": "", "chars": "", "code": 0,
-                        "flags": flags, "repeat": False})
+                        "flags": flags_of(mods), "repeat": False})
         flags = flags_of(mods)
         for k in self.held:
-            if k not in real:
+            if k not in held:
                 out.extend(self._up(key_message(k, False, flags)))
-        for k in real:
+        for k in held:
             if k not in self.held:
                 out.extend(self._down(key_message(k, True, flags), now_ms))
-        self.held = real
+        self.held = held
         return out
 
+    def feed(self, msg, now_ms=None):
+        kind = msg.get("kind")
+        if kind == "layers":
+            # Layer 0 is the default layer: always active, never part of the stack the HUD draws.
+            # The firmware sends the bitmap as it is, so dropping it is this side's business.
+            ids = [i for i in msg["ids"] if i]
+            if ids == self.layers:
+                return []  # the heartbeat, or a change that cancelled itself out
+            self.layers = ids
+            return [{"kind": "layers", "ids": ids}]
+        if kind in ("press", "release"):
+            return [dict(msg)]
+        if kind == "keys":
+            return self._keys(msg["mods"], msg["keys"], now_ms)
+        return []  # a kind this version does not know: the firmware may add some
 
-class KeyboardReader:
-    """Reads the keyboard's raw HID reports on a thread and calls emit(message) for every
-    decoded message. Rescans for the device every `rescan` seconds (hotplug)."""
 
-    def __init__(self, emit, vid=ZMK_VID, pid=ZMK_PID, name=None, base=BASE_USAGE, commit=COMMIT_USAGE,
-                 report_id=KEYBOARD_REPORT_ID, rescan=2.0, log=print, raw=False, dead_key_ms=DEAD_KEY_MS):
-        self.emit, self.vid, self.pid, self.name = emit, vid, pid, name
-        self.base, self.commit, self.report_id, self.rescan, self.log = base, commit, report_id, rescan, log
-        self.raw = raw  # debug only: dumps every report, i.e. also what you type
-        self.dead_key_ms = dead_key_ms
-        self._open = {}
+class Stream:
+    """One open connection: the bytes a carrier delivers in, the pages' messages out. Both readers
+    share it, because a BLE notification and a run of serial bytes decode the same way."""
+
+    def __init__(self, emit, device, dead_key_ms=DEAD_KEY_MS, raw=False, log=print):
+        self.emit, self.device, self.log, self.raw = emit, device, log, raw
+        self.frames = signal_frame.Decoder()
+        self.decoder = SignalDecoder(dead_key_ms=dead_key_ms)
+        self.frames_seen = 0  # a port that never produces one is not ours
+
+    def feed(self, chunk, now_ms):
+        for msg in self.frames.feed(chunk):
+            self.frames_seen += 1
+            if self.raw:
+                self.log(f"hudfeed: {self.device} {msg}")
+            for out in self.decoder.feed(msg, now_ms):
+                self._emit(out)
+
+    def idle(self, now_ms):
+        """Nothing arrived: let a dead key past its window out as the plain key it was."""
+        for out in self.decoder.flush(now_ms):
+            self._emit(out)
+
+    def close(self):
+        """The keyboard went away: whatever was held is released."""
+        flags = flags_of(0)
+        for k in self.decoder.held:
+            self._emit(key_message(k, False, flags))
+        self.decoder.held = []
+
+    def _emit(self, msg):
+        msg["device"] = self.device  # which keyboard this came from
+        self.emit(msg)
+
+
+class SerialReader:
+    """Reads the keyboard's CDC-ACM interface on a thread and calls emit(message) for each decoded
+    message. Rescans every `rescan` seconds, so unplugging and replugging just works.
+
+    A composite ZMK device can expose more than one CDC interface (ZMK Studio, USB logging), and
+    they are indistinguishable from their descriptors. So the port is not chosen, it is tried: a
+    port that produces no valid frame within `probe_s` is dropped and not tried again until it goes
+    away and comes back. The firmware announces on boot and beats every heartbeat-ms, so silence
+    that long is decisive."""
+
+    def __init__(self, emit, vid=ZMK_VID, pid=ZMK_PID, name=None, port=None, rescan=2.0, log=print,
+                 raw=False, dead_key_ms=DEAD_KEY_MS, probe_s=8.0):
+        self.emit, self.vid, self.pid, self.name, self.port = emit, vid, pid, name, port
+        self.rescan, self.log, self.raw = rescan, log, raw
+        self.dead_key_ms, self.probe_s = dead_key_ms, probe_s
+        self._open = {}   # device path -> serial.Serial
+        self._quiet = {}  # device path -> why we stopped reading it
         self._stop = threading.Event()
 
     def start(self):
-        threading.Thread(target=self._scan_loop, name="hid-scan", daemon=True).start()
+        threading.Thread(target=self._scan_loop, name="serial-scan", daemon=True).start()
 
     def stop(self):
         self._stop.set()
 
-    def _paths(self, hid):
-        seen, out = set(), []
-        for info in hid.enumerate(self.vid, self.pid):
-            if self.name and self.name.lower() not in (info.get("product_string") or "").lower():
+    def _ports(self, list_ports):
+        """(device path, product name) of every port that could be the keyboard."""
+        out = []
+        for info in list_ports.comports():
+            if self.port is not None:
+                if info.device != self.port:
+                    continue
+            else:
+                if (info.vid, info.pid) != (self.vid, self.pid):
+                    continue
+                if self.name and self.name.lower() not in (info.product or "").lower():
+                    continue
+            # macOS lists the same interface twice: /dev/cu.* does not wait for carrier detect,
+            # which is what a device that may be silent at first needs.
+            if sys.platform == "darwin" and info.device.startswith("/dev/tty."):
                 continue
-            path = info["path"]
-            if path in seen:  # macOS lists one entry per usage pair, all with the same path
-                continue
-            seen.add(path)
-            out.append((path, info.get("product_string") or "?"))
+            out.append((info.device, info.product or "?"))
         return out
 
     def _scan_loop(self):
         try:
-            import hid
+            import serial  # noqa: F401
+            from serial.tools import list_ports
         except ImportError:
-            self.log("hudfeed: hidapi is required (make venv, or pip install hidapi; macOS also brew install hidapi)")
+            self.log("hudfeed: pyserial is required (make venv, or pip install pyserial)")
             return
-        if sys.platform == "darwin":
-            # Since hidapi 0.12 the macOS backend opens devices exclusively (seizing them), which
-            # macOS refuses for a keyboard it is using: "open failed" although IOHIDDeviceOpen
-            # succeeds. The Python binding does not expose the switch, but the extension exports
-            # the C symbol, so flip it through ctypes before the first open.
-            try:
-                import ctypes
-                ctypes.CDLL(hid.__file__).hid_darwin_set_open_exclusive(0)
-            except (OSError, AttributeError) as e:
-                self.log(f"hudfeed: could not disable hidapi's exclusive open ({e}); opens may fail")
         while not self._stop.is_set():
-            for path, product in self._paths(hid):
-                if path in self._open:
+            try:
+                ports = self._ports(list_ports)
+            except Exception as e:  # a port vanishing mid-enumeration
+                self.log(f"hudfeed: cannot list serial ports: {type(e).__name__}: {e}")
+                ports = []
+            live = {path for path, _ in ports}
+            for path in [p for p in self._quiet if p not in live]:
+                del self._quiet[path]  # unplugged: worth trying again when it returns
+            for path, product in ports:
+                if path in self._open or path in self._quiet:
                     continue
-                try:
-                    dev = hid.device()
-                    dev.open_path(path)
-                except (OSError, IOError, ValueError) as e:
-                    self.log(f"hudfeed: cannot open {product} ({path!r}): {e}")
-                    if sys.platform == "darwin":
-                        self.log("hudfeed: on macOS this means the app running Python (your terminal, or "
-                                 "Hammerspoon) lacks Input Monitoring (System Settings > Privacy & Security), "
-                                 "or Karabiner-Elements modifies this keyboard's events and has seized it "
-                                 "(Karabiner > Devices: untick it)")
-                    else:
-                        self.log("hudfeed: check hidraw permissions (contrib/udev/60-zmk-layer-hud.rules)")
-                    self._open[path] = None  # do not retry every scan
-                    continue
-                self._open[path] = dev
-                self.log(f"hudfeed: reading {product}")
-                self.emit({"kind": "device", "name": product})
-                threading.Thread(target=self._read_loop, args=(path, dev, product),
-                                 name="hid-read", daemon=True).start()
+                self._start(path, product)
             self._stop.wait(self.rescan)
+
+    def _start(self, path, product):
+        import serial
+        try:
+            dev = serial.Serial(path, timeout=0.5, exclusive=False)
+        except (OSError, serial.SerialException, ValueError) as e:
+            self._quiet[path] = str(e)
+            self.log(f"hudfeed: cannot open {product} ({path}): {e}")
+            if sys.platform != "darwin":
+                self.log("hudfeed: check tty permissions (contrib/udev/60-zmk-layer-hud.rules, "
+                         "or add yourself to the dialout group)")
+            return
+        self._open[path] = dev
+        threading.Thread(target=self._read_loop, args=(path, dev, product),
+                         name="serial-read", daemon=True).start()
 
     def _read_loop(self, path, dev, product):
         import time
-        decoder = ReportDecoder(self.base, self.commit, self.report_id, dead_key_ms=self.dead_key_ms)
+        stream = Stream(self.emit, product, self.dead_key_ms, self.raw, self.log)
+        announced = False
+        started = time.monotonic()
         try:
             while not self._stop.is_set():
-                # Wake early while a dead key waits, so it is released on time when no letter follows.
-                report = dev.read(64, timeout_ms=self.dead_key_ms if decoder.pending else 500)
+                # Block on the first byte, then take whatever else has landed: read(n) would wait
+                # out the whole timeout for a full buffer and put that latency on every keystroke.
+                dev.timeout = self.dead_key_ms / 1000 if stream.decoder.pending else 0.5
+                chunk = dev.read(1)
+                if chunk:
+                    waiting = dev.in_waiting
+                    if waiting:
+                        chunk += dev.read(waiting)
                 now = int(time.monotonic() * 1000)
-                if not report:
-                    for msg in decoder.flush(now):
-                        self.emit(msg)
+                if not chunk:
+                    stream.idle(now)
+                    if not stream.frames_seen and time.monotonic() - started > self.probe_s:
+                        self._quiet[path] = "no frames"
+                        self.log(f"hudfeed: {product} ({path}) is not the layer signal; "
+                                 "leaving it alone")
+                        return
                     continue
-                if self.raw:
-                    self.log(f"hudfeed: {product} raw {bytes(report).hex(' ')}")
-                for msg in decoder.feed(report, now):
-                    msg["device"] = product  # which keyboard this came from
-                    self.emit(msg)
-        except (OSError, IOError, ValueError) as e:
-            self.log(f"hudfeed: {product} gone ({e})")
+                stream.feed(chunk, now)
+                if stream.frames_seen and not announced:
+                    announced = True
+                    self.log(f"hudfeed: reading {product} on {path}")
+                    self.emit({"kind": "device", "name": product})
+        except Exception as e:  # SerialException on unplug, and anything else the port throws
+            if not self._stop.is_set():
+                self.log(f"hudfeed: {product} gone ({type(e).__name__}: {e})")
         finally:
             try:
                 dev.close()
             except Exception:
                 pass
             self._open.pop(path, None)
-            # The keyboard went away: whatever was held is released.
-            flags = flags_of(0)
-            for k in decoder.held:
-                self.emit(key_message(k, False, flags))
+            stream.close()
+
+
+class BleReader:
+    """Reads the module's GATT service on its own thread, where bleak's event loop lives. Each
+    notification is exactly one frame.
+
+    UNVERIFIED on hardware. Two things make BLE harder than the serial port. The characteristic
+    requires encryption, so the keyboard has to be bonded to this host already — pair it with the
+    OS first, this cannot do it. And a keyboard connected as a HID peripheral stops advertising, so
+    scanning may never find it: on macOS give `ble: {address: ...}` in the config (CoreBluetooth's
+    per-host peripheral UUID, which `python3 -m bleak` lists while the keyboard is disconnected),
+    on Linux the MAC address works."""
+
+    def __init__(self, emit, address=None, name=None, rescan=2.0, log=print, raw=False,
+                 dead_key_ms=DEAD_KEY_MS):
+        self.emit, self.address, self.name = emit, address, name
+        self.rescan, self.log, self.raw, self.dead_key_ms = rescan, log, raw, dead_key_ms
+        self._stop = threading.Event()
+
+    def start(self):
+        threading.Thread(target=self._run, name="ble-read", daemon=True).start()
+
+    def stop(self):
+        self._stop.set()
+
+    def _run(self):
+        try:
+            import bleak  # noqa: F401
+        except ImportError:
+            self.log("hudfeed: bleak is not installed, so BLE keyboards are not read "
+                     "(pip install bleak, or pass --no-ble to stop saying so)")
+            return
+        try:
+            asyncio.run(self._loop())
+        except Exception as e:
+            self.log(f"hudfeed: BLE reader stopped ({type(e).__name__}: {e})")
+
+    async def _find(self):
+        from bleak import BleakScanner
+        if self.address:
+            return await BleakScanner.find_device_by_address(self.address, timeout=self.rescan)
+        return await BleakScanner.find_device_by_filter(
+            lambda d, ad: (BLE_SERVICE_UUID in (ad.service_uuids or [])
+                           and (not self.name or self.name.lower() in (d.name or "").lower())),
+            timeout=self.rescan)
+
+    async def _loop(self):
+        from bleak import BleakClient
+        said_nothing_found = False
+        while not self._stop.is_set():
+            try:
+                device = await self._find()
+            except Exception as e:
+                self.log(f"hudfeed: BLE scan failed ({type(e).__name__}: {e})")
+                device = None
+            if device is None:
+                if not said_nothing_found:
+                    said_nothing_found = True
+                    self.log("hudfeed: no BLE keyboard advertising the layer signal yet"
+                             + ("" if self.address else "; a connected keyboard does not advertise, "
+                                                        "so it may need `ble: {address: ...}`"))
+                await asyncio.sleep(self.rescan)
+                continue
+            said_nothing_found = False
+            await self._session(BleakClient, device)
+
+    async def _session(self, BleakClient, device):
+        name = device.name or str(device.address)
+        stream = Stream(self.emit, name, self.dead_key_ms, self.raw, self.log)
+        gone = asyncio.Event()
+        try:
+            async with BleakClient(device, disconnected_callback=lambda _: gone.set()) as client:
+                import time
+
+                def on_notify(_sender, data):
+                    stream.feed(bytes(data), int(time.monotonic() * 1000))
+
+                await client.start_notify(BLE_SIGNAL_UUID, on_notify)
+                self.log(f"hudfeed: reading {name} over BLE")
+                self.emit({"kind": "device", "name": name})
+                while not gone.is_set() and not self._stop.is_set():
+                    # bleak has no idle callback, so the dead-key window is closed on a timer.
+                    try:
+                        await asyncio.wait_for(gone.wait(), timeout=self.dead_key_ms / 1000)
+                    except asyncio.TimeoutError:
+                        stream.idle(int(time.monotonic() * 1000))
+        except Exception as e:
+            self.log(f"hudfeed: {name} over BLE ({type(e).__name__}: {e})")
+        finally:
+            stream.close()
 
 
 # ---------- keymap (config + keymap-drawer YAML, live reload) ----------
@@ -402,7 +514,7 @@ class Feed:
     Used in-process by host/macos/panel.py and by main() below for the WebSocket/stdout modes."""
 
     def __init__(self, emit, log=print, config=None, keys=True, keymap=True, vid=None, pid=None, name=None,
-                 base=None, commit=None, report_id=KEYBOARD_REPORT_ID, raw=False):
+                 port=None, ble=True, ble_address=None, raw=False):
         self.emit, self.log = emit, log
         self.source, cfg = None, {}
         try:
@@ -416,19 +528,25 @@ class Feed:
         except Exception as e:
             log(f"hudfeed: config/keymap failed: {type(e).__name__}: {e}")
         kb = cfg.get("keyboard") or {}
-        sig = cfg.get("signal") or {}
+        ser = cfg.get("serial") or {}
+        bt = cfg.get("ble") or {}
         feed_cfg = dict(keymap_mod.FEED_DEFAULTS)
         feed_cfg.update(cfg.get("feed") or {})
         self.keymap = keymap
         self.keys = keys
-        self.reader = KeyboardReader(
-            self._emit, log=log, raw=raw, report_id=report_id,
-            rescan=float(feed_cfg["rescan_s"]), dead_key_ms=int(feed_cfg["dead_key_ms"]),
+        rescan, dead_key_ms = float(feed_cfg["rescan_s"]), int(feed_cfg["dead_key_ms"])
+        kb_name = name if name is not None else kb.get("name")
+        self.reader = SerialReader(
+            self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms,
             vid=vid if vid is not None else int(kb.get("vid", ZMK_VID)),
             pid=pid if pid is not None else int(kb.get("pid", ZMK_PID)),
-            name=name if name is not None else kb.get("name"),
-            base=base if base is not None else int(sig.get("base", BASE_USAGE)),
-            commit=commit if commit is not None else int(sig.get("commit", COMMIT_USAGE)))
+            name=kb_name, port=port if port is not None else ser.get("port"),
+            probe_s=float(ser.get("probe_s", 8.0)))
+        self.ble = None
+        if ble and bt.get("enabled", True):
+            self.ble = BleReader(self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms,
+                                 address=ble_address if ble_address is not None else bt.get("address"),
+                                 name=kb_name)
         self.watcher = KeymapWatcher(self.source, self._emit, log) if (self.source is not None and keymap) else None
 
     def _emit(self, msg):
@@ -454,12 +572,16 @@ class Feed:
         if self.watcher:
             self.watcher.start()
         self.reader.start()
+        if self.ble:
+            self.ble.start()
         return self
 
     def stop(self):
         if self.watcher:
             self.watcher.stop()
         self.reader.stop()
+        if self.ble:
+            self.ble.stop()
 
 
 # ---------- outputs ----------
@@ -514,12 +636,14 @@ def parse_args(argv=None):
     p.add_argument("--no-keys", action="store_true", help="send layers only, no key events")
     p.add_argument("--vid", type=lambda s: int(s, 0), help="keyboard vendor id (default: config `keyboard.vid`, else ZMK's)")
     p.add_argument("--pid", type=lambda s: int(s, 0), help="keyboard product id (default: config `keyboard.pid`, else ZMK's)")
-    p.add_argument("--name", help="substring of the HID product string to select one keyboard (default: config `keyboard.name`)")
-    p.add_argument("--base", type=lambda s: int(s, 0), help="base-usage of the firmware node (default: config `signal.base`, else 0xC0)")
-    p.add_argument("--commit", type=lambda s: int(s, 0), help="commit-usage of the firmware node (default: config `signal.commit`, else 0xDF)")
-    p.add_argument("--no-report-id", action="store_true", help="firmware without HID report ids")
+    p.add_argument("--name", help="substring of the product name to select one keyboard (default: config `keyboard.name`)")
+    p.add_argument("--serial", metavar="DEV", help="the keyboard's serial port, instead of finding it by vid/pid "
+                                                   "(default: config `serial.port`)")
+    p.add_argument("--no-ble", action="store_true", help="do not look for BLE keyboards")
+    p.add_argument("--ble-address", help="address of the BLE keyboard (default: config `ble.address`); needed where a "
+                                         "connected keyboard no longer advertises")
     p.add_argument("--debug", action="store_true", help="log layer messages to stderr")
-    p.add_argument("--raw", action="store_true", help="DEBUG ONLY: dump every HID report as hex (includes your typing)")
+    p.add_argument("--raw", action="store_true", help="DEBUG ONLY: log every decoded frame (includes your typing)")
     return p.parse_args(argv)
 
 
@@ -531,8 +655,8 @@ async def main(args):
         loop.call_soon_threadsafe(lambda: asyncio.ensure_future(hub.send(msg)))
 
     Feed(emit, log=hub.log, config=args.config, keys=not args.no_keys, keymap=not args.no_keymap,
-         vid=args.vid, pid=args.pid, name=args.name, base=args.base, commit=args.commit,
-         report_id=None if args.no_report_id else KEYBOARD_REPORT_ID, raw=args.raw).start()
+         vid=args.vid, pid=args.pid, name=args.name, port=args.serial,
+         ble=not args.no_ble, ble_address=args.ble_address, raw=args.raw).start()
 
     if not args.no_ws:
         try:

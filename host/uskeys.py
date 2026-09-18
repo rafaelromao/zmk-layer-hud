@@ -1,8 +1,8 @@
 """What a US-layout keyboard sends to type a legend — the inverse of hudfeed's decode.
 
 The HUD draws two things for one keypress: the key on the board, which comes from the keymap, and
-the character in the strip below, which comes from the HID report the keyboard actually sent. They
-can disagree. An accented letter is not one keypress but a dead key and a letter; a symbol may
+the character in the strip below, which comes from the report snapshot the keyboard actually sent.
+They can disagree. An accented letter is not one keypress but a dead key and a letter; a symbol may
 need Option; Return is a named key whose glyph each table spells its own way. The only way to test
 the strip is to send it what a keyboard would send and see what comes out.
 
@@ -21,8 +21,8 @@ import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from hudfeed import (ALT_CHARS, CHARS, DEAD_KEY_SPECIAL, DEAD_KEYS, KEYBOARD_REPORT_ID,  # noqa: E402
-                     NAMED, ReportDecoder)
+from hudfeed import (ALT_CHARS, CHARS, DEAD_KEY_SPECIAL, DEAD_KEYS, NAMED,  # noqa: E402
+                     SignalDecoder)
 
 MOD_SHIFT, MOD_ALT = 0x02, 0x04
 
@@ -60,24 +60,23 @@ for _i in range(1, 25):
     NAME_FOR_LEGEND[f"F{_i}"] = f"f{_i}"
 
 
-def report(usage, mods=0, report_id=KEYBOARD_REPORT_ID):
-    """One keyboard report holding a single key."""
-    head = [report_id] if report_id is not None else []
-    return head + [mods, 0, usage, 0, 0, 0, 0, 0]
+def snapshot(usage, mods=0):
+    """One `keys` message: the keyboard's report snapshot holding a single key."""
+    return {"kind": "keys", "mods": mods, "keys": [usage] if usage else []}
 
 
 def _mods(shift, alt):
     return (MOD_SHIFT if shift else 0) | (MOD_ALT if alt else 0)
 
 
-def _tap(usage, shift=False, alt=False, report_id=KEYBOARD_REPORT_ID):
+def _tap(usage, shift=False, alt=False):
     """The press and release of one key, modifiers held across both."""
     m = _mods(shift, alt)
-    return [report(usage, m, report_id), report(0, m, report_id)]
+    return [snapshot(usage, m), snapshot(0, m)]
 
 
-def keystrokes_for(legend, report_id=KEYBOARD_REPORT_ID):
-    """The reports a US-layout keyboard sends to type `legend`, or None if it cannot.
+def keystrokes_for(legend):
+    """The snapshots a US-layout keyboard sends to type `legend`, or None if it cannot.
 
     Order matters: a plain or shifted key first, then the dead-key pair an accent is really typed
     as (the US-International layout, which is how the keymap's accent macros type on the host),
@@ -85,19 +84,19 @@ def keystrokes_for(legend, report_id=KEYBOARD_REPORT_ID):
     """
     name = NAME_FOR_LEGEND.get(legend)
     if name and name in USAGE_FOR_NAME:
-        return _tap(USAGE_FOR_NAME[name], report_id=report_id)
+        return _tap(USAGE_FOR_NAME[name])
     if len(legend) != 1:
         return None
     if legend in USAGE_FOR:
         usage, shift, alt = USAGE_FOR[legend]
-        return _tap(usage, shift, alt, report_id=report_id)
+        return _tap(usage, shift, alt)
     pair = _dead_key_pair(legend)
     if pair:
         dead, letter = pair
-        return _tap(*USAGE_FOR[dead][:2], report_id=report_id) + _tap(*USAGE_FOR[letter][:2], report_id=report_id)
+        return _tap(*USAGE_FOR[dead][:2]) + _tap(*USAGE_FOR[letter][:2])
     if legend in ALT_USAGE_FOR:
         usage, shift, alt = ALT_USAGE_FOR[legend]
-        return _tap(usage, shift, alt, report_id=report_id)
+        return _tap(usage, shift, alt)
     return None
 
 
@@ -117,19 +116,19 @@ def _dead_key_pair(ch):
     return None
 
 
-def events_for(legend, report_id=KEYBOARD_REPORT_ID):
+def events_for(legend):
     """The keyDown events the decoder emits for `legend`, dead keys composed as the reader would.
 
-    Reports go in 5 ms apart, well inside DEAD_KEY_MS, so a dead key and its letter compose into
+    Snapshots go in 5 ms apart, well inside DEAD_KEY_MS, so a dead key and its letter compose into
     the one accented character the legend asks for.
     """
-    reports = keystrokes_for(legend, report_id)
-    if reports is None:
+    snapshots = keystrokes_for(legend)
+    if snapshots is None:
         return None
-    decoder = ReportDecoder(report_id=report_id)
+    decoder = SignalDecoder()
     out, now = [], 0
-    for rep in reports:
-        out += decoder.feed(rep, now)
+    for snap in snapshots:
+        out += decoder.feed(snap, now)
         now += 5
     out += decoder.flush(now + 1000)
     return [m for m in out if m.get("type") == "keyDown"]

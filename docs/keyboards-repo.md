@@ -33,7 +33,7 @@ A general-purpose feature file (the signal is not vim-related), included from
         compatible = "zmk,layer-signal";
         heartbeat-ms = <2000>;   /* a HUD started mid-session converges within 2 s */
         positions;               /* announce key positions: exact highlighting */
-        /* defaults: base-usage 0xC0, commit-usage 0xDF, tap-ms 10, settle-ms 3 */
+        /* default: settle-ms 3 */
     };
 };
 ```
@@ -43,32 +43,34 @@ A general-purpose feature file (the signal is not vim-related), included from
 ```
 
 What it does: on every layer change (any mechanism: `&mo`, `&lt`, `&sl`, `&tog`, the auto-layers,
-`vim_sync` applying a host code), the module writes usage `0xC0 + layer id` for each active layer
-plus `0xDF` into the keyboard HID report, sends it, and releases them 10 ms later. The usages are
-reserved in the HID spec: macOS produces no key event for them and Linux gives them no keysym,
-so applications never see them; `host/hudfeed.py` decodes them from the raw report. Layer 0 is
-never sent. `hid_indicator_code_listener` (zmk-vim-mode) and this module do not interact: one
-listens to LED reports, the other to layer changes.
+`vim_sync` applying a host code), the module sends the active-layer bitmap as a small framed
+message on its own channel. With `positions;` each key press and release goes out the same way,
+and `CONFIG_ZMK_LAYER_SIGNAL_KEYS` (default y) adds a snapshot of the keyboard report so the HUD
+can show what you type. `hid_indicator_code_listener` (zmk-vim-mode) and this module do not
+interact: one listens to LED reports, the other to layer changes.
 
-## 3. Make room in the keyboard report
+Earlier versions smuggled all this through the keyboard report as the reserved keyboard-page
+usages 0xA5–0xDF, on the premise that no OS maps them. Linux does — `hid_keyboard[]` fills every
+unmapped slot with `KEY_UNKNOWN` rather than zero — so each layer change reached the compositor as
+a phantom key press carrying the held modifiers, and Gui + a layer change switched workspace. That
+is why `CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE=12` is gone from the `.conf` files: nothing needs the
+extra slots any more, and the module no longer requires the HKRO report type either.
 
-The HKRO report holds `CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE` keys (default 6). The announcement
-needs one slot per active layer plus one for the commit usage, on top of whatever real keys are
-held. VIM_NORMAL + VIM_VISUAL + NAV_CP + commit + two held keys already fill six, and a burst
-that does not fit is skipped (logged at debug level), so raise it on every central/dongle `.conf`
-that carries `CONFIG_ZMK_HID_INDICATORS=y`:
+## 3. Give the signal its carrier
+
+Over USB the channel is a CDC-ACM interface, which the module's snippet adds:
 
 ```
-CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE=12
+-n layer-hud-usb-uart
 ```
 
-e.g. `src/keyboards/rafaelromao/diamond/boards/shields/diamond/diamond_central_left.conf` and
-`diamond_central_dongle.conf`. 12 is the ceiling: the USB report becomes 15 bytes, which is the
-most Zephyr's default 16-byte HID interrupt endpoint carries; BLE sends 14 bytes, under the
-20-byte ATT payload. Boot-protocol hosts (BIOS) still get the 6-key boot report.
+The snippet puts a `cdc-acm-uart` under `&zephyr_udc0` and points the `zmk,layer-hud-uart` chosen
+node at it; `CONFIG_ZMK_LAYER_SIGNAL_UART` then defaults on. Over BLE the module defines its own
+GATT service and needs no snippet, only `CONFIG_BT_PERIPHERAL` (any wireless ZMK build).
 
-The module needs the HKRO report type (the default); with `CONFIG_ZMK_HID_REPORT_TYPE_NKRO=y`
-it does not build, because the NKRO bitmap stops at usage 0x67.
+A board can already have a CDC-ACM interface for USB logging or ZMK Studio. They are
+indistinguishable from their descriptors, so `hudfeed.py` tries each port in turn and keeps the
+one that produces valid frames.
 
 ## 4. Build and flash
 
@@ -76,8 +78,8 @@ it does not build, because the NKRO bitmap stops at usage 0x67.
 cd ~/projects/keyboards
 ./init.sh
 # inside the container:
-b rommana cl      # central left
-b rommana cd      # dongle, if used
+b rommana cl -n layer-hud-usb-uart      # central left
+b rommana cd -n layer-hud-usb-uart      # dongle, if used
 ```
 
 ## 5. Verify without the HUD
@@ -85,21 +87,19 @@ b rommana cd      # dongle, if used
 With the keyboard connected, on the machine that will run the HUD:
 
 ```bash
-python3 ~/projects/zmk-layer-hud/host/hudfeed.py --stdout --layers-only --no-ws --debug
+python3 ~/projects/zmk-layer-hud/host/hudfeed.py --stdout --no-keys --no-ws --debug
 ```
 
 Within 2 s (heartbeat) it prints the current set, e.g. `{"kind":"layers","ids":[]}`. Hold the
 numbers thumb → `[14]`; release → `[]`; `zmk-vim-mode set normal` → `[2]`; a held shortcut layer
 over vim → `[2,10]`. Type into a terminal and a text field meanwhile: nothing stray appears.
 
-macOS: the first run asks for Input Monitoring for the terminal app running Python (the
-Hammerspoon host inherits Hammerspoon's grant instead). If nothing prints, check
-Karabiner-Elements → Devices: a keyboard whose events Karabiner modifies is seized by it and a
-raw-HID reader gets no reports; untick the Diamond there.
+macOS: nothing to grant. The serial port needs no Input Monitoring, and Karabiner-Elements cannot
+seize it the way it could seize the HID device.
 
-Linux: hidraw access comes from `contrib/udev/60-zmk-layer-hud.rules` (the zmk-vim-mode daemon
-installs an identical rule). `libinput debug-events` shows the usages as `KEY_UNKNOWN`; that is
-expected and harmless.
+Linux: tty access comes from `contrib/udev/60-zmk-layer-hud.rules`, or from the `dialout` group.
+`wev` and `libinput debug-events` should stay silent through a layer change — a `KEY_UNKNOWN` (240)
+there means the firmware predates this channel and is still sending the signal as HID usages.
 
 ## Layer ids
 

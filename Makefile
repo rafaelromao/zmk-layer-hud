@@ -13,12 +13,12 @@ NODE ?= $(shell command -v node)
 all: test
 
 UNAME_S := $(shell uname -s)
-VENV_PKGS := hidapi keymap-drawer websockets
+VENV_PKGS := pyserial keymap-drawer websockets bleak
 ifeq ($(UNAME_S),Darwin)
 VENV_PKGS += pyobjc-framework-Cocoa pyobjc-framework-WebKit
 endif
 
-venv: ## create .venv with hidapi, keymap-drawer, websockets (+ pyobjc on macOS; brew install hidapi first)
+venv: ## create .venv with pyserial, keymap-drawer, websockets, bleak (+ pyobjc on macOS)
 	@$(PYTHON) -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' || \
 	  { echo "need Python >= 3.10 (found $$($(PYTHON) --version) at $(PYTHON)); brew install python or pass PYTHON=" >&2; exit 1; }
 	$(PYTHON) -m venv --clear .venv
@@ -33,7 +33,7 @@ test-firmware: ## host-side tests for the module's pure encode/decode policy
 	$(CC) -std=c11 -Wall -Wextra -Werror -O1 -o build/test_layer_signal firmware/tests/test_layer_signal.c
 	./build/test_layer_signal
 
-test-host: ## Python tests: raw-HID decoder and keymap-drawer conversion
+test-host: ## Python tests: the wire format, the signal decoder, the keymap-drawer conversion
 	$(PYTHON) -m unittest discover -s host -p '*_test.py' -v
 
 test-hud: ## the HUD page: every key on every layer, every combo, the typed-keys strip

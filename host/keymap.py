@@ -18,7 +18,8 @@ Config keys (all paths may use ~):
   feed:           the reader's timings; see FEED_DEFAULTS below                     (optional)
   drawer_config:  keymap-drawer config YAML (key sizes, glyphs); defaults otherwise (optional)
   keyboard:       {vid, pid, name} of the keyboard to read the layer signal from    (optional)
-  signal:         {base, commit} usages of the firmware node                        (optional)
+  serial:         {port, probe_s} of its CDC-ACM interface, when finding it fails   (optional)
+  ble:            {address, enabled} for reading the signal over BLE                (optional)
   layers:         how ZMK layer ids map to drawer layers                            (optional)
       dtsi:  a devicetree header whose `// Layers` block has `#define NAME n` lines; the names
              become the ids' names. Superseded by `zmk-layer-hud import`, which takes the ids from
@@ -56,7 +57,6 @@ import sys
 from itertools import chain
 
 DEFAULT_CONFIG = os.path.expanduser("~/.config/zmk-layer-hud/config.yaml")
-SIGNAL = {"base": 0xC0, "commit": 0xDF}
 
 # `hud:` section: every timing and size the page uses, in ms unless said otherwise.
 HUD_DEFAULTS = {
@@ -586,8 +586,6 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None
             raise KeymapError(f"extras.{key}: unknown layers {bad}")
     if extras.get("alpha2") and extras["alpha2"] not in layers:
         raise KeymapError(f"extras.alpha2: unknown layer {extras['alpha2']!r}")
-    signal = dict(SIGNAL)
-    signal.update({k: int(v) for k, v in (cfg.get("signal") or {}).items()})
     glyphs = resolve_glyphs(glyph_names(layers, combos), drawer_cfg, log=log, fetch=fetch_glyphs)
     hud_cfg = dict(HUD_DEFAULTS)
     unknown = sorted(set(cfg.get("hud") or {}) - set(HUD_DEFAULTS))
@@ -622,7 +620,6 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None
         "zmk_layers": zmk_layers,
         "base": base,
         "extras": extras,
-        "signal": signal,
     }
 
 

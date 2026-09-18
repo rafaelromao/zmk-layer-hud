@@ -28,7 +28,6 @@ feed:
 
 # Every ZMK board (Diamond over USB, Rommana over BLE) is read; add `name: Diamond` to pick one.
 keyboard: { vid: 0x1d50, pid: 0x615e }
-signal: { base: 0xC0, commit: 0xDF }
 
 # The drawer YAML is a curated view (six vim layers drawn as one, copy layers folded into their
 # originals), so which drawing shows which ZMK layer has to be said. The ids and the keyboard's own

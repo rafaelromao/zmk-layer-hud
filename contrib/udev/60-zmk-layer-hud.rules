@@ -1,6 +1,7 @@
-# zmk-layer-hud: let the active seat user read the ZMK keyboard's raw HID reports
-# (host/hudfeed.py decodes the layer signal from them). Identical to zmk-vim-mode's
-# 60-zmk-vim-mode.rules; installing either one is enough.
+# zmk-layer-hud: let the active seat user read the ZMK keyboard's layer signal, which
+# host/hudfeed.py reads from the keyboard's own CDC-ACM interface (the tty rule at the
+# bottom). The hidraw rules are zmk-vim-mode's daemon, which still reads HID reports;
+# this file is identical to its 60-zmk-vim-mode.rules, so installing either one is enough.
 #
 # Install:
 #   sudo cp contrib/udev/60-zmk-layer-hud.rules /etc/udev/rules.d/
@@ -30,3 +31,9 @@ SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="615e", TAG+="ua
 # The matching evdev node is read (never written) for EV_LED echoes, which is
 # how the daemon learns the kernel overwrote the indicator bits.
 SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/vendor}=="1d50", ATTRS{id/product}=="615e", TAG+="uaccess"
+
+# The layer signal itself: the keyboard's CDC-ACM interface, which hudfeed.py reads and
+# never writes. Without this the tty belongs to root:dialout and the feed reports
+# "cannot open". The group form, if uaccess is no use on a headless box, is:
+#   SUBSYSTEM=="tty", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="615e", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="615e", TAG+="uaccess"

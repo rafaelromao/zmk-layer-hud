@@ -1,9 +1,9 @@
 #!/bin/bash
 # zmk-layer-hud Linux host (Hyprland): native transparent layer-shell HUD + typed-keys panel,
-# fed by host/hudfeed.py (raw HID layer signal, evdev keys, daemon decisions).
+# fed by host/hudfeed.py (the keyboard's own layer signal, evdev keys, daemon decisions).
 #   bash host/linux/hud.sh        start (rebuilds hud/keymap.json first)
 #   bash host/linux/hud.sh stop
-# Arch dependencies: python-gobject webkit2gtk-4.1 gtk-layer-shell python-hidapi python-evdev python-websockets
+# Arch dependencies: python-gobject webkit2gtk-4.1 gtk-layer-shell python-pyserial python-evdev python-websockets
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
@@ -23,11 +23,11 @@ if [ "${1:-start}" = stop ]; then
   echo "HUD stopped; panel reservation released"
   exit 0
 fi
-# The repo's virtualenv (make venv) has hidapi, keymap-drawer and websockets; the GTK bindings
+# The repo's virtualenv (make venv) has pyserial, keymap-drawer and websockets; the GTK bindings
 # come from the system python, so the panel runs with that one and hands the venv to hudfeed.
 python3 -c "import gi; gi.require_version('Gtk', '3.0'); gi.require_version('WebKit2', '4.1'); gi.require_version('GtkLayerShell', '0.1')"
 FEED_PYTHON="${ZMKHUD_PYTHON:-$ROOT/.venv/bin/python3}"; [ -x "$FEED_PYTHON" ] || FEED_PYTHON=python3
-"$FEED_PYTHON" -c "import hid, websockets"
+"$FEED_PYTHON" -c "import serial, websockets"
 export ZMKHUD_PYTHON="$FEED_PYTHON"
 "$FEED_PYTHON" "$ROOT/host/keymap.py"   # validates the config + keymap-drawer YAML before the panel opens
 stop

@@ -13,8 +13,14 @@ keymap: ~/path/to/my-keymap.yaml
 # Optional: pick one keyboard when several ZMK boards are connected (substring of the product name).
 # keyboard: { vid: 0x1d50, pid: 0x615e, name: Corne }
 
-# Optional: only when the firmware node uses non-default usages.
-# signal: { base: 0xC0, commit: 0xDF }
+# Optional: name the keyboard's CDC-ACM port yourself, when a board exposes several and probing
+# each one in turn is too slow, or when it does not carry ZMK's vid/pid.
+# serial: { port: /dev/cu.usbmodem1101, probe_s: 8 }
+
+# Optional: BLE. `address` is needed wherever a connected keyboard no longer advertises — a
+# CoreBluetooth peripheral UUID on macOS, a MAC address on Linux. The keyboard must be bonded to
+# this host: the characteristic requires encryption.
+# ble: { address: null, enabled: true }
 
 # Optional: refine what the banner shows per layer id or name.
 # layers:

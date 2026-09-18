@@ -12,7 +12,7 @@ then i into INSERT and Esc out](docs/hud.gif)
 [zmk-vim-mode](https://github.com/rafaelromao/zmk-vim-mode), whose daemon moves the keyboard
 between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`.*
 
-- **One source**: the keyboard's HID reports. No OS event tap, no daemon, no per-app plugin.
+- **One source**: the keyboard, on a channel of its own. No OS event tap, no daemon, no per-app plugin.
 - **Any ZMK keyboard**: a small ZMK module on the keyboard, a keymap-drawer YAML on the host.
 - **Live**: edit the YAML and the HUD redraws; every size and timing lives in one config file.
 - macOS (native overlay panel) and Linux (Hyprland layer-shell panel).
@@ -38,7 +38,7 @@ between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`
 ```bash
 git clone https://github.com/rafaelromao/zmk-layer-hud ~/projects/zmk-layer-hud
 cd ~/projects/zmk-layer-hud
-brew install hidapi && make venv           # macOS (Homebrew Python); Linux: see below
+make venv                                  # macOS (Homebrew Python); Linux: see below
 mkdir -p ~/.config/zmk-layer-hud && cp config/example.yaml ~/.config/zmk-layer-hud/config.yaml
 ```
 
@@ -54,7 +54,7 @@ The panel opens on the screen with keyboard focus (drag it anywhere; it remember
 seconds the status line disappears and the banner follows your keyboard. `start.sh stop` closes
 it, `start.sh log` tails the logs.
 
-Linux needs the system GTK bindings for the panel and the udev rule for hidraw:
+Linux needs the system GTK bindings for the panel and the udev rule for the keyboard's tty:
 
 ```bash
 sudo pacman -S python-gobject webkit2gtk-4.1 gtk-layer-shell
@@ -135,18 +135,23 @@ not pushed yet. [config/diamond.imported.yaml](config/diamond.imported.yaml) is 
 
 ## How it works
 
-**The channel.** The HID Usage Tables reserve keyboard-page usages 0xA5–0xDF; no OS maps them
-to a key (macOS emits no event, Linux only `KEY_UNKNOWN`), so a report carrying them reaches
-raw-HID readers and nothing else, over USB and BLE alike. The firmware module writes them straight
-into the keyboard report (behaviours that watch key presses never notice) on every layer change:
-one usage per active layer plus a commit usage that marks the report as a complete set. With
-`positions;` each key press and release also carries its physical position as a usage pair whose
-order tells press from release. Details and limits in [docs/zmk-setup.md](docs/zmk-setup.md).
+**The channel.** The firmware module has its own: a CDC-ACM serial interface over USB, GATT
+notifications over BLE. On it go small framed messages — the active layers as a bitmap, and with
+`positions;` each key press and release by its physical position. It also sends a snapshot of the
+keyboard report (the modifier byte and the held usages) so the host can show what you type without
+reading your keystrokes anywhere else. Nothing on this channel can be mistaken for a key.
 
-**The host.** `host/hudfeed.py` reads the raw reports with hidapi, decodes layers, positions,
-keys and modifiers (US layout, dead keys composed), converts the keymap-drawer YAML with the
-drawer's own layout generators and glyphs, and re-sends it when the file changes. The macOS panel
-(`host/macos/panel.py`, PyObjC) runs it in-process; the Linux panel talks to it over a WebSocket.
+It used to ride inside the keyboard report itself, as the keyboard-page usages 0xA5–0xDF that the
+HID Usage Tables reserve, on the premise that no OS maps them. Linux does: every unmapped slot in
+the kernel's `hid_keyboard[]` table holds `KEY_UNKNOWN`, not nothing, so each layer change arrived
+as a phantom key press carrying whatever modifiers were held — enough, with Gui down, to make a
+Wayland compositor change workspace. Details and limits in [docs/zmk-setup.md](docs/zmk-setup.md).
+
+**The host.** `host/hudfeed.py` reads that channel with pyserial (or bleak over BLE), decodes
+layers, positions, keys and modifiers (US layout, dead keys composed), converts the keymap-drawer
+YAML with the drawer's own layout generators and glyphs, and re-sends it when the file changes. The
+macOS panel (`host/macos/panel.py`, PyObjC) runs it in-process; the Linux panel talks to it over a
+WebSocket.
 
 **The page** (`hud/`) draws the physical layout, lights the exact key for each position while it
 is held, groups positions pressed within the combo term into the combo the drawer defines, keeps
@@ -154,11 +159,15 @@ a one-shot layer on screen through its key's flash, and shows typed characters i
 
 ## Troubleshooting
 
-- **`cannot open <keyboard>`** (macOS, `run/hudfeed.log`): grant Input Monitoring to the app you
-  launch from, and untick the keyboard under Karabiner-Elements → Devices ("modify events"
-  seizes it). `host/hiddiag.py` prints the raw IOKit code. Linux: hidraw permissions (udev rule).
-- **No `layers` lines**: the firmware isn't announcing. `hudfeed.py --raw` shows the reports:
-  9-byte reports mean the report size was not raised; no `df` byte means the node is missing.
+- **`cannot open <keyboard>`** (Linux, `run/hudfeed.log`): tty permissions — install the udev rule,
+  or add yourself to `dialout`. macOS needs no permission at all for the serial port, which is also
+  why Karabiner-Elements can no longer take the keyboard away from the feed.
+- **`… is not the layer signal`**: that port answered nothing for eight seconds. The board exposes
+  more than one CDC interface and this was another; the feed moves on to the next by itself. If it
+  says so about every port, the firmware is not sending — build it with the snippet
+  (`-n layer-hud-usb-uart`), which is what creates the interface and points `zmk,layer-hud-uart` at it.
+- **No `layers` lines**: `hudfeed.py --raw` logs every frame it decodes, so silence there separates
+  "the keyboard says nothing" from "the host makes nothing of it".
 - **Wrong keys light** on a curated keymap: `positions:` is missing or wrong; the feed logs
   `key position N is not in the keymap's … drawer keys`.
 - **A key stays lit ~5 s**: the firmware reports presses but not releases (rebuild with the

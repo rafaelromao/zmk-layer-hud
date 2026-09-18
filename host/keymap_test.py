@@ -152,7 +152,6 @@ class Message(unittest.TestCase):
         self.assertEqual(msg["zmk_layers"]["1"]["drawer"], "Nav")
         self.assertEqual(msg["zmk_layers"]["0"]["cls"], "off")
         self.assertEqual(msg["base"], "Base")
-        self.assertEqual(msg["signal"], {"base": 0xC0, "commit": 0xDF})
 
     def test_dtsi_ids_and_case_insensitive_drawer_match(self):
         msg = km.build_message({"layers": {"dtsi": "x"}}, DOC, dtsi_text=DTSI)
