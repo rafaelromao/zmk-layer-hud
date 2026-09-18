@@ -4,3 +4,9 @@ build:
   kconfig: firmware/Kconfig
   settings:
     dts_root: firmware
+    # Both are relative to the module root, and each points at the directory
+    # *containing* the well-known folder: dts_root: firmware finds
+    # firmware/dts/bindings, snippet_root: . finds snippets/. Without this the
+    # snippet is invisible -- a build asking for it fails with "snippets not
+    # found", listing only ZMK's app and zephyr as roots.
+    snippet_root: .
