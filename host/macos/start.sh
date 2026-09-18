@@ -3,7 +3,7 @@
 #   host/macos/start.sh          start (checks the config and the keymap-drawer YAML first)
 #   host/macos/start.sh stop
 #   host/macos/start.sh log      tail the panel and feed logs
-# Needs the repo's virtualenv: make venv
+# Needs the repo's virtualenv: brew install hidapi && make venv
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
@@ -12,14 +12,14 @@ mkdir -p "$RUN"
 
 if [ -n "${ZMKHUD_PYTHON:-}" ]; then PYTHON="$ZMKHUD_PYTHON"
 elif [ -x "$ROOT/.venv/bin/python3" ]; then PYTHON="$ROOT/.venv/bin/python3"
-else echo "no .venv: run 'make venv' in $ROOT (or set ZMKHUD_PYTHON)" >&2; exit 1; fi
+else echo "no .venv: run 'brew install hidapi && make venv' in $ROOT (or set ZMKHUD_PYTHON)" >&2; exit 1; fi
 
 stop() { pkill -f "$HERE/panel.py" 2>/dev/null || true; pkill -f "$ROOT/host/hudfeed.py" 2>/dev/null || true; }
 
 case "${1:-start}" in
   start)
-    "$PYTHON" -c 'import serial, websockets, objc, WebKit' 2>/dev/null || {
-      echo "the venv lacks pyserial/websockets/pyobjc: run 'make venv' again" >&2; exit 1; }
+    "$PYTHON" -c 'import serial, hid, websockets, objc, WebKit' 2>/dev/null || {
+      echo "the venv lacks pyserial/hidapi/websockets/pyobjc: run 'make venv' again" >&2; exit 1; }
     # Fails early with a readable reason if the config or the keymap-drawer YAML is off.
     "$PYTHON" "$ROOT/host/keymap.py" ${ZMKHUD_CONFIG:+--config "$ZMKHUD_CONFIG"}
     stop

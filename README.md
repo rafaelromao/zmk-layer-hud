@@ -38,7 +38,7 @@ between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`
 ```bash
 git clone https://github.com/rafaelromao/zmk-layer-hud ~/projects/zmk-layer-hud
 cd ~/projects/zmk-layer-hud
-make venv                                  # macOS (Homebrew Python); Linux: see below
+brew install hidapi && make venv           # macOS (Homebrew Python); Linux: see below
 mkdir -p ~/.config/zmk-layer-hud && cp config/example.yaml ~/.config/zmk-layer-hud/config.yaml
 ```
 
@@ -137,9 +137,10 @@ not pushed yet. [config/diamond.imported.yaml](config/diamond.imported.yaml) is 
 
 **The channel.** The firmware module has its own: a CDC-ACM serial interface over USB, GATT
 notifications over BLE. On it go small framed messages — the active layers as a bitmap, and with
-`positions;` each key press and release by its physical position. It also sends a snapshot of the
-keyboard report (the modifier byte and the held usages) so the host can show what you type without
-reading your keystrokes anywhere else. Nothing on this channel can be mistaken for a key.
+`positions;` each key press and release by its physical position. Nothing on it can be mistaken for
+a key. What you type does not travel here — the host reads that from the keyboard's HID reports,
+because ZMK emits one per change and so none can be lost, where a snapshot sent from the firmware
+has to be deferred to a work queue and coalesces presses away.
 
 It used to ride inside the keyboard report itself, as the keyboard-page usages 0xA5–0xDF that the
 HID Usage Tables reserve, on the premise that no OS maps them. Linux does: every unmapped slot in
@@ -147,11 +148,15 @@ the kernel's `hid_keyboard[]` table holds `KEY_UNKNOWN`, not nothing, so each la
 as a phantom key press carrying whatever modifiers were held — enough, with Gui down, to make a
 Wayland compositor change workspace. Details and limits in [docs/zmk-setup.md](docs/zmk-setup.md).
 
-**The host.** `host/hudfeed.py` reads that channel with pyserial (or bleak over BLE), decodes
-layers, positions, keys and modifiers (US layout, dead keys composed), converts the keymap-drawer
-YAML with the drawer's own layout generators and glyphs, and re-sends it when the file changes. The
-macOS panel (`host/macos/panel.py`, PyObjC) runs it in-process; the Linux panel talks to it over a
-WebSocket.
+**The host.** `host/hudfeed.py` reads that channel with pyserial (or bleak over BLE) for layers
+and positions, and the keyboard's HID reports with hidapi for what you type. Two sources, because
+they fail differently: ZMK emits one report per change, so reading them cannot lose a keystroke,
+while the firmware sending the same snapshot has to defer it to a work queue and coalesces presses
+away. Reading the reports is what needs Input Monitoring on macOS; the signal channel needs nothing.
+`--no-hid-keys` drops the strip and the permission with it. The rest — decoding keys and modifiers
+(US layout, dead keys composed), converting the keymap-drawer YAML with the drawer's own layout
+generators and glyphs, re-sending it when the file changes — is unchanged. The macOS panel
+(`host/macos/panel.py`, PyObjC) runs it in-process; the Linux panel talks to it over a WebSocket.
 
 **The page** (`hud/`) draws the physical layout, lights the exact key for each position while it
 is held, groups positions pressed within the combo term into the combo the drawer defines, keeps
@@ -159,9 +164,14 @@ a one-shot layer on screen through its key's flash, and shows typed characters i
 
 ## Troubleshooting
 
-- **`cannot open <keyboard>`** (Linux, `run/hudfeed.log`): tty permissions — install the udev rule,
-  or add yourself to `dialout`. macOS needs no permission at all for the serial port, which is also
-  why Karabiner-Elements can no longer take the keyboard away from the feed.
+- **`cannot open <keyboard>`** (Linux, `run/hudfeed.log`): tty permissions for the signal channel —
+  install the udev rule, or add yourself to `dialout`. The serial port itself needs no permission on
+  macOS.
+- **`cannot read what is typed on <keyboard>`**: that is the HID half, and it does need one. On
+  macOS grant Input Monitoring to whatever runs the feed (your terminal, or Hammerspoon), and untick
+  the keyboard under Karabiner-Elements → Devices, which seizes a keyboard whose events it modifies.
+  On Linux it is hidraw access, from the same udev rule. Layers and positions keep working without
+  it; only the typed-keys strip goes quiet.
 - **`… is not the layer signal`**: that port answered nothing for eight seconds. The board exposes
   more than one CDC interface and this was another; the feed moves on to the next by itself. If it
   says so about every port, the firmware is not sending — build it with the snippet

@@ -13,12 +13,12 @@ NODE ?= $(shell command -v node)
 all: test
 
 UNAME_S := $(shell uname -s)
-VENV_PKGS := pyserial keymap-drawer websockets bleak
+VENV_PKGS := pyserial hidapi keymap-drawer websockets bleak
 ifeq ($(UNAME_S),Darwin)
 VENV_PKGS += pyobjc-framework-Cocoa pyobjc-framework-WebKit
 endif
 
-venv: ## create .venv with pyserial, keymap-drawer, websockets, bleak (+ pyobjc on macOS)
+venv: ## create .venv with pyserial, hidapi, keymap-drawer, websockets, bleak (+ pyobjc on macOS; brew install hidapi first)
 	@$(PYTHON) -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' || \
 	  { echo "need Python >= 3.10 (found $$($(PYTHON) --version) at $(PYTHON)); brew install python or pass PYTHON=" >&2; exit 1; }
 	$(PYTHON) -m venv --clear .venv

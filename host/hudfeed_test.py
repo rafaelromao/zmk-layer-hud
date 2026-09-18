@@ -11,7 +11,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
-from hudfeed import INJECTABLE, SignalDecoder, Stream  # noqa: E402
+from hudfeed import INJECTABLE, SignalDecoder, Stream, split_report  # noqa: E402
 
 
 def K(mods=0, *keys):
@@ -222,6 +222,34 @@ class StreamTest(unittest.TestCase):
         self.stream.close()
         self.assertEqual([(m["type"], m["chars"], m["device"]) for m in self.out],
                          [("keyUp", "a", "Diamond")])
+
+
+class Reports(unittest.TestCase):
+    """The HID reports the host reads for the strip, split into what the decoder wants."""
+
+    def test_zmk_keyboard_report(self):
+        # [report id 1, modifiers, reserved, keys...] as hidapi returns it
+        self.assertEqual(split_report([1, 0x02, 0, 0x04, 0x05, 0, 0, 0, 0]), (0x02, b"\x04\x05\x00\x00\x00\x00"))
+
+    def test_other_report_ids_are_not_ours(self):
+        self.assertIsNone(split_report([2, 0xCD, 0, 0, 0, 0]))  # consumer
+        self.assertIsNone(split_report([3, 0, 0, 0x04]))        # mouse
+
+    def test_short_or_empty(self):
+        self.assertIsNone(split_report([]))
+        self.assertIsNone(split_report([1, 0]))
+
+    def test_without_report_id(self):
+        self.assertEqual(split_report([0x02, 0, 0x04], report_id=None), (0x02, b"\x04"))
+        self.assertIsNone(split_report([0], report_id=None))
+
+    def test_a_report_becomes_the_same_message_the_firmware_would_send(self):
+        # The point of the split: both sources hand SignalDecoder the identical shape, so the
+        # layout tables and dead-key composition below cannot tell them apart.
+        mods, keys = split_report([1, 0x02, 0, 0x04, 0, 0, 0, 0, 0])
+        d = SignalDecoder()
+        msgs = d.feed({"kind": "keys", "mods": mods, "keys": list(keys)})
+        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["A"])
 
 
 class Injectable(unittest.TestCase):

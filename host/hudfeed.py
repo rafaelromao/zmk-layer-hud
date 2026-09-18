@@ -21,20 +21,28 @@ typing.
                                           evdev, no layout guessing
 A client sending {"kind":"close"} (the ✕ button) makes this script exit.
 
-This used to read the keyboard's raw HID reports with hidapi, and the layer signal travelled inside
-them as reserved keyboard-page usages. Linux maps that whole range to KEY_UNKNOWN rather than to
-nothing, so every layer change arrived at the compositor as a phantom key press carrying whatever
-modifiers were held — Gui held plus a layer change was enough to switch workspace. The signal has
-its own channel now, and the keys frame carries the same (modifiers, usages) snapshot the report
-used to, so everything below the reader — the layout tables, dead-key composition, the strip — is
-unchanged.
+Two sources, because they failed in different ways and the fixes are different.
 
-Access: a USB keyboard needs no permission on macOS (/dev/cu.* is world-readable) and no Input
-Monitoring, which also means Karabiner-Elements can no longer seize it out from under us; Linux
-needs read access to the tty (contrib/udev/60-zmk-layer-hud.rules, or the dialout group). BLE needs
-the keyboard bonded to this host, because the characteristic requires encryption.
-Dependencies: pyserial, keymap-drawer (`make venv`); bleak for BLE; python-websockets for the
-WebSocket.
+Layers and positions come from the channel above. They used to travel inside the keyboard report as
+reserved keyboard-page usages, on the premise that no OS maps them; Linux maps that whole range to
+KEY_UNKNOWN, so every layer change reached the compositor as a phantom key press carrying whatever
+modifiers were held — Gui held plus a layer change was enough to switch workspace.
+
+What is typed comes from the keyboard's HID reports, read here with hidapi, which is how this
+always worked and was never the thing at fault. The firmware can send the same snapshot itself
+(CONFIG_ZMK_LAYER_SIGNAL_KEYS), but it defers reading the report to a work item so it runs after
+ZMK has updated it, and k_work_submit on an already-queued item does nothing: a press and its
+release arriving together collapse into one snapshot and the key is never seen held. ZMK already
+emits one report per change, so reading them here cannot lose a transition.
+
+Access: reading the reports needs Input Monitoring on macOS for whatever runs this (your terminal,
+or Hammerspoon), and a keyboard Karabiner-Elements modifies is seized by it; Linux needs hidraw
+access. The signal channel needs neither — /dev/cu.* is world-readable, and Linux only needs the
+tty. Both grants are in contrib/udev/60-zmk-layer-hud.rules. --no-hid-keys drops the strip and the
+permission with it. BLE needs the keyboard bonded to this host, because the characteristic requires
+encryption.
+Dependencies: pyserial, hidapi, keymap-drawer (`make venv`); bleak for BLE; python-websockets for
+the WebSocket.
 """
 
 from __future__ import annotations
@@ -236,12 +244,18 @@ class Stream:
         self.frames_seen = 0  # a port that never produces one is not ours
 
     def feed(self, chunk, now_ms):
+        """Bytes off a carrier: find the frames in them and hand each one on."""
         for msg in self.frames.feed(chunk):
             self.frames_seen += 1
-            if self.raw:
-                self.log(f"hudfeed: {self.device} {msg}")
-            for out in self.decoder.feed(msg, now_ms):
-                self._emit(out)
+            self.message(msg, now_ms)
+
+    def message(self, msg, now_ms):
+        """One decoded message, wherever it came from -- a frame off the wire, or a HID report the
+        host read itself. Both arrive here in the same shape, so one decoder serves both."""
+        if self.raw:
+            self.log(f"hudfeed: {self.device} {msg}")
+        for out in self.decoder.feed(msg, now_ms):
+            self._emit(out)
 
     def idle(self, now_ms):
         """Nothing arrived: let a dead key past its window out as the plain key it was."""
@@ -507,6 +521,147 @@ class BleReader:
             stream.close()
 
 
+KEYBOARD_REPORT_ID = 1
+
+
+def split_report(report, report_id=KEYBOARD_REPORT_ID):
+    """-> (modifiers byte, key usages) of a keyboard report, or None for other reports.
+
+    ZMK's keyboard report is [id, modifiers, reserved, key...]; pass report_id=None for firmware
+    without report ids. The pair is exactly what a `keys` frame carries, which is the point: both
+    sources hand the decoder the same thing."""
+    data = bytes(report)
+    if report_id is not None:
+        if len(data) < 3 or data[0] != report_id:
+            return None
+        return data[1], data[3:]
+    if len(data) < 2:
+        return None
+    return data[0], data[2:]
+
+
+class HidKeysReader:
+    """Reads what is being typed from the keyboard's HID reports, with hidapi.
+
+    The firmware can send this itself (CONFIG_ZMK_LAYER_SIGNAL_KEYS), and for a while that is how
+    the strip was fed. It drops keys. The snapshot is deferred to a k_work item so it is read after
+    ZMK has updated the report, and k_work_submit on an already-queued item does nothing -- so a
+    press and its release arriving before the work runs collapse into one snapshot, and the key was
+    never held as far as the host can tell. Measured against `positions`, which are sent
+    synchronously and so survive: seven presses on the board, two on the strip.
+
+    Reading the report here cannot lose a transition, because ZMK already sends one report per
+    change; there is nothing to coalesce. This is how the HUD worked before the signal moved to its
+    own channel, and it is the part of that design that was never at fault. What was at fault was
+    the layer signal travelling *inside* the report as reserved usages, which Linux delivers as
+    KEY_UNKNOWN; that is what the CDC-ACM channel fixed, and layers and positions still arrive
+    there. Only the typed characters come from here.
+
+    The cost is the permission the other channel does not need: Input Monitoring on macOS, and a
+    keyboard Karabiner-Elements modifies is seized by it and gives us no reports."""
+
+    def __init__(self, emit, vid=ZMK_VID, pid=ZMK_PID, name=None, report_id=KEYBOARD_REPORT_ID,
+                 rescan=2.0, log=print, raw=False, dead_key_ms=DEAD_KEY_MS):
+        self.emit, self.vid, self.pid, self.name = emit, vid, pid, name
+        self.report_id, self.rescan, self.log = report_id, rescan, log
+        self.raw = raw  # debug only: dumps every report, i.e. also what you type
+        self.dead_key_ms = dead_key_ms
+        self._open = {}
+        self._streams = set()
+        self._stop = threading.Event()
+
+    def start(self):
+        threading.Thread(target=self._scan_loop, name="hid-scan", daemon=True).start()
+
+    def stop(self):
+        self._stop.set()
+
+    def resync(self):
+        pass  # holds no layer state: it only ever reports keys
+
+    def _paths(self, hid):
+        seen, out = set(), []
+        for info in hid.enumerate(self.vid, self.pid):
+            if self.name and self.name.lower() not in (info.get("product_string") or "").lower():
+                continue
+            path = info["path"]
+            if path in seen:  # macOS lists one entry per usage pair, all with the same path
+                continue
+            seen.add(path)
+            out.append((path, info.get("product_string") or "?"))
+        return out
+
+    def _scan_loop(self):
+        try:
+            import hid
+        except ImportError:
+            self.log("hudfeed: hidapi is required for the typed-keys strip (make venv, or pip "
+                     "install hidapi; macOS also brew install hidapi). Pass --no-hid-keys to run "
+                     "without it: layers and positions still work.")
+            return
+        if sys.platform == "darwin":
+            # Since hidapi 0.12 the macOS backend opens devices exclusively (seizing them), which
+            # macOS refuses for a keyboard it is using: "open failed" although IOHIDDeviceOpen
+            # succeeds. The Python binding does not expose the switch, but the extension exports
+            # the C symbol, so flip it through ctypes before the first open.
+            try:
+                import ctypes
+                ctypes.CDLL(hid.__file__).hid_darwin_set_open_exclusive(0)
+            except (OSError, AttributeError) as e:
+                self.log(f"hudfeed: could not disable hidapi's exclusive open ({e}); opens may fail")
+        while not self._stop.is_set():
+            for path, product in self._paths(hid):
+                if path in self._open:
+                    continue
+                try:
+                    dev = hid.device()
+                    dev.open_path(path)
+                except (OSError, IOError, ValueError) as e:
+                    self.log(f"hudfeed: cannot read what is typed on {product}: {e}")
+                    if sys.platform == "darwin":
+                        self.log("hudfeed: on macOS this means the app running Python (your terminal, or "
+                                 "Hammerspoon) lacks Input Monitoring (System Settings > Privacy & Security), "
+                                 "or Karabiner-Elements modifies this keyboard's events and has seized it "
+                                 "(Karabiner > Devices: untick it)")
+                    else:
+                        self.log("hudfeed: check hidraw permissions (contrib/udev/60-zmk-layer-hud.rules)")
+                    self._open[path] = None  # do not retry every scan
+                    continue
+                self._open[path] = dev
+                self.log(f"hudfeed: reading what is typed on {product}")
+                threading.Thread(target=self._read_loop, args=(path, dev, product),
+                                 name="hid-read", daemon=True).start()
+            self._stop.wait(self.rescan)
+
+    def _read_loop(self, path, dev, product):
+        import time
+        stream = Stream(self.emit, product, self.dead_key_ms, self.raw, self.log)
+        self._streams.add(stream)
+        try:
+            while not self._stop.is_set():
+                # Wake early while a dead key waits, so it is released on time when no letter follows.
+                report = dev.read(64, timeout_ms=self.dead_key_ms if stream.decoder.pending else 500)
+                now = int(time.monotonic() * 1000)
+                if not report:
+                    stream.idle(now)
+                    continue
+                parts = split_report(report, self.report_id)
+                if parts is None:
+                    continue  # a consumer or mouse report: not ours
+                stream.message({"kind": "keys", "mods": parts[0], "keys": list(parts[1])}, now)
+        except (OSError, IOError, ValueError) as e:
+            if not self._stop.is_set():
+                self.log(f"hudfeed: {product} gone ({e})")
+        finally:
+            try:
+                dev.close()
+            except Exception:
+                pass
+            self._open.pop(path, None)
+            self._streams.discard(stream)
+            stream.close()
+
+
 # ---------- keymap (config + keymap-drawer YAML, live reload) ----------
 
 class KeymapWatcher(threading.Thread):
@@ -550,7 +705,7 @@ class Feed:
     Used in-process by host/macos/panel.py and by main() below for the WebSocket/stdout modes."""
 
     def __init__(self, emit, log=print, config=None, keys=True, keymap=True, vid=None, pid=None, name=None,
-                 port=None, ble=True, ble_address=None, raw=False):
+                 port=None, ble=True, ble_address=None, hid_keys=True, raw=False):
         self.emit, self.log = emit, log
         self.source, cfg = None, {}
         try:
@@ -583,6 +738,16 @@ class Feed:
             self.ble = BleReader(self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms,
                                  address=ble_address if ble_address is not None else bt.get("address"),
                                  name=kb_name)
+        # What is typed comes from the keyboard's HID reports, not from the signal channel: one
+        # report per change, so nothing can be coalesced away. The firmware can send it too
+        # (CONFIG_ZMK_LAYER_SIGNAL_KEYS), and if both are on the decoders simply agree.
+        self.hid = None
+        if keys and hid_keys:
+            self.hid = HidKeysReader(
+                self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms,
+                vid=vid if vid is not None else int(kb.get('vid', ZMK_VID)),
+                pid=pid if pid is not None else int(kb.get('pid', ZMK_PID)),
+                name=kb_name)
         self.watcher = KeymapWatcher(self.source, self._emit, log) if (self.source is not None and keymap) else None
 
     def _emit(self, msg):
@@ -610,6 +775,8 @@ class Feed:
         self.reader.start()
         if self.ble:
             self.ble.start()
+        if self.hid:
+            self.hid.start()
         return self
 
     def resync(self):
@@ -624,6 +791,8 @@ class Feed:
         self.reader.stop()
         if self.ble:
             self.ble.stop()
+        if self.hid:
+            self.hid.stop()
 
 
 # ---------- outputs ----------
@@ -709,6 +878,9 @@ def parse_args(argv=None):
     p.add_argument("--no-ble", action="store_true", help="do not look for BLE keyboards")
     p.add_argument("--ble-address", help="address of the BLE keyboard (default: config `ble.address`); needed where a "
                                          "connected keyboard no longer advertises")
+    p.add_argument("--no-hid-keys", action="store_true",
+                   help="do not read the keyboard's HID reports for the typed-keys strip "
+                        "(needs Input Monitoring on macOS); layers and positions are unaffected")
     p.add_argument("--no-inject", action="store_true",
                    help=f"refuse messages sent in by a WebSocket client ({', '.join(INJECTABLE)}), "
                         "which host/hudpoke.py uses to drive the page without a keyboard")
@@ -726,7 +898,8 @@ async def main(args):
 
     feed = Feed(emit, log=hub.log, config=args.config, keys=not args.no_keys, keymap=not args.no_keymap,
                 vid=args.vid, pid=args.pid, name=args.name, port=args.serial,
-                ble=not args.no_ble, ble_address=args.ble_address, raw=args.raw).start()
+                ble=not args.no_ble, ble_address=args.ble_address,
+                hid_keys=not args.no_hid_keys, raw=args.raw).start()
     hub.on_inject = feed.resync
 
     if not args.no_ws:
