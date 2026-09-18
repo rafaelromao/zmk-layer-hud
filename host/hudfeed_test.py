@@ -11,7 +11,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
-from hudfeed import SignalDecoder, Stream  # noqa: E402
+from hudfeed import INJECTABLE, SignalDecoder, Stream  # noqa: E402
 
 
 def K(mods=0, *keys):
@@ -205,12 +205,40 @@ class StreamTest(unittest.TestCase):
         self.stream.feed(b"*** Booting Zephyr OS ***\r\n", 0)
         self.assertEqual((self.out, self.stream.frames_seen), ([], 0))
 
+    def test_resync_makes_the_next_heartbeat_speak_again(self):
+        # Something else drew on the pages, so the keyboard agreeing with itself is no longer
+        # silence worth keeping: the next heartbeat has to restate what is really held.
+        layers = self.frame(signal_frame.KIND_LAYERS, [0x02, 0x00, 0x00, 0x00])
+        self.stream.feed(layers, 0)
+        self.stream.feed(layers, 1)                      # heartbeat, unchanged
+        self.assertEqual(len(self.out), 1)
+        self.stream.resync()
+        self.stream.feed(layers, 2)                      # same heartbeat, now a change again
+        self.assertEqual([m["ids"] for m in self.out], [[1], [1]])
+
     def test_closing_releases_what_was_held(self):
         self.stream.feed(self.frame(signal_frame.KIND_KEYS, [0x00, 0x04]), 0)
         self.out.clear()
         self.stream.close()
         self.assertEqual([(m["type"], m["chars"], m["device"]) for m in self.out],
                          [("keyUp", "a", "Diamond")])
+
+
+class Injectable(unittest.TestCase):
+    """What a WebSocket client is allowed to put on the pages (host/hudpoke.py)."""
+
+    def test_the_cosmetic_kinds_are_accepted(self):
+        for kind in ("layers", "press", "release", "key", "device"):
+            self.assertIn(kind, INJECTABLE)
+
+    def test_the_keymap_is_not(self):
+        # It is large, it is built from files the feed already watches, and a page given a wrong
+        # one has no way back to the right one.
+        self.assertNotIn("keymap", INJECTABLE)
+
+    def test_close_is_not_injectable_either(self):
+        # It is handled before this list and exits the process; it must not be broadcast.
+        self.assertNotIn("close", INJECTABLE)
 
 
 if __name__ == "__main__":

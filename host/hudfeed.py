@@ -255,6 +255,15 @@ class Stream:
             self._emit(key_message(k, False, flags))
         self.decoder.held = []
 
+    def resync(self):
+        """Forget what the pages were last told about the layers.
+
+        Only sent on a change, so once something else has drawn on the pages -- an injected
+        message, a showcase take -- the keyboard agreeing with itself is silence, and the wrong
+        picture stays up. Forgetting makes the next heartbeat a change again, so the truth is
+        back within heartbeat-ms without anyone having to touch a layer key."""
+        self.decoder.layers = None
+
     def _emit(self, msg):
         msg["device"] = self.device  # which keyboard this came from
         self.emit(msg)
@@ -276,6 +285,7 @@ class SerialReader:
         self.rescan, self.log, self.raw = rescan, log, raw
         self.dead_key_ms, self.probe_s = dead_key_ms, probe_s
         self._open = {}   # device path -> serial.Serial
+        self._streams = set()  # live Streams, for resync()
         self._quiet = {}  # device path -> why we stopped reading it
         self._stop = threading.Event()
 
@@ -284,6 +294,10 @@ class SerialReader:
 
     def stop(self):
         self._stop.set()
+
+    def resync(self):
+        for stream in list(self._streams):
+            stream.resync()
 
     def _ports(self, list_ports):
         """(device path, product name) of every port that could be the keyboard."""
@@ -344,6 +358,7 @@ class SerialReader:
     def _read_loop(self, path, dev, product):
         import time
         stream = Stream(self.emit, product, self.dead_key_ms, self.raw, self.log)
+        self._streams.add(stream)
         announced = False
         started = time.monotonic()
         try:
@@ -379,6 +394,7 @@ class SerialReader:
             except Exception:
                 pass
             self._open.pop(path, None)
+            self._streams.discard(stream)
             stream.close()
 
 
@@ -397,6 +413,7 @@ class BleReader:
                  dead_key_ms=DEAD_KEY_MS):
         self.emit, self.address, self.name = emit, address, name
         self.rescan, self.log, self.raw, self.dead_key_ms = rescan, log, raw, dead_key_ms
+        self._streams = set()  # live Streams, for resync()
         self._stop = threading.Event()
 
     def start(self):
@@ -404,6 +421,10 @@ class BleReader:
 
     def stop(self):
         self._stop.set()
+
+    def resync(self):
+        for stream in list(self._streams):
+            stream.resync()
 
     def _run(self):
         try:
@@ -461,6 +482,7 @@ class BleReader:
     async def _session(self, BleakClient, device):
         name = device.name or str(device.address)
         stream = Stream(self.emit, name, self.dead_key_ms, self.raw, self.log)
+        self._streams.add(stream)
         gone = asyncio.Event()
         try:
             async with BleakClient(device, disconnected_callback=lambda _: gone.set()) as client:
@@ -481,6 +503,7 @@ class BleReader:
         except Exception as e:
             self.log(f"hudfeed: {name} over BLE ({type(e).__name__}: {e})")
         finally:
+            self._streams.discard(stream)
             stream.close()
 
 
@@ -589,6 +612,12 @@ class Feed:
             self.ble.start()
         return self
 
+    def resync(self):
+        """Draw the keyboard's real state again, after something else drew over it."""
+        self.reader.resync()
+        if self.ble:
+            self.ble.resync()
+
     def stop(self):
         if self.watcher:
             self.watcher.stop()
@@ -599,12 +628,29 @@ class Feed:
 
 # ---------- outputs ----------
 
+# Kinds a client may send in, to be fanned out as if the keyboard had produced them. The keymap is
+# not among them: it is large, it is built from files this already watches, and a page fed a wrong
+# one has no way back to the right one.
+INJECTABLE = ("layers", "press", "release", "key", "device")
+
+
 class Hub:
     """Fans messages out to WebSocket clients and/or stdout; replays the cached keymap and layer
-    set to new clients so a page that (re)connects is right immediately."""
+    set to new clients so a page that (re)connects is right immediately.
 
-    def __init__(self, stdout=False, debug=False):
-        self.stdout, self.debug = stdout, debug
+    Messages also travel the other way. A client may send any of INJECTABLE and it is broadcast to
+    every client exactly as a keyboard's would be, which is how the page is exercised without one --
+    host/hudpoke.py is the sender. Only the keyboard can produce a real frame, so this tests the
+    page and not the firmware, and it is worth being clear about which of the two you just proved.
+
+    On by default, because the inbound channel already existed and already carried something
+    stronger: {"kind":"close"} from any local client calls os._exit(). Cosmetic messages are less
+    power than that, not more. --no-inject closes it."""
+
+    def __init__(self, stdout=False, debug=False, inject=True, on_inject=None):
+        self.stdout, self.debug, self.inject = stdout, debug, inject
+        # Called after an injected message, so the keyboard's own state can be re-asserted.
+        self.on_inject = on_inject
         self.clients = set()
         self.cache = {}  # kind -> last message, for "keymap" and "layers"
 
@@ -630,11 +676,19 @@ class Hub:
                 await ws.send(json.dumps(msg, ensure_ascii=False))
             async for raw in ws:
                 try:
-                    if json.loads(raw).get("kind") == "close":
-                        self.log("hudfeed: close requested by the page")
-                        os._exit(0)
+                    msg = json.loads(raw)
                 except json.JSONDecodeError:
-                    pass
+                    continue
+                if not isinstance(msg, dict):
+                    continue
+                kind = msg.get("kind")
+                if kind == "close":
+                    self.log("hudfeed: close requested by the page")
+                    os._exit(0)
+                if self.inject and kind in INJECTABLE:
+                    await self.send(msg)
+                    if self.on_inject is not None:
+                        self.on_inject()
         finally:
             self.clients.discard(ws)
 
@@ -655,21 +709,25 @@ def parse_args(argv=None):
     p.add_argument("--no-ble", action="store_true", help="do not look for BLE keyboards")
     p.add_argument("--ble-address", help="address of the BLE keyboard (default: config `ble.address`); needed where a "
                                          "connected keyboard no longer advertises")
+    p.add_argument("--no-inject", action="store_true",
+                   help=f"refuse messages sent in by a WebSocket client ({', '.join(INJECTABLE)}), "
+                        "which host/hudpoke.py uses to drive the page without a keyboard")
     p.add_argument("--debug", action="store_true", help="log layer messages to stderr")
     p.add_argument("--raw", action="store_true", help="DEBUG ONLY: log every decoded frame (includes your typing)")
     return p.parse_args(argv)
 
 
 async def main(args):
-    hub = Hub(stdout=args.stdout, debug=args.debug)
+    hub = Hub(stdout=args.stdout, debug=args.debug, inject=not args.no_inject)
     loop = asyncio.get_running_loop()
 
     def emit(msg):
         loop.call_soon_threadsafe(lambda: asyncio.ensure_future(hub.send(msg)))
 
-    Feed(emit, log=hub.log, config=args.config, keys=not args.no_keys, keymap=not args.no_keymap,
-         vid=args.vid, pid=args.pid, name=args.name, port=args.serial,
-         ble=not args.no_ble, ble_address=args.ble_address, raw=args.raw).start()
+    feed = Feed(emit, log=hub.log, config=args.config, keys=not args.no_keys, keymap=not args.no_keymap,
+                vid=args.vid, pid=args.pid, name=args.name, port=args.serial,
+                ble=not args.no_ble, ble_address=args.ble_address, raw=args.raw).start()
+    hub.on_inject = feed.resync
 
     if not args.no_ws:
         try:
