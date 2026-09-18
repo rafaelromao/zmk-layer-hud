@@ -31,10 +31,8 @@
 
 #include <zmk/event_manager.h>
 #include <zmk/events/endpoint_changed.h>
-#include <zmk/events/keycode_state_changed.h>
 #include <zmk/events/layer_state_changed.h>
 #include <zmk/events/position_state_changed.h>
-#include <zmk/hid.h>
 #include <zmk/keymap.h>
 
 #include "signal_frame.h"
@@ -75,33 +73,6 @@ static void work_cb(struct k_work *work_item) {
     }
 }
 
-#if IS_ENABLED(CONFIG_ZMK_LAYER_SIGNAL_KEYS)
-
-/* Keys go out as a snapshot read back from the report ZMK has just built, not
- * as the event's own keycode. Two reasons: it is byte for byte what the host
- * used to read off the wire, so its layout tables and dead-key composition keep
- * working untouched; and it already accounts for implicit modifiers, sticky
- * keys and everything else that reaches the report without being a plain press.
- *
- * Via a work item because the report is only correct once hid_listener has
- * handled the same event, and listener order within one dispatch is link order.
- * Submitting defers us past the whole dispatch. It is safe on the system queue
- * -- this encodes and hands the frame to a transport that cannot block. */
-static void keys_work_cb(struct k_work *work_item) {
-    ARG_UNUSED(work_item);
-
-    const struct zmk_hid_keyboard_report *report = zmk_hid_get_keyboard_report();
-    uint8_t frame[ZLS_FRAME_MAX_LEN];
-    size_t len = zls_frame_keys(report->body.modifiers, report->body.keys,
-                                ARRAY_SIZE(report->body.keys), frame, sizeof(frame));
-
-    zls_transport_send(frame, len);
-}
-
-static K_WORK_DEFINE(keys_work, keys_work_cb);
-
-#endif /* CONFIG_ZMK_LAYER_SIGNAL_KEYS */
-
 static int layer_signal_listener(const zmk_event_t *eh) {
     if (as_zmk_layer_state_changed(eh) != NULL || as_zmk_endpoint_changed(eh) != NULL) {
         /* Coalesce: a host-driven vim mode switch or a layer-tap roll moves
@@ -124,11 +95,6 @@ static int layer_signal_listener(const zmk_event_t *eh) {
     }
 #endif
 
-#if IS_ENABLED(CONFIG_ZMK_LAYER_SIGNAL_KEYS)
-    if (as_zmk_keycode_state_changed(eh) != NULL) {
-        k_work_submit(&keys_work);
-    }
-#endif
 
     return ZMK_EV_EVENT_BUBBLE;
 }
@@ -138,9 +104,6 @@ ZMK_SUBSCRIPTION(layer_signal, zmk_layer_state_changed);
 ZMK_SUBSCRIPTION(layer_signal, zmk_endpoint_changed);
 #if POSITIONS
 ZMK_SUBSCRIPTION(layer_signal, zmk_position_state_changed);
-#endif
-#if IS_ENABLED(CONFIG_ZMK_LAYER_SIGNAL_KEYS)
-ZMK_SUBSCRIPTION(layer_signal, zmk_keycode_state_changed);
 #endif
 
 static int layer_signal_init(void) {

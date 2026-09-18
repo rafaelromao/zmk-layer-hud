@@ -29,11 +29,12 @@ KEY_UNKNOWN, so every layer change reached the compositor as a phantom key press
 modifiers were held — Gui held plus a layer change was enough to switch workspace.
 
 What is typed comes from the keyboard's HID reports, read here with hidapi, which is how this
-always worked and was never the thing at fault. The firmware can send the same snapshot itself
-(CONFIG_ZMK_LAYER_SIGNAL_KEYS), but it defers reading the report to a work item so it runs after
-ZMK has updated it, and k_work_submit on an already-queued item does nothing: a press and its
-release arriving together collapse into one snapshot and the key is never seen held. ZMK already
-emits one report per change, so reading them here cannot lose a transition.
+always worked and was never the thing at fault. The firmware used to be able to send the same
+snapshot, and it dropped keys: the report can only be read after ZMK has updated it, so the read
+was deferred to a k_work item, and k_work_submit on an already-queued item does nothing -- a press
+and its release arriving together collapsed into one snapshot and the key was never seen held. That
+path is gone from the module. ZMK already emits one report per change, so reading them here cannot
+lose a transition.
 
 Access: reading the reports needs Input Monitoring on macOS for whatever runs this (your terminal,
 or Hammerspoon), and a keyboard Karabiner-Elements modifies is seized by it; Linux needs hidraw
@@ -543,12 +544,14 @@ def split_report(report, report_id=KEYBOARD_REPORT_ID):
 class HidKeysReader:
     """Reads what is being typed from the keyboard's HID reports, with hidapi.
 
-    The firmware can send this itself (CONFIG_ZMK_LAYER_SIGNAL_KEYS), and for a while that is how
-    the strip was fed. It drops keys. The snapshot is deferred to a k_work item so it is read after
-    ZMK has updated the report, and k_work_submit on an already-queued item does nothing -- so a
-    press and its release arriving before the work runs collapse into one snapshot, and the key was
-    never held as far as the host can tell. Measured against `positions`, which are sent
-    synchronously and so survive: seven presses on the board, two on the strip.
+    The firmware sent this itself for a while, and it dropped keys. The snapshot could only be
+    read after ZMK had updated the report, so it went through a k_work item, and k_work_submit on
+    an already-queued item does nothing -- a press and its release arriving before the work ran
+    collapsed into one snapshot, and the key was never held as far as the host could tell. Measured
+    against `positions`, which go out synchronously and so survived: seven presses on the board, two
+    on the strip. The module no longer has that path, and a keyboard still running a build that does
+    is simply not listened to -- the frame kind is gone from the wire format, so those frames decode
+    as unknown and are skipped.
 
     Reading the report here cannot lose a transition, because ZMK already sends one report per
     change; there is nothing to coalesce. This is how the HUD worked before the signal moved to its
@@ -739,8 +742,7 @@ class Feed:
                                  address=ble_address if ble_address is not None else bt.get("address"),
                                  name=kb_name)
         # What is typed comes from the keyboard's HID reports, not from the signal channel: one
-        # report per change, so nothing can be coalesced away. The firmware can send it too
-        # (CONFIG_ZMK_LAYER_SIGNAL_KEYS), and if both are on the decoders simply agree.
+        # report per change, so nothing can be coalesced away.
         self.hid = None
         if keys and hid_keys:
             self.hid = HidKeysReader(

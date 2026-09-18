@@ -16,16 +16,21 @@ framing so this decoder handles both without caring which it is reading.
 
 from __future__ import annotations
 
+UNKNOWN = {}  # a well-formed frame of a kind this version does not know
+
 MAGIC = b"\xa5\x5a"
 VERSION = 1
 
 KIND_LAYERS = 0x01
 KIND_POSITION = 0x02
-KIND_KEYS = 0x03
 
 HEADER_LEN = 5  # magic0 magic1 version kind len
-KEYS_MAX = 16
-MAX_PAYLOAD = 1 + KEYS_MAX  # the keys frame is the widest: modifiers, then usages
+# The largest payload this will treat as a well-formed frame. Four bytes carry the layers bitmap
+# and the firmware encodes no more than eight, but a keyboard still running a build that sent what
+# was being typed emits up to seventeen. Keeping the bound above that lets such a frame be
+# recognised, found unknown, and skipped by its length -- rather than resynchronised through a byte
+# at a time, which is how one old firmware's frames become the next one's corruption.
+MAX_PAYLOAD = 17
 MAX_LEN = HEADER_LEN + MAX_PAYLOAD + 1
 
 
@@ -67,12 +72,11 @@ def decode_frame(frame):
     if kind == KIND_POSITION and payload_len == 2:
         return {"kind": "press" if payload[1] else "release", "pos": payload[0]}
 
-    if kind == KIND_KEYS and payload_len >= 1:
-        # The same (modifiers, usages) split_report() used to return, so the
-        # decoder above this can diff snapshots exactly as it always did.
-        return {"kind": "keys", "mods": payload[0], "keys": list(payload[1:])}
 
-    return None
+    # Valid, but nothing this version knows -- an older firmware's keys frame, or a kind added
+    # later. Distinct from None, which means the bytes are not a frame at all: the caller skips
+    # this one by its length instead of resynchronising through it a byte at a time.
+    return UNKNOWN
 
 
 class Decoder:
@@ -113,10 +117,11 @@ class Decoder:
 
             msg = decode_frame(self._buf[:total])
             if msg is None:
-                del self._buf[:1]  # bad crc or unknown shape: resync
+                del self._buf[:1]  # not a frame after all: resync a byte at a time
                 continue
 
             del self._buf[:total]
-            out.append(msg)
+            if msg is not UNKNOWN:
+                out.append(msg)
 
         return out

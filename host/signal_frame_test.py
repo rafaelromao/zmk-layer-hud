@@ -8,9 +8,9 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from signal_frame import (  # noqa: E402
-    KIND_KEYS,
     KIND_LAYERS,
     KIND_POSITION,
+    UNKNOWN,
     Decoder,
     crc8,
     decode_frame,
@@ -56,17 +56,12 @@ class DecodeFrame(unittest.TestCase):
         bad[6] ^= 0x01
         self.assertIsNone(decode_frame(bytes(bad)))
 
-    def test_keys_snapshot(self):
-        # Shift held, A and B down -- what split_report() used to return.
-        self.assertEqual(decode_frame(frame(KIND_KEYS, [0x02, 0x04, 0x05])),
-                         {"kind": "keys", "mods": 0x02, "keys": [0x04, 0x05]})
-
-    def test_keys_with_nothing_held(self):
-        self.assertEqual(decode_frame(frame(KIND_KEYS, [0x00])),
-                         {"kind": "keys", "mods": 0, "keys": []})
-
-    def test_unknown_kind_is_skipped_not_raised(self):
-        self.assertIsNone(decode_frame(frame(0x7F, [1, 2])))
+    def test_a_kind_this_version_does_not_know(self):
+        # Valid frame, unrecognised kind -- an older firmware's keys snapshot, say. It decodes to
+        # UNKNOWN rather than None, so the stream skips it by its length instead of resynchronising
+        # through its payload.
+        self.assertIs(decode_frame(frame(0x7F, [1, 2])), UNKNOWN)
+        self.assertIs(decode_frame(frame(0x03, [0x02, 0x04, 0x05])), UNKNOWN)
 
     def test_wrong_version_is_rejected(self):
         bad = bytearray(LAYERS_1_22)
@@ -108,9 +103,16 @@ class StreamDecoder(unittest.TestCase):
         self.assertEqual(d.feed(b"\x00" * 4096), [])
         self.assertEqual(d.feed(LAYERS_1_22), [{"kind": "layers", "ids": [0, 22]}])
 
+    def test_an_unknown_frame_is_skipped_whole(self):
+        # The one that matters in practice: a keyboard still sending keys frames must not stop the
+        # layers frame after it from being read.
+        d = Decoder()
+        stale = frame(0x03, [0x02] + list(range(16)))
+        self.assertEqual(d.feed(stale + LAYERS_1_22), [{"kind": "layers", "ids": [0, 22]}])
+
     def test_payload_length_beyond_the_maximum_resyncs(self):
         d = Decoder()
-        self.assertEqual(d.feed(b"\xa5\x5a\x01\x01\xff" + LAYERS_1_22),
+        self.assertEqual(d.feed(b"\xa5\x5a\x01\x01\xfe" + LAYERS_1_22),
                          [{"kind": "layers", "ids": [0, 22]}])
 
 

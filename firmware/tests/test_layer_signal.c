@@ -187,28 +187,6 @@ static void test_frames(void) {
     check(corrupt[n - 1] != zls_crc8(corrupt + 2, n - 3), "a flipped payload bit fails the crc");
 
     check(zls_frame_layers(0, buf, 9) == 0, "encoding refuses a buffer that cannot hold the frame");
-
-    /* Keys: the same (modifiers, usages) the host used to read off the report,
-     * so its layout tables and dead-key composition carry over untouched. */
-    uint8_t big[ZLS_FRAME_MAX_LEN];
-    const uint8_t report[6] = {0x04, 0x05, 0, 0, 0, 0};
-    n = zls_frame_keys(0x02, report, sizeof(report), big, sizeof(big));
-    check(n == ZLS_FRAME_HEADER_LEN + 3 + 1 && big[3] == ZLS_KIND_KEYS && big[4] == 3 &&
-              big[5] == 0x02 && big[6] == 0x04 && big[7] == 0x05,
-          "keys frame carries modifiers then the held usages");
-
-    const uint8_t empty[6] = {0, 0, 0, 0, 0, 0};
-    n = zls_frame_keys(0, empty, sizeof(empty), big, sizeof(big));
-    check(n == ZLS_FRAME_HEADER_LEN + 1 + 1 && big[4] == 1 && big[5] == 0,
-          "empty slots are dropped, so nothing held is a one byte payload");
-
-    uint8_t many[32];
-    for (int i = 0; i < 32; i++) {
-        many[i] = (uint8_t)(0x04 + i);
-    }
-    n = zls_frame_keys(0, many, sizeof(many), big, sizeof(big));
-    check(n == ZLS_FRAME_HEADER_LEN + 1 + ZLS_KEYS_MAX + 1,
-          "more usages than fit lose the tail, not the frame");
 }
 
 int main(void) {

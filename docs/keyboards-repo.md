@@ -44,10 +44,14 @@ A general-purpose feature file (the signal is not vim-related), included from
 
 What it does: on every layer change (any mechanism: `&mo`, `&lt`, `&sl`, `&tog`, the auto-layers,
 `vim_sync` applying a host code), the module sends the active-layer bitmap as a small framed
-message on its own channel. With `positions;` each key press and release goes out the same way,
-and `CONFIG_ZMK_LAYER_SIGNAL_KEYS` (default y) adds a snapshot of the keyboard report so the HUD
-can show what you type. `hid_indicator_code_listener` (zmk-vim-mode) and this module do not
-interact: one listens to LED reports, the other to layer changes.
+message on its own channel. With `positions;` each key press and release goes out the same way.
+
+What you type is not sent here. The HUD host reads the keyboard's HID reports for that: ZMK emits
+one per change, so none can be lost, where a snapshot from the firmware had to be deferred to a
+work queue that coalesced presses away.
+
+`hid_indicator_code_listener` (zmk-vim-mode) and this module do not interact: one listens to LED
+reports, the other to layer changes.
 
 Earlier versions smuggled all this through the keyboard report as the reserved keyboard-page
 usages 0xA5–0xDF, on the premise that no OS maps them. Linux does — `hid_keyboard[]` fills every

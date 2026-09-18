@@ -194,11 +194,18 @@ class StreamTest(unittest.TestCase):
         self.assertEqual(self.stream.frames_seen, 1)
 
     def test_a_frame_split_across_two_reads(self):
-        data = self.frame(signal_frame.KIND_KEYS, [0x00, 0x04])
+        data = self.frame(signal_frame.KIND_LAYERS, [0x04, 0x00, 0x00, 0x00])
         self.stream.feed(data[:3], 0)
         self.assertEqual(self.out, [])
         self.stream.feed(data[3:], 1)
-        self.assertEqual([(m["type"], m["chars"]) for m in self.out], [("keyDown", "a")])
+        self.assertEqual([m["ids"] for m in self.out], [[2]])
+
+    def test_a_keys_message_from_the_hid_reader_takes_the_same_path(self):
+        # The carrier does not carry these -- HidKeysReader reads them off the keyboard's HID
+        # reports and hands them straight to message(), which is why one decoder serves both.
+        self.stream.message({"kind": "keys", "mods": 0, "keys": [0x04]}, 0)
+        self.assertEqual([(m["type"], m["chars"], m["device"]) for m in self.out],
+                         [("keyDown", "a", "Diamond")])
 
     def test_noise_produces_nothing_and_counts_nothing(self):
         # What a port that is not ours looks like; the reader gives up on it after probe_s.
@@ -217,7 +224,7 @@ class StreamTest(unittest.TestCase):
         self.assertEqual([m["ids"] for m in self.out], [[1], [1]])
 
     def test_closing_releases_what_was_held(self):
-        self.stream.feed(self.frame(signal_frame.KIND_KEYS, [0x00, 0x04]), 0)
+        self.stream.message({"kind": "keys", "mods": 0, "keys": [0x04]}, 0)
         self.out.clear()
         self.stream.close()
         self.assertEqual([(m["type"], m["chars"], m["device"]) for m in self.out],

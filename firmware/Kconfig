@@ -57,28 +57,6 @@ config ZMK_LAYER_SIGNAL_UART_TX_BUF
       costs nothing a keystroke can feel. Raise it if you enable positions on a
       board that types faster than the host drains.
 
-config ZMK_LAYER_SIGNAL_KEYS
-    bool "Also send what is being typed"
-    default n
-    help
-      On every keycode change, send a snapshot of the keyboard report's
-      modifier byte and held usages.
-
-      Default n, and the host does not need it: hudfeed.py reads the keyboard's
-      HID reports for the typed-keys strip, which is how it always worked.
-
-      It drops keys, which is why. The snapshot has to be read after ZMK has
-      updated the report, so it is deferred to a k_work item -- and
-      k_work_submit on an already-queued item does nothing, so a press and its
-      release arriving before the work runs collapse into one snapshot and the
-      key was never held as far as the host can see. Measured against
-      `positions`, which go out synchronously and so survive: seven presses
-      lighting the board, two reaching the strip.
-
-      Turn it on only where reading the HID reports is not possible and losing
-      keystrokes is acceptable. It costs a work submission per keystroke on the
-      system work queue, which is the queue ZMK scans the matrix on.
-
 config ZMK_LAYER_SIGNAL_GATT
     bool "Carry the signal as notifications on our own GATT service"
     default y

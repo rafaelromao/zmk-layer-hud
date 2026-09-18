@@ -66,10 +66,13 @@ keymap's binding list, which is also the drawer's key order for a YAML from `key
 curated drawer file with a different key order lists each drawer key's position in the host config
 (`positions:`).
 
-Two Kconfig switches matter and both default on: `CONFIG_ZMK_LAYER_SIGNAL_KEYS` sends a snapshot of
-the keyboard report, which is what lets the HUD show the characters you type; turn it off and you
-keep layers and positions, and the keyboard stops describing your keystrokes on a second interface.
-`CONFIG_ZMK_LAYER_SIGNAL_GATT` carries the signal over BLE.
+`CONFIG_ZMK_LAYER_SIGNAL_GATT` carries the signal over BLE and defaults on.
+
+The module does not send what you type. It could once, and it lost keystrokes doing it: the
+keyboard report can only be read after ZMK has updated it, so the read was deferred to a work item
+that coalesces, and a key pressed and released between two runs was never reported held. The HUD
+host reads the HID reports instead — ZMK emits one per change, so nothing can be lost — at the cost
+of Input Monitoring on macOS.
 
 ## 3. Give the signal its carrier
 
@@ -123,14 +126,18 @@ change workspace. `wev` and `libinput debug-events` show it plainly once you kno
 nothing shows it at all if you do not: applications receive a keycode with no keysym and mostly
 ignore it.
 
-Writing into the report had a second cost that was easier to miss. A report is sent by the same
-thread that runs the keymap, so two sends per key press sat in front of the next press — long
-enough, at a 30 ms combo term, to push the second key of a combo outside the window and stop combos
-firing at all.
+A second charge was laid against writing into the report, and it turned out to be false, which is
+worth recording because it was believed for a while and acted on twice: combos stopped firing at
+about the same time, and the blocking sends were blamed. The cause was in the keymap — eight combos
+listed the base layer without the alt-OS layer beside it, and OS detection had just started raising
+that layer by itself, so whether a combo worked depended on which host was plugged in. Removing
+`positions;` appeared to fix it only because the layer happened to differ across those flashes.
 
-So the signal has a transport of its own, where a frame is a frame and nothing can be read as a
-key: a CDC-ACM interface over USB, notifications on the module's own GATT service over BLE. Both
-drop rather than block, so the module cannot delay a keystroke however slow the host is. The
+So the case for a transport of its own rests on the phantom key events alone, which is enough. A
+frame is a frame there and nothing can be read as a key: a CDC-ACM interface over USB,
+notifications on the module's own GATT service over BLE. Both drop rather than block, so the module
+cannot delay a keystroke however slow the host is — a property worth keeping on its own merits,
+whatever it was once thought to have fixed. The
 listener still works off ZMK's layer-state events, so every way of switching layers is reported and
 behaviours that watch key presses — auto-layer, adaptive keys, caps word, sticky keys — never see
 anything.
