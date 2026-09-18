@@ -8,7 +8,7 @@ PYTHON ?= $(shell command -v /opt/homebrew/bin/python3 || command -v python3.13 
 # The HUD page's own suite runs hud.js under node with a small DOM shim; no npm, no package.json.
 NODE ?= $(shell command -v node)
 
-.PHONY: all test test-firmware test-host test-hud fixture keymap venv clean help
+.PHONY: all install install-Darwin install-Linux install-config test test-firmware test-host test-hud fixture keymap venv clean help
 
 all: test
 
@@ -25,6 +25,64 @@ venv: ## create .venv with pyserial, hidapi, keymap-drawer, websockets, bleak (+
 	.venv/bin/python3 -m pip install --quiet --upgrade pip
 	.venv/bin/python3 -m pip install --quiet $(VENV_PKGS)
 	@echo "venv ready: .venv/bin/python3 ($$(.venv/bin/python3 --version)); the host scripts pick it up"
+
+# Everything a machine needs before ./start.sh works, in the order it needs it. Split by host
+# because only the system packages and the permissions differ; the venv is the same either way.
+# SUDO= skips the privileged steps and prints them instead, for a machine where you would rather
+# run them yourself.
+SUDO ?= sudo
+
+install: ## set this machine up for the HUD (system packages, venv, config, permissions)
+	@$(MAKE) --no-print-directory install-$(UNAME_S)
+	@$(MAKE) --no-print-directory install-config
+	@echo
+	@echo "ready: ./start.sh"
+
+install-Darwin:
+	@echo "==> hidapi (the Python wheel links against it)"
+	@command -v brew >/dev/null || { echo "install.sh needs Homebrew for hidapi: https://brew.sh" >&2; exit 1; }
+	brew list hidapi >/dev/null 2>&1 || brew install hidapi
+	@$(MAKE) --no-print-directory venv
+	@echo
+	@echo "==> one thing this cannot do for you"
+	@echo "    The typed-keys strip reads the keyboard's HID reports, which macOS gates behind"
+	@echo "    Input Monitoring. Grant it to whatever you start the HUD from — your terminal, or"
+	@echo "    Hammerspoon — in System Settings > Privacy & Security > Input Monitoring, and"
+	@echo "    untick the keyboard under Karabiner-Elements > Devices if you run it, because a"
+	@echo "    keyboard whose events it modifies is seized and we get no reports."
+	@echo "    Layers and positions need none of that; --no-hid-keys drops the strip and the grant."
+
+install-Linux:
+	@echo "==> system packages (Arch/Omarchy; other distros: the same four by their own names)"
+	@if command -v pacman >/dev/null; then \
+	  echo "    $(SUDO) pacman -S --needed python-gobject webkit2gtk-4.1 gtk-layer-shell"; \
+	  [ -n "$(SUDO)" ] && $(SUDO) pacman -S --needed python-gobject webkit2gtk-4.1 gtk-layer-shell || true; \
+	else \
+	  echo "    no pacman here: install python-gobject, webkit2gtk-4.1 and gtk-layer-shell yourself"; \
+	fi
+	@$(MAKE) --no-print-directory venv
+	@echo
+	@echo "==> udev rule: the tty for the layer signal, hidraw for the typed-keys strip"
+	@echo "    $(SUDO) cp contrib/udev/60-zmk-layer-hud.rules /etc/udev/rules.d/"
+	@if [ -n "$(SUDO)" ]; then \
+	  $(SUDO) cp contrib/udev/60-zmk-layer-hud.rules /etc/udev/rules.d/ && \
+	  $(SUDO) udevadm control --reload-rules && $(SUDO) udevadm trigger && \
+	  echo "    installed; replug the keyboard (a rule applies to nodes created after it)"; \
+	else \
+	  echo "    $(SUDO) udevadm control --reload-rules && $(SUDO) udevadm trigger"; \
+	fi
+
+install-config:
+	@echo
+	@echo "==> config"
+	@if [ -f "$(HOME)/.config/zmk-layer-hud/config.yaml" ]; then \
+	  echo "    $(HOME)/.config/zmk-layer-hud/config.yaml is yours already, left alone"; \
+	else \
+	  mkdir -p "$(HOME)/.config/zmk-layer-hud" && \
+	  cp config/example.yaml "$(HOME)/.config/zmk-layer-hud/config.yaml" && \
+	  echo "    wrote $(HOME)/.config/zmk-layer-hud/config.yaml from config/example.yaml"; \
+	  echo "    set \`keymap:\` to your keymap-drawer YAML, then: $(PYTHON) host/keymap.py"; \
+	fi
 
 test: test-firmware test-host test-hud ## run every test suite
 
