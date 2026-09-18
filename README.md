@@ -19,8 +19,8 @@ between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`
 
 ## Quick start
 
-**Keyboard.** Add the module to your ZMK config and one node to your keymap, set
-`CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE=12` on the central/dongle, build, flash. Step by step in
+**Keyboard.** Add the module to your ZMK config and one node to your keymap, build with the
+`layer-hud-usb-uart` snippet (`west build … -S layer-hud-usb-uart`), flash. Step by step in
 [docs/zmk-setup.md](docs/zmk-setup.md).
 
 ```c
@@ -102,7 +102,7 @@ with its default and a comment:
 | `positions` | ZMK position of each drawer key when the YAML's key order is not the keymap's |
 | `combo_term_ms` | the keymap's combo timeout, so simultaneous presses form a combo |
 | `combos` | layer coverage for a combo the import gets wrong |
-| `keyboard`, `signal` | pick one of several ZMK boards; non-default announcement usages |
+| `keyboard`, `serial`, `ble` | pick one of several ZMK boards; name its serial port; its BLE address |
 | `title` | corner text (default: the name of the keyboard that is typing) |
 | `hud`, `feed` | every size and timing: panel width and opacity, flash and pill durations, combo slack, dead-key window … |
 | `extras` | inference hints, used only with firmware that reports no positions |
@@ -183,8 +183,26 @@ make keymap      # check the configured keymap-drawer YAML converts
 make fixture     # rebuild the committed test keymap from the configured one
 ```
 
-`firmware/src/layer_signal_policy.h` is the single definition of the wire format; the C and
-Python tests share its vectors.
+`firmware/src/signal_frame.h` is the single definition of the wire format; the C and Python tests
+share its vectors, so a change on one side that is not mirrored on the other fails both.
+(`layer_signal_policy.h` beside it is the superseded encoding, from when the signal travelled
+inside the keyboard report. Nothing in `firmware/src/` includes it.)
+
+`host/hudpoke.py` drives the pages without a keyboard, by sending hudfeed the messages one would
+have produced:
+
+```bash
+host/hudpoke.py --type "hello, world"   # type it, character by character
+host/hudpoke.py --layers 2,22           # set the active layer ids
+host/hudpoke.py --press 13              # light the key at ZMK position 13
+host/hudpoke.py --stdin < script.jsonl  # raw messages, one JSON per line
+```
+
+Characters go through `host/uskeys.py`, so an accent arrives as the one composed keyDown the real
+decoder would have emitted. This exercises the page — layout, legends, strip, combo grouping — and
+nothing below it: the keyboard, the firmware and the wire format are never involved, so a HUD that
+looks right under hudpoke can still be fed wrong by a real keyboard. The feed accepts these because
+its WebSocket already accepted `{"kind":"close"}` from any local client; `--no-inject` closes it.
 
 `make test-hud` sweeps the page: every key on every layer it can be shown on, every combo on every
 layer it is declared on and in four press orders, every press that must draw no combo, and the
