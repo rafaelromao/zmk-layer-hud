@@ -55,10 +55,16 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
   transition: background 90ms ease, transform 90ms ease, box-shadow 90ms ease;
 }
 /* Legends scale with the key height (--kh, set by hud.js from the drawn layout). */
-.key .tap { font-size: calc(var(--kh, 62px) * 0.32); font-weight: 600; line-height: 1; max-width: 100%; overflow: hidden; white-space: nowrap; }
+/* line-height leaves room for a mark above a capital. At 1 the line box is exactly the font size,
+   which for a typical mono face is shorter than its own ascent+descent: the half-leading goes
+   negative and `overflow: hidden` then trims whatever sticks out. A cedilla hangs below the
+   baseline and survives; the acute on Á, the tilde on Ã and the circumflex on Ô sit above cap
+   height and were cut off entirely, so a Portuguese alpha layer drew as bare A, A, O. Measured
+   worst case is 1.095 of the font size; 1.25 leaves margin and still fits the grid row. */
+.key .tap { font-size: calc(var(--kh, 62px) * 0.32); font-weight: 600; line-height: 1.25; max-width: 100%; overflow: hidden; white-space: nowrap; }
 .key .tap.long { font-size: calc(var(--kh, 62px) * 0.19); }
 .key .tap.mid { font-size: calc(var(--kh, 62px) * 0.24); }
-.key .hold, .key .shifted { font-size: calc(var(--kh, 62px) * 0.145); color: #5b6172; line-height: 1; max-width: 100%; overflow: hidden; white-space: nowrap; }
+.key .hold, .key .shifted { font-size: calc(var(--kh, 62px) * 0.145); color: #5b6172; line-height: 1.25; max-width: 100%; overflow: hidden; white-space: nowrap; }
 .key.trans { background: #e6e8ef; }
 .key.trans .tap, .key.trans .hold, .key.trans .shifted { color: var(--key-dim); }
 .key.blank { background: #dcdfe8; border-style: dashed; }
