@@ -643,6 +643,12 @@ class HidKeysReader:
                 said = note
                 if note:
                     self.log(note)
+            # A path that failed is not retried every scan, but it is forgotten once the device
+            # goes away, so replugging after fixing a permission is enough -- the same bargain
+            # SerialReader makes with _quiet.
+            live = {p for p, _ in paths}
+            for gone in [p for p, d in self._open.items() if d is None and p not in live]:
+                del self._open[gone]
             for path, product in paths:
                 if path in self._open:
                     continue
@@ -650,14 +656,21 @@ class HidKeysReader:
                     dev = hid.device()
                     dev.open_path(path)
                 except (OSError, IOError, ValueError) as e:
-                    self.log(f"hudfeed: cannot read what is typed on {product}: {e}")
+                    # The node, not just the product name: hidapi reports an unreadable device with
+                    # an empty name, so "cannot read what is typed on ?" named nothing anyone could
+                    # go and look at, and "open failed" is all the reason it ever gives.
+                    where = path.decode("utf-8", "replace") if isinstance(path, bytes) else str(path)
+                    self.log(f"hudfeed: cannot read what is typed on {product} ({where}): {e}")
                     if sys.platform == "darwin":
                         self.log("hudfeed: on macOS this means the app running Python (your terminal, or "
                                  "Hammerspoon) lacks Input Monitoring (System Settings > Privacy & Security), "
                                  "or Karabiner-Elements modifies this keyboard's events and has seized it "
                                  "(Karabiner > Devices: untick it)")
                     else:
-                        self.log("hudfeed: check hidraw permissions (contrib/udev/60-zmk-layer-hud.rules)")
+                        self.log(f"hudfeed: hidapi opens it read-write, so read alone is not enough. "
+                                 f"`ls -l {where}` and `getfacl {where}` say who may; the uaccess tag in "
+                                 "contrib/udev/60-zmk-layer-hud.rules grants it to the active seat's user "
+                                 "and applies to nodes created after the rule, so replug the keyboard")
                     self._open[path] = None  # do not retry every scan
                     continue
                 self._open[path] = dev
