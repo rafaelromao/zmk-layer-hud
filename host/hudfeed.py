@@ -541,6 +541,27 @@ def split_report(report, report_id=KEYBOARD_REPORT_ID):
     return data[0], data[2:]
 
 
+def hid_scan_note(found, vid, pid, name=None, platform=None):
+    """The line to log for a scan that turned up `found` keyboards, or None when it found one.
+
+    The quietest failure in the feed, and the reason it is worth a function of its own.
+    _scan_loop iterates the paths it finds, so a scan that finds none runs no body at all: it logs
+    nothing and tries again every rescan, for ever. Both of the things these reports carry -- the
+    typed-keys strip, and the shift flag the board draws its capitals from -- come from here and
+    from nowhere else, so that silence reads on screen as two unrelated features quietly not
+    working, with nothing anywhere to say why.
+    """
+    if found:
+        return None
+    which = f"{vid:04x}:{pid:04x}" + (f" whose product name contains {name!r}" if name else "")
+    note = (f"hudfeed: no HID keyboard {which} to read what is typed from; the typed-keys strip "
+            "and the board's shift capitalisation stay off until there is one")
+    if (platform or sys.platform) != "darwin":
+        note += (" (install contrib/udev/60-zmk-layer-hud.rules, then replug the keyboard -- a "
+                 "rule only applies to nodes created after it)")
+    return note
+
+
 class HidKeysReader:
     """Reads what is being typed from the keyboard's HID reports, with hidapi.
 
@@ -612,8 +633,17 @@ class HidKeysReader:
                 ctypes.CDLL(hid.__file__).hid_darwin_set_open_exclusive(0)
             except (OSError, AttributeError) as e:
                 self.log(f"hudfeed: could not disable hidapi's exclusive open ({e}); opens may fail")
+        said = None
         while not self._stop.is_set():
-            for path, product in self._paths(hid):
+            paths = self._paths(hid)
+            # Said on each transition rather than every rescan, the way the BLE reader does it: a
+            # keyboard that is not there is no more absent for being mentioned every two seconds.
+            note = hid_scan_note(len(paths), self.vid, self.pid, self.name)
+            if note != said:
+                said = note
+                if note:
+                    self.log(note)
+            for path, product in paths:
                 if path in self._open:
                     continue
                 try:

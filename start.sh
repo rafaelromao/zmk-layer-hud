@@ -32,9 +32,53 @@ case "$CMD" in
     if pgrep -f "$HERE/host/hudfeed.py" >/dev/null 2>&1; then echo "feed:  running"; else echo "feed:  stopped (the macOS panel runs it in-process)"; fi
     # What it last managed to open says more than whether it is alive: the layer signal and the
     # typed-keys strip are separate grants and either can be the one that is missing.
-    if [ -f "$RUN/hudfeed.log" ]; then
-      echo "--- last from hudfeed.log ---"
-      grep -E "reading|cannot open|cannot read|is not the layer signal" "$RUN/hudfeed.log" | tail -5 || true
+    # Both logs, because where the feed writes depends on the host: the Linux panel starts it as a
+    # subprocess with its own hudfeed.log, the macOS one runs it in-process and it lands in
+    # panel.log with everything else.
+    feed_log() { cat "$RUN/hudfeed.log" "$RUN/panel.log" 2>/dev/null; }
+    # The last line matching, or empty. Emptiness is the answer rather than the exit status: a
+    # `grep | tail` pipeline reports tail's success whether or not grep matched anything, unless
+    # pipefail happens to be on, and a verdict is too easy to get backwards to rest on that.
+    feed_last() { feed_log | grep "$1" | tail -1 || true; }
+    if [ -f "$RUN/hudfeed.log" ] || [ -f "$RUN/panel.log" ]; then
+      # One line for the HID half, because both of the things it carries -- the typed-keys strip
+      # and the shift flag the board draws its capitals from -- come from there and from nowhere
+      # else, and neither of them looks like a permission when it goes. The state that matters
+      # most is an absence, a scan that found no keyboard, so this asks after each state in turn
+      # instead of printing whichever lines happen to be there.
+      typed=$(feed_last "reading what is typed on")
+      refused=$(feed_last "cannot read what is typed on")
+      absent=$(feed_last "no HID keyboard")
+      if [ -n "$typed" ]; then
+        echo "keys:  reading ${typed##*reading what is typed on }"
+      elif [ -n "$refused" ]; then
+        echo "keys:  refused -- ${refused##*cannot read what is typed on }"
+      elif [ -n "$absent" ]; then
+        echo "keys:  ${absent##*hudfeed: }"
+      else
+        echo "keys:  nothing said yet (--no-hid-keys, or the feed has not scanned)"
+      fi
+      echo "--- last from the feed ---"
+      feed_log | grep -E "reading|cannot open|cannot read|is not the layer signal|no HID keyboard" | tail -5 || true
+    fi
+    # The Linux panel draws three layer-shell surfaces, and an empty typed-keys strip is entirely
+    # transparent: "mapped with nothing on it" and "never mapped" look the same on screen. Only
+    # the compositor can tell them apart, so ask it.
+    if [ "$(uname -s)" = Linux ] && command -v hyprctl >/dev/null 2>&1; then
+      echo "--- layer-shell surfaces ---"
+      hyprctl layers -j | python3 -c '
+import json, sys
+want = ("zmkhud-layer", "zmkhud-reserved", "zmkhud-keys")
+found = {}
+for monitor in json.load(sys.stdin).values():
+    for entries in (monitor.get("levels") or {}).values():
+        for e in entries:
+            if e.get("namespace") in want:
+                found[e["namespace"]] = e
+for ns in want:
+    e = found.get(ns)
+    print("  %-16s %s" % (ns, "%d,%d %dx%d" % (e["x"], e["y"], e["w"], e["h"]) if e else "missing"))
+' || true
     fi
     ;;
   start|stop)

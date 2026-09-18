@@ -11,7 +11,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
-from hudfeed import INJECTABLE, SignalDecoder, Stream, split_report  # noqa: E402
+from hudfeed import INJECTABLE, SignalDecoder, Stream, hid_scan_note, split_report  # noqa: E402
 
 
 def K(mods=0, *keys):
@@ -257,6 +257,29 @@ class Reports(unittest.TestCase):
         d = SignalDecoder()
         msgs = d.feed({"kind": "keys", "mods": mods, "keys": list(keys)})
         self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["A"])
+
+
+class ScanNote(unittest.TestCase):
+    """A HID scan that finds no keyboard used to say nothing at all, which is how one missing
+    permission came to look like two unrelated features being broken."""
+
+    def test_a_keyboard_was_found(self):
+        self.assertIsNone(hid_scan_note(1, 0x1D50, 0x615E))
+
+    def test_none_found_names_what_it_looked_for(self):
+        note = hid_scan_note(0, 0x1D50, 0x615E, platform="darwin")
+        self.assertIn("1d50:615e", note)
+        # Both features the reports feed are named, because neither of them is obviously HID.
+        self.assertIn("strip", note)
+        self.assertIn("capitalisation", note)
+
+    def test_the_name_filter_is_named_too(self):
+        # A filter that matches nothing looks exactly like a keyboard that is not plugged in.
+        self.assertIn("'Diamond'", hid_scan_note(0, 0x1D50, 0x615E, name="Diamond", platform="linux"))
+
+    def test_only_linux_is_told_about_the_udev_rule(self):
+        self.assertIn("udev", hid_scan_note(0, 0x1D50, 0x615E, platform="linux"))
+        self.assertNotIn("udev", hid_scan_note(0, 0x1D50, 0x615E, platform="darwin"))
 
 
 class Injectable(unittest.TestCase):
