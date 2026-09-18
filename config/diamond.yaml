@@ -85,10 +85,27 @@ positions: [1, 2, 3, 6, 7, 8, 10, 11, 12, 13, 16, 17, 18, 19, 21, 22, 23, 26, 27
 # Anything written here wins over what was imported, for a combo the import gets wrong. Name it by
 # its key positions, in any order, and by `tap:` as well when several combos share them. An entry
 # matching nothing is an error rather than a no-op, so these go stale loudly.
-# combos:
 #   - positions: [11, 12, 22]
 #     tap: "↵"
 #     layers: [alpha1, vim]
+#
+# The meh and hyper chords are here because the import puts them on `shortcuts` alone, where
+# combos.dtsi declares them on ALPHA1_LAYERS and VIM_LAYERS_BASE. Three combos share each of these
+# position sets -- the numbers and symbols layers put their own on the same keys -- so `tap:` says
+# which. Without this the pill never appears on the base layer, where they are most used.
+combos:
+  - positions: [7, 8, 9]
+    tap: "meh ␣"
+    layers: [alpha1, shifted1, vim]
+  - positions: [14, 15, 16]
+    tap: "hyper ␣"
+    layers: [alpha1, shifted1, vim]
+  - positions: [10, 11, 12]
+    tap: "meh ⏎"
+    layers: [alpha1, shifted1, vim]
+  - positions: [17, 18, 19]
+    tap: "hyper ⏎"
+    layers: [alpha1, shifted1, vim]
 
 # Inference hints, used only for a key the keyboard's live stack cannot explain (synthesized
 # keys in a rehearsal, legends the drawer spells differently).

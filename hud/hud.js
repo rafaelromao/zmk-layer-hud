@@ -207,6 +207,13 @@
       }
     }
     const heldMods = Object.keys(state.mods).filter(f => state.mods[f]).map(f => MOD_GLYPH[f]).filter(Boolean);
+    // Shift is a modifier, not a layer, so nothing else on the board would show it. Caps word and
+    // caps line have their own drawn layer and arrive as a layer change; plain shift, held or
+    // tapped as a one-shot, only ever reaches us as this flag. A single lowercase letter is the
+    // whole of what it changes: \p{Ll} so the accented alphabets shift too (á -> Á), and a glyph,
+    // a word or a symbol is left alone, because shift does not make ␣ or `nav` into anything.
+    const shifting = !!state.mods.shift;
+    const shiftLegend = t => (shifting && typeof t === "string" && /^\p{Ll}$/u.test(t)) ? t.toUpperCase() : t;
     state.data.layout.keys.forEach((k, idx) => {
       const e = state.keyEls[idx];
       const r = resolveBinding(idx, layers);
@@ -228,7 +235,7 @@
       // A held modifier lights the keys that carry it: home-row mods (hold legend) and the
       // modifier keys themselves, including a sticky shift that was tapped (tap legend).
       if (heldMods.length && heldMods.some(g => (r.key.hold && r.key.hold.includes(g)) || r.key.tap === g)) e.classList.add("mod");
-      fit(e.querySelector(".tap"), r.key.tap || "", r.key.glyph);
+      fit(e.querySelector(".tap"), shiftLegend(r.key.tap) || "", r.key.glyph);
       setLegend(e.querySelector(".hold"), r.key.hold, r.key.glyph_hold);
       setLegend(e.querySelector(".shifted"), r.key.shifted, r.key.glyph_shifted);
     });
