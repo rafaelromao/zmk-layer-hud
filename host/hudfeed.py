@@ -55,6 +55,7 @@ ZMK_VID, ZMK_PID = 0x1D50, 0x615E
 # The module's own GATT service; the characteristic notifies one frame at a time.
 BLE_SERVICE_UUID = "d1f0a7c2-5b47-4a1e-9c3d-6f2a8e10b7c1"
 BLE_SIGNAL_UUID = "d1f0a7c3-5b47-4a1e-9c3d-6f2a8e10b7c1"
+BLE_RETRY_MAX_S = 60  # longest gap between scans while none of them find anything
 
 # HID modifier byte bits -> HUD flag names (left/right collapse).
 MOD_BITS = {0x01: "ctrl", 0x02: "shift", 0x04: "alt", 0x08: "cmd", 0x10: "ctrl", 0x20: "shift", 0x40: "alt", 0x80: "cmd"}
@@ -427,22 +428,34 @@ class BleReader:
 
     async def _loop(self):
         from bleak import BleakClient
-        said_nothing_found = False
+        # A machine with no Bluetooth fails every scan, for ever. Saying so once
+        # is useful; saying so every rescan fills run/hudfeed.log with one line
+        # every couple of seconds and buries everything worth reading. So each
+        # message is held until what it says changes, and a run of failures
+        # backs off -- a keyboard that is not there is not found any sooner for
+        # being asked more often.
+        said = None
+        wait = self.rescan
         while not self._stop.is_set():
             try:
                 device = await self._find()
+                failed = None
             except Exception as e:
-                self.log(f"hudfeed: BLE scan failed ({type(e).__name__}: {e})")
+                failed = f"BLE scan failed ({type(e).__name__}: {e})"
                 device = None
+
             if device is None:
-                if not said_nothing_found:
-                    said_nothing_found = True
-                    self.log("hudfeed: no BLE keyboard advertising the layer signal yet"
-                             + ("" if self.address else "; a connected keyboard does not advertise, "
-                                                        "so it may need `ble: {address: ...}`"))
-                await asyncio.sleep(self.rescan)
+                note = failed or ("no BLE keyboard advertising the layer signal yet" + (
+                    "" if self.address else "; a connected keyboard does not advertise, "
+                                            "so it may need `ble: {address: ...}`"))
+                if note != said:
+                    said = note
+                    self.log(f"hudfeed: {note}")
+                await asyncio.sleep(wait)
+                wait = min(wait * 2, BLE_RETRY_MAX_S)
                 continue
-            said_nothing_found = False
+
+            said, wait = None, self.rescan
             await self._session(BleakClient, device)
 
     async def _session(self, BleakClient, device):
