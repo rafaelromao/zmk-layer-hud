@@ -62,6 +62,12 @@ make venv && .venv/bin/pip install websockets
 sudo cp contrib/udev/60-zmk-layer-hud.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
 ```
 
+On Linux the HUD is an overlay: it floats over whatever is on screen and takes no room from it.
+`./start.sh --reserve` instead gives it an exclusive zone on the right, so the compositor tiles
+windows beside the HUD rather than under it. That is for recording — where an editor must never
+end up behind the board — and it rearranges every window on that output, which is more than a HUD
+should do merely because it was started.
+
 ### Try it without a keyboard
 
 `examples/` holds two keymaps from keymap-drawer's own examples with ready configs: a 3x5+3

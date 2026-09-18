@@ -2,9 +2,13 @@
 """zmk-layer-hud Linux host: transparent Wayland (layer-shell) surfaces, layer HUD with the
 typed-keys strip below it, plus hudfeed.py for layers, keys and daemon decisions.
 
-The right rail reserves space beside tiled editors; the typed-keys strip is an
-overlay stacked under the HUD and reserves nothing, leaving the bottom of the
-screen for editors."""
+By default the HUD is an overlay: it floats over whatever is on screen and takes no room from
+it, which is what a HUD should do to a session you are working in.
+
+ZMKHUD_RESERVE=1 (./start.sh --reserve) adds a full-height rail on the right with an exclusive
+zone, so the compositor tiles windows beside the HUD instead of under it. That is for recording
+-- the zmk-vim-mode showcase needs the editor never to sit behind the board -- and it rearranges
+every window on the output, which is too much for a HUD to do because it was started."""
 
 import json
 import os
@@ -33,6 +37,8 @@ KEYS_W, KEYS_H = 598, 96
 KEYS_GAP = 8
 INSET = 8
 WINDOWS = []
+# Taking room from every window on the output is a recording decision, not a HUD one.
+RESERVE = os.environ.get("ZMKHUD_RESERVE") == "1"
 
 
 def surface(monitor, page, namespace, width, height):
@@ -102,35 +108,41 @@ def main():
     GtkLayerShell.set_margin(hud, GtkLayerShell.Edge.TOP, top)
     GtkLayerShell.set_margin(hud, GtkLayerShell.Edge.RIGHT, right)
 
-    # A full-height right rail gives layer-shell an unambiguous exclusive edge.
-    # Keep the visible HUD separate so it retains its compact top-right geometry.
-    rail = Gtk.Window()
-    rail.set_app_paintable(True)
-    rail.set_visual(rail.get_screen().get_rgba_visual())
-    rail_width = 598 + right + INSET
-    rail.set_size_request(rail_width, 1)
-    GtkLayerShell.init_for_window(rail)
-    GtkLayerShell.set_namespace(rail, "zmkhud-reserved")
-    GtkLayerShell.set_monitor(rail, monitor)
-    GtkLayerShell.set_layer(rail, GtkLayerShell.Layer.TOP)
-    GtkLayerShell.set_keyboard_mode(rail, GtkLayerShell.KeyboardMode.NONE)
-    for edge in (GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM, GtkLayerShell.Edge.RIGHT):
-        GtkLayerShell.set_anchor(rail, edge, True)
-    GtkLayerShell.set_exclusive_zone(rail, rail_width)
-    WINDOWS.append(rail)
+    # Only when asked: a full-height right rail gives layer-shell an unambiguous exclusive edge,
+    # and the compositor tiles everything else beside it. The visible HUD stays a separate surface
+    # so it keeps its compact top-right geometry either way.
+    rail, rail_width = None, 0
+    if RESERVE:
+        rail = Gtk.Window()
+        rail.set_app_paintable(True)
+        rail.set_visual(rail.get_screen().get_rgba_visual())
+        rail_width = 598 + right + INSET
+        rail.set_size_request(rail_width, 1)
+        GtkLayerShell.init_for_window(rail)
+        GtkLayerShell.set_namespace(rail, "zmkhud-reserved")
+        GtkLayerShell.set_monitor(rail, monitor)
+        GtkLayerShell.set_layer(rail, GtkLayerShell.Layer.TOP)
+        GtkLayerShell.set_keyboard_mode(rail, GtkLayerShell.KeyboardMode.NONE)
+        for edge in (GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM, GtkLayerShell.Edge.RIGHT):
+            GtkLayerShell.set_anchor(rail, edge, True)
+        GtkLayerShell.set_exclusive_zone(rail, rail_width)
+        WINDOWS.append(rail)
 
-    # Typed-keys strip sits below the HUD in the right rail; it reserves no space
-    # of its own so the bottom of the screen is reclaimed for editors.
+    # Typed-keys strip sits below the HUD; it reserves no space of its own either way, so the
+    # bottom of the screen is never taken from the windows under it.
     keys = surface(monitor, "keys.html", "zmkhud-keys", KEYS_W, KEYS_H)
     GtkLayerShell.set_anchor(keys, GtkLayerShell.Edge.TOP, True)
     GtkLayerShell.set_anchor(keys, GtkLayerShell.Edge.RIGHT, True)
     GtkLayerShell.set_exclusive_zone(keys, -1)
     GtkLayerShell.set_margin(keys, GtkLayerShell.Edge.TOP, top + HUD_H + KEYS_GAP)
     GtkLayerShell.set_margin(keys, GtkLayerShell.Edge.RIGHT, right)
-    rail.show_all()
+    if rail is not None:
+        rail.show_all()
     keys.show_all()
     hud.show_all()
-    print(f"Panel on {info['name']}: reserved right {rail_width}px, bottom reclaimed; "
+    room = f"reserved right {rail_width}px, bottom reclaimed" if rail is not None else \
+        "overlay, nothing reserved (--reserve tiles windows beside it)"
+    print(f"Panel on {info['name']}: {room}; "
           f"HUD inset top={top}, right={right}; keys below HUD", flush=True)
 
     def quit_host(*_):

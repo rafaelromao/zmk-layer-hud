@@ -5,6 +5,10 @@
 #   ./start.sh stop
 #   ./start.sh log      follow the panel and feed logs
 #   ./start.sh status   is it running, and what is it reading
+#   ./start.sh --reserve   (Linux) tile windows beside the HUD instead of under it
+#
+# --reserve is for recording: it gives the HUD an exclusive zone, so the compositor moves every
+# window on that output out of its way. Without it the HUD is an overlay and takes no room.
 #
 # The work is in host/macos/start.sh and host/linux/hud.sh; this picks one and gives them the
 # same three verbs, because remembering which host spells it `hud.sh` is not worth anyone's time.
@@ -12,7 +16,15 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 RUN="$HERE/run"
-CMD="${1:-start}"
+CMD=start
+export ZMKHUD_RESERVE=0
+for arg in "$@"; do
+  case "$arg" in
+    --reserve)             ZMKHUD_RESERVE=1 ;;
+    start|stop|log|status) CMD="$arg" ;;
+    *) echo "usage: $0 [start|stop|log|status] [--reserve]" >&2; exit 1 ;;
+  esac
+done
 
 case "$(uname -s)" in
   Darwin) HOST_SCRIPT="$HERE/host/macos/start.sh" ;;
@@ -77,15 +89,18 @@ for monitor in json.load(sys.stdin).values():
                 found[e["namespace"]] = e
 for ns in want:
     e = found.get(ns)
-    print("  %-16s %s" % (ns, "%d,%d %dx%d" % (e["x"], e["y"], e["w"], e["h"]) if e else "missing"))
+    if e:
+        print("  %-16s %d,%d %dx%d" % (ns, e["x"], e["y"], e["w"], e["h"]))
+    elif ns == "zmkhud-reserved":
+        # Absent is the normal state: the HUD only takes room from other windows when asked to.
+        print("  %-16s overlay, nothing reserved (start with --reserve to tile beside it)" % ns)
+    else:
+        print("  %-16s missing" % ns)
 ' || true
     fi
     ;;
   start|stop)
+    # ZMKHUD_RESERVE is exported above, so the host script and the panel both see it.
     exec bash "$HOST_SCRIPT" "$CMD"
-    ;;
-  *)
-    echo "usage: $0 [start|stop|log|status]" >&2
-    exit 1
     ;;
 esac
