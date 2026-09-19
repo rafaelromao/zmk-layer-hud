@@ -1,0 +1,32 @@
+#!/bin/sh
+# zmk-layer-hud — the command line. Everything the HUD does is a verb here; `zmk-layer-hud help`
+# lists them. This file only finds an interpreter and hands off to host/cli.py.
+#
+# It is normally reached through a symlink in ~/.local/bin, so $0 is that symlink and not this
+# file: the tree has to be found by following the link first. macOS has no `readlink -f`, hence
+# the loop.
+set -e
+self=$0
+while [ -L "$self" ]; do
+  link=$(readlink "$self")
+  case $link in
+    /*) self=$link ;;
+    *)  self=$(dirname "$self")/$link ;;
+  esac
+done
+ROOT=$(cd "$(dirname "$self")/.." && pwd)
+export ZMKHUD_ROOT="$ROOT"
+
+# The venv's Python first (keymap-drawer and the rest live there), then whatever is around --
+# `doctor` and `setup` have to run before the venv exists, and they are stdlib-only for that
+# reason. cli.py re-execs itself under the venv for the verbs that need it.
+for py in "${ZMKHUD_PYTHON:-}" "$ROOT/.venv/bin/python3" /opt/homebrew/bin/python3 python3; do
+  [ -n "$py" ] || continue
+  if command -v "$py" >/dev/null 2>&1; then exec "$py" "$ROOT/host/cli.py" "$@"; fi
+done
+
+echo "zmk-layer-hud: no python3 found. The HUD needs Python 3.10 or newer:" >&2
+echo "    macOS   brew install python" >&2
+echo "    Arch    sudo pacman -S python" >&2
+echo "    Debian  sudo apt install python3 python3-venv" >&2
+exit 1

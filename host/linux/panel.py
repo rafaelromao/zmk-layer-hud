@@ -31,7 +31,10 @@ from gi.repository import Gdk, GLib, Gtk, GtkLayerShell, WebKit2
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 PAGES = ROOT / "hud"
-RUN = ROOT / "run"
+# Outside the tree, because `zmk-layer-hud update` replaces the tree wholesale. hud.sh exports
+# ZMKHUD_STATE; the default is repeated so running this directly still works.
+RUN = Path(os.environ.get("ZMKHUD_STATE") or
+           Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "zmk-layer-hud")
 HUD_W, HUD_H = 598, 392
 KEYS_W, KEYS_H = 598, 96
 KEYS_GAP = 8

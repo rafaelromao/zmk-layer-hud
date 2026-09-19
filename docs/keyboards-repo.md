@@ -91,7 +91,7 @@ b rommana cd -n layer-hud-usb-uart      # dongle, if used
 With the keyboard connected, on the machine that will run the HUD:
 
 ```bash
-python3 ~/projects/zmk-layer-hud/host/hudfeed.py --stdout --no-keys --no-ws --debug
+zmk-layer-hud feed --stdout --no-keys --no-ws --debug
 ```
 
 Within 2 s (heartbeat) it prints the current set, e.g. `{"kind":"layers","ids":[]}`. Hold the

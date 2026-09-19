@@ -99,11 +99,10 @@ or push and let the GitHub Actions workflow build it. Flash the central (or dong
 
 ## 5. Verify from the host
 
-With the keyboard connected and the HUD's Python environment set up (`make venv` in
-zmk-layer-hud, see the README):
+With the keyboard connected and the host set up (`zmk-layer-hud setup`, see the README):
 
 ```bash
-.venv/bin/python3 host/hudfeed.py --stdout --no-ws --no-keymap --no-keys --debug
+zmk-layer-hud feed --stdout --no-ws --no-keymap --no-keys --debug
 ```
 
 Within two seconds (heartbeat) it prints `{"kind":"layers","ids":[]}`; holding a layer key

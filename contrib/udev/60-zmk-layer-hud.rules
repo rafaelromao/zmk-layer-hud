@@ -3,8 +3,8 @@
 # bottom). The hidraw rules are zmk-vim-mode's daemon, which still reads HID reports;
 # this file is identical to its 60-zmk-vim-mode.rules, so installing either one is enough.
 #
-# Install:
-#   sudo cp contrib/udev/60-zmk-layer-hud.rules /etc/udev/rules.d/
+# Install: `zmk-layer-hud setup` does this, printing each line and asking first. By hand:
+#   sudo cp 60-zmk-layer-hud.rules /etc/udev/rules.d/
 #   sudo udevadm control --reload-rules && sudo udevadm trigger
 #   (BLE keyboards: re-pair or re-connect so the rule applies to the new nodes)
 #

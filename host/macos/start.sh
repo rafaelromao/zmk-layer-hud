@@ -7,7 +7,10 @@
 set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
-RUN="$ROOT/run"
+# Logs live outside the tree: `zmk-layer-hud update` replaces the tree wholesale, and that cannot
+# be the directory the logs are in. The CLI exports ZMKHUD_STATE; the default is repeated here so
+# running this script directly still works.
+RUN="${ZMKHUD_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/zmk-layer-hud}"
 mkdir -p "$RUN"
 
 if [ -n "${ZMKHUD_PYTHON:-}" ]; then PYTHON="$ZMKHUD_PYTHON"

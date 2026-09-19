@@ -33,40 +33,38 @@ between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`
 };
 ```
 
-**Host.**
+**Host.** One line, and nothing to clone:
 
 ```bash
-git clone https://github.com/rafaelromao/zmk-layer-hud ~/projects/zmk-layer-hud
-cd ~/projects/zmk-layer-hud
-brew install hidapi && make venv           # macOS (Homebrew Python); Linux: see below
-mkdir -p ~/.config/zmk-layer-hud && cp config/example.yaml ~/.config/zmk-layer-hud/config.yaml
+curl -fsSL https://raw.githubusercontent.com/rafaelromao/zmk-layer-hud/main/install.sh | sh
 ```
 
-Edit the one required line of the config, `keymap:`, to point at your keymap-drawer YAML, check
-it converts, and run:
+That puts the tree in `~/.local/share/zmk-layer-hud` and the command in `~/.local/bin`, then hands
+over to `zmk-layer-hud setup` for the machine itself: Homebrew's hidapi on macOS, the GTK and
+layer-shell packages and the udev rule on Linux, the virtualenv, and a config to start from.
+Nothing runs as root without printing the command and asking first, so a piped `curl` never
+quietly acquires it.
+
+Then point the one required line of the config, `keymap:`, at your keymap-drawer YAML, check it
+converts, and start:
 
 ```bash
-.venv/bin/python3 host/keymap.py
-host/macos/start.sh                        # macOS;  Linux: bash host/linux/hud.sh
+zmk-layer-hud config edit
+zmk-layer-hud keymap
+zmk-layer-hud start
 ```
 
 The panel opens on the screen with keyboard focus (drag it anywhere; it remembers). Within two
-seconds the status line disappears and the banner follows your keyboard. `start.sh stop` closes
-it, `start.sh log` tails the logs.
-
-Linux needs the system GTK bindings for the panel and the udev rule for the keyboard's tty:
-
-```bash
-sudo pacman -S python-gobject webkit2gtk-4.1 gtk-layer-shell
-make venv && .venv/bin/pip install websockets
-sudo cp contrib/udev/60-zmk-layer-hud.rules /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
-```
+seconds the status line disappears and the banner follows your keyboard. `zmk-layer-hud stop`
+closes it and `zmk-layer-hud log` tails the logs — and when it does not come up,
+**`zmk-layer-hud doctor`** checks the interpreter, the packages, the config, the permissions and
+the two keyboard channels, and names what is missing.
 
 On Linux the HUD is an overlay: it floats over whatever is on screen and takes no room from it.
-`./start.sh --reserve` instead gives it an exclusive zone on the right, so the compositor tiles
-windows beside the HUD rather than under it. That is for recording — where an editor must never
-end up behind the board — and it rearranges every window on that output, which is more than a HUD
-should do merely because it was started.
+`zmk-layer-hud start --reserve` instead gives it an exclusive zone on the right, so the compositor
+tiles windows beside the HUD rather than under it. That is for recording — where an editor must
+never end up behind the board — and it rearranges every window on that output, which is more than
+a HUD should do merely because it was started.
 
 ### Try it without a keyboard
 
@@ -74,12 +72,13 @@ should do merely because it was started.
 split (`config/example-3x5.yaml`) and a 4x12 ortho board (`config/example-4x12.yaml`).
 
 ```bash
-.venv/bin/python3 host/keymap.py --config config/example-3x5.yaml --dump > hud/keymap.json
-python3 -m http.server -d hud 8765         # open http://localhost:8765/index.html?keymap=keymap.json
+zmk-layer-hud demo                                      # the 3x5 sample
+zmk-layer-hud demo --config config/example-4x12.yaml    # the ortho board
 ```
 
-In the browser console, `hud.setLayers([1])` switches layers, `hud.pressAt(13)` lights a key and
-`hud.releaseAt(13)` lets it go, so the whole page can be exercised without hardware.
+That converts the keymap, serves the pages and opens them. In the browser console,
+`hud.setLayers([1])` switches layers, `hud.pressAt(13)` lights a key and `hud.releaseAt(13)` lets
+it go, so the whole page can be exercised without hardware.
 
 The same calls can be scripted: `&demo=N` renders step N of a JSON demo script (`&script=<url>`,
 or `demo.json` beside the page) and stops there, and `bash docs/make-gif.sh` screenshots every
@@ -94,6 +93,33 @@ That is the animation at the top of this page; `docs/demo-3x5.json` is the defau
 `hud/hud.js`. It needs a Chromium-family browser and cannot run inside a sandbox that denies unix
 sockets. Headless `--screenshot` is uneven across browsers — Brave exits without writing a frame,
 Edge writes one and keeps running — so the script waits for each file and stops the browser itself.
+
+## Commands
+
+Everything is a verb on `zmk-layer-hud`; `zmk-layer-hud <command> --help` explains any one of them.
+
+| | |
+|---|---|
+| `start [--reserve]` | start the HUD. `--reserve` (Linux) tiles windows beside it rather than under it |
+| `stop`, `restart` | stop it; stop and start again |
+| `status` | is it running, and which of the keyboard's two channels is live |
+| `log [-n N] [--no-follow]` | follow the panel and feed logs |
+| `doctor` | check this machine and say what is missing |
+| `setup` | prepare this machine: packages, virtualenv, config, permissions |
+| `update`, `uninstall` | fetch a newer tree; remove the tree and the command |
+| `keymap [--dump]` | check the configured keymap-drawer YAML converts |
+| `import <repo>`, `sync` | take layer ids, key positions and combo layers from a ZMK repo |
+| `config path\|show\|edit\|link` | where the config is, what is in it, and linking one kept in a repo |
+| `demo` | serve the pages against a sample keymap, with no keyboard |
+| `poke`, `feed` | drive the HUD without a keyboard; run the feed alone |
+| `version` | what this is and where it lives |
+
+`setup` prints every privileged step and asks before running it, and `--no-sudo` prints them
+without running any. From a clone, `bin/zmk-layer-hud setup --link` puts the command on your PATH
+pointing at that tree, so a developer runs exactly what everyone else does.
+
+Two flags on `feed` read alike and are not: `--no-keys` sends layers only, while `--no-hid-keys`
+drops just the HID half — the typed-keys strip and the shift flag — and keeps positions.
 
 ## Configuration
 
@@ -116,15 +142,29 @@ with its default and a comment:
 For a YAML produced by `keymap parse`, layer order and key order already match the keymap and
 none of the mapping keys are needed.
 
+Where things live, and what moves them:
+
+| | default | |
+|---|---|---|
+| `ZMKHUD_CONFIG` | `~/.config/zmk-layer-hud/config.yaml` | the config to read |
+| `ZMKHUD_STATE` | `~/.local/state/zmk-layer-hud` | where `panel.log` and `hudfeed.log` go |
+| `ZMKHUD_HOME` | `~/.local/share/zmk-layer-hud` | where the installer puts the tree |
+| `ZMKHUD_PYTHON` | the tree's `.venv/bin/python3` | the interpreter the feed runs under |
+| `ZMKHUD_PORT` | `8766` | the feed's WebSocket port |
+| `ZMKHUD_CACHE` | `~/.cache/zmk-layer-hud/repos` | where `import` keeps a repo given by URL |
+| `ZMKHUD_REF` | `main` | the branch `install.sh` and `update` fetch |
+| `ZMKHUD_RESERVE` | `0` | what `start --reserve` sets |
+| `ZMKHUD_DEBUG` | unset | the macOS panel logs every layer and position message |
+
 ### Keeping the config in this repo
 
-`make install` copies `config/example.yaml` to `~/.config` once and then leaves your config alone,
-which is what you want for a config you edit in place. If instead you keep your config *here* — as
-[config/diamond.yaml](config/diamond.yaml) is kept — link it rather than copying it, so `git pull`
-is the whole of syncing a second machine:
+`zmk-layer-hud setup` copies `config/example.yaml` to `~/.config` once and then leaves your config
+alone, which is what you want for a config you edit in place. If instead you keep your config in a
+repo — as [config/diamond.yaml](config/diamond.yaml) is kept here — link it rather than copying it,
+so `git pull` is the whole of syncing a second machine:
 
 ```sh
-make link-config CONFIG=config/diamond.yaml
+zmk-layer-hud config link config/diamond.yaml
 ```
 
 Both names are linked, and that is not a convenience: `<config>.imported.yaml` is looked for beside
@@ -141,9 +181,9 @@ a drawing choice, drawn once on the diagram that explains it, where the HUD need
 gate. `import` takes them out of the keyboard's own ZMK keymap, once:
 
 ```bash
-./zmk-layer-hud import github.com/you/keyboards          # or a path to a working copy
-./zmk-layer-hud import ~/projects/keyboards --keyboard diamond
-./zmk-layer-hud sync                                     # read it again, and say what changed
+zmk-layer-hud import github.com/you/keyboards          # or a path to a working copy
+zmk-layer-hud import ~/projects/keyboards --keyboard diamond
+zmk-layer-hud sync                                     # read it again, and say what changed
 ```
 
 What it derives goes in a file named after the config (`config.yaml` → `config.imported.yaml`), so
@@ -174,24 +214,23 @@ separate permissions, which is why half the HUD can work while the other half do
 | the keyboard's HID reports | what you type, and the modifier flags | macOS: Input Monitoring. Linux: read on `/dev/hidrawN`, from the same udev rule |
 
 Lose the first and the board stops following you; lose the second and the typed-keys strip stays
-empty and shift stops capitalising the legends, while everything else still works. `./start.sh
-status` says which of the two is live. `--no-hid-keys` drops the second channel deliberately, and
-the permission with it.
+empty and shift stops capitalising the legends, while everything else still works.
+`zmk-layer-hud status` says which of the two is live, and `zmk-layer-hud doctor` says why when one
+is not. `--no-hid-keys` drops the second channel deliberately, and the permission with it.
 
 ### 2. The command line
 
-`./start.sh` runs the HUD: `start`, `stop`, `log` (tail both logs), `status` (what it is reading,
-and on Linux which layer-shell surfaces are mapped), and `--reserve` to tile windows beside it
-rather than under it.
+`zmk-layer-hud` runs the HUD — `start`, `stop`, `status`, `log` and the rest are in
+[Commands](#commands) above.
 
-`host/hudpoke.py` drives it, by sending the feed the messages a keyboard would have produced:
+`zmk-layer-hud poke` drives it, by sending the feed the messages a keyboard would have produced:
 
 ```bash
-host/hudpoke.py --type "hello, world"   # type it, character by character
-host/hudpoke.py --legend 'á'            # one legend, composed as the decoder would
-host/hudpoke.py --layers 2,22           # set the active layer ids ('' clears)
-host/hudpoke.py --press 13              # light the key at ZMK position 13, then release it
-host/hudpoke.py --stdin < script.jsonl  # raw messages, one JSON per line
+zmk-layer-hud poke --type "hello, world"   # type it, character by character
+zmk-layer-hud poke --legend 'á'            # one legend, composed as the decoder would
+zmk-layer-hud poke --layers 2,22           # set the active layer ids ('' clears)
+zmk-layer-hud poke --press 13              # light the key at ZMK position 13, then release it
+zmk-layer-hud poke --stdin < script.jsonl  # raw messages, one JSON per line
 ```
 
 `--gap-ms` and `--hold-ms` set the timing, `-v` echoes what it sends, `--url` points it elsewhere.
@@ -205,10 +244,10 @@ you have just shown.
 
 ### 3. The WebSocket
 
-`host/hudfeed.py` serves `ws://127.0.0.1:8766` (`--port`, or `ZMKHUD_PORT`; `--no-ws` turns it
-off). This is how the Linux panel is fed, and it is what `hudpoke` talks to. Note that the macOS
+`zmk-layer-hud feed` serves `ws://127.0.0.1:8766` (`--port`, or `ZMKHUD_PORT`; `--no-ws` turns it
+off). This is how the Linux panel is fed, and it is what `poke` talks to. Note that the macOS
 panel runs the feed in-process and opens **no socket at all** — to drive that one, use the page's
-own API in a browser, or run `host/hudfeed.py` yourself and point a browser page at it with
+own API in a browser, or run `zmk-layer-hud feed` yourself and point a browser page at it with
 `index.html?ws=ws://127.0.0.1:8766`.
 
 Outbound, every message is one JSON object per frame. A message produced by a keyboard also carries
@@ -278,7 +317,12 @@ a one-shot layer on screen through its key's flash, and shows typed characters i
 
 ## Troubleshooting
 
-- **`cannot open <keyboard>`** (Linux, `run/hudfeed.log`): tty permissions for the signal channel —
+**`zmk-layer-hud doctor` first.** It checks the interpreter and its version, the virtualenv's
+packages, the GTK bindings on Linux, the config and whether its keymap converts, the udev rule,
+whether the command is on your PATH, and what the feed last managed to open — and prints the fix
+beside anything that is wrong. What it cannot see:
+
+- **`cannot open <keyboard>`** (Linux, `~/.local/state/zmk-layer-hud/hudfeed.log`): tty permissions for the signal channel —
   install the udev rule, or add yourself to `dialout`. The serial port itself needs no permission on
   macOS.
 - **`cannot read what is typed on <keyboard>`**: that is the HID half, and it does need one. On
@@ -289,49 +333,20 @@ a one-shot layer on screen through its key's flash, and shows typed characters i
 - **`… is not the layer signal`**: that port answered nothing for eight seconds. The board exposes
   more than one CDC interface and this was another; the feed moves on to the next by itself. If it
   says so about every port, the firmware is not sending — build it with the snippet
-  (`-n layer-hud-usb-uart`), which is what creates the interface and points `zmk,layer-hud-uart` at it.
-- **No `layers` lines**: `hudfeed.py --raw` logs every frame it decodes, so silence there separates
+  (`-S layer-hud-usb-uart`), which is what creates the interface and points `zmk,layer-hud-uart` at it.
+- **No `layers` lines**: `zmk-layer-hud feed --raw` logs every frame it decodes, so silence there separates
   "the keyboard says nothing" from "the host makes nothing of it".
 - **Wrong keys light** on a curated keymap: `positions:` is missing or wrong; the feed logs
   `key position N is not in the keymap's … drawer keys`.
 - **A key stays lit ~5 s**: the firmware reports presses but not releases (rebuild with the
   current module).
-- `ZMKHUD_DEBUG=1 host/macos/start.sh` logs every layer and position message with timestamps.
+- `ZMKHUD_DEBUG=1 zmk-layer-hud start` logs every layer and position message with timestamps.
 
 ## Development
 
-```bash
-make test        # firmware wire policy (C) + host decoder and keymap conversion (Python) + the page (node)
-make test-hud    # just the page; KEYMAP=hud/keymap.json runs it against your own board
-make keymap      # check the configured keymap-drawer YAML converts
-make fixture     # rebuild the committed test keymap from the configured one
-```
-
-`firmware/src/signal_frame.h` is the single definition of the wire format; the C and Python tests
-share its vectors, so a change on one side that is not mirrored on the other fails both.
-(`layer_signal_policy.h` beside it is the superseded encoding, from when the signal travelled
-inside the keyboard report. Nothing in `firmware/src/` includes it.)
-
-`host/hudpoke.py` drives the pages without a keyboard, and the WebSocket it speaks is documented
-under [Three ways in](#three-ways-in) along with the other two.
-
-`make test-hud` sweeps the page: every key on every layer it can be shown on, every combo on every
-layer it is declared on and in four press orders, every press that must draw no combo, and the
-typed-keys strip against what a keyboard would have sent to type each legend. Over 5000 checks in
-about a third of a second. The cases are generated from the keymap message, so pointing it at
-another board sweeps that board.
-
-`hud/tests/dom.js` is a browser small enough to read — the DOM the page touches and a clock the
-test drives by hand — so `hud/hud.js` and `hud/keys.js` run under node exactly as they ship, with
-no npm and nothing to build. A DOM that small can also be wrong, so the same cases run in the real
-page: serve `hud/`, open `index.html?keymap=tests/fixtures/diamond.json`, and
-
-```js
-await import("./tests/browser.js"); await hudBrowserSweep("tests/fixtures/diamond.json")
-```
-
-prints the same count and the same failure digest that `node hud/tests/hud_test.js --signature`
-does. A case the two disagree about is a hole in the shim.
+`make test` runs every suite: the firmware's wire policy in C, the host decoder and keymap
+conversion in Python, and the page under node. [docs/development.md](docs/development.md) covers
+working from a clone, what each suite sweeps, and how the command line is put together.
 
 ## Limits
 
@@ -339,4 +354,4 @@ does. A case the two disagree about is a hole in the shim.
 - Without keymap-drawer installed, only `cols_thumbs_notation` and `ortho_layout` layouts render
   and combos given as `trigger_keys` are skipped.
 - The macOS panel runs the feed in-process and serves no WebSocket, so `hudpoke` cannot reach it;
-  drive that one from the page's own API, or run `host/hudfeed.py` separately.
+  drive that one from the page's own API, or run `zmk-layer-hud feed` separately.
