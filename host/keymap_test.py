@@ -34,6 +34,12 @@ class Keys(unittest.TestCase):
         self.assertEqual(km.norm_key(7)["tap"], "7")
         self.assertEqual(km.norm_key(None)["type"], "blank")
         self.assertEqual(km.norm_key("▽")["type"], "trans")
+        # A key that *draws* ▽ is not a transparent one. GLYPHS renders
+        # mdi:arrow-down-circle-outline as ▽, and taking that for the drawer's transparent marker
+        # sent the media layer's scroll-down key to the layer underneath, where it drew an `f`.
+        drawn = km.norm_key("$$mdi:arrow-down-circle-outline$$")
+        self.assertEqual(drawn["type"], "key")
+        self.assertEqual(drawn["glyph"], "mdi:arrow-down-circle-outline")
         k = km.norm_key({"t": "$$mdi:keyboard-return$$", "h": "Nav", "s": "sticky", "type": "held"})
         self.assertEqual((k["tap"], k["hold"], k["shifted"], k["type"], k["glyph"]), ("↵", "Nav", "sticky", "held", "mdi:keyboard-return"))
         self.assertEqual(km.norm_key({"tap": "x", "hold": "y", "shifted": "z"}), {"tap": "x", "hold": "y", "shifted": "z", "type": "key"})

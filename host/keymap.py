@@ -160,7 +160,12 @@ def norm_key(raw):
     hold, glyph_h = legend(raw.get("h", raw.get("hold", raw.get("bottom"))))
     shifted, glyph_s = legend(raw.get("s", raw.get("shifted")))
     ktype = raw.get("type", "") or ""
-    if tap == "▽":
+    # keymap-drawer writes a transparent key as the plain string ▽. A key that *draws* ▽ is a
+    # different thing, and the two were indistinguishable here: GLYPHS renders
+    # mdi:arrow-down-circle-outline as ▽, so the media layer's scroll-down key was reclassified
+    # transparent, lost its icon, and resolved to whatever the base layer had underneath (an f).
+    # A glyph reference is never the marker: the marker is text the drawer file typed itself.
+    if tap == "▽" and not glyph:
         tap, ktype = "", "trans"
     key = {"tap": tap, "hold": hold, "shifted": shifted, "type": ktype or "key"}
     if glyph:
