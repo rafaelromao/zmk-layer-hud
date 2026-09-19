@@ -11,8 +11,8 @@
 combo_term_ms: 30
 
 layers:
-  0: { name: DEFAULT, drawer: alpha1, label: Alpha 1 }
-  1: { name: ALT OS, drawer: null, label: Alt OS }    # not drawn — set one in config.yaml if it should be
+  0: { name: OMARCHY, drawer: alpha1, label: Alpha 1 }
+  1: { name: MACOS, drawer: null, label: Alt OS }    # not drawn — set one in config.yaml if it should be
   2: { name: NORMAL, drawer: vim, label: Vim normal }
   3: { name: VISUAL, drawer: vim, label: Vim visual }
   4: { name: CHANGE, drawer: vim, label: Vim change }
