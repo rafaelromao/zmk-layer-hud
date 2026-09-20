@@ -42,7 +42,7 @@ between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`
 };
 ```
 
-**Host.** One line, and nothing to clone:
+**Host.** One line:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/rafaelromao/zmk-layer-hud/main/install.sh | sh
@@ -275,8 +275,8 @@ beside anything that is wrong. What it cannot see:
   separates "the keyboard says nothing" from "the host makes nothing of it".
 - **Wrong keys light** on a curated keymap: `positions:` is missing or wrong; the feed logs
   `key position N is not in the keymap's … drawer keys`.
-- **A key stays lit ~5 s**: the firmware reports presses but not releases. Rebuild with the
-  current module.
+- **A key stays lit ~5 s**: the firmware is reporting presses but not releases. Rebuild and
+  reflash it.
 - `ZMKHUD_DEBUG=1 zmk-layer-hud start` logs every layer and position message with timestamps.
 
 ## Limits
