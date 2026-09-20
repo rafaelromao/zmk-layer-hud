@@ -9,8 +9,8 @@ bin/zmk-layer-hud setup --link
 ```
 
 `setup --link` puts `zmk-layer-hud` on your PATH pointing at the clone, so you run exactly what
-everyone else runs rather than a second, more convenient way in. Everything else — the virtualenv,
-the system packages, the config, the udev rule — is what `setup` does for any machine.
+everyone else runs. Everything else — the virtualenv, the system packages, the config, the udev
+rule — is what `setup` does for any machine.
 
 `zmk-layer-hud update` refuses to touch a clone; `git pull` is its update path.
 
@@ -22,16 +22,10 @@ make test-hud    # just the page; KEYMAP=hud/keymap.json runs it against your ow
 make fixture     # rebuild the committed test keymap from the configured one
 ```
 
-`zmk-layer-hud keymap` checks that the configured keymap-drawer YAML converts — that used to be
-`make keymap`, and it moved because it is something anyone does, not only someone working here.
+`zmk-layer-hud keymap` checks that the configured keymap-drawer YAML converts.
 
 `firmware/src/signal_frame.h` is the single definition of the wire format; the C and Python tests
 share its vectors, so a change on one side that is not mirrored on the other fails both.
-(`layer_signal_policy.h` beside it is the superseded encoding, from when the signal travelled
-inside the keyboard report. Nothing in `firmware/src/` includes it.)
-
-`zmk-layer-hud poke` drives the pages without a keyboard, and the WebSocket it speaks is
-documented under [Three ways in](../README.md#three-ways-in) along with the other two.
 
 `make test-hud` sweeps the page: every key on every layer it can be shown on, every combo on every
 layer it is declared on and in four press orders, every press that must draw no combo, and the
@@ -51,6 +45,12 @@ await import("./tests/browser.js"); await hudBrowserSweep("tests/fixtures/diamon
 prints the same count and the same failure digest that `node hud/tests/hud_test.js --signature`
 does. A case the two disagree about is a hole in the shim.
 
+## Driving the HUD without a keyboard
+
+`zmk-layer-hud poke` sends the feed the messages a keyboard would have produced, and
+`zmk-layer-hud demo` serves the pages against a sample keymap. The WebSocket both speak is
+documented in [protocol.md](protocol.md).
+
 ## The command line
 
 `bin/zmk-layer-hud` finds an interpreter and hands off to `host/cli.py`, which is where every verb
@@ -64,5 +64,5 @@ lives. Two rules it keeps, and both matter:
 
 Starting and stopping stays in `host/macos/start.sh` and `host/linux/hud.sh`; `cli.py` picks one
 and gives them the same verbs. `poke` and `feed` are split off before argparse sees them and
-handed their whole line, because their flags belong to `hudpoke.py` and `hudfeed.py` and
+handed their whole line, because their flags belong to `host/hudpoke.py` and `host/hudfeed.py` and
 restating them here would only give them somewhere to drift apart.
