@@ -1,10 +1,17 @@
-# zmk-layer-hud: the test suites. Everything a user does is a verb on the command itself --
-# `zmk-layer-hud setup` prepares a machine, `zmk-layer-hud keymap` checks the configured YAML --
-# so nothing here installs anything. From a clone, `bin/zmk-layer-hud setup --link` puts that
-# command on your PATH pointing at this tree.
+# zmk-layer-hud: `make install` sets this machine up from a clone, and the rest is the test
+# suites. Everything a user does is a verb on the command itself -- `zmk-layer-hud setup`
+# prepares a machine, `zmk-layer-hud keymap` checks the configured YAML -- so the targets here
+# delegate to it rather than carry a second implementation.
 #
 # The firmware itself is built by the keyboards repo (west, inside its container); see
 # docs/keyboards-repo.md.
+
+# Every target here is a verb, never a file. Without this, GNU make's built-in `%: %.sh` rule
+# turns `make install` into `cat install.sh >install; chmod a+x install` -- it prints those two
+# lines, leaves an executable copy of the installer named `install` in the tree, and from then on
+# reports `install' is up to date` without ever installing anything.
+MAKEFLAGS += --no-builtin-rules
+.SUFFIXES:
 
 CC ?= cc
 # keymap-drawer needs Python >= 3.10; Apple's /usr/bin/python3 is 3.9, so prefer Homebrew's or
@@ -13,9 +20,15 @@ PYTHON ?= $(shell command -v /opt/homebrew/bin/python3 || command -v python3.13 
 # The HUD page's own suite runs hud.js under node with a small DOM shim; no npm, no package.json.
 NODE ?= $(shell command -v node)
 
-.PHONY: all test test-firmware test-host test-hud fixture clean help
+.PHONY: all install venv test test-firmware test-host test-hud fixture clean help
 
 all: test
+
+install: ## set this machine up and put zmk-layer-hud on your PATH, pointing at this clone
+	bin/zmk-layer-hud setup --link
+
+venv: ## just the virtualenv the feed and the tests run under
+	bin/zmk-layer-hud setup --venv-only
 
 test: test-firmware test-host test-hud ## run every test suite
 

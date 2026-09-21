@@ -157,6 +157,7 @@ Where things live, and what moves them:
 | `ZMKHUD_STATE` | `~/.local/state/zmk-layer-hud` | where `panel.log` and `hudfeed.log` go |
 | `ZMKHUD_ROOT` | the installed tree | the tree the command runs from |
 | `ZMKHUD_HOME` | `~/.local/share/zmk-layer-hud` | where `install.sh` puts the tree |
+| `ZMKHUD_BIN_DIR` | `~/.local/bin` | where `setup` puts the command |
 | `ZMKHUD_PYTHON` | the tree's `.venv/bin/python3` | the interpreter the feed runs under |
 | `ZMKHUD_PORT` | `8766` | the feed's WebSocket port |
 | `ZMKHUD_CACHE` | `~/.cache/zmk-layer-hud/repos` | where `import` keeps a repo given by URL |
@@ -289,9 +290,11 @@ beside anything that is wrong. What it cannot see:
 
 ## Contributing
 
-`make test` runs every suite: the firmware's wire policy in C, the host decoder and keymap
-conversion in Python, and the page under node. [docs/development.md](docs/development.md) covers
-working from a clone, what each suite sweeps, and how the command line is put together.
+From a clone, `make install` sets the machine up and puts `zmk-layer-hud` on your PATH pointing at
+that clone; `make test` runs every suite — the firmware's wire policy in C, the host decoder and
+keymap conversion in Python, and the page under node.
+[docs/development.md](docs/development.md) covers what each suite sweeps and how the command line
+is put together.
 
 ## License
 

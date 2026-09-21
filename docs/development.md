@@ -5,12 +5,15 @@
 ```bash
 git clone https://github.com/rafaelromao/zmk-layer-hud
 cd zmk-layer-hud
-bin/zmk-layer-hud setup --link
+make install
 ```
 
-`setup --link` puts `zmk-layer-hud` on your PATH pointing at the clone, so you run exactly what
-everyone else runs. Everything else — the virtualenv, the system packages, the config, the udev
-rule — is what `setup` does for any machine.
+`make install` is `bin/zmk-layer-hud setup --link`: it puts `zmk-layer-hud` on your PATH pointing
+at the clone, so you run exactly what everyone else runs. Everything else — the virtualenv, the
+system packages, the config, the udev rule — is what `setup` does for any machine. `make venv`
+builds just the virtualenv, which is what the error messages that mention it mean.
+
+`$ZMKHUD_BIN_DIR` puts the command somewhere other than `~/.local/bin`.
 
 `zmk-layer-hud update` refuses to touch a clone; `git pull` is its update path.
 
