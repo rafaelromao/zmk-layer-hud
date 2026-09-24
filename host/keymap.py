@@ -37,7 +37,8 @@ Config keys (all paths may use ~):
   extras:         inference hints used only while a key cannot be placed on the live stack:
       sticky:            layers entered for one key (shown as one-shot)
       alpha2:            a secondary alpha layer typed letters may come from
-      letter_combos_on:  layers on which letter-producing base-layer combos count
+      letter_combos_on:  layers on which letter-producing base-layer combos count (the
+                         keyboard's own reports only: typing sent in says so per key, `combos`)
       search:            layer search order for unplaced keys (default: YAML order)
 
 A `<config>.imported.yaml` beside the config — written by `zmk-layer-hud import` out of the

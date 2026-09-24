@@ -15,7 +15,8 @@ and passes it to `west build` through `ZMK_EXTRA_MODULES`, so one line is enough
 +DEF_MODULES=(urob/zmk-leader-key,urob/zmk-auto-layer,urob/zmk-adaptive-key,rafaelromao/zmk-layer-morph,rafaelromao/zmk-vim-mode,rafaelromao/zmk-layer-hud)
 ```
 
-Until the repo is on GitHub, point the submodule at the local clone instead:
+To build against a local clone of this repo instead of the published one, add the submodule by
+path:
 
 ```bash
 cd ~/projects/keyboards
@@ -47,18 +48,14 @@ What it does: on every layer change (any mechanism: `&mo`, `&lt`, `&sl`, `&tog`,
 message on its own channel. With `positions;` each key press and release goes out the same way.
 
 What you type is not sent here. The HUD host reads the keyboard's HID reports for that: ZMK emits
-one per change, so none can be lost, where a snapshot from the firmware had to be deferred to a
-work queue that coalesced presses away.
+one per change, so none can be lost.
+
+Nothing travels in the keyboard report, so the module needs neither the HKRO report type nor extra
+report slots — no `CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE` in the `.conf` files.
+[Why a channel of its own](zmk-setup.md#why-a-channel-of-its-own) explains the reasoning.
 
 `hid_indicator_code_listener` (zmk-vim-mode) and this module do not interact: one listens to LED
 reports, the other to layer changes.
-
-Earlier versions smuggled all this through the keyboard report as the reserved keyboard-page
-usages 0xA5–0xDF, on the premise that no OS maps them. Linux does — `hid_keyboard[]` fills every
-unmapped slot with `KEY_UNKNOWN` rather than zero — so each layer change reached the compositor as
-a phantom key press carrying the held modifiers, and Gui + a layer change switched workspace. That
-is why `CONFIG_ZMK_HID_KEYBOARD_REPORT_SIZE=12` is gone from the `.conf` files: nothing needs the
-extra slots any more, and the module no longer requires the HKRO report type either.
 
 ## 3. Give the signal its carrier
 
@@ -73,7 +70,7 @@ node at it; `CONFIG_ZMK_LAYER_SIGNAL_UART` then defaults on. Over BLE the module
 GATT service and needs no snippet, only `CONFIG_BT_PERIPHERAL` (any wireless ZMK build).
 
 A board can already have a CDC-ACM interface for USB logging or ZMK Studio. They are
-indistinguishable from their descriptors, so `hudfeed.py` tries each port in turn and keeps the
+indistinguishable from their descriptors, so `host/hudfeed.py` tries each port in turn and keeps the
 one that produces valid frames.
 
 ## 4. Build and flash
@@ -103,11 +100,11 @@ seize it the way it could seize the HID device.
 
 Linux: tty access comes from `contrib/udev/60-zmk-layer-hud.rules`, or from the `dialout` group.
 `wev` and `libinput debug-events` should stay silent through a layer change — a `KEY_UNKNOWN` (240)
-there means the firmware predates this channel and is still sending the signal as HID usages.
+there means something is sending the signal as HID usages rather than on this channel.
 
 ## Layer ids
 
 `hud/keymap/build.py` reads the `// Layers` block of `src/definitions/config.dtsi` and maps every
 define to the drawer layer that shows it (`ZMK_LAYERS` in that script). Adding a layer to
 `config.dtsi` fails the build of `keymap.json` until it gets an entry there, on purpose. Ids must
-stay below 31 (30 with the default usages); the module's `BUILD_ASSERT` enforces it.
+be 0–31; the module's `BUILD_ASSERT` enforces it.

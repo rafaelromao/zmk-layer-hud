@@ -33,7 +33,7 @@ STATE = os.environ.get("ZMKHUD_STATE") or os.path.join(
 
 CONFIG_DIR = os.path.expanduser("~/.config/zmk-layer-hud")
 CONFIG = os.path.join(CONFIG_DIR, "config.yaml")
-BIN_DIR = os.path.expanduser("~/.local/bin")
+BIN_DIR = os.path.expanduser(os.environ.get("ZMKHUD_BIN_DIR") or "~/.local/bin")
 BIN_LINK = os.path.join(BIN_DIR, "zmk-layer-hud")
 
 REPO = "rafaelromao/zmk-layer-hud"
@@ -495,14 +495,21 @@ def setup_config():
 
 
 def link_command():
-    os.makedirs(BIN_DIR, exist_ok=True)
     target = os.path.join(ROOT, "bin", "zmk-layer-hud")
-    # A tarball carries whatever mode the archive held, and a file written by hand may carry none;
-    # the command is useless without the bit, so set it rather than assume it.
-    os.chmod(target, 0o755)
-    if os.path.islink(BIN_LINK) or os.path.exists(BIN_LINK):
-        os.unlink(BIN_LINK)
-    os.symlink(target, BIN_LINK)
+    # Installing is the first thing anyone runs, so a directory that cannot be written or a link
+    # that cannot be replaced has to say so and say what to do, not raise.
+    try:
+        os.makedirs(BIN_DIR, exist_ok=True)
+        # A tarball carries whatever mode the archive held, and a file written by hand may carry
+        # none; the command is useless without the bit, so set it rather than assume it.
+        os.chmod(target, 0o755)
+        if os.path.islink(BIN_LINK) or os.path.exists(BIN_LINK):
+            os.unlink(BIN_LINK)
+        os.symlink(target, BIN_LINK)
+    except OSError as e:
+        raise Fail(f"cannot put the command in {BIN_DIR} ({e.strerror}). Point it somewhere you "
+                   f"can write with ZMKHUD_BIN_DIR, or link it yourself:\n"
+                   f"    ln -sf {target} <a directory on your PATH>/zmk-layer-hud")
     print(f"    {BIN_LINK} -> {target}")
     if BIN_DIR not in os.environ.get("PATH", "").split(os.pathsep):
         shell = os.path.basename(os.environ.get("SHELL", "") or "")
@@ -517,6 +524,9 @@ def link_command():
 
 
 def cmd_setup(args):
+    if args.venv_only:
+        make_venv(args)
+        return 0
     if args.link_only:
         args.link = True
     if args.link:
@@ -830,6 +840,8 @@ def build_parser():
                    help="also put zmk-layer-hud on PATH from this tree")
     s.add_argument("--link-only", action="store_true",
                    help="with --link, do nothing else")
+    s.add_argument("--venv-only", action="store_true",
+                   help="build the virtualenv and do nothing else")
     s.set_defaults(func=cmd_setup)
 
     s = add("update", "fetch a newer tree over this one")

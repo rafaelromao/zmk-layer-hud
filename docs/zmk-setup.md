@@ -66,13 +66,14 @@ keymap's binding list, which is also the drawer's key order for a YAML from `key
 curated drawer file with a different key order lists each drawer key's position in the host config
 (`positions:`).
 
-`CONFIG_ZMK_LAYER_SIGNAL_GATT` carries the signal over BLE and defaults on.
+`CONFIG_ZMK_LAYER_SIGNAL_GATT` carries the signal over BLE. It depends on `CONFIG_BT_PERIPHERAL`
+and defaults on wherever that is set, which is any wireless ZMK build.
 
-The module does not send what you type. It could once, and it lost keystrokes doing it: the
-keyboard report can only be read after ZMK has updated it, so the read was deferred to a work item
-that coalesces, and a key pressed and released between two runs was never reported held. The HUD
-host reads the HID reports instead — ZMK emits one per change, so nothing can be lost — at the cost
-of Input Monitoring on macOS.
+The module does not send what you type; the HUD host reads that from the keyboard's HID reports.
+ZMK emits one report per change, so reading them cannot lose a keystroke, where the firmware
+sending the same information would have to defer the read to a work item that coalesces — a key
+pressed and released between two runs would never be reported held. The cost is Input Monitoring
+on macOS.
 
 ## 3. Give the signal its carrier
 
@@ -113,30 +114,21 @@ every frame that decodes, which separates a silent keyboard from a host that can
 
 ## Why a channel of its own
 
-Because the obvious alternative does not work, and the way it fails is quiet.
+The signal travels on a transport of its own rather than inside the keyboard report, because a
+report the host can read is also a report the OS can read.
 
-The HID Usage Tables reserve keyboard-page usages 0xA5–0xDF, and earlier versions of this module
-put the signal there: the report reaches a raw-HID reader, and no OS was supposed to map the
+The HID Usage Tables reserve keyboard-page usages 0xA5–0xDF, which makes them a tempting place to
+put a signal: the report reaches a raw-HID reader on the host, and no OS is supposed to map the
 usages to anything. Linux maps them. The kernel's `hid_keyboard[]` table fills every unassigned
 slot with `KEY_UNKNOWN` (240) rather than with zero, and `hidinput` only drops a usage that maps to
-zero — so each of those reports arrived as a real key event, carrying whatever modifiers were held
-at the time. Holding Gui and touching a layer was enough to make a Wayland compositor act on it and
+zero — so every such report arrives as a real key event carrying whatever modifiers are held at the
+time. Holding Gui while switching layers is enough to make a Wayland compositor act on it and
 change workspace. `wev` and `libinput debug-events` show it plainly once you know to look, and
 nothing shows it at all if you do not: applications receive a keycode with no keysym and mostly
 ignore it.
 
-A second charge was laid against writing into the report, and it turned out to be false, which is
-worth recording because it was believed for a while and acted on twice: combos stopped firing at
-about the same time, and the blocking sends were blamed. The cause was in the keymap — eight combos
-listed the base layer without the alt-OS layer beside it, and OS detection had just started raising
-that layer by itself, so whether a combo worked depended on which host was plugged in. Removing
-`positions;` appeared to fix it only because the layer happened to differ across those flashes.
-
-So the case for a transport of its own rests on the phantom key events alone, which is enough. A
-frame is a frame there and nothing can be read as a key: a CDC-ACM interface over USB,
-notifications on the module's own GATT service over BLE. Both drop rather than block, so the module
-cannot delay a keystroke however slow the host is — a property worth keeping on its own merits,
-whatever it was once thought to have fixed. The
-listener still works off ZMK's layer-state events, so every way of switching layers is reported and
-behaviours that watch key presses — auto-layer, adaptive keys, caps word, sticky keys — never see
-anything.
+On a channel of its own a frame is a frame and nothing can be read as a key: a CDC-ACM interface
+over USB, notifications on the module's own GATT service over BLE. Both drop rather than block, so
+the module cannot delay a keystroke however slow the host is. The listener works off ZMK's
+layer-state events, so every way of switching layers is reported and behaviours that watch key
+presses — auto-layer, adaptive keys, caps word, sticky keys — never see anything.

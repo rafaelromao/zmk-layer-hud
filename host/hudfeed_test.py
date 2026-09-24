@@ -11,8 +11,8 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
-from hudfeed import (INJECTABLE, SignalDecoder, Stream, hid_scan_note,  # noqa: E402
-                     hidraw_match, split_report)
+from hudfeed import (COMBOS_DEFAULT, INJECTABLE, SignalDecoder, Stream,  # noqa: E402
+                     hid_scan_note, hidraw_match, sent_in, split_report)
 
 
 def K(mods=0, *keys):
@@ -332,6 +332,34 @@ class Injectable(unittest.TestCase):
     def test_close_is_not_injectable_either(self):
         # It is handled before this list and exits the process; it must not be broadcast.
         self.assertNotIn("close", INJECTABLE)
+
+
+class SentIn(unittest.TestCase):
+    """Typing sent in says whether combos are how it is typed, and the pages rely on the field
+    being there: it is also what tells typing sent in from the keyboard's own reports."""
+
+    KEY = {"kind": "key", "type": "keyDown", "name": "z", "chars": "z"}
+
+    def test_the_default_is_no_combos(self):
+        self.assertIs(COMBOS_DEFAULT, False)
+        self.assertIs(sent_in(dict(self.KEY))["combos"], False)
+
+    def test_a_sender_that_says_keeps_its_word(self):
+        for said in (True, False):
+            self.assertIs(sent_in({**self.KEY, "combos": said})["combos"], said)
+
+    def test_a_value_that_is_not_a_yes_or_no_is_not_one(self):
+        # "true" from a hand-typed client is not True; the default stands rather than a guess.
+        self.assertIs(sent_in({**self.KEY, "combos": "true"})["combos"], COMBOS_DEFAULT)
+
+    def test_only_keys_carry_it(self):
+        for msg in ({"kind": "layers", "ids": [13]}, {"kind": "press", "pos": 16}, {"kind": "device", "name": "x"}):
+            self.assertNotIn("combos", sent_in(dict(msg)))
+
+    def test_the_sender_s_message_is_not_changed_under_it(self):
+        msg = dict(self.KEY)
+        sent_in(msg)
+        self.assertNotIn("combos", msg)
 
 
 if __name__ == "__main__":

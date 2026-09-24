@@ -2914,9 +2914,6 @@
 "extras": {
 "alpha2": "alpha2",
 "base": "alpha1",
-"letter_combos_on": [
-"vim"
-],
 "search": [
 "alpha2",
 "shifted1",
