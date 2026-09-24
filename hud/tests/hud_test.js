@@ -102,6 +102,38 @@ function checkPageIds(page) {
   return missing;
 }
 
+/* A rehearsal's uinput character has no matching firmware position report. The feed may still
+ * send a synthetic position for its sticky thumb, so prove that the subsequent synthetic character
+ * highlights its key while an unmarked hardware character remains suppressed by the freshness
+ * guard. This exercises hud.js itself, not a reimplementation of its timers or resolver. */
+function checkSyntheticFreshness(page, data) {
+  const alpha2 = Object.entries(data.zmk_layers || {})
+    .find(([, layer]) => layer.drawer === "alpha2");
+  const thumb = Object.entries(data.positions || {})
+    .find(([, index]) => Number(index) === 22);
+  const q = (data.layers.alpha2 || []).findIndex(key => key.tap === "q");
+  if (!alpha2 || !thumb || q < 0) return ["fixture lacks Alpha 2 q or its sticky thumb position"];
+
+  page.hud.load(data);
+  page.hud.setLayers([Number(alpha2[0])]);
+  page.hud.pressAt(Number(thumb[0]));
+  page.hud.releaseAt(Number(thumb[0]));
+  page.clock.advance(Number(data.hud.release_ms || 60) + 1);
+  page.hud.key({ type: "keyDown", name: "q", chars: "q", code: 16, flags: {}, synthetic: true });
+  const lit = () => page.hud.state.keyEls.flatMap((el, idx) =>
+    el.classList.contains("pressed") ? [idx] : []);
+  if (lit().join() !== String(q)) {
+    return [`synthetic q after a thumb position should light ${q}; lit [${lit()}]`];
+  }
+
+  page.clock.advance(Number(data.hud.press_ms || 320) + 1);
+  page.hud.key({ type: "keyDown", name: "q", chars: "q", code: 16, flags: {} });
+  if (lit().length) {
+    return [`unmarked hardware q inside the freshness window should remain suppressed; lit [${lit()}]`];
+  }
+  return [];
+}
+
 async function main() {
   const opt = parseArgs(process.argv.slice(2));
   if (!fs.existsSync(opt.keymap)) {
@@ -114,6 +146,12 @@ async function main() {
   const missing = checkPageIds(page);
   if (missing.length) {
     console.error(`hud_test: hud/tests/dom.js is missing ids index.html defines: ${missing.join(", ")}`);
+    process.exit(1);
+  }
+
+  const freshnessFailures = checkSyntheticFreshness(page, data);
+  if (freshnessFailures.length) {
+    for (const failure of freshnessFailures) console.error(`FAIL synthetic-freshness: ${failure}`);
     process.exit(1);
   }
 

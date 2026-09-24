@@ -504,7 +504,10 @@
     state.lastKeyAt = Date.now();
     // With key positions coming from the firmware, the board is lit from them; the character
     // only feeds the strip (hud.key forwards it).
-    if (state.posAt && Date.now() - state.posAt < T('positions_fresh_ms')) return;
+    // Physical character reports are redundant while firmware position reports are fresh. The
+    // rehearsal feed marks its uinput events synthetic: those have no matching firmware positions,
+    // so they must still resolve and light their key after a synthetic thumb flash.
+    if (!ev.synthetic && state.posAt && Date.now() - state.posAt < T('positions_fresh_ms')) return;
     const token = tokenFor(ev);
     if (!token) return;
 
