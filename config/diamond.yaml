@@ -45,7 +45,10 @@ layers:
     VIM_VISUAL:  { drawer: vim, label: Vim visual, class: vim }
     VIM_CHANGE:  { drawer: vim, label: Vim change, class: vim }
     VIM_INSERT:  { drawer: null, label: Vim insert, class: vim-insert }
-    VIM_REPLACE: { drawer: vim, label: Vim replace, class: vim }
+    # Replace types, as insert does: its keys are the base's and it fires the base's letter combos
+    # (combos.dtsi VIM_LAYERS_BASE), so it is drawn as the base -- drawn as vim, the r+a chord
+    # that types z showed vim's p. `python3 host/ways.py --audit` checks the whole mapping.
+    VIM_REPLACE: { drawer: null, label: Vim replace, class: vim }
     VIM_CMDLINE: { drawer: null, label: Vim cmdline, class: vim-cmdline }
     CASE_A1:     { drawer: shifted1, label: Caps word }
     CPLK_A1:     { drawer: shifted1, label: Caps line }
@@ -113,8 +116,12 @@ combos:
 
 # Inference hints, used only for a key the keyboard's live stack cannot explain (synthesized
 # keys in a rehearsal, legends the drawer spells differently).
+#
+# No `letter_combos_on`: it says base-layer letter combos are commands unless those layers are
+# up, and on this keymap they are how k w v q x z j y are typed (combos.dtsi, ALPHA1_BASE). Whether
+# typing sent in -- `zmk-layer-hud poke`, a WebSocket client -- is drawn with combos is the
+# sender's to say, per key (`poke --combos`), not the config's.
 extras:
   sticky: [alpha2, shifted1, shifted2, ç-extension]
   alpha2: alpha2
-  letter_combos_on: [vim]
   search: [alpha2, shifted1, shifted2, numbers, symbols, nav, shortcuts, media, text, func, macros, toggles, ç-extension]

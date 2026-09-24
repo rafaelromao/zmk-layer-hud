@@ -233,9 +233,15 @@ a one-shot layer on screen through its key's flash, and shows typed characters i
 
 ### Where the messages come from
 
-Three things can produce the stream the page draws, and the page cannot tell them apart: the
-keyboard, `zmk-layer-hud poke`, and any WebSocket client. Only the keyboard proves anything — a HUD
-that looks right under `poke` can still be fed wrong by a real keyboard.
+Three things can produce the stream the page draws, and the page treats them alike: the keyboard,
+`zmk-layer-hud poke`, and any WebSocket client. Only the keyboard proves anything — a HUD that looks
+right under `poke` can still be fed wrong by a real keyboard.
+
+The one difference is typing sent in, which says whether combos are how it is typed. By default
+they are not: `zmk-layer-hud poke --type zebra` draws the `z` as Alpha 2's key, and `--combos` draws
+the `r`+`a` chord. A WebSocket client says the same with `"combos": true` on a `key`
+([docs/protocol.md](docs/protocol.md#typing-sent-in)). The keyboard's own reports need no such word:
+they are placed on the layers it says are up.
 
 The keyboard speaks on two channels at once, with separate permissions, which is why half the HUD
 can work while the other half does not:

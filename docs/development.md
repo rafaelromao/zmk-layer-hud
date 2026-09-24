@@ -22,6 +22,7 @@ builds just the virtualenv, which is what the error messages that mention it mea
 ```bash
 make test        # firmware wire policy (C) + host decoder and keymap conversion (Python) + the page (node)
 make test-hud    # just the page; KEYMAP=hud/keymap.json runs it against your own board
+make audit       # the drawing against the keyboard's own keymap; SOURCE=~/projects/keyboards for a working copy
 make fixture     # rebuild the committed test keymap from the configured one
 ```
 
@@ -35,6 +36,22 @@ layer it is declared on and in four press orders, every press that must draw no 
 typed-keys strip against what a keyboard would have sent to type each legend. Over 5000 checks in
 about a third of a second. The cases are generated from the keymap message, so pointing it at
 another board sweeps that board.
+
+Those two drive one channel each, with the page's own rules for what a keymap means, and that is
+how a letter typed by a combo lit nothing once the board had to work from the character: both
+stayed green. `hud/tests/words_test.js` works from the keyboard's side instead. `host/ways.py`
+lists every way the keymap has of typing each legend — its key, a combo, another layer, a held
+Shift — under ZMK's own rules (a combo fires on the highest active layer only; a hold-tap's report
+comes when the key comes up), stated there rather than borrowed from `hud.js`. Each way is replayed
+down every channel it can arrive by: positions and reports in either order, reports alone with and
+without layers, positions alone, and typing sent in with combos on and off. Words go key after key
+on one page at a typist's pace, so a way is also tested next to its neighbours: a one-shot layer
+that outlives its key, a chord inside a combo term, a macro across two layers.
+
+`make audit` checks what those cases cannot: the drawing itself. One drawer layer stands for every
+ZMK layer drawn as it, so where two of them fire different things on the same keys, the HUD can be
+right for only one. It reads the keyboard's keymap with keymap-drawer's own parser (what `import`
+reads) and lists every such chord.
 
 `hud/tests/dom.js` is a browser small enough to read — the DOM the page touches and a clock the
 test drives by hand — so `hud/hud.js` and `hud/keys.js` run under node exactly as they ship, with

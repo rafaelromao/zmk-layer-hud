@@ -996,6 +996,23 @@ class Feed:
 # one has no way back to the right one.
 INJECTABLE = ("layers", "press", "release", "key", "device")
 
+# Whether typing sent in is drawn with the keymap's combos. A `key` a client sends says it with
+# `combos`; one that does not say gets this. It is off because a combo is a choice of technique,
+# not something a character implies -- z is both the r+a chord and Alpha 2's key -- and typing
+# sent in is typically a take being staged, where the chords are the typist's to show or not.
+COMBOS_DEFAULT = False
+
+
+def sent_in(msg):
+    """An injected message as the pages get it: a `key` always says whether combos count.
+
+    That field is also how a page tells typing sent in from the keyboard's own reports, which
+    never carry it: those are placed on the layers the keyboard says are up, exactly, while typing
+    sent in did not come from those layers and is placed by technique (hud/hud.js handleKey)."""
+    if msg.get("kind") == "key" and not isinstance(msg.get("combos"), bool):
+        msg = {**msg, "combos": COMBOS_DEFAULT}
+    return msg
+
 
 class Hub:
     """Fans messages out to WebSocket clients and/or stdout; replays the cached keymap and layer
@@ -1049,7 +1066,7 @@ class Hub:
                     self.log("hudfeed: close requested by the page")
                     os._exit(0)
                 if self.inject and kind in INJECTABLE:
-                    await self.send(msg)
+                    await self.send(sent_in(msg))
                     if self.on_inject is not None:
                         self.on_inject()
         finally:

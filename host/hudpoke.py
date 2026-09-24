@@ -5,6 +5,7 @@ hudfeed accepts layers / press / release / key from a WebSocket client and fans 
 pages exactly as it fans out the keyboard's own (see Hub.INJECTABLE). This is the sender.
 
     host/hudpoke.py --type "hello, world"     type it, character by character
+    host/hudpoke.py --type zebra --combos     ...drawing the keymap's combos where it has them
     host/hudpoke.py --layers 2,22             set the active layer ids
     host/hudpoke.py --press 13                light key at position 13, then release it
     host/hudpoke.py --legend 'á'              one legend, composed as the decoder would
@@ -68,6 +69,16 @@ def messages(args):
                 yield 0, json.loads(line)
 
 
+def says_combos(pairs, combos):
+    """Every `key` sent says whether combos are how it was typed (hudfeed COMBOS_DEFAULT): with
+    --combos a z is the r+a chord, without it Alpha 2's key. A raw message from --stdin that
+    already says keeps its own word."""
+    for wait_ms, msg in pairs:
+        if msg.get("kind") == "key" and not isinstance(msg.get("combos"), bool):
+            msg = {**msg, "combos": combos}
+        yield wait_ms, msg
+
+
 async def main(args):
     try:
         import websockets
@@ -77,7 +88,7 @@ async def main(args):
     url = args.url or f"ws://127.0.0.1:{os.environ.get('ZMKHUD_PORT', '8766')}"
     sent = 0
     async with websockets.connect(url) as ws:
-        for wait_ms, msg in messages(args):
+        for wait_ms, msg in says_combos(messages(args), args.combos):
             if wait_ms:
                 await asyncio.sleep(wait_ms / 1000)
             await ws.send(json.dumps(msg, ensure_ascii=False))
@@ -94,6 +105,9 @@ def parse_args(argv=None):
     p.add_argument("--url", help="hudfeed's WebSocket (default: ws://127.0.0.1:$ZMKHUD_PORT or 8766)")
     p.add_argument("--type", metavar="TEXT", help="type TEXT one character at a time")
     p.add_argument("--legend", action="append", metavar="L", help="type one legend (repeatable)")
+    p.add_argument("--combos", action="store_true",
+                   help="draw what is typed with the keymap's combos where it has them "
+                        "(default: without, a letter on its layer's own key)")
     p.add_argument("--layers", metavar="IDS", help="set the active layer ids, comma separated ('' clears)")
     p.add_argument("--press", action="append", type=int, metavar="POS", help="press and release a position (repeatable)")
     p.add_argument("--gap-ms", type=int, default=90, help="wait between keystrokes (default 90)")

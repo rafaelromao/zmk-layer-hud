@@ -20,7 +20,10 @@ PYTHON ?= $(shell command -v /opt/homebrew/bin/python3 || command -v python3.13 
 # The HUD page's own suite runs hud.js under node with a small DOM shim; no npm, no package.json.
 NODE ?= $(shell command -v node)
 
-.PHONY: all install venv test test-firmware test-host test-hud fixture clean help
+# The audit reads the keyboard's keymap with keymap-drawer, which lives in the venv.
+VENV_PYTHON := $(wildcard .venv/bin/python3)
+
+.PHONY: all install venv test test-firmware test-host test-hud audit fixture clean help
 
 all: test
 
@@ -40,13 +43,17 @@ test-firmware: ## host-side tests for the module's pure encode/decode policy
 test-host: ## Python tests: the wire format, the signal decoder, the keymap-drawer conversion
 	$(PYTHON) -m unittest discover -s host -p '*_test.py' -v
 
-test-hud: ## the HUD page: every key on every layer, every combo, the typed-keys strip
+test-hud: ## the HUD page: every key and combo, the strip, and every way to type every legend on every channel
 	@if [ -z "$(NODE)" ]; then \
 	  echo "test-hud: node not found, skipping (brew install node)"; \
 	else \
 	  $(NODE) hud/tests/hud_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
-	  PYTHON="$(PYTHON)" $(NODE) hud/tests/strip_test.js $(if $(KEYMAP),--keymap $(KEYMAP)); \
+	  PYTHON="$(PYTHON)" $(NODE) hud/tests/strip_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
+	  PYTHON="$(PYTHON)" $(NODE) hud/tests/words_test.js $(if $(KEYMAP),--keymap $(KEYMAP)); \
 	fi
+
+audit: ## the drawing against the keyboard's own keymap (SOURCE=<working copy>, else the one import recorded)
+	$(or $(VENV_PYTHON),$(PYTHON)) host/ways.py --audit $(if $(CONFIG),--config $(CONFIG)) $(if $(SOURCE),--source $(SOURCE))
 
 fixture: ## rebuild hud/tests/fixtures/diamond.json from the configured keymap (glyphs placeheld)
 	$(PYTHON) host/keymap.py --dump | $(PYTHON) hud/tests/fixtures/make.py > hud/tests/fixtures/diamond.json
