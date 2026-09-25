@@ -1,8 +1,10 @@
-# Integrating with the author's keyboards repo
+# Worked example: the author's keyboards repo
 
 The generic guide is [zmk-setup.md](zmk-setup.md). This page is the same three changes applied to
-`~/projects/keyboards` (rafaelromao/keyboards), whose build script manages modules itself instead
-of `west.yml`. Then build and flash the central (or dongle). Peripherals need nothing.
+[rafaelromao/keyboards](https://github.com/rafaelromao/keyboards), the author's ZMK config, whose
+build script manages modules itself instead of `west.yml`: a reference for configs built that way,
+not something zmk-layer-hud needs. Then build and flash the central (or dongle). Peripherals need
+nothing.
 
 ## 1. Add the module
 
@@ -19,8 +21,8 @@ To build against a local clone of this repo instead of the published one, add th
 path:
 
 ```bash
-cd ~/projects/keyboards
-git submodule add ~/projects/zmk-layer-hud modules/rafaelromao/zmk-layer-hud
+cd keyboards   # a checkout of rafaelromao/keyboards
+git submodule add /path/to/zmk-layer-hud modules/rafaelromao/zmk-layer-hud
 ```
 
 ## 2. Add the node in `src/features/hud.dtsi`
@@ -76,7 +78,7 @@ one that produces valid frames.
 ## 4. Build and flash
 
 ```bash
-cd ~/projects/keyboards
+cd keyboards
 ./init.sh
 # inside the container:
 b rommana cl -n layer-hud-usb-uart      # central left

@@ -8,8 +8,8 @@ on. Those live in the keyboard's own ZMK keymap, and until now they were written
 its own config and nothing else — no keymap, no repo, no network. `sync` does it again and says
 what changed.
 
-    zmk-layer-hud import github.com/you/keyboards        # or a path to a working copy
-    zmk-layer-hud import ~/projects/keyboards --keyboard diamond
+    zmk-layer-hud import github.com/you/zmk-config       # or a path to a working copy
+    zmk-layer-hud import ~/zmk-config --keyboard corne   # which keyboard, when it holds several
     zmk-layer-hud sync                                   # re-read the recorded source
 
 What is derived goes in its own file, named after the config (`config.yaml` -> `config.imported.yaml`),

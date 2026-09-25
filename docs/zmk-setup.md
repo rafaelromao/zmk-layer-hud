@@ -83,6 +83,16 @@ Over USB the signal goes out on a CDC-ACM interface. The module ships a snippet 
 west build ... -S layer-hud-usb-uart
 ```
 
+When GitHub Actions builds the firmware, name the snippet on the board's entry in `build.yaml`
+instead:
+
+```yaml
+include:
+  - board: nice_nano_v2
+    shield: corne_left
+    snippet: layer-hud-usb-uart
+```
+
 It adds a `cdc-acm-uart` under `&zephyr_udc0` and sets the `zmk,layer-hud-uart` chosen node, which
 is what turns `CONFIG_ZMK_LAYER_SIGNAL_UART` on. Point that chosen node at a UART yourself if you
 would rather use a physical one.

@@ -22,7 +22,7 @@ builds just the virtualenv, which is what the error messages that mention it mea
 ```bash
 make test        # firmware wire policy (C) + host decoder and keymap conversion (Python) + the page (node)
 make test-hud    # just the page; KEYMAP=hud/keymap.json runs it against your own board
-make audit       # the drawing against the keyboard's own keymap; SOURCE=~/projects/keyboards for a working copy
+make audit       # the drawing against the keyboard's own keymap; SOURCE=path/to/zmk-config for a working copy
 make fixture     # rebuild the committed test keymap from the configured one
 ```
 

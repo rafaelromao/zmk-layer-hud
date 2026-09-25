@@ -86,9 +86,9 @@ class SyncArgv(unittest.TestCase):
 
     def test_import_with_every_flag(self):
         self.assertEqual(
-            ["import", "~/projects/keyboards", "--keyboard", "diamond",
+            ["import", "~/zmk-config", "--keyboard", "corne",
              "--config", "/tmp/c.yaml", "--quiet"],
-            self.run_cli(["import", "~/projects/keyboards", "--keyboard", "diamond",
+            self.run_cli(["import", "~/zmk-config", "--keyboard", "corne",
                           "--config", "/tmp/c.yaml", "--quiet"]))
 
     def test_sync_takes_no_source(self):

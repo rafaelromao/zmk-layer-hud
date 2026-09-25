@@ -1,8 +1,10 @@
 # zmk-layer-hud
 
 An on-screen HUD for ZMK keyboards. It shows the layer you are on and lights the keys, combos
-and macros as you press them, drawn from the same keymap-drawer file you document your layout
-with. The keyboard itself reports its layers and key positions, so nothing is guessed.
+and macros as you press them, drawn from the same
+[keymap-drawer](https://github.com/caksoylar/keymap-drawer) file you document your layout with.
+The keyboard itself reports its layers and key positions, so nothing is guessed. Keep it on
+screen while you learn a layout, or while you record or share your screen.
 
 ![The HUD following a keyboard through its vim layers: typing on the base layer, a combo into vim
 mode, NORMAL with h j k l lit one at a time, v into VISUAL to select a word, yank and put it back,
@@ -12,7 +14,8 @@ then i into INSERT and Esc out](docs/hud.gif)
 [zmk-vim-mode](https://github.com/rafaelromao/zmk-vim-mode), whose daemon moves the keyboard
 between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`.*
 
-- **One source**: the keyboard, on a channel of its own. No OS event tap, no daemon, no per-app plugin.
+- **One source**: the keyboard, on a channel of its own. No OS event tap, no service to install,
+  no per-app plugin.
 - **Any ZMK keyboard**: a small ZMK module on the keyboard, a keymap-drawer YAML on the host.
 - **Live**: edit the YAML and the HUD redraws; every size and timing lives in one config file.
 - **Native panels**: a macOS overlay panel, a Hyprland layer-shell panel on Linux.
@@ -22,25 +25,31 @@ between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`
 - macOS, or Linux running Hyprland (the panel is a layer-shell surface).
 - Python 3.10 or newer. `setup` builds a virtualenv; on macOS, Apple's `/usr/bin/python3` is 3.9
   and is not enough on its own.
-- A ZMK keyboard whose firmware you can build and flash.
+- A ZMK keyboard whose firmware you can build and flash, and a keymap-drawer YAML of its keymap
+  (the [quick start](#quick-start) shows how to make one).
 - On Linux, the system GTK bindings for the panel — `python-gobject`, `webkit2gtk-4.1` and
   `gtk-layer-shell`, which `setup` installs.
 
 ## Quick start
 
-**Keyboard.** Add the module to your ZMK config and one node to your keymap, build with the
-`layer-hud-usb-uart` snippet (`west build … -S layer-hud-usb-uart`), flash. Step by step in
-[docs/zmk-setup.md](docs/zmk-setup.md).
+**Keyboard.** Add the module to your zmk-config's `config/west.yml`, and this node to your
+keymap:
 
 ```c
 / {
     layer_signal {
         compatible = "zmk,layer-signal";
-        heartbeat-ms = <2000>;
-        positions;
+        heartbeat-ms = <2000>;   // re-send the layers every 2 s, so a HUD started late catches up
+        positions;               // also report every key press by position, to light the exact key
     };
 };
 ```
+
+Over USB the signal needs a serial interface of its own, which the module's snippet adds:
+`-S layer-hud-usb-uart` on a local `west build`, or `snippet: layer-hud-usb-uart` on the board's
+entry in `build.yaml` when GitHub Actions builds it. Over Bluetooth it needs nothing more. Build and
+flash the central half, or the dongle; peripherals need nothing.
+[docs/zmk-setup.md](docs/zmk-setup.md) has every step, the `west.yml` lines included.
 
 **Host.** One line:
 
@@ -53,6 +62,15 @@ which prepares the machine itself: Homebrew's hidapi on macOS, the GTK and layer
 and the udev rule on Linux, the virtualenv, a config to start from, and the command in
 `~/.local/bin`. Nothing runs as root without printing the command and asking first, so a piped
 `curl` never quietly acquires it.
+
+No keymap-drawer YAML yet? keymap-drawer makes one from your keymap, and `setup` has already
+installed it in the tree's virtualenv:
+
+```bash
+~/.local/share/zmk-layer-hud/.venv/bin/keymap parse -z path/to/your.keymap > keymap.yaml
+```
+
+A YAML made that way needs nothing else in the config: its layer and key order are the keymap's.
 
 Then point the one required line of the config, `keymap:`, at your keymap-drawer YAML, check it
 converts, and start:
@@ -76,37 +94,46 @@ must never end up behind the board; it rearranges every window on that output.
 
 ### Try it without a keyboard
 
-`examples/` holds two keymaps from keymap-drawer's own examples with ready configs in `config/`: a
-3x5+3 split (`config/example-3x5.yaml`) and a 4x12 ortho board (`config/example-4x12.yaml`).
+The tree holds two keymaps from keymap-drawer's own examples, with ready configs: a 3x5+3 split
+and a 4x12 ortho board.
 
 ```bash
-zmk-layer-hud demo                                      # the 3x5 sample
-zmk-layer-hud demo --config config/example-4x12.yaml    # the ortho board
+zmk-layer-hud demo                                                                  # the 3x5 sample
+zmk-layer-hud demo --config ~/.local/share/zmk-layer-hud/config/example-4x12.yaml   # the ortho board
 ```
 
-That converts the keymap, serves the pages and opens them. In the browser console,
-`hud.setLayers([1])` switches layers, `hud.pressAt(13)` lights a key and `hud.releaseAt(13)` lets
-it go, so the whole page can be exercised without hardware.
+(From a clone, the second is `--config config/example-4x12.yaml`.) That converts the keymap,
+serves the pages and opens them. In the browser console, `hud.setLayers([1])` switches layers,
+`hud.pressAt(13)` lights a key and `hud.releaseAt(13)` lets it go, so the whole page can be
+exercised without hardware.
 
-The same calls can be scripted: `&demo=N` renders step N of a JSON demo script (`&script=<url>`,
-or `demo.json` beside the page) and stops there, and `docs/make-gif.sh` screenshots every step
-with a headless browser and assembles a GIF:
+**A GIF of your own.** The same calls can be scripted: `docs/make-gif.sh` steps through a JSON
+demo script in a headless Chromium-family browser and assembles the frames with `ffmpeg`. With no
+options it renders the 3x5 sample:
 
 ```bash
-bash docs/make-gif.sh --config config/diamond.yaml --script docs/demo-vim.json --out docs/hud.gif
+bash ~/.local/share/zmk-layer-hud/docs/make-gif.sh --out demo.gif
 ```
 
-That is the animation at the top of this page; `docs/demo-3x5.json` is the default and renders the
-3x5 sample instead. Both show the script's shape, which is documented above `demoFrame` in
-`hud/hud.js`. It needs a Chromium-family browser and cannot run inside a sandbox that denies unix
-sockets.
+The animation at the top of this page is `--config config/diamond.yaml --script
+docs/demo-vim.json`. A script's shape is documented above `demoFrame` in `hud/hud.js`, and
+`&demo=N` in the page's URL renders its step N alone (`&script=<url>`, or `demo.json` beside the
+page). The browser needs unix sockets, so this cannot run inside a sandbox that denies them.
+
+### Updating and uninstalling
+
+`zmk-layer-hud update` fetches a newer tree and keeps your config; a clone updates with `git pull`
+instead. `zmk-layer-hud uninstall` removes the tree and the command and leaves your config in
+`~/.config/zmk-layer-hud`, which `--purge` removes too, with the logs and the import cache. On
+Linux the udev rule stays until you remove it:
+`sudo rm /etc/udev/rules.d/60-zmk-layer-hud.rules`.
 
 ## Commands
 
 Everything is a verb on `zmk-layer-hud`; `zmk-layer-hud <command> --help` lists the flags of any
 one of them.
 
-| | |
+| Command | What it does |
 |---|---|
 | `start`, `stop`, `restart` | start the HUD; stop it; stop and start again |
 | `status` | is it running, and which of the keyboard's two channels is live |
@@ -130,8 +157,9 @@ drops just the HID half — the typed-keys strip and the shift flag — and keep
 ## Configuration
 
 `~/.config/zmk-layer-hud/config.yaml` (or `--config` / `ZMKHUD_CONFIG`). Paths may be relative to
-the file. Only `keymap:` is required; [config/diamond.yaml](config/diamond.yaml) shows every key
-with its default and a comment:
+the file. Only `keymap:` is required. [config/example.yaml](config/example.yaml) is the config
+`setup` starts you with; [config/diamond.yaml](config/diamond.yaml), the author's own, shows every
+key with its default and a comment:
 
 | key | what |
 |---|---|
@@ -165,15 +193,15 @@ Where things live, and what moves them:
 | `ZMKHUD_RESERVE` | `0` | what `start --reserve` sets |
 | `ZMKHUD_DEBUG` | unset | the macOS panel logs every layer and position message |
 
-### Keeping the config in this repo
+### Keeping the config in a repo
 
 `zmk-layer-hud setup` copies `config/example.yaml` to `~/.config` once and then leaves your config
 alone, which is what you want for a config you edit in place. If instead you keep your config in a
-repo — as [config/diamond.yaml](config/diamond.yaml) is kept here — link it rather than copying it,
-so `git pull` is the whole of syncing a second machine:
+repo — your zmk-config, say, the way [config/diamond.yaml](config/diamond.yaml) is kept in this
+one — link it rather than copying it, so `git pull` is the whole of syncing a second machine:
 
 ```sh
-zmk-layer-hud config link config/diamond.yaml
+zmk-layer-hud config link path/to/your/config.yaml
 ```
 
 Both names are linked, and that matters: `<config>.imported.yaml` is looked for beside the config's
@@ -189,8 +217,8 @@ a drawing choice, where the HUD needs the firmware's gate. `import` takes them o
 keyboard's own ZMK keymap, once:
 
 ```bash
-zmk-layer-hud import github.com/you/keyboards          # or a path to a working copy
-zmk-layer-hud import ~/projects/keyboards --keyboard diamond
+zmk-layer-hud import github.com/you/zmk-config         # or a path to a working copy
+zmk-layer-hud import ~/zmk-config --keyboard corne     # --keyboard: which one, when it holds several
 zmk-layer-hud sync                                     # read it again, and say what changed
 ```
 
@@ -238,10 +266,11 @@ Three things can produce the stream the page draws, and the page treats them ali
 right under `poke` can still be fed wrong by a real keyboard.
 
 The one difference is typing sent in, which says whether combos are how it is typed. By default
-they are not: `zmk-layer-hud poke --type zebra` draws the `z` as Alpha 2's key, and `--combos` draws
-the `r`+`a` chord. A WebSocket client says the same with `"combos": true` on a `key`
-([docs/protocol.md](docs/protocol.md#typing-sent-in)). The keyboard's own reports need no such word:
-they are placed on the layers it says are up.
+they are not: `zmk-layer-hud poke --type zebra` lights, for each letter, a single key that types it
+(for a `z` on a second alpha layer, that layer's key), and `--combos` lights the combo instead
+wherever one types it (a `z` typed by an `r`+`a` chord). A WebSocket client says the same with
+`"combos": true` on a `key` ([docs/protocol.md](docs/protocol.md#typing-sent-in)). The
+keyboard's own reports need no such word: they are placed on the layers it says are up.
 
 The keyboard speaks on two channels at once, with separate permissions, which is why half the HUD
 can work while the other half does not:
