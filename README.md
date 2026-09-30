@@ -154,7 +154,7 @@ one of them.
 | `start`, `stop`, `restart` | start the HUD; stop it; stop and start again |
 | `status` | is it running, and which of the keyboard's two channels is live |
 | `log` | follow the panel and feed logs |
-| `session [list\|new\|save\|load\|reset\|delete\|rename-layer\|export]` | the typing sessions: the active one, naming it, starting or loading another, drawing its heatmap as an SVG |
+| `session [list\|new\|save\|load\|reset\|delete\|rename-layer\|export\|history\|compare]` | the typing sessions: the active one, naming it, starting or loading another, drawing its heatmap as an SVG, its days, two side by side |
 | `heatmap [live\|session\|physical\|speed\|off]` | what the keys glow with: what was just typed, every press this session on the layer on screen or on all of them, each key's time, or nothing |
 | `doctor` | check this machine and say what is missing |
 | `setup` | prepare this machine: packages, virtualenv, config, permissions |
@@ -228,7 +228,12 @@ zmk-layer-hud session list
 zmk-layer-hud session load colemak-1  # make it the active one again: typing adds to it
 zmk-layer-hud heatmap session         # the keys glow with how often each one was pressed
 zmk-layer-hud session history         # the active one, day by day; --all adds every session's days up
+zmk-layer-hud session compare colemak-1   # side by side with the active one (or name a second)
 ```
+
+`compare` sets the numbers of two sessions against each other: keys, the share made as combos,
+accuracy, typing time, speed, same-finger bigrams, and each layer's share of the keys. That is
+the way to see what a change to the keymap did.
 
 `save` on a session that already has a name keeps it as it is and goes on in a copy under the
 new one. `reset` zeroes the active session and `delete` removes one that is not active; both ask

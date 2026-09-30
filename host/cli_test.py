@@ -73,6 +73,26 @@ class Parser(unittest.TestCase):
         self.assertTrue(cli.needs_venv(args))
         self.assertFalse(cli.needs_venv(self.parser.parse_args(["session", "list"])))
 
+    def test_two_sessions_side_by_side(self):
+        import session
+        a, b = session.empty("week1", True), session.empty("week2", True)
+        a["presses"] = {"alpha": {"0": 800}, "sym": {"1": 200}}
+        a["totals"].update(chars=900, deleted=90, active_ms=600000, active_net=810, peak_wpm=70)
+        b["presses"] = {"alpha": {"0": 900}, "sym": {"1": 300}, "nav": {"2": 300}}
+        b["combos"] = {"alpha": {"0,1": 150}}
+        b["totals"].update(chars=1200, deleted=60, active_ms=600000, active_net=1140, peak_wpm=80,
+                           sfb=30, bigrams=1000)
+        rows = {r[0].strip(): r[1:] for r in cli.compare_rows(a, b, session)}
+        self.assertEqual(("1,000", "1,500", "+50%"), rows["keys"])
+        self.assertEqual(("0%", "11%", "+11 pts"), rows["combos"])          # 150 of 1350 keystrokes
+        self.assertEqual(("90%", "95%", "+5 pts"), rows["accurate"])
+        self.assertEqual(("16", "23", "+7"), rows["wpm"])
+        self.assertEqual(("—", "3.0%", ""), rows["same finger"])
+        self.assertEqual(("80%", "60%", "-20 pts"), rows["alpha"])
+        self.assertEqual(("0%", "20%", "+20 pts"), rows["nav"])
+        names = [r[0].strip() for r in cli.compare_rows(a, b, session)]
+        self.assertLess(names.index("alpha"), names.index("sym"))           # B's most used layer first
+
     def test_needs_venv_names_real_verbs(self):
         # NEEDS_VENV is consulted by name before the parser runs, so a typo there would silently
         # stop a verb from re-execing into the venv.
@@ -184,6 +204,15 @@ class Shim(unittest.TestCase):
             moved = run("session", "rename-layer", "sym", "symbols")
             self.assertEqual(0, moved.returncode, moved.stderr)
             self.assertNotIn("not shown", run("session").stdout)
+            # Two sessions side by side: week1 against the active one, then against a named one.
+            self.assertEqual(0, run("session", "new", "week3").returncode)
+            both = run("session", "compare", "week1")
+            self.assertEqual(0, both.returncode, both.stderr)
+            self.assertIn("week1", both.stdout.splitlines()[0])
+            self.assertIn("week3", both.stdout.splitlines()[0])
+            self.assertIn("symbols", both.stdout)
+            self.assertEqual(1, run("session", "compare", "week3").returncode)   # itself
+            self.assertEqual(1, run("session", "compare", "week1", "nope").returncode)
 
     def test_a_sessions_days(self):
         import datetime

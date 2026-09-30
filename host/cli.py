@@ -348,6 +348,48 @@ def numbers_line(t):
     return " · ".join(parts)
 
 
+def compare_rows(a, b, mod):
+    """`session compare`: (what, A, B, the change from A to B) for two sessions side by side."""
+    ta, tb = mod.summary(a), mod.summary(b)
+
+    def count(x, y):
+        return f"{(y - x) / x * 100:+.0f}%" if x else ""
+
+    def share(x, y, digits=0):
+        if x is None or y is None:
+            return ""
+        points = (y - x) * 100
+        return f"{points:+.{digits}f} pt" + ("" if abs(round(points, digits)) == 1 else "s")
+
+    pct = lambda v, digits=0: "—" if v is None else f"{v * 100:.{digits}f}%"   # noqa: E731
+    num = lambda v: "—" if v is None else f"{v:,}"                               # noqa: E731
+    rows = [
+        ("keys", num(ta["presses"]), num(tb["presses"]), count(ta["presses"], tb["presses"])),
+        ("combos", pct(ta["combo_share"]), pct(tb["combo_share"]), share(ta["combo_share"], tb["combo_share"])),
+        ("typed", num(ta["chars"]), num(tb["chars"]), count(ta["chars"], tb["chars"])),
+        ("accurate", pct(ta["accuracy"]), pct(tb["accuracy"]), share(ta["accuracy"], tb["accuracy"])),
+        ("typing time", duration(ta["active_ms"]), duration(tb["active_ms"]), count(ta["active_ms"], tb["active_ms"])),
+        ("wpm", num(ta["wpm"]), num(tb["wpm"]),
+         f"{tb['wpm'] - ta['wpm']:+d}" if ta["wpm"] is not None and tb["wpm"] is not None else ""),
+        ("top wpm", num(ta["peak_wpm"]), num(tb["peak_wpm"]),
+         f"{tb['peak_wpm'] - ta['peak_wpm']:+d}" if ta["peak_wpm"] and tb["peak_wpm"] else ""),
+        ("same finger", pct(ta["sfb"], 1), pct(tb["sfb"], 1), share(ta["sfb"], tb["sfb"], 1)),
+    ]
+    # Where the typing went: each layer's share of the keys, the layers B uses most first.
+    shares = []
+    for s in (a, b):
+        per = {layer: sum(m.values()) for layer, m in s["presses"].items()}
+        total = sum(per.values())
+        shares.append({layer: n / total for layer, n in per.items()} if total else {})
+    layers = sorted(set(shares[0]) | set(shares[1]), key=lambda l: (-shares[1].get(l, 0), -shares[0].get(l, 0), l))
+    if layers:
+        rows.append(("layers, of the keys", "", "", ""))
+        of = lambda i, layer: shares[i].get(layer, 0) if shares[i] else None     # noqa: E731  (no keys: no share)
+        rows += [(f"  {layer}", pct(of(0, layer)), pct(of(1, layer)), share(of(0, layer), of(1, layer)))
+                 for layer in layers]
+    return rows
+
+
 def session_line(s, mod):
     t = mod.summary(s)
     parts = [f"{t['presses']:,} keys", f"{t['combos']:,} combos", f"{t['chars']:,} typed",
@@ -365,11 +407,11 @@ def cmd_session(args):
     mod = sessions_mod()
     d = mod.default_dir()
     act, name = args.action, args.name
-    if act in ("save", "load", "delete") and not name:
+    if act in ("save", "load", "delete", "compare") and not name:
         raise Fail(f"`session {act}` needs the session's name")
     if act == "rename-layer" and not (name and args.other):
         raise Fail("`session rename-layer` needs the layer's old name and its new one")
-    if args.other and act != "rename-layer":
+    if args.other and act not in ("rename-layer", "compare"):
         raise Fail(f"`session {act}` takes {'one name' if act in ('new', 'save', 'load', 'delete', 'export', 'history') else 'no name'}")
     try:
         if act == "status":
@@ -392,6 +434,19 @@ def cmd_session(args):
                       f" moved from {name} to {args.other}")
         elif act == "export":
             return session_export(args, mod, d)
+        elif act == "compare":
+            every = mod.sessions(d)
+            _, current = mod.status(d)
+            second = args.other or current["name"]
+            for n in (name, second):
+                if n not in every:
+                    raise Fail(f"there is no session called {n}; `zmk-layer-hud session list` shows them")
+            if name == second:
+                raise Fail(f"{name} is the active session; name the one to compare it with")
+            rows = [("", name, second, "")] + compare_rows(every[name], every[second], mod)
+            widths = [max(len(r[i]) for r in rows) for i in range(3)]
+            for what, x, y, change in rows:
+                print(f"{what:<{widths[0]}}  {x:>{widths[1]}}  {y:>{widths[2]}}  {change}".rstrip())
         elif act == "history":
             every = mod.sessions(d)
             if args.all:
@@ -1089,12 +1144,13 @@ def build_parser():
     s = add("session", "the typing sessions: the active one, naming it, starting or loading another")
     s.add_argument("action", nargs="?", default="status",
                    choices=("status", "list", "new", "save", "load", "reset", "delete", "rename-layer", "export",
-                            "history"),
+                            "history", "compare"),
                    help="status (default), list, new [NAME], save NAME, load NAME, reset, delete NAME, "
-                        "rename-layer OLD NEW, export [NAME], history [NAME]")
-    s.add_argument("name", nargs="?", help="the session, for new, save, load, delete, export and history (default: "
-                                           "the active one); the layer, for rename-layer")
-    s.add_argument("other", nargs="?", help="the layer's new name, for rename-layer")
+                        "rename-layer OLD NEW, export [NAME], history [NAME], compare NAME [OTHER]")
+    s.add_argument("name", nargs="?", help="the session, for new, save, load, delete, export, history and compare "
+                                           "(default: the active one); the layer, for rename-layer")
+    s.add_argument("other", nargs="?", help="the layer's new name, for rename-layer; the session to compare with "
+                                            "(default: the active one)")
     s.add_argument("--all", action="store_true", help="rename-layer in every session, not only the active one; "
                                                       "history: every session's days added up")
     s.add_argument("--yes", action="store_true", help="do not ask before reset or delete")
