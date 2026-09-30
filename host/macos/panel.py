@@ -24,8 +24,9 @@ DEBUG = os.environ.get("ZMKHUD_DEBUG") == "1"  # log every layer and position me
 
 try:
     import objc
-    from AppKit import (NSApplication, NSApplicationActivationPolicyAccessory, NSBackingStoreBuffered, NSColor,
-                        NSMakeRect, NSPanel, NSScreen, NSStatusWindowLevel, NSWindowCollectionBehaviorCanJoinAllSpaces,
+    from AppKit import (NSAlert, NSApplication, NSApplicationActivationPolicyAccessory, NSBackingStoreBuffered,
+                        NSColor, NSEvent, NSEventMaskLeftMouseDown, NSMakeRect, NSMenu, NSMenuItem, NSOnState,
+                        NSPanel, NSTextField, NSScreen, NSStatusWindowLevel, NSWindowCollectionBehaviorCanJoinAllSpaces,
                         NSWindowCollectionBehaviorFullScreenAuxiliary, NSWindowCollectionBehaviorStationary,
                         NSWindowStyleMaskBorderless, NSWindowStyleMaskNonactivatingPanel)
     from Foundation import NSNotificationCenter, NSObject, NSURL
@@ -36,6 +37,7 @@ except ImportError:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import hudfeed  # noqa: E402
+import session as session_mod  # noqa: E402  (host/session.py)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 PAGES = ROOT / "hud"
@@ -86,10 +88,59 @@ def initial_frame():
 
 
 class DragWebView(WKWebView):
-    """Dragging anywhere on the page moves the window; clicks still reach the page (the ✕)."""
+    """The page, filling the panel. The window is moved by dragging the page anywhere but on its
+    controls, and that is done here rather than by AppKit's movable-by-background: that asks one of
+    WebKit's own views whether a press may move the window, never this one, so it moved the window
+    from under the slider too. The page says where its controls are ({"kind": "nodrag", "rects":
+    [[x, y, w, h], ...]}, page points from the top left); a press anywhere else starts a window drag
+    (Host.mouse_down)."""
+
+    no_drag = []
 
     def mouseDownCanMoveWindow(self):
-        return True
+        return False
+
+    @objc.python_method
+    def on_control(self, event):
+        """Whether a mouse-down in the window lands on one of the page's controls."""
+        p = self.convertPoint_fromView_(event.locationInWindow(), None)
+        y = p.y if self.isFlipped() else self.frame().size.height - p.y
+        return any(x <= p.x <= x + w and top <= y <= top + h for x, top, w, h in DragWebView.no_drag)
+
+    def willOpenMenu_withEvent_(self, menu, event):
+        """The page's own menu (right-click) gets the sessions: save the one being typed into under
+        a name, load a saved one, or start a new one -- what `zmk-layer-hud session` does."""
+        objc.super(DragWebView, self).willOpenMenu_withEvent_(menu, event)
+        store = Host.instance.feed.sessions if Host.instance and Host.instance.feed else None
+        if store is None or not store.persist:
+            return
+        bridge = Host.instance.bridge
+        try:
+            active = session_mod.status(store.dir)[1]["name"]
+            names = sorted(session_mod.sessions(store.dir))
+        except Exception as e:
+            log(f"session: {type(e).__name__}: {e}")
+            return
+        menu.addItem_(NSMenuItem.separatorItem())
+        head = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(f"Session: {active}", None, "")
+        head.setEnabled_(False)
+        menu.addItem_(head)
+        for title, action in (("Save Session As…", "saveSession:"), ("New Session", "newSession:")):
+            item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, action, "")
+            item.setTarget_(bridge)
+            menu.addItem_(item)
+        load = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Load Session", None, "")
+        sub = NSMenu.alloc().initWithTitle_("Load Session")
+        for name in names:
+            item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(name, "loadSession:", "")
+            item.setTarget_(bridge)
+            item.setRepresentedObject_(name)
+            if name == active:
+                item.setState_(NSOnState)
+            sub.addItem_(item)
+        load.setSubmenu_(sub)
+        load.setEnabled_(bool(names))
+        menu.addItem_(load)
 
 
 class Bridge(NSObject):
@@ -110,6 +161,11 @@ class Bridge(NSObject):
         kind = msg.get("kind") if isinstance(msg, dict) else None
         if kind == "size":
             Host.instance.resize(msg.get("width"), msg.get("height"))
+        elif kind == "nodrag":
+            rects = msg.get("rects")
+            if isinstance(rects, list):
+                DragWebView.no_drag = [tuple(float(v) for v in r) for r in rects
+                                       if isinstance(r, list) and len(r) == 4 and all(isinstance(v, (int, float)) for v in r)]
         elif kind in ("tally", "heatmap", "pref"):
             store = Host.instance.feed.sessions if Host.instance and Host.instance.feed else None
             if store is None:
@@ -124,12 +180,61 @@ class Bridge(NSObject):
             except Exception as e:  # a count that could not be kept must not take the panel down
                 log(f"session: {type(e).__name__}: {e}")
 
+    # The menu's session items (DragWebView.willOpenMenu_withEvent_). What was counted and not yet
+    # written goes first, and the store is read again at once, so the page shows the change now
+    # rather than at the next poll.
+    @objc.python_method
+    def _sessions(self, what, *args):
+        store = Host.instance.feed.sessions if Host.instance and Host.instance.feed else None
+        if store is None:
+            return
+        try:
+            store.flush()
+            what(store.dir, *args)
+            store.reload(announce=True)
+        except session_mod.SessionError as e:
+            ask_name(str(e), None)          # said in a plain alert, with nothing to type
+        except Exception as e:
+            log(f"session: {type(e).__name__}: {e}")
+
+    def saveSession_(self, sender):
+        name = ask_name("Save the session being typed into as:", "")
+        if name:
+            self._sessions(session_mod.save, name)
+
+    def loadSession_(self, sender):
+        self._sessions(session_mod.load, str(sender.representedObject()))
+
+    def newSession_(self, sender):
+        self._sessions(session_mod.new)
+
     def windowDidMove_(self, notification):
         f = notification.object().frame()
         save_state({"frame": [f.origin.x, f.origin.y, f.size.width, f.size.height]})
 
+    def webView_didStartProvisionalNavigation_(self, webview, navigation):
+        Host.instance.page_leaving()
+
     def webView_didFinishNavigation_(self, webview, navigation):
         Host.instance.page_ready()
+
+
+def ask_name(message, default):
+    """A small modal alert, the panel's one dialog: with a field when default is a string (-> what
+    was typed, or None if cancelled), without one to say something (-> None)."""
+    NSApplication.sharedApplication().activateIgnoringOtherApps_(True)   # an accessory app's alert is behind otherwise
+    alert = NSAlert.alloc().init()
+    alert.setMessageText_(message)
+    field = None
+    if default is not None:
+        field = NSTextField.alloc().initWithFrame_(NSMakeRect(0, 0, 240, 24))
+        field.setStringValue_(default)
+        alert.setAccessoryView_(field)
+        alert.addButtonWithTitle_("Save")
+        alert.addButtonWithTitle_("Cancel")
+        alert.window().setInitialFirstResponder_(field)
+    ok = alert.runModal() == 1000   # NSAlertFirstButtonReturn
+    return field.stringValue().strip() if field is not None and ok else None
 
 
 class Host:
@@ -140,7 +245,9 @@ class Host:
     def __init__(self):
         Host.instance = self
         self.ready = False
+        self.loaded = False             # the first page has loaded (page_ready): a later one is a reload
         self.queue = []
+        self.standing = {}              # kind -> the latest of it, for a reloaded page
         self.bridge = Bridge.alloc().init()
 
         frame = initial_frame()
@@ -150,7 +257,7 @@ class Host:
         panel.setOpaque_(False)
         panel.setBackgroundColor_(NSColor.clearColor())
         panel.setHasShadow_(False)
-        panel.setMovableByWindowBackground_(True)
+        panel.setMovableByWindowBackground_(False)   # DragWebView and mouse_down move it instead
         panel.setCollectionBehavior_(NSWindowCollectionBehaviorCanJoinAllSpaces
                                      | NSWindowCollectionBehaviorStationary
                                      | NSWindowCollectionBehaviorFullScreenAuxiliary)
@@ -169,6 +276,9 @@ class Host:
         web.loadFileURL_allowingReadAccessToURL_(NSURL.fileURLWithPath_(str(PAGES / "index.html")),
                                                  NSURL.fileURLWithPath_(str(PAGES)))
         panel.setContentView_(web)
+        # Every press in the panel is looked at first: on a control it goes to the page as it is,
+        # anywhere else it moves the window and the page never sees it (nothing there takes a click).
+        self.monitor = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(NSEventMaskLeftMouseDown, self.mouse_down)
         panel.orderFrontRegardless()
         self.panel, self.web = panel, web
         log(f"HUD on {focused_screen().localizedName()} at {int(frame.origin.x)},{int(frame.origin.y)}")
@@ -203,11 +313,31 @@ class Host:
         self.panel.setFrame_display_(NSMakeRect(f.origin.x, top - h, w, h), True)
         self.web.setFrame_(((0, 0), (w, h)))
 
+    # What a page loaded afresh (a reload from the page's menu) has to be told again: the latest of
+    # each, since the feed says them once, when they change. Keys come and go and are not kept.
+    STANDING = ("keymap", "layers", "device", "session", "secure")
+
+    def mouse_down(self, event):
+        if event.window() is None or event.window() != self.panel:
+            return event
+        if self.web.on_control(event):
+            if DEBUG:
+                log("mouse down on a control: the page has it")
+            return event
+        self.panel.performWindowDragWithEvent_(event)
+        return None
+
     def page_ready(self):
         self.ready = True
-        for js in self.queue:
+        replay = [self.standing[k] for k in self.STANDING if k in self.standing] if self.loaded else []
+        self.loaded = True
+        for js in replay + self.queue:
             self.web.evaluateJavaScript_completionHandler_(js, None)
         self.queue = []
+
+    def page_leaving(self):
+        """A reload has begun: until the new page is ready, messages wait for it."""
+        self.ready = False
 
     def deliver(self, msg):
         data = json.dumps(msg, ensure_ascii=False)
@@ -231,6 +361,8 @@ class Host:
             js = f"hud.receive({data})"   # the rest (the session) through the page's own dispatcher
         if msg.get("device"):
             js = f"hud.setDevice({json.dumps(msg['device'])}); " + js
+        if msg["kind"] in self.STANDING and not msg.get("sent"):
+            self.standing[msg["kind"]] = js
         if self.ready:
             self.web.evaluateJavaScript_completionHandler_(js, None)
         else:
