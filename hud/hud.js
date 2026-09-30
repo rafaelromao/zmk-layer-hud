@@ -385,7 +385,8 @@
   // Tell a native host how tall the page wants to be (the layout decides), and how wide the
   // config says. Hosts that listen (host/macos/panel.py) resize their window to it.
   function postSize() {
-    const width = (state.data && state.data.hud && state.data.hud.width) || null;
+    let width = (state.data && state.data.hud && state.data.hud.width) || null;
+    if (width && bar.host && !bar.host.classList.contains("off")) width += STATS_COLUMN;
     const height = Math.ceil(document.body.scrollHeight);
     // The macOS panel reads it on its bridge. The Linux panel has a handler for nothing else
     // (host/linux/panel.py), named apart so that the page never takes it for the bridge a
@@ -880,40 +881,53 @@
   }
   const pct = x => Math.round(x * 100) + "%";
 
-  // Chips of their own above the panel, like the strip's below it, so they read on a surface
-  // with nothing behind them. Each is written only when its text changes.
+  // A column right of the keys (hud.css #stats): one box per stat, all as wide as the column, each
+  // row a label and its value. The column is added to the panel's width rather than taken out of
+  // the board's (postSize), so the keys stay the size hud.width gives them. Each value is written
+  // only when its text changes.
+  const STATS_COLUMN = 172 + 12;   // hud.css: #stats width (a session name and its label fit) + its margin-left
   const bar = {};
   function buildStats() {
     const host = $("stats");
     if (!host || bar.host) return;
     bar.host = host;
-    const chip = (name, parts) => {
-      const c = el("span", "stat " + name);
-      const vals = [];
-      for (const p of parts) {
-        if (p === null) { const b = el("b"); vals.push(b); c.appendChild(b); } else c.appendChild(el("span", null, p));
+    // labels: one per row; null is a label the stat writes itself (the layer's name).
+    const chip = (name, labels) => {
+      const c = el("div", "stat " + name);
+      const vals = [], names = [];
+      for (const label of labels) {
+        const row = el("div", "row");
+        const l = el("span", null, label == null ? "" : label), b = el("b");
+        row.appendChild(l); row.appendChild(b); c.appendChild(row);
+        names.push(l); vals.push(b);
       }
       host.appendChild(c);
-      return { chip: c, vals };
+      return { chip: c, vals, names };
     };
     // In the config's order (host/keymap.py STATS_DEFAULTS), each shown or not by its `stats:` word.
-    bar.wpm = chip("wpm", [null, " wpm"]);
-    bar.session = chip("session", ["avg ", null, " · top ", null]);
-    bar.accuracy = chip("acc", [null, " accurate"]);
-    bar.keys = chip("keys", [null, " keys · ", null, " combos"]);
-    bar.layer = chip("layer", [null, " ", null]);
-    bar.time = chip("time", [null, " typing"]);
-    bar.hands = chip("hands", ["L ", null, " · R ", null]);
-    bar.sfb = chip("sfb", [null, " same finger"]);
+    bar.wpm = chip("wpm", ["wpm"]);
+    bar.session = chip("session", ["avg wpm", "top wpm"]);
+    bar.accuracy = chip("acc", ["accurate"]);
+    bar.keys = chip("keys", ["keys", "combos"]);
+    bar.layer = chip("layer", [null]);
+    bar.time = chip("time", ["typing"]);
+    bar.hands = chip("hands", ["left hand", "right hand"]);
+    bar.sfb = chip("sfb", ["same finger"]);
     bar.sfb.chip.title = "same-finger bigrams: two keys in a row struck by one finger";
-    bar.slow = chip("slow", ["slowest ", null, " ", null]);
+    bar.slow = chip("slow", ["slowest", "after the last"]);
     bar.slow.chip.title = "the key that takes longest after the key before it, on average";
-    bar.heatmap = chip("mode", [null, "heat ", null]);
+    // `stats: heatmap` shows both: the session the counts go to, and what the keys glow with.
+    bar.named = chip("named", ["session"]);
+    bar.heatmap = chip("mode", ["heat"]);
     bar.heatmap.chip.title = "click: " + HEAT_MODES.join(", ");
     bar.heatmap.chip.addEventListener("click", () => setHeatmap(HEAT_MODES[(HEAT_MODES.indexOf(state.heatMode) + 1) % HEAT_MODES.length]));
   }
-  function put(chip, values) {
+  function put(chip, values, names) {
     values.forEach((v, i) => { if (chip.vals[i].textContent !== v) chip.vals[i].textContent = v; });
+    (names || []).forEach((v, i) => { if (chip.names[i].textContent !== v) chip.names[i].textContent = v; });
+  }
+  function toggleChip(chip, on) {
+    if (chip.chip.classList.contains("off") === on) chip.chip.classList.toggle("off", !on);
   }
   function fmtDuration(ms) {
     const s = Math.floor(ms / 1000), m = Math.floor(s / 60), h = Math.floor(m / 60);
@@ -947,9 +961,10 @@
     const fingers = !!(state.data && state.data.fingers);
     for (const name of Object.keys(STAT_DEFAULTS)) {
       // Hands and same-finger bigrams need to know whose finger struck each key.
-      const on = statOn(name) && (fingers || (name !== "hands" && name !== "sfb"));
-      if (bar[name].chip.classList.contains("off") === on) bar[name].chip.classList.toggle("off", !on);
+      toggleChip(bar[name], statOn(name) && (fingers || (name !== "hands" && name !== "sfb")));
     }
+    const named = state.session && state.session.name;
+    toggleChip(bar.named, statOn("heatmap") && !!named);
     const now = Date.now(), v = view();
     const live = Math.round(wpmOf(state.typing, now));
     put(bar.wpm, [v.chars || state.typing.win.length ? String(live) : "—"]);
@@ -968,7 +983,7 @@
       put(bar.sfb, [v.bigrams >= SFB_MIN ? (Math.round(v.sfb / v.bigrams * 1000) / 10).toFixed(1) + "%" : "—"]);
     }
     const slow = slowest(v);
-    put(bar.slow, slow ? [legendAt(slow.layer, slow.pos), Math.round(slow.mean) + " ms"] : ["—", ""]);
+    put(bar.slow, slow ? [legendAt(slow.layer, slow.pos), Math.round(slow.mean) + " ms"] : ["—", "—"]);
     // A combo is one keystroke made with several keys: its share is of keystrokes, not of keys.
     let presses = 0, combos = 0, members = 0;
     for (const layer in v.presses) presses += sum(v.presses[layer]);
@@ -978,15 +993,17 @@
     const strokes = presses - members + combos;
     put(bar.keys, [fmtCount(presses), strokes > 0 ? pct(combos / strokes) : "—"]);
     const top = state.data ? stack()[0] : null;
-    put(bar.layer, [top ? layerLabel(top) : "—", top && presses ? pct(sum(v.presses[top] || {}) / presses) : "—"]);
-    put(bar.heatmap, [state.session && state.session.name ? state.session.name + " · " : "", state.heatMode]);
+    put(bar.layer, [top && presses ? pct(sum(v.presses[top] || {}) / presses) : "—"], [top ? layerLabel(top) : "layer"]);
+    put(bar.named, [named || ""]);
+    bar.named.chip.title = named || "";   // a long name is cut short on the column
+    put(bar.heatmap, [state.heatMode]);
     followBar();
   }
-  // More chips than a row holds wrap onto a second (hud.css #stats): the page is taller then, or
-  // shorter again, and the panel sizes itself from the page.
+  // A column taller than the board makes the page taller, and one shown or hidden changes the
+  // panel's width (postSize): the panel sizes itself from what the page says.
   function followBar() {
-    const h = bar.host.offsetHeight;
-    if (h !== bar.height) { bar.height = h; postSize(); }
+    const shape = bar.host.offsetHeight + (bar.host.classList.contains("off") ? "/off" : "");
+    if (shape !== bar.shape) { bar.shape = shape; postSize(); }
   }
 
   // ---------- resolver ----------

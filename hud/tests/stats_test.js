@@ -19,6 +19,8 @@ const { loadPage } = require("./dom.js");
 const FIXTURE = path.join(__dirname, "fixtures", "diamond.json");
 const SPACED_MS = 100;    // between presses that must stay separate keystrokes: past any combo term
 const CHORD_MS = 5;       // between the keys of a chord
+// A stat box's text as a viewer reads it: each row's label and value, rows apart.
+const rowsText = c => c.children.map(row => row.children.map(x => x.textContent).join(" ")).join(" / ");
 
 function main() {
   const argv = process.argv.slice(2);
@@ -419,23 +421,23 @@ function main() {
     const p = fresh();
     const bar = p.document.getElementById("stats");
     const chip = name => bar.querySelectorAll(".stat").find(c => c.classList.contains(name));
-    const text = name => { const c = chip(name); return c ? c.children.map(x => x.textContent).join("") : null; };
+    const text = name => { const c = chip(name); return c ? rowsText(c) : null; };
     check("the bar has its chips", ["wpm", "session", "acc", "keys", "layer", "mode"].every(chip),
           bar.children.map(c => c.className).join(" | "));
-    check("with nothing typed, no speed", text("wpm") === "— wpm", text("wpm"));
+    check("with nothing typed, no speed", text("wpm") === "wpm —", text("wpm"));
     typeText(p, "x".repeat(60), 200);
-    check("typing shows its speed", text("wpm") === "60 wpm", text("wpm"));
-    check("its session average and peak", /^avg 60 · top 6[01]$/.test(text("session")), text("session"));
-    check("and its accuracy", text("acc") === "100% accurate", text("acc"));
+    check("typing shows its speed", text("wpm") === "wpm 60", text("wpm"));
+    check("its session average and peak", /^avg wpm 60 \/ top wpm 6[01]$/.test(text("session")), text("session"));
+    check("and its accuracy", text("acc") === "accurate 100%", text("acc"));
     // The x typed above is a chord on some boards (the Diamond's), so keys are counted apart.
     const k = fresh();
     const ktext = name => k.document.getElementById("stats").querySelectorAll(".stat")
-      .find(c => c.classList.contains(name)).children.map(x => x.textContent).join("");
+      .find(c => c.classList.contains(name));
     tap(k, A.pos); tap(k, B.pos); tap(k, A.pos);
     k.clock.advance(settle);
-    check("keys are counted", ktext("keys") === "3 keys · 0% combos", ktext("keys"));
-    check("the layer on screen has its share", ktext("layer").endsWith(" 100%"), ktext("layer"));
-    check("and the heatmap its mode", ktext("mode") === "heat live", ktext("mode"));
+    check("keys are counted", rowsText(ktext("keys")) === "keys 3 / combos 0%", rowsText(ktext("keys")));
+    check("the layer on screen has its share", rowsText(ktext("layer")).endsWith(" 100%"), rowsText(ktext("layer")));
+    check("and the heatmap its mode", rowsText(ktext("mode")) === "heat live", rowsText(ktext("mode")));
 
     const q = fresh({ stats_bar: 0 });
     check("stats_bar: 0 hides it", q.document.getElementById("stats").classList.contains("off"));
@@ -601,18 +603,18 @@ function main() {
             shown(blind, "time") && shown(blind, "slow") && !shown(blind, "wpm"));
       const c = withFingers(hands, { stats: asked });
       const txt = name => c.document.getElementById("stats").querySelectorAll(".stat")
-        .find(x => x.classList.contains(name)).children.map(x => x.textContent).join("");
+        .find(x => x.classList.contains(name));
       for (let i = 0; i < 12; i++) { tap(c, P.pos); c.clock.advance(20); tap(c, R.pos); c.clock.advance(200); }
       tap(c, Q.pos); tap(c, P.pos); tap(c, Q.pos);
       c.clock.advance(settle);
       // P after R: 300 ms, eleven times, and once 100 ms after Q; R after P: 120 ms. Of 26
       // bigrams, Q-P and P-Q are one finger's.
-      check("the slowest key and its time", txt("slow").startsWith("slowest ") &&
-            txt("slow").endsWith(` ${Math.round((11 * 300 + 100) / 12)} ms`), txt("slow"));
-      check("same-finger bigrams as a share", txt("sfb") === `${(Math.round(2 / 26 * 1000) / 10).toFixed(1)}% same finger`, txt("sfb"));
-      check("each hand's share", txt("hands") === `L ${Math.round(15 / 27 * 100)}% · R ${Math.round(12 / 27 * 100)}%`, txt("hands"));
+      check("the slowest key and its time", /^slowest \S+ \/ after the last /.test(rowsText(txt("slow"))) &&
+            rowsText(txt("slow")).endsWith(` ${Math.round((11 * 300 + 100) / 12)} ms`), rowsText(txt("slow")));
+      check("same-finger bigrams as a share", rowsText(txt("sfb")) === `same finger ${(Math.round(2 / 26 * 1000) / 10).toFixed(1)}%`, rowsText(txt("sfb")));
+      check("each hand's share", rowsText(txt("hands")) === `left hand ${Math.round(15 / 27 * 100)}% / right hand ${Math.round(12 / 27 * 100)}%`, rowsText(txt("hands")));
       typeText(c, "x".repeat(60), 200);
-      check("and the time spent typing", txt("time") === "11s typing", txt("time"));
+      check("and the time spent typing", rowsText(txt("time")) === "typing 11s", rowsText(txt("time")));
 
       // The heatmaps the session's counts make besides its own: every layer at once, and speed.
       const other = data.layer_order.find(l => l !== base && idOf(l) !== null && binding(P.idx, [l, base]) === l &&
@@ -707,9 +709,9 @@ function main() {
     check("what it has not yet is shown with it", shown(p) === 2 && posted.filter(m => m.kind === "tally").length === 2, shown(p));
     p.hud.receive(sessionMsg({ presses: { [base]: { [A.pos]: 1, [B.pos]: 1 } }, acks: { [first.page]: 2 } }));
     check("and once it has it, once", shown(p) === 2, shown(p));
-    const text = p.document.getElementById("stats").querySelectorAll(".stat").find(c => c.classList.contains("mode"))
-      .children.map(x => x.textContent).join("");
-    check("the bar names the session", text === "week1 · heat live", text);
+    const statText = name => rowsText(p.document.getElementById("stats").querySelectorAll(".stat").find(c => c.classList.contains(name)));
+    check("the bar names the session, apart from the heat", statText("named") === "session week1" &&
+          statText("mode") === "heat live", `${statText("named")} | ${statText("mode")}`);
 
     // A reset (or another session loaded): what was on the way belongs to the one before.
     tap(p, C.pos);

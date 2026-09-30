@@ -111,20 +111,30 @@ body.secure #layerSub { color: #e0af68; }
 /* A GIF still (&demo=N) is drawn as it always was. */
 body.demo .key::before, body.demo #stats { display: none; }
 
-/* The stats bar above the panel (hud.js "the stats bar"): chips of their own, like the strip's
-   below, so they read with nothing behind them. Which chips it has is the config's `stats:`; one
-   it leaves out is .off. More than a row's worth go on a second row, and the page tells the panel
-   it is taller (followBar): the macOS window and the Linux surface both take the page's size. */
-#stats { display: flex; flex-wrap: wrap; gap: 4px 5px; max-height: 56px; margin-bottom: 6px; overflow: hidden; white-space: nowrap; font-family: var(--font); }
+/* The stats column right of the keys (hud.js "the stats bar"): one box per stat, every one the
+   column's width, each row a label and its value. Which boxes it has is the config's `stats:`; one
+   it leaves out is .off. The column's width is added to the panel's (hud.js STATS_COLUMN, which
+   has to agree with the width and margin here), so the keys keep the size hud.width gives them. */
+#main { display: flex; align-items: flex-start; }
+#main #board { flex: 1 1 auto; min-width: 0; }
+#stats { flex: none; width: 172px; margin-left: 12px; display: flex; flex-direction: column; gap: 4px; font-family: var(--font); }
 #stats.off, #stats .stat.off { display: none; }
 #stats .stat {
-  flex: none; padding: 0 8px; border-radius: 4px; background: var(--panel); border: 1px solid var(--panel-border);
-  color: #8b91a3; font-size: 11px; line-height: 24px; font-variant-numeric: tabular-nums;
+  box-sizing: border-box; width: 100%; padding: 1px 8px; border-radius: 4px; background: var(--chip);
+  color: #8b91a3; font-size: 11px; line-height: 20px; font-variant-numeric: tabular-nums;
 }
-#stats .stat b { color: #e6e8ef; font-weight: 700; }
-#stats .stat.layer { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-#stats .stat.mode { margin-left: auto; cursor: pointer; }
+#stats .row { display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; }
+#stats .row span, #stats .row b { overflow: hidden; text-overflow: ellipsis; }
+#stats .row span { flex: 0 1 auto; min-width: 0; }
+#stats .row b { flex: 0 1 auto; min-width: 0; color: #e6e8ef; font-weight: 700; text-align: right; }
+#stats .stat.layer .row span { color: #e6e8ef; }
+#stats .stat.mode { cursor: pointer; }
 #stats .stat.mode:hover { color: #e6e8ef; }
+/* Too narrow for a column beside the keys (the landing page on a phone): under them, two across. */
+@media (max-width: 560px) {
+  #main { flex-direction: column; align-items: stretch; }
+  #stats { width: auto; margin: 8px 0 0; display: grid; grid-template-columns: 1fr 1fr; }
+}
 #status { font-size: 12px; color: #aab0c0; min-height: 16px; display: flex; }
 #feed { color: #e0af68; }
 #feed:empty { display: none; }
