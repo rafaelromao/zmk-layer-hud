@@ -11,7 +11,7 @@ what was typed, in what order, or when within a day.
 
     $ZMKHUD_STATE/sessions/       (default ~/.local/state/zmk-layer-hud/sessions; 0700)
         <name>.json               one session (0600)
-        .state.json               {"active": <name>, "heatmap": "live" | "session" | "off"}
+        .state.json               {"active": <name>, "heatmap": "live" | "session" | "off", and PREFS}
         .lock                     held by whatever reads a session to add to it or rewrite it
 
 The files are the truth. The feed keeps what the page reported since its last write and adds it
@@ -37,6 +37,12 @@ VERSION = 1
 # What the keys glow with: what was just typed; the session's presses on the layer on screen;
 # its presses on every layer, by where the fingers went; the time each key takes; nothing.
 HEATMAP_MODES = ("live", "session", "physical", "speed", "off")
+# What the page lets its viewer choose besides the heatmap, and remembers here once chosen. Until
+# then there is none, and the page goes by the config (hud.dark) or its own default.
+PREFS = {
+    "theme": ("light", "dark"),       # the keys: light, keymap-drawer's; or dark, the heat in indigo
+    "side": ("shown", "hidden"),      # the stats block beside the panel
+}
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 # Added up from what the page reports; peak_wpm is kept as a maximum instead. sfb and bigrams:
 # two keystrokes in a row on one finger, of two keystrokes in a row by any two (hud.js "strokes").
@@ -182,12 +188,16 @@ def _read_state(directory, log):
     st = st if isinstance(st, dict) else {}
     if st.get("heatmap") not in HEATMAP_MODES:
         st["heatmap"] = "live"
+    for name, values in PREFS.items():
+        if st.get(name) not in values:
+            st.pop(name, None)
     return st
 
 
 def _write_state(directory, st):
     write_json(os.path.join(directory, ".state.json"),
-               {"version": VERSION, "active": st.get("active"), "heatmap": st.get("heatmap", "live")})
+               dict({"version": VERSION, "active": st.get("active"), "heatmap": st.get("heatmap", "live")},
+                    **{name: st[name] for name in PREFS if st.get(name) in PREFS[name]}))
 
 
 def sessions(directory, log=None):
@@ -371,6 +381,16 @@ def set_heatmap(directory=None, mode=None, log=None):
         _write_state(directory, st)
 
 
+def set_pref(directory=None, name=None, value=None, log=None):
+    if value not in PREFS.get(name, ()):
+        raise SessionError(f"{value!r} is not a {name}: {', '.join(PREFS.get(name, ()))}")
+    directory = directory or default_dir()
+    with locked(directory):
+        st, _ = active(directory, log)
+        st[name] = value
+        _write_state(directory, st)
+
+
 def orphans(s):
     """The layers a session has counts on that the keymap it was last typed with does not draw,
     as {layer: (presses, combos)}: a layer renamed or taken out since. Nothing when no keymap has
@@ -538,6 +558,7 @@ class Store:
         self.lock = threading.RLock()
         self.session = None
         self.heatmap = "live"
+        self.prefs = {}
         self.pending = {}      # (id, gen) -> counts not yet written
         self.replaced = {}     # id -> (gen, when) of a session just replaced
         self.acks = {}         # page -> the last seq added
@@ -594,6 +615,7 @@ class Store:
                 with locked(self.dir):
                     st, s = active(self.dir, self.log)
                 self.heatmap = st["heatmap"]
+                self.prefs = {name: st[name] for name in PREFS if name in st}
             else:
                 s = self.session or empty("demo", False)
             if self.session is not None and self.session["id"] != s["id"]:
@@ -696,6 +718,18 @@ class Store:
             self.heatmap = mode
             self.announce()
 
+    def set_pref(self, name, value):
+        if value not in PREFS.get(name, ()):
+            return
+        with self.lock:
+            if self.persist:
+                news = self._stamp() != self.stamp
+                set_pref(self.dir, name, value, self.log)
+                if not news:
+                    self.stamp = self._stamp()
+            self.prefs[name] = value
+            self.announce()
+
     def message(self):
         """The active session as the pages get it: what is written plus what is not yet."""
         with self.lock:
@@ -704,7 +738,7 @@ class Store:
             if mine:
                 add(s, _pending_as_delta(mine))
             return {"kind": "session", "v": VERSION, "id": s["id"], "gen": s["gen"], "name": s["name"],
-                    "named": s.get("named", False), "heatmap": self.heatmap, "presses": s["presses"],
+                    "named": s.get("named", False), "heatmap": self.heatmap, "prefs": dict(self.prefs), "presses": s["presses"],
                     "combos": s["combos"], "ms": s["ms"], "timed": s["timed"], "totals": s["totals"], "acks": dict(self.acks),
                     "keyboards": s.get("keyboards", []), "created": s.get("created"), "updated": s.get("updated")}
 

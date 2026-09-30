@@ -87,7 +87,8 @@ HUD_DEFAULTS = {
     "heatmap_ms": 3000,        # a key pressed once glows and fades over this (0: no heatmap); pressed often, it stays warm longer
     "wpm_window_ms": 10000,    # live WPM counts what was typed within this
     "wpm_idle_ms": 3000,       # a pause longer than this starts a new burst, and is not counted as typing time
-    "stats_bar": 1,            # the stats bar above the panel (0 hides it)
+    "stats_bar": 1,            # the stats block beside the panel (0 hides it)
+    "dark": 0,                 # 1: dark keys, the heat in indigo; the theme box in the stats changes it on this machine
 }
 # `stats:` section: which chips the stats bar shows, left to right (true shows one, false hides it).
 STATS_DEFAULTS = {
@@ -101,6 +102,7 @@ STATS_DEFAULTS = {
     "sfb": False,              # same-finger bigrams: two keys in a row struck by one finger (needs fingers)
     "slow": False,             # the key that takes longest to strike after the key before it
     "heatmap": True,           # the session's name and what the keys glow with; a click changes it
+    "theme": True,             # the keys light or dark; a click changes it
 }
 # `fingers:` names, left pinky to right pinky; a thumb is lt or rt.
 FINGERS = ("lp", "lr", "lm", "li", "lt", "rt", "ri", "rm", "rr", "rp")

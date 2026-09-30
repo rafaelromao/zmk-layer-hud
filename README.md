@@ -195,7 +195,7 @@ key with its default and a comment:
 | `title` | corner text (default: the name of the keyboard that is typing) |
 | `stagger` | a 3x5 split whose `layout` only counts its keys is drawn with a Ferris Sweep's column stagger; `false` keeps it ortholinear |
 | `hud`, `feed` | every size and timing: panel width and opacity, flash and pill durations, combo slack, how long a key's glow takes to fade, dead-key window … |
-| `stats` | which chips the [stats bar](#how-it-works) shows: `true` or `false` for each |
+| `stats` | which boxes the [stats block](#how-it-works) shows: `true` or `false` for each |
 | `fingers` | the finger that strikes each drawer key (`lp` … `li`, `lt`, `rt`, `ri` … `rp`), when the HUD cannot tell from the layout |
 | `extras` | inference hints, used only with firmware that reports no positions |
 
@@ -343,7 +343,7 @@ a one-shot layer on screen through its key's flash, and shows typed characters i
 A key also glows once it is pressed, and cools over `hud.heatmap_ms` (3 s; `0` turns it off): a
 live heatmap of what was just typed, where a key struck again and again stays warm longest.
 
-Above the panel, a bar says how the typing goes:
+Beside the panel, a block of its own says how the typing goes:
 - words per minute, live, over the last `hud.wpm_window_ms` (10 s);
 - the session's average over its typing time, not counting pauses longer than `hud.wpm_idle_ms`
   (3 s), and its peak;
@@ -351,12 +351,17 @@ Above the panel, a bar says how the typing goes:
 - keystrokes, and the share of them made as combos;
 - the share of typing done on the layer on screen.
 
-Its last chip names the [session](#sessions) and switches the heatmap: `live`; `session`, how
+Below those it names the [session](#sessions), and switches the heatmap (a click on `heat`): `live`; `session`, how
 often each key was pressed on the layer on screen; `physical`, every layer's presses of a key
 added up, which is where the fingers went; `speed`, how long each key takes after the key before
 it, the slowest the hottest; and `off`. Every keystroke the board draws is counted once, when
 nothing can take it back: a combo counts as one keystroke, and a report that beats its own
-position is not counted twice. `hud.stats_bar: 0` hides the bar.
+position is not counted twice.
+
+Its last box is the keys: `light`, as keymap-drawer draws them, or `dark`, with the heat in one
+indigo. A click changes it, and the feed remembers the choice on this machine; until one is made,
+`hud.dark: 1` in the config makes them dark. The chevron at the top right of the panel puts the
+block away and brings it back, remembered the same way; `hud.stats_bar: 0` leaves it out.
 
 Four more chips are there for the asking, in the config's `stats:` section, which turns any chip
 on or off:
@@ -367,7 +372,7 @@ stats:
   hands: true    # the left and the right hand's shares of the keystrokes
   sfb: true      # same-finger bigrams: two keys in a row struck by one finger, of all such pairs
   slow: true     # the key slowest to strike after the key before it, and its average
-  layer: false   # ...and any of the others off: wpm, session, accuracy, keys, layer, heatmap
+  layer: false   # ...and any of the others off: wpm, session, accuracy, keys, layer, heatmap, theme
 ```
 
 A key's time runs from the keystroke before it, within `hud.wpm_idle_ms`. A key that can be held

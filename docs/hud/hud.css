@@ -1,6 +1,7 @@
-/* zmk-layer-hud panel. Visual language borrowed from keymap-drawer: light keys, tap legend
-   centred, hold legend at the bottom, shifted legend at the top, held keys tinted blue. Corners
-   are barely rounded, keys and chips alike. Dark translucent panel so it reads on any editor. */
+/* zmk-layer-hud panel. Visual language borrowed from keymap-drawer: light keys (dark ones on
+   request, body.dark), tap legend centred, hold legend at the bottom, shifted legend at the top,
+   held keys tinted blue. Keys are softly rounded, chips barely. Dark translucent panel so it reads
+   on any editor. */
 :root {
   --key: 62px;
   --gap: 6px;
@@ -48,7 +49,7 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 #board { position: relative; width: 100%; min-height: 40px; }
 .key {
   position: absolute;
-  box-sizing: border-box; border-radius: 4px;
+  box-sizing: border-box; border-radius: 7px;
   background: var(--key-bg); color: var(--key-fg); border: 1px solid var(--key-border);
   display: grid; grid-template-rows: calc(var(--kh, 62px) * 0.23) 1fr calc(var(--kh, 62px) * 0.23);
   align-items: center; justify-items: center;
@@ -83,7 +84,7 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
    key; the transition smooths its coarse steps. Longhand offsets, not `inset`: the page runs in
    WebKit builds older than that property. */
 .key::before {
-  content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; border-radius: 3px;
+  content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; border-radius: 6px;
   z-index: -1; pointer-events: none; background: var(--heat-live); opacity: var(--heat, 0);
   transition: opacity 120ms linear;
 }
@@ -91,7 +92,7 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
    heat's, so a warm key keeps it. As when it was the key's own box-shadow, a pressed or combo key
    drops the activator's ring for its glow, and a modifier's ring takes the place of any glow. */
 .key::after {
-  content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; border-radius: 3px;
+  content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; border-radius: 6px;
   z-index: -1; pointer-events: none; box-shadow: inset 0 0 0 2px var(--ring, transparent);
   transition: box-shadow 90ms ease;
 }
@@ -111,14 +112,19 @@ body.secure #layerSub { color: #e0af68; }
 /* A GIF still (&demo=N) is drawn as it always was. */
 body.demo .key::before, body.demo #stats { display: none; }
 
-/* The stats column right of the keys (hud.js "the stats bar"): one box per stat, every one the
-   column's width, each row a label and its value. Which boxes it has is the config's `stats:`; one
-   it leaves out is .off. The column's width is added to the panel's (hud.js STATS_COLUMN, which
-   has to agree with the width and margin here), so the keys keep the size hud.width gives them. */
-#main { display: flex; align-items: flex-start; }
-#main #board { flex: 1 1 auto; min-width: 0; }
-#stats { flex: none; width: 172px; margin-left: 12px; display: flex; flex-direction: column; gap: 4px; font-family: var(--font); }
-#stats.off, #stats .stat.off { display: none; }
+/* The stats block right of the panel (hud.js "the stats bar"), a panel of its own: one box per
+   stat, every one the block's width, each row a label and its value. Which boxes it has is the
+   config's `stats:`; one it leaves out is .off, and the whole block goes with the panel's chevron
+   (body.side-hidden). Its width and gap are added to the panel's (hud.js STATS_COLUMN, which has to
+   agree with the numbers here), so the keys keep the size hud.width gives them. */
+#frame { display: flex; align-items: flex-start; }
+#frame > #hud { flex: 1 1 auto; min-width: 0; }
+#stats {
+  flex: none; box-sizing: border-box; width: 188px; margin-left: 8px; padding: 8px; border-radius: 8px;
+  background: var(--panel); border: 1px solid var(--panel-border);
+  display: flex; flex-direction: column; gap: 4px; font-family: var(--font);
+}
+#stats.off, #stats .stat.off, body.side-hidden #stats { display: none; }
 #stats .stat {
   box-sizing: border-box; width: 100%; padding: 1px 8px; border-radius: 4px; background: var(--chip);
   color: #8b91a3; font-size: 11px; line-height: 20px; font-variant-numeric: tabular-nums;
@@ -128,11 +134,11 @@ body.demo .key::before, body.demo #stats { display: none; }
 #stats .row span { flex: 0 1 auto; min-width: 0; }
 #stats .row b { flex: 0 1 auto; min-width: 0; color: #e6e8ef; font-weight: 700; text-align: right; }
 #stats .stat.layer .row span { color: #e6e8ef; }
-#stats .stat.mode { cursor: pointer; }
-#stats .stat.mode:hover { color: #e6e8ef; }
-/* Too narrow for a column beside the keys (the landing page on a phone): under them, two across. */
+#stats .stat.mode, #stats .stat.theme { cursor: pointer; }
+#stats .stat.mode:hover, #stats .stat.theme:hover { color: #e6e8ef; }
+/* Too narrow for a block beside the panel (the landing page on a phone): under it, two across. */
 @media (max-width: 560px) {
-  #main { flex-direction: column; align-items: stretch; }
+  #frame { flex-direction: column; align-items: stretch; }
   #stats { width: auto; margin: 8px 0 0; display: grid; grid-template-columns: 1fr 1fr; }
 }
 #status { font-size: 12px; color: #aab0c0; min-height: 16px; display: flex; }
@@ -165,6 +171,32 @@ body.demo .key::before, body.demo #stats { display: none; }
 #layer.vim-insert { border-color: var(--chip-insert); } #layer.vim-insert #layerName { color: var(--chip-insert); }
 #layer.vim-cmdline { border-color: #e0af68; } #layer.vim-cmdline #layerName { color: #e0af68; }
 #board.vim-insert .key, #board.vim-cmdline .key { background: #e3ebff; border-color: #b7c7f2; }
+
+/* Dark keys (body.dark: the theme box in the stats block, remembered by the feed): the board the
+   way LayoutMaster draws its own, dark keys and the heat in one indigo, brighter the hotter. The
+   light keys above stay the default. hud.js heatMax() raises the live glow's opacity to match. */
+body.dark {
+  --key-bg: #24283b; --key-fg: #e6e8ef; --key-dim: #545c7e; --key-border: #3b4261;
+  --held: #5a3b46;                           /* keymap-drawer's held key, in the red of its dark mode */
+  --heat-live: #6366f1;                      /* the live glow and a pressed key: the steps' top indigo */
+}
+body.dark .key .hold, body.dark .key .shifted { color: #a9b1d6; }
+body.dark .key.trans, body.dark .key.blank, body.dark .key.ghost { background: #1f2335; }
+body.dark .key.activator { background: #2e3c64; }
+body.dark .key.hs1::before { background: #313460; opacity: 1; }
+body.dark .key.hs2::before { background: #3a3e7b; opacity: 1; }
+body.dark .key.hs3::before { background: #444796; opacity: 1; }
+body.dark .key.hs4::before { background: #4d50b1; opacity: 1; }
+body.dark .key.hs5::before { background: #585bd0; opacity: 1; }
+body.dark .key.hs6::before { background: #6366f1; opacity: 1; }
+body.dark .key.heated .hold, body.dark .key.heated .shifted { color: #d5d8ff; }
+body.dark #board.vim .key, body.dark #board.vim-insert .key, body.dark #board.vim-cmdline .key { background: #1f2a47; border-color: #34426b; }
+body.dark #board.momentary .key { background: #2a2442; border-color: #463c66; }
+body.dark #board.raw .key, body.dark #board.off .key { background: var(--key-bg); }
+/* A pressed key over any tint lights in the indigo: the tints outrank a key's classes, hence the id. */
+body.dark #board .key.pressed, body.dark #board .key.pressed.combo { background: var(--heat-live); }
+body.dark .combo-pill { background: #2f334d; }
+body.dark .combo-pill .combo-label, body.dark .combo-pill .combo-sub { color: #a9b1d6; }
 
 /* Combo pill (keymap-drawer style): appears at the midpoint of the combo's keys when typed. */
 .combo-pill {
@@ -205,6 +237,17 @@ body.demo .key::before, body.demo #stats { display: none; }
 #close { margin-left: 10px; width: 22px; height: 22px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.12);
   background: rgba(255,255,255,0.06); color: #aab0c0; font: 13px/1 var(--font); cursor: pointer; padding: 0; }
 #close:hover { background: var(--chip-raw); color: #101420; }
+/* The chevron beside it shows and hides the stats block: pointing at the block to put it away,
+   back at the panel to bring it out. */
+#side { margin-left: auto; width: 22px; height: 22px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06); color: #aab0c0; cursor: pointer; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; }
+#side:hover { background: rgba(255,255,255,0.14); color: #e6e8ef; }
+#side svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
+  transition: transform 120ms ease; }
+body.side-hidden #side svg { transform: scaleX(-1); }
+#side + #close { margin-left: 6px; }
+body.demo #side { display: none; }
 
 /* Framed by another page (index.html?embed, the landing page's demo): that page sizes the frame to
    the content, so nothing scrolls, and there is no host for the ✕ to close. On the root, because

@@ -110,12 +110,17 @@ class Bridge(NSObject):
         kind = msg.get("kind") if isinstance(msg, dict) else None
         if kind == "size":
             Host.instance.resize(msg.get("width"), msg.get("height"))
-        elif kind in ("tally", "heatmap"):
+        elif kind in ("tally", "heatmap", "pref"):
             store = Host.instance.feed.sessions if Host.instance and Host.instance.feed else None
             if store is None:
                 return
             try:
-                store.apply(msg) if kind == "tally" else store.set_heatmap(msg.get("mode"))
+                if kind == "tally":
+                    store.apply(msg)
+                elif kind == "heatmap":
+                    store.set_heatmap(msg.get("mode"))
+                else:
+                    store.set_pref(msg.get("name"), msg.get("value"))
             except Exception as e:  # a count that could not be kept must not take the panel down
                 log(f"session: {type(e).__name__}: {e}")
 

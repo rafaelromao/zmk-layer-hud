@@ -28,7 +28,8 @@ hud:
   heatmap_ms: 3000            # a key pressed once glows and fades over this (0: no heatmap); pressed often, it stays warm longer
   wpm_window_ms: 10000        # live WPM counts what was typed within this
   wpm_idle_ms: 3000           # a pause longer than this starts a new burst, and is not counted as typing time
-  stats_bar: 1                # the stats bar above the panel (0 hides it)
+  stats_bar: 1                # the stats block beside the panel (0 hides it; the chevron on the panel does too)
+  dark: 0                     # 1: dark keys, the heat in indigo (the theme box in the stats changes it on this machine)
 
 # The stats bar's chips, left to right (true shows one). Shown with the defaults.
 stats:
@@ -42,6 +43,7 @@ stats:
   sfb: false                  # same-finger bigrams: two keys in a row struck by one finger
   slow: false                 # the key that takes longest to strike after the key before it
   heatmap: true               # the session's name and what the keys glow with; a click changes it
+  theme: true                 # the keys light or dark; a click changes it
 # The finger that strikes each drawer key, for `hands` and `sfb`. The Diamond's are worked out
 # from its columns; a board they cannot be read off says them here, in drawer order:
 # fingers: [lr, lm, li, ri, rm, rr, lp, lr, lm, li, ri, rm, rr, rp, lr, lm, li, ri, rm, rr, lt, lt, rt, rt]

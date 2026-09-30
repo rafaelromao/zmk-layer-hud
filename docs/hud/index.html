@@ -6,10 +6,13 @@
 <link rel="stylesheet" href="hud.css">
 </head>
 <body>
+<div id="frame">
 <div id="hud">
-  <div id="layer"><span id="layerName"></span><span id="layerSub"></span><button id="close" title="close the HUD" aria-label="close">✕</button></div>
-  <div id="main"><div id="board"></div><div id="stats"></div></div>
+  <div id="layer"><span id="layerName"></span><span id="layerSub"></span><button id="side" title="hide the stats" aria-label="hide the stats" aria-pressed="true"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M3.5 2 L6.5 5 L3.5 8"/></svg></button><button id="close" title="close the HUD" aria-label="close">✕</button></div>
+  <div id="board"></div>
   <div id="status"><span id="feed">waiting for the keymap…</span><span id="title"></span></div>
+</div>
+<div id="stats"></div>
 </div>
 <div id="keys"></div>
 <script src="keys.js"></script>

@@ -46,11 +46,11 @@
   // notice.
   const DEFAULTS = { opacity: 86, press_ms: 320, release_ms: 60, held_timeout_ms: 5000, momentary_ms: 700, combo_slack_ms: 20, activator_ms: 400,
     positions_fresh_ms: 3000, combo_pill_ms: 1000, sequence_ms: 200, sequence_max: 6, one_shot_ms: 450, heatmap_ms: 3000,
-    wpm_window_ms: 10000, wpm_idle_ms: 3000, stats_bar: 1 };
+    wpm_window_ms: 10000, wpm_idle_ms: 3000, stats_bar: 1, dark: 0 };
   const T = name => (state.data && state.data.hud && state.data.hud[name] != null) ? state.data.hud[name] : DEFAULTS[name];
   // The stats bar's chips, from the config's `stats:` section; again only the fallback.
   const STAT_DEFAULTS = { wpm: true, session: true, accuracy: true, keys: true, layer: true, time: false,
-    hands: false, sfb: false, slow: false, heatmap: true };
+    hands: false, sfb: false, slow: false, heatmap: true, theme: true };
   const statOn = name => (state.data && state.data.stats && state.data.stats[name] != null) ? !!state.data.stats[name] : STAT_DEFAULTS[name];
   const recentPos = [];
 
@@ -88,6 +88,7 @@
     heat: new Map(),          // key idx -> {h, t}: the live heatmap (see bumpHeat)
     heatTimer: null,
     heatMode: "live",         // what the keys glow with: live | session | physical | speed | off
+    prefs: {},                // what the viewer chose (setPref): theme light | dark, side shown | hidden
     secure: false,            // macOS secure input: a secret is being typed, and nothing of it shows
     demo: false,              // a GIF still (&demo=N): drawn as it always was, no heat, no counts
     ledger: [],               // keystrokes drawn and not counted yet (see "ledger")
@@ -386,7 +387,7 @@
   // config says. Hosts that listen (host/macos/panel.py) resize their window to it.
   function postSize() {
     let width = (state.data && state.data.hud && state.data.hud.width) || null;
-    if (width && bar.host && !bar.host.classList.contains("off")) width += STATS_COLUMN;
+    if (width && bar.host && !bar.host.classList.contains("off") && sideShown()) width += STATS_COLUMN;
     const height = Math.ceil(document.body.scrollHeight);
     // The macOS panel reads it on its bridge. The Linux panel has a handler for nothing else
     // (host/linux/panel.py), named apart so that the page never takes it for the bridge a
@@ -412,7 +413,9 @@
    * (hud.css .key::before) is what makes the fade smooth. */
   const HEAT_TICK_MS = 100;
   const HEAT_STEP = 0.4;      // of the gap to full heat, closed by one press
-  const HEAT_MAX = 0.55;      // the overlay's opacity at full heat: the legends must stay readable
+  // The overlay's opacity at full heat: the legends must stay readable. Dark keys take more of the
+  // indigo before their light legends stop reading (hud.css body.dark).
+  const heatMax = () => (theme() === "dark" ? 0.85 : 0.55);
   const HEAT_LEVELS = 20;     // opacity is written in this many steps, so a fading key is touched ~20 times
   const HEAT_GAMMA = 0.6;     // drawn as heat^0.6: a key pressed once still shows, not a faint blush
 
@@ -453,7 +456,7 @@
     const el = state.keyEls[idx];
     if (!el) return;
     const step = Math.ceil(Math.pow(v, HEAT_GAMMA) * HEAT_LEVELS);   // ceil: a key still warm never paints cold
-    const value = step > 0 ? String(Math.round(step / HEAT_LEVELS * HEAT_MAX * 1000) / 1000) : "";
+    const value = step > 0 ? String(Math.round(step / HEAT_LEVELS * heatMax() * 1000) / 1000) : "";
     if (el.style.getPropertyValue("--heat") !== value) el.style.setProperty("--heat", value);
   }
 
@@ -527,6 +530,41 @@
     paintHeat();
     renderStats();
     if (!fromHost) postToHost({ kind: "heatmap", v: 1, mode });
+  }
+
+  // What the viewer chooses on the page besides the heatmap: the keys light or dark, and whether the
+  // stats block is out. The feed remembers a choice (host/session.py PREFS) and hands it back with
+  // the session; until one is made, the theme is the config's (hud.dark). A page with no feed to
+  // tell (the landing page) keeps it in its own storage.
+  const PREFS = { theme: ["light", "dark"], side: ["shown", "hidden"] };
+  const PREFS_KEY = "zmkhud.prefs";
+  try { Object.assign(state.prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || "{}")); } catch (e) { /* no storage */ }
+  const theme = () => state.prefs.theme || (T("dark") > 0 ? "dark" : "light");
+  const sideShown = () => state.prefs.side !== "hidden";
+  function applyPrefs() {
+    const body = document.body;
+    if (body.classList.contains("dark") !== (theme() === "dark")) {
+      body.classList.toggle("dark", theme() === "dark");
+      paintHeat();                  // the glow's opacity goes with the theme (heatMax)
+    }
+    if (body.classList.contains("side-hidden") === sideShown()) body.classList.toggle("side-hidden", !sideShown());
+    const side = $("side");
+    if (side) {
+      const say = sideShown() ? "hide the stats" : "show the stats";
+      if (side.title !== say) { side.title = say; side.setAttribute("aria-label", say); }
+      side.setAttribute("aria-pressed", String(sideShown()));
+    }
+  }
+  function setPref(name, value, fromHost) {
+    if (!(PREFS[name] || []).includes(value) || state.prefs[name] === value) return;
+    state.prefs[name] = value;
+    if (!fromHost) {
+      try { localStorage.setItem(PREFS_KEY, JSON.stringify(state.prefs)); } catch (e) { /* no storage */ }
+      postToHost({ kind: "pref", v: 1, name, value });
+    }
+    applyPrefs();
+    renderStats();
+    postSize();                     // the block in or out changes the panel's width
   }
 
   // ---------- ledger ----------
@@ -854,6 +892,7 @@
                                                 (b.session === null || b.session === m.id));
     state.viewCache = null;
     if (HEAT_MODES.includes(m.heatmap)) setHeatmap(m.heatmap, true);
+    for (const name in m.prefs || {}) setPref(name, m.prefs[name], true);
     paintSessionHeat();
     renderStats();
   }
@@ -885,7 +924,7 @@
   // row a label and its value. The column is added to the panel's width rather than taken out of
   // the board's (postSize), so the keys stay the size hud.width gives them. Each value is written
   // only when its text changes.
-  const STATS_COLUMN = 172 + 12;   // hud.css: #stats width (a session name and its label fit) + its margin-left
+  const STATS_COLUMN = 188 + 8;    // hud.css: #stats width (a session name and its label fit) + its margin-left
   const bar = {};
   function buildStats() {
     const host = $("stats");
@@ -921,6 +960,9 @@
     bar.heatmap = chip("mode", ["heat"]);
     bar.heatmap.chip.title = "click: " + HEAT_MODES.join(", ");
     bar.heatmap.chip.addEventListener("click", () => setHeatmap(HEAT_MODES[(HEAT_MODES.indexOf(state.heatMode) + 1) % HEAT_MODES.length]));
+    bar.theme = chip("theme", ["keys"]);
+    bar.theme.chip.title = "click: light or dark keys";
+    bar.theme.chip.addEventListener("click", () => setPref("theme", theme() === "dark" ? "light" : "dark"));
   }
   function put(chip, values, names) {
     values.forEach((v, i) => { if (chip.vals[i].textContent !== v) chip.vals[i].textContent = v; });
@@ -997,12 +1039,13 @@
     put(bar.named, [named || ""]);
     bar.named.chip.title = named || "";   // a long name is cut short on the column
     put(bar.heatmap, [state.heatMode]);
+    put(bar.theme, [theme()]);
     followBar();
   }
   // A column taller than the board makes the page taller, and one shown or hidden changes the
   // panel's width (postSize): the panel sizes itself from what the page says.
   function followBar() {
-    const shape = bar.host.offsetHeight + (bar.host.classList.contains("off") ? "/off" : "");
+    const shape = bar.host.offsetHeight + (bar.host.classList.contains("off") ? "/off" : "") + (sideShown() ? "" : "/hidden");
     if (shape !== bar.shape) { bar.shape = shape; postSize(); }
   }
 
@@ -1408,6 +1451,7 @@
       // that one, whose layers and keys it names.
       if (state.data) ledgerCommit(Date.now(), true);
       state.data = data;
+      applyPrefs();                 // the config's hud.dark, until the viewer chose
       state.momentary = []; state.oneShot = null;
       state.activatorOf = {}; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null;
       // Keystrokes on the keymap going away are not followed by the next one's keys.
@@ -1649,6 +1693,7 @@
     // What the keys glow with: "live" (what was just typed), "session" (every press counted) or
     // "off". The bar's last chip cycles it too.
     setHeatmap(mode) { setHeatmap(mode); },
+    setPref(name, value) { setPref(name, value); },
     // The counts, for tests and hosts: everything shown (`local`), the keyboard's own not yet
     // handed on (`unsent`), keystrokes still waiting to be counted, and the live WPM.
     stats: {
@@ -1661,6 +1706,11 @@
     state,
   };
   window.hud = hud;
+
+  // The chevron: the stats block out or away.
+  const sideBtn = $("side");
+  if (sideBtn) sideBtn.addEventListener("click", () => setPref("side", sideShown() ? "hidden" : "shown"));
+  applyPrefs();
 
   // ✕: tell the host to close. Hammerspoon listens on a user-content controller; a
   // WebSocket host receives {"kind":"close"}.

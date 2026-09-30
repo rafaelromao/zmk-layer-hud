@@ -212,6 +212,17 @@ class Commands(Base):
         with self.assertRaises(session.SessionError):
             session.set_heatmap(self.dir, "sometimes")
 
+    def test_a_pref_is_none_until_chosen_and_kept_once_it_is(self):
+        self.assertNotIn("theme", session.status(self.dir)[0])      # the config's hud.dark decides
+        session.set_pref(self.dir, "theme", "dark")
+        session.set_pref(self.dir, "side", "hidden")
+        st = session.status(self.dir)[0]
+        self.assertEqual(("dark", "hidden"), (st["theme"], st["side"]))
+        session.set_heatmap(self.dir, "session")                     # one does not undo the other
+        self.assertEqual("dark", session.status(self.dir)[0]["theme"])
+        with self.assertRaises(session.SessionError):
+            session.set_pref(self.dir, "theme", "sepia")
+
 
 class StoreTest(Base):
     def store(self, directory=None):
@@ -272,6 +283,15 @@ class StoreTest(Base):
         st.set_heatmap("session")
         self.assertEqual("session", self.sent[-1]["heatmap"])
         self.assertEqual("session", session.status(self.dir)[0]["heatmap"])
+
+    def test_a_pref_it_is_told_is_kept_and_said(self):
+        st = self.store()
+        self.assertEqual({}, st.message()["prefs"])
+        st.set_pref("theme", "dark")
+        self.assertEqual({"theme": "dark"}, self.sent[-1]["prefs"])
+        self.assertEqual({"theme": "dark"}, self.store().message()["prefs"])   # read again after a restart
+        st.set_pref("theme", "sepia")
+        self.assertEqual({"theme": "dark"}, st.message()["prefs"])
 
     def test_key_times_and_bigrams_are_kept(self):
         st = self.store()

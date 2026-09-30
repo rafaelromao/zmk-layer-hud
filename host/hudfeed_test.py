@@ -449,13 +449,16 @@ class FakeSocket:
 
 class FakeStore:
     def __init__(self):
-        self.applied, self.modes, self.flushed = [], [], 0
+        self.applied, self.modes, self.prefs, self.flushed = [], [], [], 0
 
     def apply(self, msg):
         self.applied.append(msg)
 
     def set_heatmap(self, mode):
         self.modes.append(mode)
+
+    def set_pref(self, name, value):
+        self.prefs.append((name, value))
 
     def flush(self):
         self.flushed += 1
@@ -474,9 +477,11 @@ class Sessions(unittest.TestCase):
         hub = Hub(sessions=store, tally_token="t0k")
         self.talk(hub, {"kind": "tally", "seq": 1}, {"kind": "tally", "seq": 2, "token": "guess"},
                   {"kind": "tally", "seq": 3, "token": "t0k"}, {"kind": "heatmap", "mode": "session", "token": "t0k"},
-                  {"kind": "heatmap", "mode": "off"})
+                  {"kind": "heatmap", "mode": "off"}, {"kind": "pref", "name": "theme", "value": "dark", "token": "t0k"},
+                  {"kind": "pref", "name": "side", "value": "hidden"})
         self.assertEqual([3], [m["seq"] for m in store.applied])
         self.assertEqual(["session"], store.modes)
+        self.assertEqual([("theme", "dark")], store.prefs)
 
     def test_without_a_token_nothing_counts(self):
         store = FakeStore()

@@ -740,6 +740,41 @@ function main() {
     check("a page that does not report shows the session as the host has it", shown(r) === 4, shown(r));
   }
 
+  // ---------- the keys' theme, and the stats block out or away ----------
+  {
+    const posted = [];
+    const p = loadPage();
+    p.window.webkit = { messageHandlers: { zmkhud: { postMessage: s => {
+      const m = JSON.parse(s); if (m.kind === "pref" || m.kind === "size") posted.push(m);
+    } } } };
+    p.hud.load(Object.assign({}, data, { hud: Object.assign({}, data.hud, { width: 600 }) }));
+    p.hud.setLayers([]);
+    const dark = page => page.document.body.classList.contains("dark");
+    const box = (page, name) => rowsText(page.document.getElementById("stats").querySelectorAll(".stat").find(c => c.classList.contains(name)));
+    check("the keys are light unless the config says otherwise", !dark(p) && box(p, "theme") === "keys light", box(p, "theme"));
+    tap(p, A.pos);
+    const lightGlow = level(p, A.idx);
+    p.hud.setPref("theme", "dark");
+    check("a click makes them dark", dark(p) && box(p, "theme") === "keys dark", box(p, "theme"));
+    check("and the host is told, to remember it", posted.some(m => m.kind === "pref" && m.name === "theme" && m.value === "dark"),
+          JSON.stringify(posted));
+    check("dark keys glow brighter", level(p, A.idx) > lightGlow, `${lightGlow} -> ${level(p, A.idx)}`);
+    const width = () => posted.filter(m => m.kind === "size").pop().width;
+    const out = width();
+    p.hud.setPref("side", "hidden");
+    check("the chevron puts the stats away", p.document.body.classList.contains("side-hidden") &&
+          p.document.getElementById("side").title === "show the stats", p.document.getElementById("side").title);
+    check("and the panel is narrower by the block", out - width() > 100 && width() === 600, `${out} -> ${width()}`);
+    p.hud.setPref("side", "bogus");
+    check("a value that is not one is ignored", p.hud.state.prefs.side === "hidden");
+
+    const q = fresh({ dark: 1 });
+    check("hud.dark: 1 makes the keys dark", dark(q));
+    q.hud.receive({ kind: "session", v: 1, id: "s1", gen: 0, name: "", heatmap: "live", prefs: { theme: "light" },
+                    presses: {}, combos: {}, totals: {}, acks: {} });
+    check("and what the host remembers wins", !dark(q) && box(q, "theme") === "keys light", box(q, "theme"));
+  }
+
   // ---------- macOS secure input ----------
   {
     const p = fresh();
