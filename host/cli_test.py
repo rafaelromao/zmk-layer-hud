@@ -2,6 +2,7 @@
 through the symlink it is normally invoked by, and that the two verbs which pass their whole line
 to another parser keep doing so."""
 
+import json
 import os
 import subprocess
 import sys
@@ -61,6 +62,8 @@ class Parser(unittest.TestCase):
         self.assertIsNone(self.parser.parse_args(["heatmap"]).mode)
         with self.assertRaises(SystemExit):
             self.parser.parse_args(["heatmap", "sometimes"])
+        args = self.parser.parse_args(["session", "rename-layer", "sym", "symbols", "--all"])
+        self.assertEqual(("rename-layer", "sym", "symbols", True), (args.action, args.name, args.other, args.all))
 
     def test_needs_venv_names_real_verbs(self):
         # NEEDS_VENV is consulted by name before the parser runs, so a typo there would silently
@@ -161,6 +164,18 @@ class Shim(unittest.TestCase):
             self.assertIn("active session", bad.stderr)
             self.assertEqual(0, run("session", "delete", "week2", "--yes").returncode)
             self.assertNotIn("week2", run("session", "list").stdout)
+            # Counts on a layer the keymap has since renamed: said, and moved over.
+            path = os.path.join(tmp, "sessions", "week1.json")
+            with open(path, encoding="utf-8") as f:
+                s = json.load(f)
+            s.update(layers=["base", "symbols"], presses={"base": {"1": 4}, "sym": {"2": 3}})
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(s, f)
+            self.assertIn("sym: 3 keys", run("session").stdout)
+            self.assertEqual(1, run("session", "save", "week1", "extra").returncode)
+            moved = run("session", "rename-layer", "sym", "symbols")
+            self.assertEqual(0, moved.returncode, moved.stderr)
+            self.assertNotIn("not shown", run("session").stdout)
 
     def test_tree_is_found_through_a_chain_of_symlinks(self):
         with tempfile.TemporaryDirectory() as tmp:

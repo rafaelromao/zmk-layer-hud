@@ -1019,7 +1019,7 @@ class Feed:
             self.sessions = session_mod.Store(emit, flush_s=feed_cfg["session_flush_s"],
                                               poll_s=feed_cfg["session_poll_s"], log=log)
             if self.source is not None and self.source.message:
-                self.sessions.keymap = os.path.basename(self.source.message.get("source") or "")
+                self.sessions.set_keymap(self.source.message)
         # While macOS says a secret is being typed, nothing typed goes on (SecureInput).
         self.secure = None
         probe = carbon_probe() if int(feed_cfg.get("secure_input", 1)) else None
@@ -1033,6 +1033,8 @@ class Feed:
             return
         if msg["kind"] in ("press", "release"):
             self._check_position(msg["pos"])
+        if msg["kind"] == "keymap" and self.sessions is not None:
+            self.sessions.set_keymap(msg)     # a keymap edited while it runs: its layers from now on
         self.emit(msg)
 
     def _check_position(self, pos):

@@ -76,7 +76,7 @@ def _now():
 def empty(name, named):
     t = _now()
     return {"version": VERSION, "id": os.urandom(8).hex(), "gen": 0, "name": name, "named": bool(named),
-            "created": t, "updated": t, "keyboards": [], "keymap": "",
+            "created": t, "updated": t, "keyboards": [], "keymap": "", "layers": [],
             "presses": {}, "combos": {}, "totals": dict({k: 0 for k in TOTALS}, peak_wpm=0)}
 
 
@@ -160,6 +160,7 @@ def read_session(path, log=None):
     s.setdefault("named", True)
     s.setdefault("keyboards", [])
     s.setdefault("keymap", "")
+    s.setdefault("layers", [])
     for k in TOTALS + ("peak_wpm",):
         s["totals"].setdefault(k, 0)
     return s
@@ -231,10 +232,11 @@ def add(s, delta):
     s["totals"]["peak_wpm"] = max(s["totals"].get("peak_wpm", 0), delta.get("peak_wpm") or 0)
 
 
-def add_counts(directory, sid, gen, delta, keyboards=(), keymap="", log=None):
+def add_counts(directory, sid, gen, delta, keyboards=(), keymap="", log=None, layers=None):
     """Add `delta` to the session whose id is `sid`, if it is still at `gen`, and write it. A
     session reset since (a higher gen) or deleted takes nothing: those keys were typed into what
-    the user threw away. Returns the session as written, or None."""
+    the user threw away. `layers` are the keymap's, the one the counts were typed with. Returns the
+    session as written, or None."""
     with locked(directory):
         every = sessions(directory, log)
         s = next((x for x in every.values() if x["id"] == sid), None)
@@ -244,7 +246,10 @@ def add_counts(directory, sid, gen, delta, keyboards=(), keymap="", log=None):
         s["keyboards"] = sorted(set(s["keyboards"]) | {k for k in keyboards if k})
         if keymap:
             s["keymap"] = keymap
-        s["updated"] = _now()
+        if layers:
+            s["layers"] = list(layers)
+        if delta.get("presses") or delta.get("combos") or any(delta.get(k) for k in TOTALS):
+            s["updated"] = _now()        # when something was typed, not when the layers were written
         write_json(path_of(directory, s["name"]), s)
         return s
 
@@ -354,6 +359,51 @@ def set_heatmap(directory=None, mode=None, log=None):
         _write_state(directory, st)
 
 
+def orphans(s):
+    """The layers a session has counts on that the keymap it was last typed with does not draw,
+    as {layer: (presses, combos)}: a layer renamed or taken out since. Nothing when no keymap has
+    said which layers it has (a session from before they were written down)."""
+    known = set(s.get("layers") or [])
+    if not known:
+        return {}
+    out = {}
+    for i, kind in enumerate(("presses", "combos")):
+        for layer, m in s[kind].items():
+            if layer not in known and m:
+                out.setdefault(layer, [0, 0])[i] += sum(m.values())
+    return {layer: tuple(n) for layer, n in sorted(out.items())}
+
+
+def rename_layer(directory=None, old=None, new=None, every=False, log=None):
+    """Move what was counted on layer `old` to layer `new`, in the active session or in `every`
+    one: a layer the keymap renamed keeps what was typed on it. Counts already under the new name
+    are added to. Returns [(session, presses moved, combos moved)]."""
+    directory = directory or default_dir()
+    for layer in (old, new):
+        if not isinstance(layer, str) or not layer.strip() or len(layer) > 64:
+            raise SessionError(f"{layer!r} is not a layer name")
+    if old == new:
+        raise SessionError(f"{old} is already called {new}")
+    with locked(directory):
+        _, current = active(directory, log)
+        moved = []
+        for s in (sessions(directory, log).values() if every else [current]):
+            n = [0, 0]
+            for i, kind in enumerate(("presses", "combos")):
+                src = s[kind].pop(old, None) or {}
+                into = s[kind].setdefault(new, {}) if src else None
+                for k, c in src.items():
+                    into[k] = into.get(k, 0) + c
+                    n[i] += c
+            if any(n):
+                write_json(path_of(directory, s["name"]), s)
+                moved.append((s["name"], n[0], n[1]))
+        if not moved:
+            where = "any session" if every else current["name"]
+            raise SessionError(f"nothing is counted on a layer called {old} in {where}")
+        return moved
+
+
 def summary(s):
     """The numbers `zmk-layer-hud session` prints for a session."""
     t = s["totals"]
@@ -430,6 +480,8 @@ class Store:
         self.acks = {}         # page -> the last seq added
         self.devices = set()
         self.keymap = ""
+        self.layers = []       # the keymap's, written into the session so that `session` can tell
+                               # counts on a layer the keymap no longer has (orphans)
         self.stamp = None
         self._stop = threading.Event()
         self._thread = None
@@ -494,18 +546,28 @@ class Store:
         if self.persist and self._stamp() != self.stamp:
             self.reload(announce=True)
 
+    def set_keymap(self, msg):
+        """The keymap the pages draw with: its file's name and its layers go into the session with
+        the next counts, or on their own at the next flush when they changed."""
+        with self.lock:
+            self.keymap = os.path.basename((msg or {}).get("source") or "") or self.keymap
+            self.layers = list((msg or {}).get("layers") or {}) or self.layers
+
     def flush(self):
         """Add what the page reported to the files it belongs in. What cannot be written now (a
         full disk) is kept, and tried again next time."""
         with self.lock:
             pending, self.pending = self.pending, {}
             self._flushed = time.monotonic()
-            if not pending:
-                return
             if not self.persist:
                 for (sid, gen), p in pending.items():
                     if sid == self.session["id"] and gen == self.session["gen"]:
                         add(self.session, _pending_as_delta(p))
+                return
+            mine = (self.session["id"], self.session["gen"])
+            if self.layers and self.session.get("layers") != self.layers and mine not in pending:
+                pending[mine] = {"presses": {}, "combos": {}, "totals": {}}   # the layers alone
+            if not pending:
                 return
             # Something else wrote since we last looked (a command): after our own write, poll must
             # still see it, so the snapshot is not taken over it.
@@ -513,7 +575,8 @@ class Store:
             error = None
             for (sid, gen), p in pending.items():
                 try:
-                    written = add_counts(self.dir, sid, gen, _pending_as_delta(p), sorted(self.devices), self.keymap, self.log)
+                    written = add_counts(self.dir, sid, gen, _pending_as_delta(p), sorted(self.devices), self.keymap,
+                                         self.log, layers=self.layers)
                 except OSError as e:
                     error = e
                     _merge_delta(self.pending.setdefault((sid, gen), {"presses": {}, "combos": {}, "totals": {}}),

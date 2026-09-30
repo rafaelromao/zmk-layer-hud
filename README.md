@@ -154,7 +154,7 @@ one of them.
 | `start`, `stop`, `restart` | start the HUD; stop it; stop and start again |
 | `status` | is it running, and which of the keyboard's two channels is live |
 | `log` | follow the panel and feed logs |
-| `session [list\|new\|save\|load\|reset\|delete]` | the typing sessions: the active one, naming it, starting or loading another |
+| `session [list\|new\|save\|load\|reset\|delete\|rename-layer]` | the typing sessions: the active one, naming it, starting or loading another |
 | `heatmap [live\|session\|off]` | what the keys glow with: what was just typed, every press this session, or nothing |
 | `doctor` | check this machine and say what is missing |
 | `setup` | prepare this machine: packages, virtualenv, config, permissions |
@@ -231,6 +231,12 @@ zmk-layer-hud heatmap session         # the keys glow with how often each one wa
 new one. `reset` zeroes the active session and `delete` removes one that is not active; both ask
 first (`--yes` does not). The commands work whether the HUD is running or not, and it follows
 what they do within a second.
+
+Counts are kept per layer, by the layer's name in the keymap-drawer YAML, and a session writes
+down which layers its keymap had. Rename a layer, or take one out, and what was counted on it
+can no longer be drawn: `zmk-layer-hud session` lists those layers, and
+`zmk-layer-hud session rename-layer OLD NEW` moves their counts over, in the active session or,
+with `--all`, in every one.
 
 A session is kept in `$ZMKHUD_STATE/sessions/<name>.json` (the directory 0700, each file 0600),
 and it holds counts: how often each key was pressed on each layer, each combo, how many characters

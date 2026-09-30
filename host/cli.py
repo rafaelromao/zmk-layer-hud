@@ -346,12 +346,29 @@ def cmd_session(args):
     act, name = args.action, args.name
     if act in ("save", "load", "delete") and not name:
         raise Fail(f"`session {act}` needs the session's name")
+    if act == "rename-layer" and not (name and args.other):
+        raise Fail("`session rename-layer` needs the layer's old name and its new one")
+    if args.other and act != "rename-layer":
+        raise Fail(f"`session {act}` takes {'one name' if act in ('new', 'save', 'load', 'delete') else 'no name'}")
     try:
         if act == "status":
             st, s = mod.status(d)
             print(f"{s['name']}{'' if s.get('named') else ' (not named yet: session save NAME)'}")
             print("  " + session_line(s, mod))
             print(f"  heatmap {st['heatmap']} · {mod.path_of(d, s['name'])}")
+            lost = mod.orphans(s)
+            if lost:
+                keymap = s.get("keymap") or "the keymap"
+                print(f"  counts on layers {keymap} no longer has, which the HUD cannot show:")
+                for layer, (presses, combos) in lost.items():
+                    print(f"    {layer}: {presses:,} keys" + (f", {combos:,} combos" if combos else ""))
+                print(f"  a layer that was renamed takes them along: "
+                      f"zmk-layer-hud session rename-layer {next(iter(lost))} NEW")
+                print(f"  ({keymap}'s layers: {', '.join(s['layers'])})")
+        elif act == "rename-layer":
+            for n, presses, combos in mod.rename_layer(d, name, args.other, every=args.all):
+                print(f"{n}: {presses:,} keys" + (f" and {combos:,} combos" if combos else "") +
+                      f" moved from {name} to {args.other}")
         elif act == "list":
             st, _ = mod.status(d)
             every = mod.sessions(d)
@@ -985,9 +1002,12 @@ def build_parser():
 
     s = add("session", "the typing sessions: the active one, naming it, starting or loading another")
     s.add_argument("action", nargs="?", default="status",
-                   choices=("status", "list", "new", "save", "load", "reset", "delete"),
-                   help="status (default), list, new [NAME], save NAME, load NAME, reset, delete NAME")
-    s.add_argument("name", nargs="?", help="the session, for new, save, load and delete")
+                   choices=("status", "list", "new", "save", "load", "reset", "delete", "rename-layer"),
+                   help="status (default), list, new [NAME], save NAME, load NAME, reset, delete NAME, "
+                        "rename-layer OLD NEW")
+    s.add_argument("name", nargs="?", help="the session, for new, save, load and delete; the layer, for rename-layer")
+    s.add_argument("other", nargs="?", help="the layer's new name, for rename-layer")
+    s.add_argument("--all", action="store_true", help="rename-layer in every session, not only the active one")
     s.add_argument("--yes", action="store_true", help="do not ask before reset or delete")
     s.set_defaults(func=cmd_session)
 

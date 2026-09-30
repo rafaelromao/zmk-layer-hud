@@ -176,6 +176,36 @@ class Commands(Base):
         self.assertIsNone(session.add_counts(self.dir, s["id"], 0, counts({"base": {"3": 5}})))
         self.assertTrue(session.is_empty(self.active()))
 
+    def with_counts(self, layers, presses, combos=None):
+        _, s = session.status(self.dir)
+        session.add_counts(self.dir, s["id"], s["gen"], counts(presses, combos), layers=layers)
+        return self.active()
+
+    def test_counts_on_a_layer_the_keymap_no_longer_has_are_told(self):
+        s = self.with_counts(["base", "symbols"], {"base": {"3": 5}, "sym": {"4": 2, "5": 1}}, {"sym": {"1,2": 3}})
+        self.assertEqual({"sym": (3, 3)}, session.orphans(s))
+        s["layers"] = []                             # a session from before layers were written down
+        self.assertEqual({}, session.orphans(s))
+
+    def test_a_renamed_layer_takes_its_counts_along(self):
+        self.with_counts(["base", "symbols"], {"sym": {"4": 2}, "symbols": {"4": 1, "6": 1}}, {"sym": {"1,2": 3}})
+        self.assertEqual([(self.active()["name"], 2, 3)], session.rename_layer(self.dir, "sym", "symbols"))
+        s = self.active()
+        self.assertEqual(({"symbols": {"4": 3, "6": 1}}, {"symbols": {"1,2": 3}}), (s["presses"], s["combos"]))
+        self.assertEqual({}, session.orphans(s))
+        with self.assertRaises(session.SessionError):
+            session.rename_layer(self.dir, "sym", "symbols")          # nothing is left there
+
+    def test_every_session_or_only_the_active_one(self):
+        self.with_counts(["base"], {"sym": {"4": 2}})
+        session.save(self.dir, "week1")
+        session.new(self.dir, "week2")
+        self.with_counts(["base"], {"sym": {"4": 1}})
+        self.assertEqual([("week2", 1, 0)], session.rename_layer(self.dir, "sym", "symbols"))
+        self.assertEqual(2, session.sessions(self.dir)["week1"]["presses"]["sym"]["4"])
+        session.rename_layer(self.dir, "sym", "symbols", every=True)
+        self.assertEqual(2, session.sessions(self.dir)["week1"]["presses"]["symbols"]["4"])
+
     def test_the_heatmap_is_kept(self):
         session.set_heatmap(self.dir, "session")
         self.assertEqual("session", session.status(self.dir)[0]["heatmap"])
@@ -242,6 +272,20 @@ class StoreTest(Base):
         st.set_heatmap("session")
         self.assertEqual("session", self.sent[-1]["heatmap"])
         self.assertEqual("session", session.status(self.dir)[0]["heatmap"])
+
+    def test_the_keymaps_layers_go_into_the_session(self):
+        st = self.store()
+        st.set_keymap({"source": "/home/me/zmk/board.yaml", "layers": {"base": {}, "sym": {}}})
+        st.apply(batch(1, presses={"base": {"3": 2}}))
+        st.flush()
+        s = self.active()
+        self.assertEqual((["base", "sym"], "board.yaml"), (s["layers"], s["keymap"]))
+        # A keymap edited while it runs: its layers are written even before anything is typed.
+        updated = s["updated"]
+        st.set_keymap({"source": "/home/me/zmk/board.yaml", "layers": {"base": {}, "symbols": {}}})
+        st.flush()
+        s = self.active()
+        self.assertEqual((["base", "symbols"], updated), (s["layers"], s["updated"]))
 
     def test_the_demo_keeps_its_session_in_memory(self):
         st = self.store(directory=False)
