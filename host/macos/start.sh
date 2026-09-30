@@ -30,9 +30,10 @@ case "${1:-start}" in
     PID=$!
     sleep 2
     kill -0 "$PID" 2>/dev/null || { echo "panel failed; see $RUN/panel.log" >&2; cat "$RUN/panel.log" >&2; exit 1; }
-    echo "HUD started on the recording display (logs: $RUN/panel.log, $RUN/hudfeed.log). Stop with: $0 stop"
+    # The feed runs inside the panel here, so its lines are in panel.log too.
+    echo "HUD started on the recording display (log: $RUN/panel.log). Stop with: $0 stop"
     ;;
   stop) stop; echo "HUD stopped" ;;
-  log) tail -n 40 -f "$RUN/panel.log" "$RUN/hudfeed.log" ;;
+  log) tail -n 40 -f "$RUN/panel.log" ;;
   *) echo "usage: $0 [start|stop|log]" >&2; exit 2 ;;
 esac

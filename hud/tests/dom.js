@@ -6,11 +6,11 @@
  * — the bytes under test are the bytes the panel loads.
  *
  * The tail of hud.js is inert here on purpose: location.search is empty, so `?keymap=` never
- * fetches (hud.js:809), and location.protocol is not http, so no keydown listener is installed
- * (hud.js:817). What is left is window.hud and window.keys, which is all the tests want.
+ * fetches (the loader at the end of hud.js), and location.protocol is not http, so no keydown listener is installed
+ * (the one after it). What is left is window.hud and window.keys, which is all the tests want.
  *
  * Geometry is real, not stubbed: getBoundingClientRect() reports back the px that hud.js itself
- * wrote into element.style, so showCombo's midpoint arithmetic (hud.js:301) runs for real.
+ * wrote into element.style, so showCombo's midpoint arithmetic runs for real.
  * Layout that a browser would compute and nothing asserts — font fitting, clientWidth — is a
  * constant.
  */
@@ -30,7 +30,7 @@ const BOARD_WIDTH = 570;            // hud.js's own fallback when a board has no
  * decide what counts as one combo, so a test that cannot move time cannot see any of it. Callbacks
  * fire in due order, ties in insertion order, which is what a browser does.
  *
- * Note this is the opposite of what demoFrame (hud.js:771) does for the GIF: it replaces
+ * Note this is the opposite of what demoFrame (hud.js) does for the GIF: it replaces
  * setTimeout with a no-op so nothing ever tears down. That is right for a screenshot and useless
  * here — a test has to watch the key go out.
  */
@@ -124,7 +124,7 @@ class El {
 
   setAttribute(name, value) {
     this.attributes.set(name, String(value));
-    if (name === "class") this.className = value;    // the combo links are built this way (hud.js:310)
+    if (name === "class") this.className = value;    // the combo links are built this way (hud.js showCombo)
   }
   getAttribute(name) { return this.attributes.has(name) ? this.attributes.get(name) : null; }
 
@@ -153,7 +153,7 @@ class El {
     return this.tagName === name.toUpperCase();
   }
   // Only what hud.js and keys.js ask for: a single class or id, and comma-separated groups whose
-  // last simple selector decides (".combo-pill, #keys .chip" at hud.js:806).
+  // last simple selector decides (".combo-pill, #keys .chip" in hud.js demoFrame).
   querySelector(sel) { return this.querySelectorAll(sel)[0] || null; }
   querySelectorAll(sel) {
     const wanted = String(sel).split(",").map(s => s.trim().split(/\s+/).pop()).filter(Boolean);
@@ -170,7 +170,7 @@ class El {
   }
 
   /* The box hud.js gave this element. buildBoard writes every key's left/top/width/height in px
-   * (hud.js:95-98) and the board's own height, so the numbers a real browser would lay out are
+   * (hud.js buildBoard) and the board's own height, so the numbers a real browser would lay out are
    * already here — showCombo's centres come out right instead of being faked. */
   getBoundingClientRect() {
     const px = v => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
@@ -215,7 +215,7 @@ function makeDocument() {
   doc.body = make("body");
   doc.documentElement.appendChild(doc.head);
   doc.documentElement.appendChild(doc.body);
-  doc.body.scrollHeight = 0;          // postSize reads it outside its own try/catch (hud.js:290)
+  doc.body.scrollHeight = 0;          // postSize reads it outside its own try/catch (hud.js postSize)
   for (const id of PAGE_IDS) {
     const e = make("div");
     e.attributes.set("id", id);

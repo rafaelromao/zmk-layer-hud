@@ -49,11 +49,11 @@
     return out;
   }
 
-  // The stack the page will have with exactly this drawer layer live, top first (hud.js:119).
+  // The stack the page will have with exactly this drawer layer live, top first (hud.js liveStack).
   const stackFor = (data, layer) => (layer === data.base ? [data.base] : [layer, data.base]);
 
   // What the drawer file says wins at idx on that stack — the spec resolveBinding is measured
-  // against (hud.js:148): the first layer with a binding that is not transparent.
+  // against (hud.js resolveBinding): the first layer with a binding that is not transparent.
   function expectedBinding(data, idx, stack) {
     for (const name of stack) {
       const k = data.layers[name] && data.layers[name][idx];
@@ -101,7 +101,7 @@
   // ---------- expectations, as the page would render them ----------
 
   /* A legend is the glyph markup when the message carries one for it, else the plain text
-   * (hud.js:159). Comparing the markup rather than a parsed id keeps this exact for a real MDI
+   * (hud.js legendHTML). Comparing the markup rather than a parsed id keeps this exact for a real MDI
    * SVG and for the placeholder the fixture uses. */
   /* A glyph legend is the SVG and nothing else — the glyph replaces the text rather than joining
    * it, and a key's `tap` carries the glyph's own text spelling only so something shows when the

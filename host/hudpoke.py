@@ -46,8 +46,9 @@ def key_events(text, gap_ms=90):
             continue
         for down in events:
             yield gap_ms, down
-            # The page lights a key on the down and clears it on the up; sending only downs
-            # leaves the strip correct but every key stuck lit.
+            # A keyboard sends the up as well, so this does too. The page draws from the downs
+            # alone (a key lit by one fades by itself, after press_ms); another client reading
+            # the stream sees what a keyboard would have sent.
             yield 0, dict(down, type="keyUp")
 
 

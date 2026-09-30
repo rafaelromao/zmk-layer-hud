@@ -63,7 +63,7 @@ function nodeDriver(page) {
       page.clock.advance(6000);
       // Say the layers went away too. A real keyboard reports [] when the thumb comes up; without
       // it the page still believes the previous case's layer is held, and setLayers holds the next
-      // report back to keep a flash under the right legends (hud.js:615).
+      // report back to keep a flash under the right legends (hud.js setLayers).
       page.hud.setLayers([]);
       page.clock.advance(6000);
       if (ids !== null && ids !== undefined) page.hud.setLayers(isBase ? [] : [ids]);

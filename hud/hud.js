@@ -1241,7 +1241,6 @@
       for (const idx of [...state.heat.keys()]) if (idx >= data.layout.keys.length) state.heat.delete(idx);
       document.documentElement.style.setProperty("--panel-alpha", String(T("opacity") / 100));
       buildBoard();
-      const t = $("title");
       renderTitle();
       postSize();
       render();
@@ -1388,7 +1387,6 @@
     },
     // Leave live mode (tests, or a host that lost the keyboard).
     clearLayers() { state.live = null; render(); },
-    // The keyboard that was opened (its HID product name): the default title.
     // The key at ZMK position `pos` went up: the flash fades out from now.
     releaseAt(pos) {
       if (!state.data) return;
@@ -1400,6 +1398,7 @@
       clearTimeout(state.timers.get(idx));
       state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo", "inferred"), T('release_ms')));
     },
+    // The keyboard that was opened (its HID product name): the default title.
     setDevice(name) { if ((name || "") !== state.device) { state.device = name || ""; renderTitle(); } },
     key(ev) {
       if (typeof ev === "string") ev = JSON.parse(ev);

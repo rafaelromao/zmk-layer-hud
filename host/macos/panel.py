@@ -67,14 +67,18 @@ def focused_screen():
 
 
 def initial_frame():
-    """The remembered frame when it is still on some screen, else top-right of the focused screen."""
+    """The remembered frame when it is still on some screen, else top-right of the focused screen.
+
+    Its own size too, not the default: Cocoa's origin is the bottom-left, and the page's first
+    size keeps the top where it is (resize), so a frame restored at 480 points tall put that top
+    480 above the saved bottom -- and the panel crept up by the difference on every start."""
     saved = load_state().get("frame")
     if saved and len(saved) == 4:
         x, y, w, h = saved
         for s in NSScreen.screens():
             f = s.frame()
             if f.origin.x <= x + w / 2 <= f.origin.x + f.size.width and f.origin.y <= y + h / 2 <= f.origin.y + f.size.height:
-                return NSMakeRect(x, y, WIDTH, HEIGHT)
+                return NSMakeRect(x, y, w, h)
     vf = focused_screen().visibleFrame()  # excludes menu bar and Dock; origin bottom-left
     return NSMakeRect(vf.origin.x + vf.size.width - WIDTH - MARGIN, vf.origin.y + vf.size.height - HEIGHT - MARGIN, WIDTH, HEIGHT)
 
