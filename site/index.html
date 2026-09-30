@@ -282,8 +282,9 @@ zmk-layer-hud start</code></pre>
       <div><dt>Does it get in ZMK Studio's way?</dt><dd>No. The feed tries each serial port the board
         exposes and moves on from one that says nothing, so a Studio or logging port beside the
         signal is left alone.</dd></div>
-      <div><dt>Bluetooth?</dt><dd>The module has a GATT service for it, but reading a board over
-        Bluetooth has not been checked on hardware yet. A dongle is USB, and works.</dd></div>
+      <div><dt>Bluetooth?</dt><dd>Yes: over Bluetooth the signal rides the module's own GATT service.
+        Pair the keyboard with the computer first; on macOS the feed finds a keyboard that is already
+        connected, with no address to give. A dongle is USB, and works too.</dd></div>
       <div><dt>Which ZMK?</dt><dd>The module follows ZMK <code>main</code>; there is no tagged release
         to pin yet.</dd></div>
     </dl>
