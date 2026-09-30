@@ -206,7 +206,6 @@ footer {
   border-top: 1px solid var(--border); font-size: 14px; color: var(--muted);
 }
 footer p { margin: 0 0 8px; max-width: 760px; }
-.built { font-family: var(--mono); font-size: 12px; }
 
 /* ---------- narrow screens ---------- */
 @media (max-width: 720px) {

@@ -54,15 +54,16 @@ test-hud: ## the HUD page: every key and combo, the heatmap, the strip, and ever
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/play_test.js; \
 	fi
 
-test-site: ## the landing page: what it is built from, and its demo on the HUD page
+test-site: ## the landing page: what it is built from, its demo on the HUD page, and whether docs/ is behind
 	$(PYTHON) -m unittest discover -s site -p '*_test.py'
 	@if [ -z "$(NODE)" ]; then \
 	  echo "test-site: node not found, skipping the demo (brew install node)"; \
 	else \
 	  PYTHON="$(PYTHON)" $(NODE) site/tests/demo_test.js; \
 	fi
+	@$(PYTHON) site/build.py --check
 
-site: ## build the landing page into build/site (STRICT=1: every board, or fail, as CI builds it)
+site: ## build the landing page into docs/, which GitHub Pages serves; commit what it writes (STRICT=1: every board, or fail)
 	$(or $(VENV_PYTHON),$(PYTHON)) site/build.py $(if $(STRICT),--strict)
 
 audit: ## the drawing against the keyboard's own keymap (SOURCE=<working copy>, else the one import recorded)

@@ -4,8 +4,10 @@ The steps are tested as functions on the repo's own files, with the standard lib
 `make test-site` runs a Python without the venv. The whole build needs keymap-drawer and runs only
 where it is installed, the way keymap_test.py does."""
 
+import filecmp
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
@@ -109,23 +111,52 @@ class Missing(unittest.TestCase):
         self.assertIn("no config/nope.yaml", str(e.exception))
 
 
+def write(path, text="x"):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(text)
+
+
 class Prepare(unittest.TestCase):
-    def test_it_does_not_clear_what_it_did_not_build(self):
+    """The page is written into docs/, beside the docs: only the names it is made of are its own."""
+
+    def test_only_the_pages_own_names_are_removed(self):
         with tempfile.TemporaryDirectory() as tmp:
-            with open(os.path.join(tmp, "notes.txt"), "w") as f:
-                f.write("mine")
+            out = os.path.join(tmp, "docs")
+            for name in ("index.html", "site.css", "boards/index.json", "boards/old.json", "hud/hud.js",
+                         "zmk-setup.md", "demo-vim.json"):
+                write(os.path.join(out, name))
+            build.prepare(out)
+            self.assertEqual(sorted(os.listdir(out)), ["boards", "demo-vim.json", "hud", "zmk-setup.md"])
+            self.assertEqual(os.listdir(os.path.join(out, "boards")), [])
+
+    def test_in_docs_the_gif_is_the_gif_not_a_copy(self):
+        self.assertNotIn("hud.gif", build.owned(build.DOCS))
+        self.assertIn("hud.gif", build.owned(os.path.join(build.REPO, "build", "site")))
+
+    def test_a_directory_that_holds_other_things_and_no_page_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write(os.path.join(tmp, "index.html"), "mine")
             with self.assertRaises(build.BuildError):
                 build.prepare(tmp)
-            self.assertTrue(os.path.exists(os.path.join(tmp, "notes.txt")))
+            with open(os.path.join(tmp, "index.html"), encoding="utf-8") as f:
+                self.assertEqual(f.read(), "mine")
 
-    def test_it_clears_a_page_it_built(self):
+
+class Stale(unittest.TestCase):
+    def test_a_published_copy_behind_its_source_is_named(self):
         with tempfile.TemporaryDirectory() as tmp:
-            out = os.path.join(tmp, "site")
-            os.makedirs(os.path.join(out, "boards"))
-            with open(os.path.join(out, "index.html"), "w") as f:
-                f.write("old")
-            build.prepare(out)
-            self.assertEqual(sorted(os.listdir(out)), ["boards", "hud"])
+            with open(os.path.join(build.REPO, "hud", "index.html"), encoding="utf-8") as f:
+                hud = build.hud_files(f.read())
+            os.makedirs(os.path.join(tmp, "hud"))
+            for name in hud:
+                shutil.copyfile(os.path.join(build.REPO, "hud", name), os.path.join(tmp, "hud", name))
+            for name in build.SITE_FILES:
+                shutil.copyfile(os.path.join(build.SITE, name), os.path.join(tmp, name))
+            self.assertEqual(build.stale(tmp), [])
+            write(os.path.join(tmp, "hud", "hud.js"), "an older HUD")
+            os.remove(os.path.join(tmp, "site.css"))
+            self.assertEqual(sorted(os.path.basename(p) for p in build.stale(tmp)), ["hud.js", "site.css"])
 
 
 @unittest.skipUnless(HAVE_DRAWER, "keymap-drawer is not installed for this Python (make venv)")
@@ -150,8 +181,22 @@ class WholeBuild(unittest.TestCase):
                     with open(os.path.join(out, b["demo"]), encoding="utf-8") as f:
                         self.assertTrue(json.load(f)["timeline"])
             self.assertEqual(sorted(os.listdir(os.path.join(out, "hud"))), ["hud.css", "hud.js", "index.html", "keys.js"])
-            with open(os.path.join(out, "index.html"), encoding="utf-8") as f:
-                self.assertNotIn("<!--commit-->", f.read())
+            self.assertEqual(build.stale(out), [])
+
+            # The output is committed: built again from the same sources, it is the same bytes.
+            again = os.path.join(tmp, "again")
+            build.log, log = (lambda msg: None), build.log
+            try:
+                build.build(again)
+            finally:
+                build.log = log
+            diff = filecmp.dircmp(out, again)
+            self.assertEqual((diff.left_only, diff.right_only, diff.diff_files), ([], [], []))
+            for sub in ("boards", "hud"):
+                d = filecmp.dircmp(os.path.join(out, sub), os.path.join(again, sub))
+                self.assertEqual((d.left_only, d.right_only), ([], []))
+                self.assertEqual(filecmp.cmpfiles(os.path.join(out, sub), os.path.join(again, sub),
+                                                  os.listdir(os.path.join(out, sub)), shallow=False)[1:], ([], []))
 
 
 if __name__ == "__main__":

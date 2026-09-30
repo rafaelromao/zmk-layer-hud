@@ -2,24 +2,30 @@
 """The landing page, put together: site/'s own files, the HUD page as it ships, and for each sample
 board its keymap message and its demo, played ahead of time.
 
-    site/build.py [--strict] [--out build/site]
+    site/build.py [--strict] [--out docs]      build it (GitHub Pages serves docs/)
+    site/build.py --check [--out docs]         say which published files are behind hud/ or site/
 
 It runs under the venv (make site): a board is converted the way the panel converts it, with
 keymap-drawer's layouts and glyphs, by host/keymap.py. A demo is compiled by host/play.py into the
 messages a keyboard would send and when, which the page plays back on its own clock.
 
+What it writes into --out is the page and nothing else: the names it is made of are removed and
+written afresh, and everything else there -- in docs/, the docs, the demo scripts and hud.gif,
+which the page uses where it is -- is left alone. The output is committed, so a build of
+unchanged sources changes nothing.
+
 Without --strict, a board whose files are not on this machine (the Diamond's keymap lives in
-rafaelromao/keyboards) is skipped with a line saying so. With it, as in CI, a board that cannot be
-built, a glyph that fell back to text or a demo with a character its keymap cannot type fails the
-build: what is published is every board, drawn as it draws at home, or nothing.
+rafaelromao/keyboards) is skipped with a line saying so. With it, a board that cannot be built, a
+glyph that fell back to text or a demo with a character its keymap cannot type fails the build:
+what is published is every board, drawn as it draws at home, or nothing.
 """
 
 import argparse
+import filecmp
 import json
 import os
 import re
 import shutil
-import subprocess
 import sys
 
 SITE = os.path.dirname(os.path.abspath(__file__))
@@ -34,7 +40,7 @@ import play  # noqa: E402  (host/play.py)
 SITE_FILES = ["index.html", "site.css", "site.js", "demo.js", "favicon.svg", "og.html"]
 OPTIONAL_FILES = ["og.png"]
 GIF = os.path.join(REPO, "docs", "hud.gif")   # what the page shows without JavaScript
-REPO_URL = "https://github.com/rafaelromao/zmk-layer-hud"
+DOCS = os.path.join(REPO, "docs")
 
 
 class BuildError(Exception):
@@ -134,29 +140,50 @@ def build_board(board, strict):
     return message, demo
 
 
+def owned(out):
+    """The names in `out` the page is made of. hud.gif is one of them only where it is a copy: in
+    docs/ it is the GIF itself."""
+    names = SITE_FILES + OPTIONAL_FILES + ["hud", "boards"]
+    if os.path.abspath(os.path.join(out, "hud.gif")) != os.path.abspath(GIF):
+        names.append("hud.gif")
+    return names
+
+
 def prepare(out):
-    """An empty output directory. What is in it is removed only if it is a page built before, so a
-    mistaken --out cannot take anything else with it."""
-    if os.path.isdir(out) and os.listdir(out):
-        if not os.path.isdir(os.path.join(out, "boards")):
-            raise BuildError(f"{out} is not empty and is not a page built before; not clearing it")
-        shutil.rmtree(out)
+    """`out` with none of the page left in it, ready to be written: the names the page is made of
+    are removed, and nothing else is touched. A directory outside this repo that already holds
+    other things and no page is refused, so a mistaken --out cannot lose anything."""
+    inside = os.path.commonpath([os.path.abspath(out), REPO]) == REPO
+    if (not inside and os.path.isdir(out) and os.listdir(out)
+            and not os.path.isfile(os.path.join(out, "boards", "index.json"))):
+        raise BuildError(f"{out} holds other things and no page built before; not writing into it")
+    os.makedirs(out, exist_ok=True)
+    for name in owned(out):
+        path = os.path.join(out, name)
+        if os.path.isdir(path) and not os.path.islink(path):
+            shutil.rmtree(path)
+        elif os.path.lexists(path):
+            os.remove(path)
     os.makedirs(os.path.join(out, "boards"))
     os.makedirs(os.path.join(out, "hud"))
+
+
+def stale(out):
+    """The published files that are not what a build would copy now -- the page's own and the
+    HUD's -- so a page left behind by a change to hud/ or site/ is noticed. The boards are not
+    compared: converting them needs the venv."""
+    with open(os.path.join(REPO, "hud", "index.html"), encoding="utf-8") as f:
+        pairs = [(os.path.join(REPO, "hud", n), os.path.join(out, "hud", n)) for n in hud_files(f.read())]
+    pairs += [(os.path.join(SITE, n), os.path.join(out, n)) for n in SITE_FILES + OPTIONAL_FILES
+              if os.path.isfile(os.path.join(SITE, n))]
+    return [os.path.relpath(dst, REPO) for src, dst in pairs
+            if not (os.path.isfile(dst) and filecmp.cmp(src, dst, shallow=False))]
 
 
 def write_json(path, obj):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, separators=(",", ":"))
         f.write("\n")
-
-
-def commit():
-    try:
-        return subprocess.run(["git", "-C", REPO, "rev-parse", "--short", "HEAD"], capture_output=True,
-                              text=True, check=True).stdout.strip()
-    except (OSError, subprocess.CalledProcessError):
-        return ""
 
 
 def build(out, strict=False, boards=None):
@@ -200,30 +227,34 @@ def build(out, strict=False, boards=None):
             shutil.copyfile(os.path.join(SITE, name), os.path.join(out, name))
         else:
             log(f"site: no site/{name} yet (docs/development.md says how to render it)")
-    shutil.copyfile(GIF, os.path.join(out, "hud.gif"))
-
-    sha = commit()
-    stamp = f'<a href="{REPO_URL}/commit/{sha}">{sha}</a>' if sha else "a working copy"
-    index = os.path.join(out, "index.html")
-    with open(index, encoding="utf-8") as f:
-        html = f.read()
-    with open(index, "w", encoding="utf-8") as f:
-        f.write(html.replace("<!--commit-->", stamp))
+    if "hud.gif" in owned(out):
+        shutil.copyfile(GIF, os.path.join(out, "hud.gif"))
     return built
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--strict", action="store_true",
-                   help="fail, rather than skip, on anything that would not be drawn as it is at home (CI)")
-    p.add_argument("--out", default=os.path.join(REPO, "build", "site"), help="where the page goes (default: build/site)")
+                   help="fail, rather than skip, on anything that would not be drawn as it is at home")
+    p.add_argument("--out", default=DOCS, help="where the page goes (default: docs, which GitHub Pages serves)")
+    p.add_argument("--check", action="store_true",
+                   help="build nothing; say which published files are behind hud/ or site/")
     args = p.parse_args(argv)
+    out = os.path.abspath(args.out)
+    if args.check:
+        # A note rather than a failure: the page is published by committing it, and a change to
+        # the HUD need not wait for that.
+        if os.path.isfile(os.path.join(out, "index.html")):
+            behind = stale(out)
+            if behind:
+                log(f"site: the published page is behind: {', '.join(behind)} (make site, then commit {os.path.relpath(out, REPO)}/)")
+        return 0
     try:
-        built = build(os.path.abspath(args.out), strict=args.strict)
+        built = build(out, strict=args.strict)
     except (BuildError, play.PlayError) as e:
         log(f"site: {e}")
         return 1
-    log(f"site: {', '.join(b['id'] for b in built)} in {os.path.relpath(os.path.abspath(args.out))}")
+    log(f"site: {', '.join(b['id'] for b in built)} in {os.path.relpath(out)}")
     return 0
 
 
