@@ -25,9 +25,12 @@ make test-hud    # just the page; KEYMAP=hud/keymap.json runs it against your ow
 make test-site   # just the landing page: what it is built from, and its demo on the HUD page
 make audit       # the drawing against the keyboard's own keymap; SOURCE=path/to/zmk-config for a working copy
 make fixture     # rebuild the committed test keymap from the configured one
+make samples     # write the sample boards' definitions again, as import does (the Diamond's needs ~/projects/keyboards)
 ```
 
-`zmk-layer-hud keymap` checks that the configured keymap-drawer YAML converts.
+`zmk-layer-hud keymap` checks that the HUD's own files load: the config and the definitions
+`import` wrote. The samples in `config/` carry theirs (`*.definitions.json`), so the demo, the
+fixtures and the landing page draw them with no keymap-drawer and no network.
 
 `firmware/src/signal_frame.h` is the single definition of the wire format; the C and Python tests
 share its vectors, so a change on one side that is not mirrored on the other fails both.
@@ -88,12 +91,12 @@ home.
 
 `site/build.py` puts together the page's own files, the HUD page as it ships (the files
 `hud/index.html` names, nothing else), and for each board in `site/boards.json` its keymap message
-and its demo. A board is converted the way the panel converts it, under the venv with
-keymap-drawer's layouts and glyphs, and its `source` is replaced with a public one: a dump names the
-keymap by a path under the home folder of whoever built it. A demo is compiled ahead of time by
-`host/play.py`, in the shape `--capture` prints. A board whose files are not on this machine is
-skipped with a line saying so: the Diamond's keymap lives in
-[rafaelromao/keyboards](https://github.com/rafaelromao/keyboards).
+and its demo. A board's message is built the way the panel builds it, from its config and the
+definitions committed beside it (`make samples` writes them again), so the build needs neither
+keymap-drawer nor the network. Its `source` is replaced with a public one, since a dump names the
+keymap by a path under the home folder of whoever built it, and its keys are dark, like the page
+(`hud.dark: 1`). A demo is compiled ahead of time by `host/play.py`, in the shape `--capture`
+prints. A board whose definitions are missing is skipped with a line saying so.
 
 In `docs/` the page is `index.html` and its files beside it, `hud/` and `boards/`; `hud.gif` is
 used where it is. A build removes and rewrites exactly those names and leaves the docs, the demo

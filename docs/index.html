@@ -4,14 +4,14 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>zmk-layer-hud · an on-screen HUD for ZMK keyboards</title>
-<meta name="description" content="An on-screen HUD for ZMK keyboards: the layer you are on, and every key, combo and macro as you press it, drawn from your keymap-drawer file and reported by the keyboard itself.">
+<meta name="description" content="An on-screen HUD for ZMK keyboards: the layer you are on, and every key, combo and macro as you press it, drawn from your keymap and reported by the keyboard itself.">
 <link rel="canonical" href="https://rafaelromao.github.io/zmk-layer-hud/">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#1a1b26">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="zmk-layer-hud">
 <meta property="og:title" content="zmk-layer-hud · an on-screen HUD for ZMK keyboards">
-<meta property="og:description" content="The layer you are on, and every key, combo and macro as you press it, drawn from your keymap-drawer file and reported by the keyboard itself. Try it in the browser.">
+<meta property="og:description" content="The layer you are on, and every key, combo and macro as you press it, drawn from your keymap and reported by the keyboard itself. Try it in the browser.">
 <meta property="og:url" content="https://rafaelromao.github.io/zmk-layer-hud/">
 <meta property="og:image" content="https://rafaelromao.github.io/zmk-layer-hud/og.png">
 <meta property="og:image:width" content="1200">
@@ -36,7 +36,7 @@
   <section class="hero" aria-labelledby="title">
     <h1 id="title">The layer you're on, and every key you press</h1>
     <p class="lead">An on-screen HUD for ZMK keyboards. It shows the layer you are on and lights the
-      keys, combos and macros as you press them, drawn from the same
+      keys, combos and macros as you press them, drawn from your ZMK keymap, or from the
       <a href="https://github.com/caksoylar/keymap-drawer">keymap-drawer</a> file you document your
       layout with. The keyboard itself reports its layers and key positions, so nothing is guessed.</p>
 
@@ -77,18 +77,17 @@
   </section>
 
   <section id="drawer" aria-labelledby="drawer-title">
-    <h2 class="banner" id="drawer-title">Drawn from your keymap-drawer file</h2>
-    <p>The board on screen is the YAML you already keep for your keymap's diagram, glyphs and key
-      sizes included: the config's one required line points at it. Edit the file and the HUD redraws.</p>
-    <p>No YAML yet? keymap-drawer makes one from your keymap, and the installer has already put it in
-      the HUD's own virtualenv. A YAML made this way needs nothing else: its layer and key order are
-      the keymap's.</p>
-    <pre><code>~/.local/share/zmk-layer-hud/.venv/bin/keymap parse -z path/to/your.keymap &gt; keymap.yaml</code></pre>
-    <p>A curated drawing does not carry three things the HUD needs: the id of each ZMK layer, the
-      position of each drawn key, and which layers a combo really fires on. <code>import</code> takes
-      them from your zmk-config once, and <code>sync</code> reads it again after you push:</p>
+    <h2 class="banner" id="drawer-title">Drawn from your keymap</h2>
+    <p><code>import</code> reads your zmk-config once and draws the board with
+      <a href="https://github.com/caksoylar/keymap-drawer">keymap-drawer</a>: every layer and key,
+      the combos, and what a drawing leaves out, the id of each ZMK layer and the layers a combo
+      really fires on. Keep a keymap-drawer YAML for your keymap's diagram, glyphs and key sizes
+      included? Name it in the config and the board is that one instead.</p>
+    <p>What import draws goes in a file beside the config, and the HUD reads that and the config and
+      nothing else: no keymap, no keymap-drawer and no network while it runs. <code>sync</code> draws
+      it again after you push, and <code>sync --watch</code> each time you save.</p>
     <pre><code>zmk-layer-hud import github.com/you/zmk-config
-zmk-layer-hud sync</code></pre>
+zmk-layer-hud sync --watch</code></pre>
     <p>The config can live in that repo too. After <code>zmk-layer-hud config link path/to/config.yaml</code>,
       <code>git pull</code> is the whole of setting up a second machine.</p>
   </section>
@@ -111,7 +110,7 @@ zmk-layer-hud sync</code></pre>
       </div>
       <div class="node">
         <b>Feed</b>
-        <span>reads both, and converts your keymap-drawer YAML</span>
+        <span>reads both, and sends the board import drew</span>
       </div>
       <div class="edges one">
         <div class="edge"><span>messages</span><small>in the panel, or on a local WebSocket</small></div>
@@ -222,10 +221,11 @@ zmk-layer-hud sync</code></pre>
       </li>
       <li>
         <h3>Your keymap</h3>
-        <pre><code>zmk-layer-hud config edit                        # point keymap: at your keymap-drawer YAML
-zmk-layer-hud import github.com/you/zmk-config   # layer ids, positions, combo layers
+        <pre><code>zmk-layer-hud import github.com/you/zmk-config   # draws your keymap: layers, ids, combos
 zmk-layer-hud start</code></pre>
-        <p>The panel opens, and within two seconds it follows your keyboard. When it does not,
+        <p>To draw a keymap-drawer YAML of your own instead, name it as <code>keymap:</code> in the
+          config first (<code>zmk-layer-hud config edit</code>). The panel opens, and within two
+          seconds it follows your keyboard. When it does not,
           <code>zmk-layer-hud doctor</code> checks the interpreter, the packages, the config, the
           permissions and both channels, and names what is missing. The channel alone:</p>
         <pre><code>zmk-layer-hud feed --stdout --no-ws --no-keymap --no-keys --debug</code></pre>

@@ -106,7 +106,9 @@ there means something is sending the signal as HID usages rather than on this ch
 
 ## Layer ids
 
-`hud/keymap/build.py` reads the `// Layers` block of `src/definitions/config.dtsi` and maps every
-define to the drawer layer that shows it (`ZMK_LAYERS` in that script). Adding a layer to
-`config.dtsi` fails the build of `keymap.json` until it gets an entry there, on purpose. Ids must
-be 0–31; the module's `BUILD_ASSERT` enforces it.
+`zmk-layer-hud import ~/projects/keyboards --keyboard diamond` reads the ids from the keymap
+itself, each layer node in the order ZMK numbers them, and writes them into the HUD's definitions;
+`zmk-layer-hud sync` reads them again after a change. Which drawn layer shows each one is
+`layers.map` in [config/diamond.yaml](../config/diamond.yaml), for the layers the keymap-drawer
+file names differently, and a layer added to the keymap is listed as undecided until it gets an
+entry there. Ids must be 0–31; the module's `BUILD_ASSERT` enforces it.

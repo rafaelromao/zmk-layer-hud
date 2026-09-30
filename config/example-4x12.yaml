@@ -1,6 +1,8 @@
 # zmk-layer-hud config for keymap-drawer's 4x12 MIT example (examples/4x12.MIT.yaml): a wide,
 # non-split ortho board, to see the panel follow a very different shape. Paths are relative to
-# this file; see config/example-3x5.yaml for how to try it without a keyboard.
+# this file, and the HUD draws from example-4x12.definitions.json beside it, which `zmk-layer-hud
+# import --config config/example-4x12.yaml` writes; see config/example-3x5.yaml for how to try it
+# without a keyboard.
 
 keymap: ../examples/4x12.MIT.yaml
 title: 4x12 MIT example

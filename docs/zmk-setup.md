@@ -62,9 +62,9 @@ Properties (all optional):
 
 Layer ids 0–31 are representable: the set travels as a bitmap, so there is no per-layer cost and
 no ceiling to raise. Positions 0–255 are representable; a key's position is its index in the
-keymap's binding list, which is also the drawer's key order for a YAML from `keymap parse`. A
-curated drawer file with a different key order lists each drawer key's position in the host config
-(`positions:`).
+keymap's binding list, which is also the drawing's key order when `zmk-layer-hud import` draws the
+keymap itself, or a YAML `keymap parse` made. A curated drawer file with a different key order lists
+each drawer key's position in the host config (`positions:`).
 
 `CONFIG_ZMK_LAYER_SIGNAL_GATT` carries the signal over BLE. It depends on `CONFIG_BT_PERIPHERAL`
 and defaults on wherever that is set, which is any wireless ZMK build.

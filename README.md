@@ -1,7 +1,7 @@
 # zmk-layer-hud
 
 An on-screen HUD for ZMK keyboards. It shows the layer you are on and lights the keys, combos
-and macros as you press them, drawn from the same
+and macros as you press them, drawn from your ZMK keymap, or from the
 [keymap-drawer](https://github.com/caksoylar/keymap-drawer) file you document your layout with.
 The keyboard itself reports its layers and key positions, so nothing is guessed. Keep it on
 screen while you learn a layout, or while you record or share your screen.
@@ -19,8 +19,9 @@ between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`
 
 - **One source**: the keyboard, on a channel of its own. No OS event tap, no service to install,
   no per-app plugin.
-- **Any ZMK keyboard**: a small ZMK module on the keyboard, a keymap-drawer YAML on the host.
-- **Live**: edit the YAML and the HUD redraws; every size and timing lives in one config file.
+- **Any ZMK keyboard**: a small ZMK module on the keyboard; on the host, `import` draws its keymap.
+- **Live**: under `sync --watch`, edit the keymap or its drawing and the HUD redraws; every size
+  and timing lives in one config file.
 - **Native panels**: a macOS overlay panel, a Hyprland layer-shell panel on Linux.
 
 ## Requirements
@@ -28,8 +29,8 @@ between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`
 - macOS, or Linux running Hyprland (the panel is a layer-shell surface).
 - Python 3.10 or newer. `setup` builds a virtualenv; on macOS, Apple's `/usr/bin/python3` is 3.9
   and is not enough on its own.
-- A ZMK keyboard whose firmware you can build and flash, and a keymap-drawer YAML of its keymap
-  (the [quick start](#quick-start) shows how to make one).
+- A ZMK keyboard whose firmware you can build and flash, and its zmk-config: a GitHub URL, or a
+  working copy. A keymap-drawer YAML of the keymap is optional.
 - On Linux, the system GTK bindings for the panel — `python-gobject`, `webkit2gtk-4.1` and
   `gtk-layer-shell`, which `setup` installs.
 
@@ -66,23 +67,19 @@ and the udev rule on Linux, the virtualenv, a config to start from, and the comm
 `~/.local/bin`. Nothing runs as root without printing the command and asking first, so a piped
 `curl` never quietly acquires it.
 
-No keymap-drawer YAML yet? keymap-drawer makes one from your keymap, and `setup` has already
-installed it in the tree's virtualenv:
+Then draw your keymap into the HUD's own files, and start:
 
 ```bash
-~/.local/share/zmk-layer-hud/.venv/bin/keymap parse -z path/to/your.keymap > keymap.yaml
-```
-
-A YAML made that way needs nothing else in the config: its layer and key order are the keymap's.
-
-Then point the one required line of the config, `keymap:`, at your keymap-drawer YAML, check it
-converts, and start:
-
-```bash
-zmk-layer-hud config edit
-zmk-layer-hud keymap
+zmk-layer-hud import github.com/you/zmk-config   # or a path to a working copy
 zmk-layer-hud start
 ```
+
+`import` reads the keymap: every layer, where each key sits, the combos and the layers they really
+fire on. It writes what the HUD draws beside the config, in `config.definitions.json`, and the HUD
+reads that and the config and nothing else, so it runs without the keymap, keymap-drawer or the
+network. Already keep a keymap-drawer YAML, glyphs and key sizes included? Name it as `keymap:` in
+the config first (`zmk-layer-hud config edit`), and import draws that instead. After a change to
+the keymap, `zmk-layer-hud sync` draws it again ([more](#taking-it-from-your-keyboards-repo)).
 
 The panel opens on the screen with keyboard focus (drag it anywhere; it remembers). Within two
 seconds the status line disappears and the banner follows your keyboard. `zmk-layer-hud stop`
@@ -105,8 +102,8 @@ zmk-layer-hud demo                                                              
 zmk-layer-hud demo --config ~/.local/share/zmk-layer-hud/config/example-4x12.yaml   # the ortho board
 ```
 
-(From a clone, the second is `--config config/example-4x12.yaml`.) That converts the keymap,
-serves the pages and opens them, fed by a socket of their own the way the Linux panel's are. In
+(From a clone, the second is `--config config/example-4x12.yaml`.) That loads the sample's
+definitions, committed beside its config, serves the pages and opens them, fed by a socket of their own the way the Linux panel's are. In
 the browser console, `hud.setLayers([1])` switches layers, `hud.pressAt(13)` lights a key and
 `hud.releaseAt(13)` lets it go; `zmk-layer-hud poke --url ws://127.0.0.1:8767 --type hello` types
 on it from a terminal.
@@ -163,7 +160,7 @@ flags of any one of them, and [docs/cli.md](docs/cli.md) has every verb's in one
 | `setup` | prepare this machine: packages, virtualenv, config, permissions |
 | `update`, `uninstall` | fetch a newer tree; remove the tree and the command |
 | `keymap` | check the HUD's own files load: the config and the definitions import wrote |
-| `import [<repo>]`, `sync` | write the definitions the HUD draws from: the drawing from `keymap:`, and layer ids and combo layers from a ZMK repo; `sync` does it again from the same sources. `import --pristine` starts over, and says first what only an earlier import had (`--keep-custom` keeps just that) |
+| `import [<repo>]`, `sync` | write the definitions the HUD draws from: the drawing, from the ZMK keymap or the keymap-drawer YAML `keymap:` names, with layer ids and combo layers from a ZMK repo; `sync` does it again from the same sources, and `sync --watch` each time they are edited. `import --pristine` starts over, and says first what only an earlier import had (`--keep-custom` keeps just that) |
 | `config path\|show\|edit\|link` | where the config is, what is in it, and linking one kept in a repo |
 | `demo [--play SCRIPT]` | serve the pages against a sample keymap, with no keyboard; type a demo script on them |
 | `poke`, `feed` | drive the HUD without a keyboard; run the feed alone |
@@ -178,13 +175,16 @@ drops just the HID half — the typed-keys strip and the shift flag — and keep
 ## Configuration
 
 `~/.config/zmk-layer-hud/config.yaml` (or `--config` / `ZMKHUD_CONFIG`). Paths may be relative to
-the file. Only `keymap:` is required. [config/example.yaml](config/example.yaml) is the config
+the file, and nothing in it is required. [config/example.yaml](config/example.yaml) is the config
 `setup` starts you with; [config/diamond.yaml](config/diamond.yaml), the author's own, shows every
-key with its default and a comment:
+key with its default and a comment. The first three rows are what `import` and `sync` draw from;
+the HUD itself never reads them:
 
 | key | what |
 |---|---|
-| `keymap`, `drawer_config` | the keymap-drawer YAML, and your drawer config (key sizes, glyphs) |
+| `keymap`, `drawer_config` | a keymap-drawer YAML to draw instead of the ZMK keymap, and your drawer config (key sizes, glyphs) |
+| `layout` | how the keys sit, as a keymap-drawer layout, when the drawing comes from the ZMK keymap and import cannot find the board's physical layout in its repo |
+| `stagger` | a 3x5 split whose `layout` only counts its keys is drawn with a Ferris Sweep's column stagger; `false` keeps it ortholinear |
 | `layers` | which drawer layer shows which ZMK layer, when the YAML is curated (`map`) |
 | `base` | the drawer layer that is always active (default: the layer for id 0) |
 | `positions` | ZMK position of each drawer key when the YAML's key order is not the keymap's |
@@ -193,14 +193,13 @@ key with its default and a comment:
 | `combos` | layer coverage for a combo the import gets wrong |
 | `keyboard`, `serial`, `ble` | pick one of several ZMK boards; name its serial port; its BLE address |
 | `title` | corner text (default: the name of the keyboard that is typing) |
-| `stagger` | a 3x5 split whose `layout` only counts its keys is drawn with a Ferris Sweep's column stagger; `false` keeps it ortholinear |
 | `hud`, `feed` | every size and timing: panel width and opacity, flash and pill durations, combo slack, how long a key's glow takes to fade, dead-key window … |
 | `stats` | which boxes the [stats block](#how-it-works) shows: `true` or `false` for each |
 | `fingers` | the finger that strikes each drawer key (`lp` … `li`, `lt`, `rt`, `ri` … `rp`), when the HUD cannot tell from the layout |
 | `extras` | inference hints, used only with firmware that reports no positions |
 
-For a YAML produced by `keymap parse`, layer order and key order already match the keymap and
-none of the mapping keys are needed.
+When import draws the ZMK keymap itself, or a YAML `keymap parse` made, layer order and key
+order already match the keymap and none of the mapping keys are needed.
 
 Where things live, and what moves them:
 
@@ -243,14 +242,14 @@ new one. `reset` zeroes the active session and `delete` removes one that is not 
 first (`--yes` does not). The commands work whether the HUD is running or not, and it follows
 what they do within a second.
 
-Counts are kept per layer, by the layer's name in the keymap-drawer YAML, and a session writes
+Counts are kept per layer, by the layer's name in the drawing, and a session writes
 down which layers its keymap had. Rename a layer, or take one out, and what was counted on it
 can no longer be drawn: `zmk-layer-hud session` lists those layers, and
 `zmk-layer-hud session rename-layer OLD NEW` moves their counts over, in the active session or,
 with `--all`, in every one.
 
-A session's heatmap can be kept as a picture, drawn by keymap-drawer over the configured keymap
-with its own legends, glyphs and combos:
+A session's heatmap can be kept as a picture, drawn by keymap-drawer from the HUD's definitions
+with the keymap's own legends, glyphs and combos:
 
 ```bash
 zmk-layer-hud session export                    # the active one: colemak-1-session.svg, every layer with heat
@@ -258,7 +257,8 @@ zmk-layer-hud session export colemak-1 --mode physical -o hands.svg   # all laye
 zmk-layer-hud session export --mode speed --layers SYM,NUM            # each key's time, on those layers
 ```
 
-The steps and colours are the HUD's own. `-o -` writes the SVG to stdout.
+The steps and colours are the HUD's own, on light keys or dark ones as the HUD's are. `-o -`
+writes the SVG to stdout.
 
 A session is kept in `$ZMKHUD_STATE/sessions/<name>.json` (the directory 0700, each file 0600),
 and it holds counts: how often each key was pressed on each layer, each combo, how many characters
@@ -286,34 +286,47 @@ one — link it rather than copying it, so `git pull` is the whole of syncing a 
 zmk-layer-hud config link path/to/your/config.yaml
 ```
 
-Both names are linked, and that matters: `<config>.imported.yaml` is looked for beside the config's
-own path, not beside whatever that path points at, so linking only `config.yaml` would leave a
-stale imported file in play. The pair also has to travel together — a config and an import that
-disagree about `combo_term_ms` silently fall back to the 50 ms default.
+Three names are linked — the config, `<config>.definitions.json` and `<config>.imported.yaml` —
+and that matters: the definitions are looked for beside the config's own path, not beside whatever
+that path points at, so linking only `config.yaml` would leave stale definitions in play, or none.
+The three also have to travel together: definitions from another import can draw layers the config
+maps differently. A sync writes through the links, into the repo's own files.
 
 ### Taking it from your keyboard's repo
 
-A keymap-drawer file does not carry three things the HUD needs: the id of each ZMK layer, the key
-position of each drawn key, and which layers a combo really fires on — a combo's `layers:` there is
-a drawing choice, where the HUD needs the firmware's gate. `import` takes them out of the
-keyboard's own ZMK keymap, once:
+The HUD reads two files and nothing else: its config, and the definitions `import` writes beside
+it (`config.yaml` → `config.definitions.json`). They hold the drawing — every key where it sits,
+each layer's legends, the combos, the glyphs — made with keymap-drawer from the YAML the config
+names as `keymap:`, or, when it names none, from the keyboard's own ZMK keymap. From a repo they
+also hold what the keymap says and a drawing does not: the id of each ZMK layer, and the layers
+each combo really fires on (a combo's `layers:` in a drawing is a drawing choice, where the HUD
+needs the firmware's gate).
 
 ```bash
 zmk-layer-hud import github.com/you/zmk-config         # or a path to a working copy
 zmk-layer-hud import ~/zmk-config --keyboard corne     # --keyboard: which one, when it holds several
-zmk-layer-hud sync                                     # read it again, and say what changed
+zmk-layer-hud import                                   # no repo: draw the YAML `keymap:` names, alone
+zmk-layer-hud sync                                     # read the same sources again, and say what changed
+zmk-layer-hud sync --watch                             # and again each time one of them is saved
 ```
 
-What it derives goes in a file named after the config (`config.yaml` → `config.imported.yaml`), so
-the config stays yours: anything set there wins, and a sync never touches it. The one thing import
-cannot know is which drawn layer shows which ZMK layer — your names, not the keymap's — so it
-drafts that mapping and marks the lines it had to leave undecided. Correct them once in
-`config.yaml`; sync will not overwrite them.
+The config stays yours: anything set there wins, and a sync never touches it. What a repo's keymap
+says is also written for you to read, in `config.imported.yaml`. When the drawing is a curated
+keymap-drawer file, the one thing import cannot know is which drawn layer shows which ZMK layer —
+your names, not the keymap's — so it drafts that mapping there and marks the lines it had to leave
+undecided. Correct them once in `config.yaml`; sync will not overwrite them. A curated file whose
+key order is not the keymap's says each key's position with `positions:`.
+
+`start` refuses until there are definitions, and says which command writes them; `doctor` says
+when a source is newer than they are. A sync whose definitions would not load writes nothing, so it
+never leaves the HUD without the keymap it had.
 
 A URL is cloned into `~/.cache/zmk-layer-hud/repos` (`$ZMKHUD_CACHE` moves it) and fetched on every
 later sync, so a sync sees what you pushed; a path is read where it is, so it sees what you have
-not pushed yet. [config/diamond.imported.yaml](config/diamond.imported.yaml) is what it writes for
-the Diamond.
+not pushed yet. `sync --watch` stays, and syncs again whenever the config, the keymap-drawer files,
+or a working copy's keymap and what it includes are saved; the running HUD redraws. A repo given
+by URL is not watched. [config/diamond.definitions.json](config/diamond.definitions.json) and
+[config/diamond.imported.yaml](config/diamond.imported.yaml) are what it writes for the Diamond.
 
 ## How it works
 
@@ -332,8 +345,8 @@ emits one HID report per change, so reading them cannot lose a keystroke, while 
 sending the same snapshot would have to defer it to a work queue that coalesces presses away.
 Reading the reports is what needs Input Monitoring on macOS; the signal channel needs nothing, and
 `--no-hid-keys` drops the strip and the permission with it. The feed also decodes keys and
-modifiers (US layout, dead keys composed) and converts the keymap-drawer YAML with the drawer's own
-layout generators and glyphs, re-sending it when the file changes. The macOS panel
+modifiers (US layout, dead keys composed), and builds the keymap the page draws from the config and
+the definitions `import` wrote, sending it again whenever either changes. The macOS panel
 (`host/macos/panel.py`, PyObjC) runs the feed in-process; the Linux panel talks to it over a
 WebSocket.
 
@@ -418,7 +431,8 @@ The message format, the WebSocket the feed serves, and what a client may inject 
 ## Troubleshooting
 
 **`zmk-layer-hud doctor` first.** It checks the interpreter and its version, the virtualenv's
-packages, the GTK bindings on Linux, the config and whether its keymap converts, the udev rule,
+packages, the GTK bindings on Linux, the config and whether its definitions load (and whether a
+sync is due), the udev rule,
 whether the command is on your PATH, and what the feed last managed to open — and prints the fix
 beside anything that is wrong. What it cannot see:
 
@@ -440,6 +454,8 @@ beside anything that is wrong. What it cannot see:
   Privacy & Security → Bluetooth). `… over BLE, not read` means it connected but found no signal
   service: the firmware was built without `CONFIG_ZMK_LAYER_SIGNAL_GATT`, or macOS has cached the
   keyboard's services from an older firmware — remove and re-pair it.
+- **`no definitions yet`**: `start` waits for `import` to have drawn the keymap:
+  `zmk-layer-hud import <your zmk-config>`, or with `keymap:` set, `zmk-layer-hud import`.
 - **No `layers` lines**: `zmk-layer-hud feed --raw` logs every frame it decodes, so silence there
   separates "the keyboard says nothing" from "the host makes nothing of it".
 - **Wrong keys light** on a curated keymap: `positions:` is missing or wrong; the feed logs
@@ -451,8 +467,9 @@ beside anything that is wrong. What it cannot see:
 ## Limits
 
 - Layer ids 0–31, key positions 0–255.
-- Without keymap-drawer installed, only `cols_thumbs_notation` and `ortho_layout` layouts render
-  and combos given as `trigger_keys` are skipped.
+- `import` and `sync` draw with keymap-drawer, from the virtualenv `setup` makes; without it they
+  draw only `cols_thumbs_notation` and `ortho_layout` layouts, and skip combos given as
+  `trigger_keys`. The HUD itself needs neither keymap-drawer nor the network.
 - Linux has nothing like macOS's secure input, so there the strip shows what is typed into a
   password field too, and the board lights its keys. Stop the HUD, or record with it hidden, when
   that matters.

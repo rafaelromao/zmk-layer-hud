@@ -105,8 +105,9 @@ socket shows the session without adding its counts a second time. The macOS pane
 through the panel's own bridge and needs no token. A batch names the session and `gen` it was
 typed under, so what was on the way when a session was loaded or reset lands where it belongs.
 
-The keymap is not injectable: it is large, it is built from files the feed already watches, and a
-page given a wrong one has no way back.
+The keymap is not injectable: it is large, it is built from the HUD's own files (the config and
+the definitions `import` wrote), which the feed already watches, and a page given a wrong one has no
+way back.
 
 ### Typing sent in
 
