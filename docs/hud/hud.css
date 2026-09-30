@@ -1,0 +1,200 @@
+/* zmk-layer-hud panel. Visual language borrowed from keymap-drawer:
+   rounded light keys, tap legend centred, hold legend at the bottom, shifted legend
+   at the top, held keys tinted blue. Dark translucent panel so it reads on any editor. */
+:root {
+  --key: 62px;
+  --gap: 6px;
+  --panel-alpha: 0.86;                       /* set from the config's hud.opacity by hud.js */
+  --panel: rgba(20, 22, 30, var(--panel-alpha));
+  --panel-border: rgba(255, 255, 255, 0.08);
+  --key-bg: #f5f6fa;
+  --key-fg: #1f2430;
+  --key-dim: #9aa0ad;
+  --key-border: #c9ccd6;
+  --held: #c5d6ff;
+  --pressed: #ffb454;
+  --combo: #ffd68a;
+  --heat-live: #ff5a36;                      /* the live heatmap's glow, set apart from --pressed */
+  --chip: #2a2f3d;
+  --chip-fg: #e6e8ef;
+  --chip-vim: #7aa2f7;
+  --chip-insert: #9ece6a;
+  --chip-raw: #f7768e;
+  --chip-off: #565f89;
+  --chip-layer: #bb9af7;
+  --font: "Hack Nerd Font", "JetBrains Mono", Menlo, monospace;
+}
+html, body { margin: 0; background: transparent; }
+body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
+#hud {
+  display: flex; flex-direction: column; gap: 10px; width: 100%; box-sizing: border-box;
+  padding: 12px 14px 14px; border-radius: 16px;
+  background: var(--panel); border: 1px solid var(--panel-border);
+}
+.chip {
+  padding: 3px 10px; border-radius: 999px; background: var(--chip);
+  font-size: 14px; font-weight: 700; letter-spacing: 0.04em; line-height: 20px;
+  transition: background 120ms ease, color 120ms ease;
+}
+.chip.base { background: var(--chip); color: var(--chip-fg); }
+.chip.layer { background: var(--chip-layer); color: #1f1f2e; }
+.chip.vim { background: var(--chip-vim); color: #101420; }
+.chip.insert { background: var(--chip-insert); color: #101420; }
+.chip.cmdline { background: #e0af68; color: #101420; }
+.chip.raw { background: var(--chip-raw); color: #101420; }
+.chip.off { background: var(--chip-off); color: #dfe3f0; }
+.chip.provisional { outline: 2px dashed rgba(255,255,255,0.45); outline-offset: -2px; }
+/* The board is the keymap-drawer physical layout scaled to the panel width; every key is
+   positioned (and rotated) from the drawer's coordinates, so any keyboard renders. */
+#board { position: relative; width: 100%; min-height: 40px; }
+.key {
+  position: absolute;
+  box-sizing: border-box; border-radius: 9px;
+  background: var(--key-bg); color: var(--key-fg); border: 1px solid var(--key-border);
+  display: grid; grid-template-rows: calc(var(--kh, 62px) * 0.23) 1fr calc(var(--kh, 62px) * 0.23);
+  align-items: center; justify-items: center;
+  transition: background 90ms ease, transform 90ms ease, box-shadow 90ms ease;
+  isolation: isolate;                        /* the heat overlay's own stacking context (.key::before) */
+}
+/* Legends scale with the key height (--kh, set by hud.js from the drawn layout). */
+/* line-height leaves room for a mark above a capital. At 1 the line box is exactly the font size,
+   which for a typical mono face is shorter than its own ascent+descent: the half-leading goes
+   negative and `overflow: hidden` then trims whatever sticks out. A cedilla hangs below the
+   baseline and survives; the acute on Á, the tilde on Ã and the circumflex on Ô sit above cap
+   height and were cut off entirely, so a Portuguese alpha layer drew as bare A, A, O. Measured
+   worst case is 1.095 of the font size; 1.25 leaves margin and still fits the grid row. */
+.key .tap { font-size: calc(var(--kh, 62px) * 0.32); font-weight: 600; line-height: 1.25; max-width: 100%; overflow: hidden; white-space: nowrap; }
+.key .tap.long { font-size: calc(var(--kh, 62px) * 0.19); }
+.key .tap.mid { font-size: calc(var(--kh, 62px) * 0.24); }
+.key .hold, .key .shifted { font-size: calc(var(--kh, 62px) * 0.145); color: #5b6172; line-height: 1.25; max-width: 100%; overflow: hidden; white-space: nowrap; }
+.key.trans { background: #e6e8ef; }
+.key.trans .tap, .key.trans .hold, .key.trans .shifted { color: var(--key-dim); }
+.key.blank { background: #dcdfe8; border-style: dashed; }
+.key.ghost { background: #e6e8ef; border-style: dotted; opacity: 0.75; }   /* keymap-drawer `type: ghost` */
+.key.held { background: var(--held); }
+.key.activator { background: var(--held); box-shadow: inset 0 0 0 2px #7aa2f7; }
+.key.pressed { background: var(--pressed); transform: translateY(2px); box-shadow: 0 0 0 3px rgba(255,180,84,0.55); }
+.key.pressed.combo { background: var(--combo); }
+.key.combo-key { box-shadow: 0 0 0 3px #7aa2f7, 0 0 18px rgba(122,162,247,0.6); z-index: 2; }
+.key.mod { box-shadow: inset 0 0 0 2px #9ece6a; }
+/* A key the HUD could not place on the keyboard's real layer stack (host-only inference,
+   e.g. synthesized keys in a rehearsal): same flash, dashed edge. */
+.key.pressed.inferred { border: 2px dashed #a86a1a; }
+/* The heatmap (hud.js heat): an overlay above the key's own fill and below its legends -- z-index
+   -1 inside the stacking context `isolation` gives each key. An overlay, not a background: the
+   board's layer tints (#board.off .key …) outrank any class on a key and would hide it on the base
+   layer. Inset 3px, so the rings drawn inside a key's edge (activator, mod) stay in sight. hud.js
+   writes --heat, the overlay's opacity, on the key; the transition smooths its coarse steps.
+   Longhand offsets, not `inset`: the page runs in WebKit builds older than that property. */
+.key::before {
+  content: ""; position: absolute; top: 3px; right: 3px; bottom: 3px; left: 3px; border-radius: 6px;
+  z-index: -1; pointer-events: none; background: var(--heat-live); opacity: var(--heat, 0);
+  transition: opacity 120ms linear;
+}
+/* The session heatmap (hud.js paintSessionHeat): six steps of how often a key was pressed, on the
+   same overlay. ColorBrewer YlOrRd's light half, so the dark tap legend reads on every step;
+   .heated darkens the small hold and shifted legends, which would not. */
+.key.hs1::before { background: #ffffcc; opacity: 0.9; }
+.key.hs2::before { background: #ffeda0; opacity: 0.9; }
+.key.hs3::before { background: #fed976; opacity: 0.9; }
+.key.hs4::before { background: #feb24c; opacity: 0.9; }
+.key.hs5::before { background: #fd8d3c; opacity: 0.9; }
+.key.hs6::before { background: #fc4e2a; opacity: 0.9; }
+.key.heated .hold, .key.heated .shifted { color: #2e3240; }
+/* macOS secure input (hud.js setSecure): the board has stopped following, and looks it. */
+body.secure #board { opacity: 0.55; }
+body.secure #layerSub { color: #e0af68; }
+/* A GIF still (&demo=N) is drawn as it always was. */
+body.demo .key::before, body.demo #stats { display: none; }
+
+/* The stats bar above the panel (hud.js "the stats bar"): chips of their own, like the strip's
+   below, so they read with nothing behind them. A fixed height: the macOS window takes its size
+   once the keymap loads, and the Linux surface is sized for it (host/linux/panel.py STATS_H). */
+#stats { display: flex; gap: 5px; height: 26px; margin-bottom: 6px; overflow: hidden; white-space: nowrap; font-family: var(--font); }
+#stats.off { display: none; }
+#stats .stat {
+  flex: none; padding: 0 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--panel-border);
+  color: #8b91a3; font-size: 11px; line-height: 24px; font-variant-numeric: tabular-nums;
+}
+#stats .stat b { color: #e6e8ef; font-weight: 700; }
+#stats .stat.layer { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#stats .stat.mode { margin-left: auto; cursor: pointer; }
+#stats .stat.mode:hover { color: #e6e8ef; }
+#layer.inferred { border-bottom-style: dashed; }
+#status { font-size: 12px; color: #aab0c0; min-height: 16px; display: flex; }
+#feed { color: #e0af68; }
+#feed:empty { display: none; }
+/* keymap-drawer glyphs, drawn as the SVG it draws, sized like the legend text around them. */
+.glyph { display: inline-flex; align-items: center; justify-content: center; height: 1.15em; }
+.glyph svg { height: 100%; width: auto; fill: currentColor; }
+.key .tap .glyph { height: 1.25em; }
+#title { font-size: 13px; color: #aab0c0; margin-left: auto; letter-spacing: 0.04em; }
+
+/* Active layer banner: the one thing to read at a glance. */
+#layer { display: flex; align-items: center; gap: 12px; padding: 2px 4px 5px; border-bottom: 3px solid var(--chip); transition: border-color 120ms ease; min-height: 30px; }
+#layer.provisional { border-bottom-style: dashed; }
+#layerName { font-size: 24px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; line-height: 28px; }
+#layerSub { font-size: 12px; color: #aab0c0; line-height: 14px; padding-top: 3px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#layer.vim { border-color: var(--chip-vim); } #layer.vim #layerName { color: var(--chip-vim); }
+#layer.insert { border-color: var(--chip-insert); } #layer.insert #layerName { color: var(--chip-insert); }
+#layer.cmdline { border-color: #e0af68; } #layer.cmdline #layerName { color: #e0af68; }
+#layer.raw { border-color: var(--chip-raw); } #layer.raw #layerName { color: var(--chip-raw); }
+#layer.off { border-color: var(--chip-off); } #layer.off #layerName { color: #c0c6d6; }
+#layer.momentary { border-color: var(--chip-layer); } #layer.momentary #layerName { color: var(--chip-layer); }
+/* Chips: the topmost active layer is bright, the rest muted. */
+.chip.muted { opacity: 0.45; }
+/* Whole board takes the layer's tint so the switch is visible even from far away. */
+#board.vim .key { background: #e3ebff; border-color: #b7c7f2; }
+#board.momentary .key { background: #efe6ff; border-color: #d0bff0; }
+#board.raw .key, #board.off .key { background: #ececf0; }
+
+/* Vim insert / cmdline: still a vim layer (transparent), so the board keeps the vim tint. */
+#layer.vim-insert { border-color: var(--chip-insert); } #layer.vim-insert #layerName { color: var(--chip-insert); }
+#layer.vim-cmdline { border-color: #e0af68; } #layer.vim-cmdline #layerName { color: #e0af68; }
+#board.vim-insert .key, #board.vim-cmdline .key { background: #e3ebff; border-color: #b7c7f2; }
+
+/* Combo pill (keymap-drawer style): appears at the midpoint of the combo's keys when typed. */
+.combo-pill {
+  position: absolute; transform: translate(-50%, -50%) scale(0.6); z-index: 5;
+  min-width: 44px; padding: 4px 8px; border-radius: 8px; text-align: center;
+  background: var(--held); color: var(--key-fg); border: 2px solid #7aa2f7;
+  opacity: 0; pointer-events: none;
+  transition: opacity 120ms ease, transform 120ms ease;
+  display: flex; flex-direction: column; align-items: center; line-height: 1;
+}
+.combo-pill.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.combo-pill .combo-label { font-size: 8px; letter-spacing: 0.12em; text-transform: uppercase; color: #3b4261; margin-bottom: 1px; }
+.combo-pill .combo-tap { font-size: 22px; font-weight: 800; }
+.combo-pill .combo-sub { font-size: 9px; color: #3b4261; margin-top: 2px; }
+.combo-links { position: absolute; left: 0; top: 0; z-index: 4; pointer-events: none; opacity: 0; transition: opacity 120ms ease; }
+.combo-links.show { opacity: 1; }
+.combo-links line { stroke: #7aa2f7; stroke-width: 3; stroke-linecap: round; }
+
+/* Typed-keys strip: below the panel in index.html, alone in keys.html. */
+#keys { display: flex; align-items: flex-end; gap: 10px; padding: 8px 12px; min-height: 56px; font-family: var(--font); }
+#keys .chip {
+  padding: 8px 14px; border-radius: 12px; background: var(--panel); color: #e6e8ef;
+  border: 1px solid rgba(255,255,255,0.1);
+  font-size: 26px; font-weight: 700; line-height: 1; white-space: pre; letter-spacing: 0.02em;
+  opacity: 0; transform: translateY(6px); transition: opacity 120ms ease, transform 120ms ease;
+}
+#keys .chip.show { opacity: 1; transform: none; }
+#keys .chip.special { color: #7aa2f7; }
+#keys .chip.chord { color: #e0af68; }
+#keys .chip.fade { opacity: 0; transition: opacity 500ms ease; }
+/* Standalone only (keys.html sets this): nothing is feeding the strip. An empty strip is
+   transparent, so without this a surface with no feed and a surface that never mapped look
+   exactly alike. Dim, because it is a resting state and not an error. */
+#keys.nofeed::before { content: "no feed"; padding: 8px 14px; border-radius: 12px;
+  background: var(--panel); color: var(--chip-off); font-size: 16px; font-weight: 700; line-height: 1; }
+
+/* Close button: closes the HUD (the host receives "close"). */
+#close { margin-left: 10px; width: 22px; height: 22px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06); color: #aab0c0; font: 13px/1 var(--font); cursor: pointer; padding: 0; }
+#close:hover { background: var(--chip-raw); color: #101420; }
+
+/* Framed by another page (index.html?embed, the landing page's demo): that page sizes the frame to
+   the content, so nothing scrolls, and there is no host for the ✕ to close. On the root, because
+   overflow is the root's and the WebKit builds the panels run have no :has(). */
+html.embed { overflow: hidden; }
+html.embed #close { display: none; }
