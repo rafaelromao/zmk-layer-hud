@@ -508,23 +508,62 @@ class Import(unittest.TestCase):
         self.as_if_a_repo_was_imported()
         asked = []
         with contextlib.redirect_stderr(io.StringIO()) as err:
-            again = self.pristine(ask=lambda q: asked.append(q) or q.startswith("keep 2"))
-        self.assertEqual(["keep 1? [Y/n] ", "keep 2? [Y/n] "], asked)   # one at a time
-        self.assertIn("2. the repo `sync` reads again: github.com/you/zmk-config", err.getvalue())
-        self.assertNotIn("zmk", again)                                   # 1 dropped
-        self.assertEqual("github.com/you/zmk-config", again["sources"]["repo"])   # 2 kept
+            again = self.pristine(ask=lambda q: asked.append(q) or q.startswith("Keep 2"))
+        self.assertEqual(["Keep 1, layer numbers and names? [Y/n] ", "Keep 2, combo timeout (40 ms)? [Y/n] ",
+                          "Keep 3, the repo sync reads? [Y/n] "], asked)          # each on its own
+        listed = err.getvalue()
+        self.assertIn("These came from your last import of github.com/you/zmk-config", listed)
+        self.assertIn("  2. Combo timeout: 40 ms\n     Without it: the default, 50 ms.", listed)
+        self.assertEqual({"combo_term_ms": 40}, again["zmk"])                    # 2 kept, 1 dropped
+        self.assertNotIn("repo", again["sources"])                               # 3 dropped
 
     def test_pristine_keeps_the_items_it_is_told(self):
         self.as_if_a_repo_was_imported()
-        again = self.pristine(keep={1})
-        self.assertEqual(40, again["zmk"]["combo_term_ms"])
-        self.assertNotIn("repo", again["sources"])
+        again = self.pristine(keep={1, 3})
+        self.assertEqual(["layers"], list(again["zmk"]))                         # not the combo timeout
+        self.assertEqual("github.com/you/zmk-config", again["sources"]["repo"])
 
     def test_pristine_refuses_an_item_it_did_not_list(self):
         before = self.as_if_a_repo_was_imported()
-        with self.assertRaisesRegex(sync.SyncError, "names 3, and the list has 2"):
-            self.pristine(keep={3})
+        with self.assertRaisesRegex(sync.SyncError, "names 4, and the list goes up to 3"):
+            self.pristine(keep={4})
         self.assertEqual(before, os.stat(self.defs).st_mtime_ns)
+
+    def test_pristine_lists_only_what_would_change_something(self):
+        self.as_if_a_repo_was_imported()
+        write(self.d, "config.yaml", "keymap: board.yaml\ntitle: T\ncombo_term_ms: 30\n")   # the config's own wins
+        asked = []
+        with contextlib.redirect_stderr(io.StringIO()):
+            self.pristine(ask=lambda q: asked.append(q) or True)
+        self.assertFalse(any("combo timeout" in q for q in asked), asked)
+
+    def with_labels(self):
+        self.as_if_a_repo_was_imported()
+        write(self.d, "config.yaml", "keymap: board.yaml\ntitle: T\nlayers:\n  map:\n"
+                                     "    BASE: { drawer: Base, label: My base }   # mine\n"
+                                     "    NAV:  { drawer: Nav, label: Arrows, class: vim }\n")
+
+    def test_pristine_asks_first_about_the_configs_own_labels(self):
+        self.with_labels()
+        asked = []
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            self.pristine(ask=lambda q: asked.append(q) or True)
+        self.assertEqual("Keep 1, the layer labels in config.yaml? [Y/n] ", asked[0])
+        self.assertIn('Layer labels your config.yaml sets (2 layers, e.g. NAV = "Arrows")', err.getvalue())
+        with open(self.config, encoding="utf-8") as f:
+            self.assertIn("label: Arrows", f.read())                     # kept: not touched
+
+    def test_pristine_drops_them_from_config_yaml_and_keeps_the_rest_of_it(self):
+        self.with_labels()
+        self.pristine(keep={2, 3, 4})                                       # everything but the labels
+        with open(self.config, encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn("    BASE: { drawer: Base }   # mine\n", text)
+        self.assertIn("    NAV:  { drawer: Nav, class: vim }", text)
+        backups = [n for n in os.listdir(self.d) if n.startswith("config.yaml.bak-")]
+        self.assertEqual(1, len(backups))
+        with open(os.path.join(self.d, backups[0]), encoding="utf-8") as f:
+            self.assertIn("label: Arrows", f.read())
 
     def test_pristine_with_nothing_carried_asks_nothing(self):
         self.run_import()
@@ -563,6 +602,7 @@ class Import(unittest.TestCase):
         self.assertEqual(["NAV"], defs["drawing"]["combos"][0]["layers"])
         self.assertEqual(sync.os.path.abspath(repo), defs["sources"]["repo"])
         self.assertTrue(os.path.isfile(sync.imported_path(self.config)))
+
 
 
 @unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")

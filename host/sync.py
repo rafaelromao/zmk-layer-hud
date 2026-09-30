@@ -690,31 +690,111 @@ def new_config(config_path):
 
 # ---------- the commands ----------
 
-def decide(carried, keep, ask, quiet):
-    """Which of what only an earlier import had --pristine keeps (do_import): a set of indexes into
-    carried. keep: True, all of it; False, none; a set of numbers as listed (from 1), those; None,
-    ask of each in turn, or refuse with the list when there is no one to ask."""
-    lines = [f"  {n}. {what}" for n, (what, _) in enumerate(carried, 1)]
-    head = "--pristine: an earlier import left this, and the sources given now would not make it again:"
+def config_labels(cfg):
+    """[(position, key, label)] of the layers.map entries that give a layer a label of their own. The
+    map is written in ZMK layer order, so an entry's position is its layer's id."""
+    out = []
+    for i, (key, entry) in enumerate(((cfg.get("layers") or {}).get("map") or {}).items()):
+        if isinstance(entry, dict) and entry.get("label"):
+            out.append((i, str(key), str(entry["label"])))
+    return out
+
+
+LABEL_ITEM = re.compile(r"""(,\s*)?\blabel:\s*("[^"]*"|'[^']*'|[^,}]*?)\s*(?=,|\})(\s*,)?""")
+
+
+def strip_config_labels(config_path):
+    """Take every `label:` out of config.yaml's layers.map, and nothing else: the drawings, classes
+    and comments stay, line for line. A copy goes to config.yaml.bak-<time> first. -> (how many
+    were taken out, [lines left for a human: a label this cannot take out safely])."""
+    import datetime
+    path = os.path.realpath(config_path)             # a linked config is edited where it lives
+    with open(path, encoding="utf-8") as f:
+        lines = f.read().split("\n")
+    out, taken, left, where, map_indent = [], 0, [], None, None
+    for n, line in enumerate(lines, 1):
+        indent = len(line) - len(line.lstrip())
+        stripped = line.strip()
+        if where is None and re.match(r"^layers:\s*(#.*)?$", line):
+            where = "layers"
+        elif where == "layers" and re.match(r"^\s+map:\s*(#.*)?$", line):
+            where, map_indent = "map", indent
+        elif where in ("layers", "map") and stripped and not stripped.startswith("#") and indent == 0:
+            where = None                                   # the next top-level setting
+        elif where == "map" and stripped and not stripped.startswith("#") and indent <= map_indent:
+            where = "layers"
+        if where == "map" and indent > map_indent and "label:" in line.split("#")[0]:
+            body, hash_, comment = line.partition("#") if not re.search(r"""["'][^"']*#""", line) else (line, "", "")
+            if re.match(r"^\s+label:", body):
+                taken += 1
+                continue                                   # a block mapping's own `label:` line
+            if "{" in body and "}" in body:
+                new = LABEL_ITEM.sub(lambda m: "," if m.group(1) and m.group(3) else "", body, count=1)
+                new = re.sub(r"\{\s*,\s*", "{ ", re.sub(r",?\s*\}(?=[^}]*$)", " }", new))
+                taken += 1
+                gap = body[len(body.rstrip()):] or " "      # the comment keeps its column
+                out.append(new.rstrip() + ((gap + hash_ + comment) if hash_ else ""))
+                continue
+            left.append(f"{config_path}:{n}: {stripped}")
+        out.append(line)
+    if taken:
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        shutil.copy2(path, f"{config_path}.bak-{stamp}")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(out))
+    return taken, left
+
+
+def carry(short, title, without, token):
+    """One thing --pristine would lose (do_import): what it is, briefly for the question and in full
+    for the list, what the HUD does without it, and what do_import keeps it by."""
+    return {"short": short, "title": title, "without": without, "token": token}
+
+
+def decide(carried, keep, ask, quiet, since):
+    """Which of carried --pristine keeps (do_import): a set of indexes into it. keep: True, all;
+    False, none; a set of numbers as listed (from 1), those; None, ask of each in turn, or refuse
+    with the list when there is no one to ask. since: the earlier import they came from."""
+    lines = [f"--pristine starts over. These came from {since}, and starting over would lose them:", ""]
+    for n, c in enumerate(carried, 1):
+        lines += [f"  {n}. {c['title']}", f"     Without it: {c['without']}"]
     if keep is None:
         if ask is None:
-            raise SyncError("\n".join([head] + lines + [
-                "nothing was written: --keep-custom keeps all of these and makes the rest anew, "
-                "--keep-custom=1,3 just those, --drop-custom none"]))
-        print("\n".join([head] + lines), file=sys.stderr)
-        kept = {i for i in range(len(carried)) if ask(f"keep {i + 1}? [Y/n] ")}
+            raise SyncError("\n".join(lines + ["", "Nothing was written. Say which to keep: --keep-custom (all of them), "
+                                                "--keep-custom=1,3 (just those), or --drop-custom (none)."]))
+        print("\n".join(lines + [""]), file=sys.stderr)
+        kept = {i for i, c in enumerate(carried) if ask(f"Keep {i + 1}, {c['short']}? [Y/n] ")}
     elif keep is True or keep is False:
         kept = set(range(len(carried))) if keep else set()
     else:
         wrong = sorted(n for n in keep if not 1 <= n <= len(carried))
         if wrong:
-            raise SyncError("\n".join([head] + lines + [
-                f"nothing was written: --keep-custom names {', '.join(map(str, wrong))}, and the list has "
-                f"{len(carried)}"]))
+            raise SyncError("\n".join(lines + ["", f"Nothing was written: --keep-custom names {', '.join(map(str, wrong))}, "
+                                                f"and the list goes up to {len(carried)}."]))
         kept = {n - 1 for n in keep}
-    say(quiet, f"--pristine: kept {len(kept)} of {len(carried)} thing(s) only an earlier import had"
-               + (f" ({', '.join(str(i + 1) for i in sorted(kept))})" if kept and len(kept) < len(carried) else ""))
+    said = lambda idx: ", ".join(f"{i + 1} ({carried[i]['short']})" for i in sorted(idx))
+    dropped = set(range(len(carried))) - kept
+    say(quiet, "--pristine: " + "; ".join(x for x in (kept and f"kept {said(kept)}", dropped and f"dropped {said(dropped)}") if x))
     return kept
+
+
+def drop_config_labels(config_path, labelled, quiet):
+    """--pristine's config-labels item, dropped: config.yaml loses its `label:`s. -> the config as
+    it now reads."""
+    taken, left = strip_config_labels(config_path)
+    say(quiet, f"--pristine: took {taken} label(s) out of {config_path} (a copy is beside it, .bak-<time>)")
+    if left:
+        say(quiet, "these could not be taken out safely; change them by hand:\n" + "\n".join("  " + l for l in left))
+    cfg = keymap_mod.load_yaml(config_path)
+    if not isinstance(cfg, dict):
+        raise SyncError(f"{config_path}: taking the labels out left something that does not read; "
+                        "the copy beside it is what it was")
+    return cfg
+
+
+def describe_layer(entry):
+    drawn = f'drawn as "{entry["drawer"]}"' if entry.get("drawer") else "no drawing of its own"
+    return f'shown as "{entry.get("label")}", {drawn}'
 
 
 def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=False, keep=None, ask=None):
@@ -738,7 +818,19 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
     previous = None if pristine else old_defs
     before_rec = None if pristine else old_rec
     sources, zmk, undecided, rec = {}, None, [], None
-    carried = []                          # (what, why it goes, how to keep it), for --pristine
+    carried = []                          # what --pristine would lose (carry()), in the order it asks
+    labelled = config_labels(cfg) if pristine else []
+    if labelled:
+        had = ((old_defs or {}).get("zmk") or {}).get("layers") or (old_rec or {}).get("layers") or {}
+        eg = [(i, key, label) for i, key, label in labelled if i > 0][:2] or labelled[:1]
+        named = lambda i: (had.get(str(i)) or {}).get("name")
+        eg_new = next((named(i).title() for i, _, _ in eg if named(i)), None)
+        carried.append(carry("the layer labels in config.yaml",
+                             f"Layer labels your config.yaml sets ({len(labelled)} layers, e.g. "
+                             + ", ".join(f'{key} = "{label}"' for _, key, label in eg) + ")",
+                             "each layer is named as the keymap names it" + (f' (e.g. "{eg_new}")' if eg_new else "")
+                             + ". config.yaml is edited: only the `label:` parts go, after a backup.",
+                             "config_labels"))
 
     if source and os.path.isfile(os.path.expanduser(source)):
         # A keymap-drawer YAML, not a repo. The config is what says where the drawing lives -- sync
@@ -800,9 +892,10 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
                     if i in previous_map or "drawer" not in was or was.get("name", entry["name"]) != entry["name"]:
                         continue
                     if (was.get("drawer"), was.get("label")) != (entry["drawer"], entry["label"]):
-                        carried.append((f"layer {i} {entry['name']}: drawer {was.get('drawer')}, label {was.get('label')!r} "
-                                        f"(a fresh draft: {entry['drawer']}, {entry['label']!r})",
-                                        ("layer", i, was)))
+                        carried.append(carry(f"layer {i} ({entry['name']})",
+                                             f"Layer {i} ({entry['name']}): {describe_layer(was)}",
+                                             f"starting over would guess: {describe_layer(entry)}.",
+                                             ("layer", i, was)))
             parsed = parse_keymap(keymap_path)
             coverage = combo_coverage(parsed, layers, positions, layers_drawn, drawn_combos)
         else:
@@ -812,11 +905,18 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
             layers = {str(i): {"name": l["name"], "drawer": next(it) if l["drawn"] else None,
                                "label": l["name"].title()} for i, l in enumerate(zlayers)}
             coverage = []
-        kept = [carried[n] for n in sorted(decide(carried, keep, ask, quiet))] if carried else []
-        if kept:
-            for _, (_kind, i, was) in kept:
+        since = f"your last import of {old_rec.get('source')}" if (old_rec or {}).get("source") else "your last import"
+        kept = [carried[n]["token"] for n in sorted(decide(carried, keep, ask, quiet, since))] if carried else []
+        if labelled and "config_labels" not in kept:
+            cfg = drop_config_labels(config_path, labelled, quiet)
+            for i, _, _ in labelled:
+                if str(i) in layers:
+                    layers[str(i)]["label"] = layers[str(i)]["name"].title()
+        mappings = [t for t in kept if isinstance(t, tuple)]
+        if mappings:
+            for _kind, i, was in mappings:
                 layers[i].update(drawer=was.get("drawer"), label=was.get("label") or layers[i]["label"])
-            undecided = [u for u in undecided if str(u[0]) not in {c[1][1] for c in kept}]
+            undecided = [u for u in undecided if str(u[0]) not in {c[1] for c in mappings}]
             if cfg.get("keymap"):
                 coverage = combo_coverage(parsed, layers, positions, layers_drawn, drawn_combos)
         zmk = {"layers": layers, "combo_term_ms": combo_term(keymap_path),
@@ -831,15 +931,42 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
         if pristine:
             old_zmk = (old_defs or {}).get("zmk") or (old_rec and {k: v for k, v in old_rec.items() if v})
             old_repo, old_kb = recorded(config_path)
-            if old_zmk:
-                carried.append((f"what the import of {old_repo or 'a ZMK repo'} said of the keymap: its layer ids, "
-                                "combo term and combo layers", "zmk"))
+            # One item each, and only what would change something: a value the config sets itself
+            # wins over the import anyway, and one equal to the default is the default.
+            old_zmk = old_zmk or {}
+            layers_had = old_zmk.get("layers") or {}
+            if layers_had:
+                eg = ", ".join(f"{i} = {layers_had[i].get('name')}" for i in sorted(layers_had, key=int)[1:3])
+                carried.append(carry("layer numbers and names",
+                                     f"Layer numbers and names ({len(layers_had)} layers" + (f", e.g. {eg})" if eg else ")"),
+                                     "the layers are numbered in drawing order, so a layer the keyboard reports "
+                                     "may show as the wrong one.", "layers"))
+            term = old_zmk.get("combo_term_ms")
+            if term and "combo_term_ms" not in cfg and int(term) != 50:
+                carried.append(carry(f"combo timeout ({term} ms)", f"Combo timeout: {term} ms",
+                                     "the default, 50 ms.", "combo_term_ms"))
+            idle = old_zmk.get("combo_idle_ms")
+            if idle and "combo_idle_ms" not in cfg:
+                carried.append(carry(f"combo idle time ({idle} ms)",
+                                     f"Combo idle time: {idle} ms (a combo fires only this long after the key before it)",
+                                     "none: a combo fires straight after any key.", "combo_idle_ms"))
+            combos_had = old_zmk.get("combos") or []
+            if combos_had:
+                carried.append(carry("which layers each combo works on",
+                                     f"Which layers each combo works on ({len(combos_had)} combos)",
+                                     "each combo shows on the layers your keymap-drawer file draws it on.", "combos"))
             if old_repo:
-                carried.append((f"the repo `sync` reads again: {old_repo}" + (f", keyboard {old_kb}" if old_kb else ""),
-                                "repo"))
-            kept = {carried[n][1] for n in decide(carried, keep, ask, quiet)} if carried else set()
-            if "zmk" in kept:
-                zmk = old_zmk
+                where = old_repo + (f" ({old_kb})" if old_kb else "")
+                carried.append(carry("the repo sync reads", f"The repo `zmk-layer-hud sync` reads again: {where}",
+                                     "`sync` redraws from your keymap-drawer file only.", "repo"))
+            since = f"your last import of {old_repo}" if old_repo else "your last import"
+            kept = {carried[n]["token"] for n in decide(carried, keep, ask, quiet, since)} if carried else set()
+            zmk = {k: v for k, v in old_zmk.items() if k in kept} or None
+            if labelled and "config_labels" not in kept:
+                cfg = drop_config_labels(config_path, labelled, quiet)
+                if zmk and zmk.get("layers"):
+                    zmk["layers"] = {i: dict(e, label=e["name"].title()) if int(i) in {p for p, _, _ in labelled} else e
+                                     for i, e in zmk["layers"].items()}
             if "repo" in kept:
                 repo, kb = old_repo, old_kb
         sources.update({k: v for k, v in (("repo", repo), ("keyboard", kb)) if v})
