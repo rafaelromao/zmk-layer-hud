@@ -152,7 +152,7 @@ class Stale(unittest.TestCase):
             os.makedirs(os.path.join(tmp, "hud"))
             for name in hud:
                 shutil.copyfile(os.path.join(build.REPO, "hud", name), os.path.join(tmp, "hud", name))
-            for name in build.SITE_FILES:
+            for name in build.SITE_FILES + [n for n in build.OPTIONAL_FILES if os.path.isfile(os.path.join(build.SITE, n))]:
                 shutil.copyfile(os.path.join(build.SITE, name), os.path.join(tmp, name))
             self.assertEqual(build.stale(tmp), [])
             write(os.path.join(tmp, "hud", "hud.js"), "an older HUD")
