@@ -12,14 +12,17 @@
 "use strict";
 
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { execFileSync } = require("node:child_process");
 const { loadPage } = require("./dom.js");
 
 const REPO = path.join(__dirname, "..", "..");
 const FIXTURES = path.join(__dirname, "fixtures");
+// A third entry changes the keymap: combo_idle is ZMK's require-prior-idle-ms, which the player
+// has to wait out before each chord and the page has to hold against every one it draws.
 const PAIRS = [["docs/demo-type.json", "example-3x5.json"], ["docs/demo-3x5.json", "example-3x5.json"],
-               ["docs/demo-vim.json", "diamond.json"]];
+               ["docs/demo-vim.json", "diamond.json"], ["docs/demo-type.json", "example-3x5.json", { combo_idle: 400 }]];
 
 function pythons() {
   const chosen = process.env.PYTHON;
@@ -41,8 +44,15 @@ function main() {
   const verbose = process.argv.includes("--verbose") || process.argv.includes("-v");
   const fail = [];
   let checked = 0;
-  for (const [script, fixture] of PAIRS) {
-    const keymap = path.join(FIXTURES, fixture);
+  for (const [script, fixture, change] of PAIRS) {
+    let keymap = path.join(FIXTURES, fixture);
+    if (change) {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), "zmk-layer-hud-play-"));
+      const changed = Object.assign(JSON.parse(fs.readFileSync(keymap, "utf8")), change);
+      keymap = path.join(dir, fixture);
+      fs.writeFileSync(keymap, JSON.stringify(changed));
+      process.on("exit", () => fs.rmSync(dir, { recursive: true, force: true }));
+    }
     const timeline = play([script, "--keymap", keymap, "--timeline"]);
     const strokes = play([script, "--keymap", keymap, "--strokes"]);
     if (timeline.error || strokes.error) {

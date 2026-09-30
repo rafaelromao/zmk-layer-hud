@@ -32,6 +32,8 @@ Config keys (all paths may use ~):
                   list the keys in the keymap's binding order (firmware `positions;`)            (optional)
   combo_term_ms:  the keymap's combo timeout (ZMK `timeout-ms`, default 50): key positions pressed
                   within it form a combo on the HUD                                            (optional)
+  combo_idle_ms:  how long the keyboard must be idle before a combo (ZMK `require-prior-idle-ms`,
+                  default none): a chord struck sooner after another key is its keys          (optional)
   combos:         [{positions, layers}] overrides for combos the drawer lists on fewer layers
                   than the firmware has them                                                    (optional)
   extras:         inference hints used only while a key cannot be placed on the live stack:
@@ -689,6 +691,9 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None
         "hud": hud_cfg,
         # The keyboard's combo term: positions pressed within it form a combo (+ hud.combo_slack_ms).
         "combo_term": int(cfg.get("combo_term_ms", 50)),
+        # How long the keyboard must be idle before a combo (ZMK require-prior-idle-ms): a chord
+        # struck sooner after another key is its keys. 0: no such rule.
+        "combo_idle": int(cfg.get("combo_idle_ms") or 0),
         "glyphs": glyphs,
         "positions": pos_to_idx,
         "layout": layout,
@@ -751,6 +756,8 @@ def merge_imported(cfg, imported):
         cfg["_imported_layers"] = {str(k): v for k, v in layers.items()}
     if imported.get("combo_term_ms") and "combo_term_ms" not in cfg:
         cfg["combo_term_ms"] = int(imported["combo_term_ms"])
+    if imported.get("combo_idle_ms") and "combo_idle_ms" not in cfg:
+        cfg["combo_idle_ms"] = int(imported["combo_idle_ms"])
     named = {tuple(sorted(c.get("positions") or [])) for c in (cfg.get("combos") or [])}
     inherited = [c for c in (imported.get("combos") or [])
                  if tuple(sorted(c.get("positions") or [])) not in named]

@@ -285,8 +285,12 @@ def words(km, cases_):
             for alt in by_legend[part["legend"]]:
                 if alt is not part:
                     variants.append(spelled[:i] + [alt] + spelled[i + 1:])
+        # A keymap that wants idle before a combo (require-prior-idle-ms) types a word's combos as
+        # letters at a pace faster than that; typed at the kit's pace, the word would test chords
+        # ZMK does not fire. So its words go no faster than the idle allows.
+        gap = max(KEY_GAP_MS, (km.data.get("combo_idle") or 0) + 20)
         for v in variants:
-            out.append({"word": word, "gap_ms": KEY_GAP_MS, "steps": v})
+            out.append({"word": word, "gap_ms": gap, "steps": v})
     return out
 
 

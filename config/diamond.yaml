@@ -91,6 +91,7 @@ positions: [1, 2, 3, 6, 7, 8, 10, 11, 12, 13, 16, 17, 18, 19, 21, 22, 23, 26, 27
 
 # The keyboard's combo timeout — key positions pressed within it are one chord — comes from the
 # keymap too, so it cannot drift from the firmware. Set `combo_term_ms:` here to override it.
+# So does `combo_idle_ms:`, the combos' require-prior-idle-ms, when the keymap sets one.
 
 # Which layers each combo really fires on lives in diamond.imported.yaml beside this file, taken
 # out of the keyboard's own keymap by `zmk-layer-hud import`, kept current by `zmk-layer-hud sync`.

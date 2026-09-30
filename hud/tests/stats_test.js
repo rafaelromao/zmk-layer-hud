@@ -242,6 +242,35 @@ function main() {
       check(`a combo superseded by a larger one counts only the larger (${big.key.tap})`,
             ((loc.combos[base] || {})[key(big.positions)] || 0) === 1 && combosOf(loc) === 1, JSON.stringify(loc.combos));
     } else notes.push("no three-key combo containing a two-key one on the base layer: supersession not checked");
+
+    // ZMK's own rules for when a chord is not a combo, and its keys are typed one by one.
+    if (two) {
+      const [p1, p2] = two.positions.map(i => posOf.get(i));
+      const combos = page => combosOf(page.hud.stats.local());
+      const pills = page => page.board.querySelectorAll(".combo-pill").length;
+      // A fast roll: the first key is up before the second goes down, inside the combo term.
+      const roll = fresh();
+      roll.hud.pressAt(p1); roll.clock.advance(CHORD_MS); roll.hud.releaseAt(p1); roll.clock.advance(CHORD_MS);
+      roll.hud.pressAt(p2);
+      roll.clock.advance(settle);
+      check("a key let go before the chord is complete makes it two keystrokes, not a combo",
+            combos(roll) === 0 && pills(roll) === 0 && total(roll.hud.stats.local()) === 2,
+            `${combos(roll)} combos, ${pills(roll)} pills`);
+      // require-prior-idle-ms: a chord struck too soon after another key is typed as its keys.
+      const idleData = Object.assign({}, data, { combo_idle: 150 });
+      const other = [A, B, C].find(k => !two.positions.includes(k.idx));
+      const soon = loadPage(); soon.hud.load(idleData); soon.hud.setLayers([]);
+      tap(soon, other.pos); soon.clock.advance(20);
+      soon.hud.pressAt(p1); soon.clock.advance(CHORD_MS); soon.hud.pressAt(p2);
+      soon.clock.advance(settle);
+      check("a chord struck sooner than the keymap's idle after a key is its keys", combos(soon) === 0 && pills(soon) === 0,
+            `${combos(soon)} combos`);
+      const later = loadPage(); later.hud.load(idleData); later.hud.setLayers([]);
+      tap(later, other.pos); later.clock.advance(300);
+      later.hud.pressAt(p1); later.clock.advance(CHORD_MS); later.hud.pressAt(p2);
+      later.clock.advance(settle);
+      check("and one struck after it is the combo", combos(later) === 1, `${combos(later)} combos`);
+    }
   }
 
   // ---------- the ledger: reports ----------

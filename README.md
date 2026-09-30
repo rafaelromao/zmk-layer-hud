@@ -186,6 +186,7 @@ key with its default and a comment:
 | `base` | the drawer layer that is always active (default: the layer for id 0) |
 | `positions` | ZMK position of each drawer key when the YAML's key order is not the keymap's |
 | `combo_term_ms` | the keymap's combo timeout, so simultaneous presses form a combo |
+| `combo_idle_ms` | the keymap's `require-prior-idle-ms` for combos: a chord struck sooner after another key is drawn as its keys, as ZMK types it |
 | `combos` | layer coverage for a combo the import gets wrong |
 | `keyboard`, `serial`, `ble` | pick one of several ZMK boards; name its serial port; its BLE address |
 | `title` | corner text (default: the name of the keyboard that is typing) |

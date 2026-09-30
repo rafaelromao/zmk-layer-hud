@@ -229,6 +229,7 @@ class Board:
         self.down = set()
         self.layers = []
         self.flags = {f: False for f in FLAGS}
+        self.last_tap = None  # when the last keystroke struck (not a layer key, not a held Shift)
 
     def send(self, t, msg):
         self.events.append((int(round(t)), len(self.events), msg))
@@ -270,6 +271,12 @@ def compile(script, keymap, speed=1.0, combos=None):
     km = ways.Keymap(data)
     hud = data.get("hud") or {}
     floor = (data.get("combo_term") or 50) + hud.get("combo_slack_ms", 20) + 20
+    # A keymap that wants the keyboard idle before a combo (require-prior-idle-ms): a chord sooner
+    # than that after the last keystroke is typed as its keys, so a combo waits for it. A key that
+    # brings a layer in types nothing, and ZMK does not time the idle from it.
+    idle = data.get("combo_idle") or 0
+    layer_keys = {km.zmk(a["idx"]) for a in data.get("activators") or [] if a.get("idx") is not None}
+    after_idle = lambda b: b if not idle or board.last_tap is None else max(b, board.last_tap + idle + SETTLE_MS)  # noqa: E731
     speed = speed if speed and speed > 0 else 1.0
     pace = lambda ms: max(floor, ms / speed)            # noqa: E731  (between keystrokes)
     span = lambda ms: max(20.0, ms / speed)             # noqa: E731  (a hold, a frame, a pause)
@@ -340,9 +347,12 @@ def compile(script, keymap, speed=1.0, combos=None):
                         board.press(b, p)
                     board.shift(b, True)
                     b += max(HELD_LEAD_MS, floor)
+                if way["combo"]:
+                    b = after_idle(b)
                 for i, p in enumerate(strike):
                     board.press(b + i * CHORD_MS, p)
                 last = b + (len(strike) - 1) * CHORD_MS
+                board.last_tap = last
                 for i, ev in enumerate(evs):
                     board.send(last + REPORT_MS * (i + 1), key_event(ev, entry_combos))
                 reported = last + REPORT_MS * len(evs)
@@ -388,9 +398,13 @@ def compile(script, keymap, speed=1.0, combos=None):
         carried = [p for p in press if p in board.down]
         strike = [p for p in press if p not in board.down]
         b = t + SETTLE_MS
+        if combo_on(data, strike, target):
+            b = after_idle(b)
         for i, p in enumerate(strike):
             board.press(b + i * CHORD_MS, p)
         last = b + max(0, len(strike) - 1) * CHORD_MS
+        if any(p not in layer_keys for p in strike):
+            board.last_tap = last
         cur = [chip_id(k) for k in step.get("keys") or []]
         keys = step.get("keys") or []
         if "typed" in step:

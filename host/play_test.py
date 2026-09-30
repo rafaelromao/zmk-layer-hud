@@ -154,6 +154,15 @@ class Timing(unittest.TestCase):
             self.assertEqual(set(), down)                            # and nothing is left down
         self.assertEqual([], of(self.c, "layers")[-1]["ids"])
 
+    def test_a_combo_waits_out_the_idle_the_keymap_asks_for(self):
+        # require-prior-idle-ms: a chord struck sooner than that after a keystroke is its keys.
+        def gaps(keymap):
+            c = compiled([{"type": "azaz"}], keymap, combos=True)
+            ends = [s["at_ms"] + (len(s["strike"]) - 1) * play.CHORD_MS for s in c.strokes]
+            return [b["at_ms"] - end for end, b in zip(ends, c.strokes[1:]) if b["combo"]]
+        self.assertTrue(gaps(DIAMOND) and all(g < 400 for g in gaps(DIAMOND)))
+        self.assertTrue(all(g >= 400 for g in gaps(dict(DIAMOND, combo_idle=400))))
+
     def test_a_wait_is_its_length(self):
         without = compiled([{"type": "a"}, {"type": "b"}])
         with_ = compiled([{"type": "a"}, {"wait": 700}, {"type": "b"}])

@@ -191,6 +191,16 @@ class Settings(unittest.TestCase):
         with self.assertRaises(km.KeymapError):
             km.build_message({"hud": {"opacity": 120}}, DOC)
 
+    def test_the_idle_a_combo_needs_reaches_the_page(self):
+        self.assertEqual(0, km.build_message({}, DOC)["combo_idle"])
+        self.assertEqual(150, km.build_message({"combo_idle_ms": 150}, DOC)["combo_idle"])
+        cfg = {}
+        km.merge_imported(cfg, {"combo_idle_ms": 120})
+        self.assertEqual(120, cfg["combo_idle_ms"])
+        cfg = {"combo_idle_ms": 80}
+        km.merge_imported(cfg, {"combo_idle_ms": 120})
+        self.assertEqual(80, cfg["combo_idle_ms"])              # the config's own word wins
+
     def test_a_setting_that_is_not_a_number_says_so(self):
         # Not a traceback, and not quietly something else.
         for bad in ("fast", "320ms", 2.5, True, None, [320]):

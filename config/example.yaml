@@ -32,8 +32,11 @@ keymap: ~/path/to/my-keymap.yaml
 #     3: { label: Navigation }
 #     4: { drawer: null, label: Adjust }     # a layer the YAML does not draw
 
-# Optional: the keymap's combo timeout (ZMK timeout-ms), so simultaneous presses form a combo.
+# Optional: the keymap's combo timeout (ZMK timeout-ms), so simultaneous presses form a combo,
+# and how long the keyboard must be idle before one (the combos' require-prior-idle-ms): a chord
+# struck sooner after another key is typed as its keys. `import` reads both from the keymap.
 # combo_term_ms: 50
+# combo_idle_ms: 150
 
 # Optional: every size and timing the HUD and the reader use; see config/diamond.yaml for the
 # full list with defaults.

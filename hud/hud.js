@@ -1324,7 +1324,8 @@
       state.timers.set(idx, setTimeout(() => hud.releaseAt(pos), T('held_timeout_ms')));
       // Older presses stay in the list for the activator lookup (setLayers); the combo group is
       // the trailing run of presses that started within the term of this one.
-      while (recentPos.length && now - recentPos[0].t > T('activator_ms')) recentPos.shift();
+      const keepMs = Math.max(T('activator_ms'), state.data.combo_idle || 0);   // the idle rule below looks back this far
+      while (recentPos.length && now - recentPos[0].t > keepMs) recentPos.shift();
       recentPos.push({ idx, t: now });
       // The keyboard has already decided. A key still down that is what brought one of the live
       // layers up was treated by ZMK as a layer hold, not as part of a chord — had it been half
@@ -1337,10 +1338,14 @@
       // both holds a layer with and uses as one of its own (a sticky layer's own key) is still
       // part of the chord it arrived with.
       const holdsALayer = idx => state.held.has(idx) && Object.values(state.activatorOf).includes(idx);
+      // ...and a key already let go ends it too. ZMK cancels a combo whose key comes up before the
+      // combo is complete and types the keys one by one, which is what a fast roll across a combo's
+      // keys is: the first key is up before the next goes down. Drawn by timing alone, every such
+      // roll was a pill, and a combo in the counts.
       let start = recentPos.length - 1;
       while (start > 0) {
         const prev = recentPos[start - 1];
-        if (now - prev.t > term || (prev.t < now && holdsALayer(prev.idx))) break;
+        if (now - prev.t > term || !state.held.has(prev.idx) || (prev.t < now && holdsALayer(prev.idx))) break;
         start--;
       }
       if (start === recentPos.length - 1) { state.comboShown = null; state.comboEntry = null; } // a new group begins
@@ -1348,7 +1353,20 @@
       // captured positions together when a combo completes, so they arrive within the term. A key
       // pressed later while a layer is held is that layer's key, never a combo with the holder.
       const pressedSet = recentPos.slice(start).map(p => p.idx);
-      if (pressedSet.length > 1) {
+      // A keymap that asks for idle before a combo (ZMK require-prior-idle-ms, data.combo_idle)
+      // gets none from a chord that starts sooner than that after another key was struck: ZMK
+      // types it as its keys. ZMK times it from the last key that typed something, so a key that
+      // brought a layer in, and one held down as a modifier for the chord, do not count.
+      const MODS = Object.values(MOD_GLYPH);
+      const struck = p => {
+        if (Object.values(state.activatorOf).includes(p.idx)) return false;
+        if (!state.held.has(p.idx)) return true;
+        const r = resolveBinding(p.idx, stack());
+        return !(r && ((r.key.hold && MODS.some(g => r.key.hold.includes(g))) || MODS.includes(r.key.tap)));
+      };
+      const prior = recentPos.slice(0, start).reverse().find(struck);
+      const tooSoon = state.data.combo_idle > 0 && prior && recentPos[start].t - prior.t < state.data.combo_idle;
+      if (pressedSet.length > 1 && !tooSoon) {
         // The topmost active layer that defines a combo on these keys wins: the base layer is
         // always in the stack and often has a different combo on the same keys.
         const samePositions = c => c.positions.length === pressedSet.length && c.positions.every(p => pressedSet.includes(p));

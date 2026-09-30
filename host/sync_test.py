@@ -14,6 +14,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import sync  # noqa: E402
 
+try:
+    import keymap_drawer  # noqa: F401
+    HAVE_DRAWER = True
+except ImportError:
+    HAVE_DRAWER = False
+
 
 def write(directory, name, text):
     path = os.path.join(directory, name)
@@ -117,6 +123,56 @@ class ComboTerm(unittest.TestCase):
             self.assertIsNone(sync.combo_term(write(d, "board.keymap", KEYMAP)))
 
 
+@unittest.skipUnless(HAVE_DRAWER, "reading combo nodes needs keymap-drawer's parser (the venv)")
+class ComboIdle(unittest.TestCase):
+    # The same property name means two things: on a combo, how long the keyboard must have been
+    # idle for the combo to fire; on a hold-tap, when a tap is forced. Only the first is the HUD's.
+    BOARD = """
+#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+#define IDLE 150
+/ {
+    behaviors {
+        hm: home_row_mod {
+            compatible = "zmk,behavior-hold-tap";
+            #binding-cells = <2>;
+            require-prior-idle-ms = <90>;
+            bindings = <&kp>, <&kp>;
+        };
+    };
+    combos {
+        compatible = "zmk,combos";
+        %s
+    };
+    keymap {
+        compatible = "zmk,keymap";
+        base { bindings = <&kp A &kp B &kp C &kp D>; };
+    };
+};
+"""
+
+    def idle(self, combos):
+        with tempfile.TemporaryDirectory() as d:
+            return sync.combo_idle(write(d, "board.keymap", self.BOARD % combos))
+
+    def test_the_combos_idle_is_read_and_the_hold_taps_is_not(self):
+        self.assertEqual(150, self.idle("esc { timeout-ms = <30>; key-positions = <0 1>; bindings = <&kp ESC>;"
+                                        " require-prior-idle-ms = <IDLE>; };"))
+
+    def test_combos_that_never_say_give_nothing(self):
+        self.assertIsNone(self.idle("esc { timeout-ms = <30>; key-positions = <0 1>; bindings = <&kp ESC>; };"))
+
+    def test_the_commonest_wins(self):
+        self.assertEqual(120, self.idle(
+            "a { key-positions = <0 1>; bindings = <&kp X>; require-prior-idle-ms = <120>; };"
+            "b { key-positions = <1 2>; bindings = <&kp Y>; require-prior-idle-ms = <120>; };"
+            "c { key-positions = <2 3>; bindings = <&kp Z>; require-prior-idle-ms = <200>; };"))
+
+    def test_a_keymap_the_parser_cannot_read_gives_nothing(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertIsNone(sync.combo_idle(write(d, "board.keymap", "/ { combos { ")))
+
+
 class Mapping(unittest.TestCase):
     DRAWN = ["alpha1", "numbers", "nav"]
 
@@ -206,6 +262,11 @@ class Delta(unittest.TestCase):
         lines = sync.delta(before, after)
         self.assertTrue(any(line.startswith("  - layer 0") for line in lines))
         self.assertTrue(any(line.startswith("  + layer 1") for line in lines))
+
+    def test_the_idle_before_a_combo_changing_is_said(self):
+        before, after = self.after(), self.after()
+        after["combo_idle_ms"] = 150
+        self.assertEqual(["  ~ idle before a combo: 0 ms became 150 ms"], sync.delta(before, after))
 
     def test_a_first_import_has_nothing_to_compare_against(self):
         self.assertEqual(sync.delta(None, self.after()), [])

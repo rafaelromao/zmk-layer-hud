@@ -185,6 +185,38 @@ def combo_term(keymap_path):
     return max(found.items(), key=lambda kv: (kv[1], -kv[0]))[0]
 
 
+def combo_idle(keymap_path):
+    """How long a combo needs the keyboard to have been idle before it (ZMK's per-combo
+    require-prior-idle-ms), or None when no combo says.
+
+    A chord struck sooner than that after another key is not a combo in ZMK -- its keys are typed
+    one by one, which is what makes a fast roll over a combo's keys come out as letters -- and the
+    HUD has to draw it the same way. Read from the combo nodes alone, after the preprocessor has
+    expanded them: hold-taps take a property of the same name for something else, and a keymap
+    that writes its combos through macros only has them once they are expanded. The commonest
+    wins, as for the combo term: the HUD keeps one."""
+    try:
+        from keymap_drawer.config import ParseConfig
+        from keymap_drawer.dts import DeviceTree
+        from keymap_drawer.parse import zmk as drawer_zmk
+        with open(keymap_path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        with open(drawer_zmk.ZMK_DEFINES_PATH, encoding="utf-8") as f:
+            defines = f.read()
+        dts = DeviceTree(text, keymap_path, True, preamble=ParseConfig().zmk_preamble + "\n" + defines)
+        nodes = [n for p in dts.get_compatible_nodes("zmk,combos") for n in p.children]
+    except Exception:   # no keymap-drawer, or a keymap its parser cannot read: say nothing
+        return None
+    found = {}
+    for node in nodes:
+        values = node.get_array("require-prior-idle-ms") or []
+        if values and values[0].isdigit() and int(values[0]) > 0:
+            found[int(values[0])] = found.get(int(values[0]), 0) + 1
+    if not found:
+        return None
+    return max(found.items(), key=lambda kv: (kv[1], -kv[0]))[0]
+
+
 def parse_keymap(keymap_path):
     """keymap-drawer's own ZMK parser: combos with the layers they really fire on."""
     exe = shutil.which("keymap", path=os.path.dirname(sys.executable)) or shutil.which("keymap")
@@ -276,6 +308,10 @@ def render(data, undecided):
         L += ["# The keyboard's own combo timeout: presses within it are one chord, and the HUD has",
               "# to group them the same way or it draws chords that were never struck.",
               f"combo_term_ms: {data['combo_term_ms']}", ""]
+    if data.get("combo_idle_ms"):
+        L += ["# How long the keyboard must be idle before a combo (ZMK require-prior-idle-ms): a",
+              "# chord struck sooner after another key is typed as its keys, and drawn so.",
+              f"combo_idle_ms: {data['combo_idle_ms']}", ""]
     L.append("layers:")
     for lid, entry in sorted(data["layers"].items(), key=lambda kv: int(kv[0])):
         drawer = entry["drawer"]
@@ -303,6 +339,9 @@ def delta(before, after):
     was, now = (before or {}).get("combo_term_ms"), after.get("combo_term_ms")
     if before is not None and was != now:
         out.append(f"  ~ combo term: {was} ms became {now} ms")
+    was, now = (before or {}).get("combo_idle_ms"), after.get("combo_idle_ms")
+    if before is not None and was != now:
+        out.append(f"  ~ idle before a combo: {was or 0} ms became {now or 0} ms")
     ol, nl = (before or {}).get("layers", {}), after["layers"]
     for lid in sorted(set(ol) | set(nl), key=int):
         a, b = ol.get(lid), nl.get(lid)
@@ -344,6 +383,7 @@ def read_imported(path):
         got = yaml.safe_load(f) or {}
     return {"layers": {str(k): v for k, v in (got.get("layers") or {}).items()},
             "combo_term_ms": got.get("combo_term_ms"),
+            "combo_idle_ms": got.get("combo_idle_ms"),
             "combos": got.get("combos") or []}
 
 
@@ -372,6 +412,7 @@ def do_import(source, keyboard, config_path, quiet=False):
     data = {"source": source if kind == "url" else os.path.abspath(os.path.expanduser(source)),
             "keyboard": board, "layers": layers,
             "combo_term_ms": combo_term(keymap_path),
+            "combo_idle_ms": combo_idle(keymap_path),
             "combos": combo_coverage(parsed, layers, positions, drawn, drawn_combos)}
 
     before = read_imported(out_path)
