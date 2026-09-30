@@ -80,7 +80,7 @@ fi
 
 # Where the system puts temporary files: macOS's mktemp ignores $TMPDIR unless given a template.
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/zmk-layer-hud-gif.XXXXXX")"
-trap 'kill $SERVER 2>/dev/null || true; rm -rf "$WORK"' EXIT
+trap 'kill $SERVER 2>/dev/null || true; wait $SERVER 2>/dev/null || true; rm -rf "$WORK"' EXIT
 # No subshell: $! must be the server itself, or the trap kills the wrapper and leaves the
 # server holding the port (which then silently breaks every later run).
 python3 -m http.server -d "$ROOT/hud" "$PORT" >/dev/null 2>&1 & SERVER=$!
@@ -105,7 +105,9 @@ for i in $(seq 0 $((FRAMES - 1))); do
   sleep 0.3                                   # let the PNG finish landing
   kill "$BPID" 2>/dev/null || true
   wait "$BPID" 2>/dev/null || true
-  rm -rf "$WORK/profile-$i"
+  # Its profile goes now, or eighty of them pile up. The browser's helpers can still be writing to
+  # it a moment after the browser is gone, so what cannot go yet goes with the rest at the end.
+  rm -rf "$WORK/profile-$i" 2>/dev/null || true
   [ -s "$FRAME" ] || { echo "$BROWSER wrote no frame in ${TIMEOUT_S}s — set ZMKHUD_BROWSER to another Chromium" >&2; exit 1; }
   echo "frame $((i + 1)) of $FRAMES"
 done
