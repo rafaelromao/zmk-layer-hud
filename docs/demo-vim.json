@@ -1,6 +1,7 @@
 {
   "device": "Diamond",
   "opacity": 100,
+  "step_ms": 550,
   "steps": [
     { "note": "typing on the base layer: one key per frame, like every keystroke here",
       "layers": [], "press": [11], "keys": ["n"] },
