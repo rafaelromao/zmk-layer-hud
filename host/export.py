@@ -81,15 +81,29 @@ def stylesheet():
     return "/* zmk-layer-hud: the session's heatmap */\n" + "\n".join(rules)
 
 
-def svg(session, message, doc, drawer_cfg=None, mode="session", layers=None, footer=""):
-    """The SVG text: `doc` is the keymap-drawer YAML the config names, `drawer_cfg` its drawer config.
-    `layers` picks which to draw (default: those with any heat, in the keymap's order)."""
-    from io import StringIO
+def svg(session, message, definitions, mode="session", layers=None, footer=""):
+    """The SVG text, drawn from the HUD's definitions alone (`zmk-layer-hud import` wrote them):
+    keymap-drawer's own form of the drawing -- its layers and combos, the drawer config -- on the
+    drawn keys, handed to keymap-drawer as a QMK layout, and with the glyphs the definitions carry,
+    so nothing is fetched and no file of the user's is read. `layers` picks which to draw (default:
+    those with any heat, in the keymap's order)."""
+    import json
+    from io import BytesIO, StringIO
 
     from keymap_drawer.config import Config, DrawConfig
     from keymap_drawer.draw import KeymapDrawer
     from keymap_drawer.keymap import LayoutKey
 
+    form = definitions.get("keymap_drawer") or {}
+    doc = {"layout": {"qmk_info_json": BytesIO(json.dumps(form.get("layout") or []).encode())},
+           "layers": form.get("layers") or {}, "combos": form.get("combos") or [],
+           "draw_config": form.get("draw_config") or {}}
+    drawer_cfg = dict(form.get("config") or {})
+    glyphs = (definitions.get("drawing") or {}).get("glyphs") or {}
+    if glyphs:
+        dc = dict(drawer_cfg.get("draw_config") or {})
+        dc["glyphs"] = {**glyphs, **(dc.get("glyphs") or {})}
+        drawer_cfg["draw_config"] = dc
     steps = levels(session, message, mode)
     names = list(layers) if layers else [name for name in doc.get("layers") or {} if name in steps]
     unknown = [name for name in names if name not in (doc.get("layers") or {})]

@@ -54,7 +54,7 @@ FEED_PYTHON="${ZMKHUD_PYTHON:-$ROOT/.venv/bin/python3}"; [ -x "$FEED_PYTHON" ] |
 # the wheel's Linux backend is libusb, which cannot open the node with the access the udev rule grants.
 "$FEED_PYTHON" -c "import serial, websockets"
 export ZMKHUD_PYTHON="$FEED_PYTHON"
-"$FEED_PYTHON" "$ROOT/host/keymap.py"   # validates the config + keymap-drawer YAML before the panel opens
+"$FEED_PYTHON" "$ROOT/host/keymap.py"   # validates the config + its definitions before the panel opens
 stop
 sleep 0.5
 nohup python3 -u "$HERE/panel.py" >"$RUN/panel.log" 2>&1 &

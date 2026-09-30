@@ -23,7 +23,8 @@ case "${1:-start}" in
   start)
     "$PYTHON" -c 'import serial, hid, websockets, objc, WebKit' 2>/dev/null || {
       echo "the venv lacks pyserial/hidapi/websockets/pyobjc: run 'make venv' again" >&2; exit 1; }
-    # Fails early with a readable reason if the config or the keymap-drawer YAML is off.
+    # Fails early with a readable reason if the config or its definitions are off -- or missing,
+    # when nothing has been imported yet (it names `zmk-layer-hud import`).
     "$PYTHON" "$ROOT/host/keymap.py" ${ZMKHUD_CONFIG:+--config "$ZMKHUD_CONFIG"}
     stop
     nohup "$PYTHON" -u "$HERE/panel.py" >"$RUN/panel.log" 2>&1 &

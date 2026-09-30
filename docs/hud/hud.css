@@ -43,7 +43,6 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 .chip.cmdline { background: #e0af68; color: #101420; }
 .chip.raw { background: var(--chip-raw); color: #101420; }
 .chip.off { background: var(--chip-off); color: #dfe3f0; }
-.chip.provisional { outline: 2px dashed rgba(255,255,255,0.45); outline-offset: -2px; }
 /* The board is the keymap-drawer physical layout scaled to the panel width; every key is
    positioned (and rotated) from the drawer's coordinates, so any keyboard renders. */
 #board { position: relative; width: 100%; min-height: 40px; }
@@ -77,9 +76,6 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 .key.pressed.combo { background: var(--combo); }
 .key.combo-key { box-shadow: 0 0 0 3px #7aa2f7, 0 0 18px rgba(122,162,247,0.6); z-index: 2; }
 .key.mod { box-shadow: inset 0 0 0 2px #9ece6a; }
-/* A key the HUD could not place on the keyboard's real layer stack (host-only inference,
-   e.g. synthesized keys in a rehearsal): same flash, dashed edge. */
-.key.pressed.inferred { border: 2px dashed #a86a1a; }
 /* The heatmap (hud.js heat): an overlay above the key's own fill and below its legends -- z-index
    -1 inside the stacking context `isolation` gives each key. An overlay, not a background: the
    board's layer tints (#board.off .key …) outrank any class on a key and would hide it on the base
@@ -108,10 +104,11 @@ body.secure #layerSub { color: #e0af68; }
 body.demo .key::before, body.demo #stats { display: none; }
 
 /* The stats bar above the panel (hud.js "the stats bar"): chips of their own, like the strip's
-   below, so they read with nothing behind them. A fixed height: the macOS window takes its size
-   once the keymap loads, and the Linux surface is sized for it (host/linux/panel.py STATS_H). */
-#stats { display: flex; gap: 5px; height: 26px; margin-bottom: 6px; overflow: hidden; white-space: nowrap; font-family: var(--font); }
-#stats.off { display: none; }
+   below, so they read with nothing behind them. Which chips it has is the config's `stats:`; one
+   it leaves out is .off. More than a row's worth go on a second row, and the page tells the panel
+   it is taller (followBar): the macOS window and the Linux surface both take the page's size. */
+#stats { display: flex; flex-wrap: wrap; gap: 4px 5px; max-height: 56px; margin-bottom: 6px; overflow: hidden; white-space: nowrap; font-family: var(--font); }
+#stats.off, #stats .stat.off { display: none; }
 #stats .stat {
   flex: none; padding: 0 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--panel-border);
   color: #8b91a3; font-size: 11px; line-height: 24px; font-variant-numeric: tabular-nums;
@@ -120,7 +117,6 @@ body.demo .key::before, body.demo #stats { display: none; }
 #stats .stat.layer { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 #stats .stat.mode { margin-left: auto; cursor: pointer; }
 #stats .stat.mode:hover { color: #e6e8ef; }
-#layer.inferred { border-bottom-style: dashed; }
 #status { font-size: 12px; color: #aab0c0; min-height: 16px; display: flex; }
 #feed { color: #e0af68; }
 #feed:empty { display: none; }
@@ -132,7 +128,6 @@ body.demo .key::before, body.demo #stats { display: none; }
 
 /* Active layer banner: the one thing to read at a glance. */
 #layer { display: flex; align-items: center; gap: 12px; padding: 2px 4px 5px; border-bottom: 3px solid var(--chip); transition: border-color 120ms ease; min-height: 30px; }
-#layer.provisional { border-bottom-style: dashed; }
 #layerName { font-size: 24px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; line-height: 28px; }
 #layerSub { font-size: 12px; color: #aab0c0; line-height: 14px; padding-top: 3px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #layer.vim { border-color: var(--chip-vim); } #layer.vim #layerName { color: var(--chip-vim); }

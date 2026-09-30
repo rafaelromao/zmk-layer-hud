@@ -1,35 +1,38 @@
 #!/usr/bin/env python3
-"""Turn a keymap-drawer YAML into the HUD's keymap message, at runtime.
+"""The HUD's keymap message, from the HUD's own two files.
 
-The HUD pages carry no keymap of their own. host/hudfeed.py loads a small config
-(~/.config/zmk-layer-hud/config.yaml by default), converts the keymap-drawer file it names with
-this module, sends {"kind":"keymap", ...} to the pages, and re-sends it whenever the YAML, the
-config or the layer dtsi changes. Edit the drawer file, the HUD redraws.
+The HUD pages carry no keymap of their own. host/hudfeed.py loads the config
+(~/.config/zmk-layer-hud/config.yaml by default) and the definitions `zmk-layer-hud import` and
+`sync` wrote beside it (`config.definitions.json`), builds {"kind":"keymap", ...} from the two with
+this module, sends it to the pages, and sends it again whenever either file changes. Nothing else
+is read at runtime: not the keymap-drawer file, not the drawer config, not the ZMK keymap, not the
+network. `sync` (or `sync --watch`) is what takes an edit of those into the definitions.
 
-The physical layout (key positions, sizes, rotation) comes from keymap-drawer itself
-(`pip install keymap-drawer`), so every layout kind it supports works: cols_thumbs_notation,
-ortho_layout, qmk_keyboard / zmk_keyboard / zmk_shared_layout from its database, qmk_info_json and
-dts_layout files. Without the library only cols_thumbs_notation is understood.
+The drawing itself -- the physical layout, every layer's legends, the combos, the glyphs -- is made
+at import time by `draw`, from a keymap-drawer YAML: the one the config names as `keymap:`, or the
+one `keymap parse` makes of the ZMK keymap when it names none. That is the only code here that needs
+keymap-drawer (`pip install keymap-drawer`) or the network; without the library only
+cols_thumbs_notation and ortho_layout are understood.
 
-Config keys (all paths may use ~):
-  keymap:         path to the keymap-drawer YAML                                   (required)
+Config keys (all paths may use ~). The first four are read by import and sync only:
+  keymap:         the keymap-drawer YAML to draw from (default: the ZMK keymap, parsed)
+  drawer_config:  its keymap-drawer config YAML (key sizes, glyphs); defaults otherwise
+  layout:         a keymap-drawer layout spec, for a drawing made from the ZMK keymap
+  stagger:        false keeps a 3x5 split drawn from a key count ortholinear
+The rest are read at runtime:
   title:          text in the panel's corner (default: the keyboard's HID name)   (optional)
   hud:            every size and timing the page uses; see HUD_DEFAULTS below      (optional)
   feed:           the reader's timings; see FEED_DEFAULTS below                     (optional)
   stats:          which chips the stats bar shows, true or false; see STATS_DEFAULTS  (optional)
   fingers:        the finger that strikes each drawer key (FINGERS), in drawer order, for the
                   hands' shares and same-finger bigrams; worked out for a split board's columns (optional)
-  drawer_config:  keymap-drawer config YAML (key sizes, glyphs); defaults otherwise (optional)
   keyboard:       {vid, pid, name} of the keyboard to read the layer signal from    (optional)
   serial:         {port, probe_s} of its CDC-ACM interface, when finding it fails   (optional)
   ble:            {address, enabled} for reading the signal over BLE                (optional)
   layers:         how ZMK layer ids map to drawer layers                            (optional)
-      dtsi:  a devicetree header whose `// Layers` block has `#define NAME n` lines; the names
-             become the ids' names. Superseded by `zmk-layer-hud import`, which takes the ids from
-             the keymap itself. Without either, id n is the n-th layer of the YAML (what
-             `keymap parse` produces from a .keymap).
       map:   per layer (by name, by id, or by position in ZMK layer order): a drawer layer name,
-             null for a layer that is transparent or not drawn, or {drawer, label, class}.
+             null for a layer that is transparent or not drawn, or {drawer, label, class}. The
+             ids come from the import; without one, id n is the n-th drawn layer.
   base:           the drawer layer that is always active (default: the layer for id 0)         (optional)
   positions:      ZMK key position of each drawer key, in drawer order, when the drawer does not
                   list the keys in the keymap's binding order (firmware `positions;`)            (optional)
@@ -46,9 +49,11 @@ Config keys (all paths may use ~):
                          keyboard's own reports only: typing sent in says so per key, `combos`)
       search:            layer search order for unplaced keys (default: YAML order)
 
-A `<config>.imported.yaml` beside the config — written by `zmk-layer-hud import` out of the
-keyboard's own ZMK keymap — supplies the layer ids, the combos' real layer coverage and the
-keyboard's combo term. It is a floor, never a ceiling: anything the config says wins over it.
+The definitions (`<config>.definitions.json`, DEFINITIONS_VERSION) hold the drawing, what the
+keyboard's own ZMK keymap says of it when a repo was imported -- the layer ids, the combos' real
+layer coverage, the combo term -- and keymap-drawer's own form of the drawing, for
+`session export`. What came from the keymap is a floor, never a ceiling: anything the config says
+wins over it. `<config>.imported.yaml` is the same facts written to be read, and is not read here.
 
 `python3 host/keymap.py [--config PATH] [--dump]` prints the message (or an error) for checking.
 """
@@ -139,7 +144,9 @@ GLYPHS = {
 }
 GLYPH_RE = re.compile(r"^\$\$(.+?)\$\$$")
 GLYPH_IN_TEXT_RE = re.compile(r"\$\$(.+?)\$\$")
-DEFINE_RE = re.compile(r"^\s*#define\s+([A-Za-z_][A-Za-z0-9_]*)\s+(\d+)\s*$")
+# The shape of `<config>.definitions.json`; a file of another version is written again by `sync`.
+DEFINITIONS_VERSION = 1
+DEFAULT_KEY_H = 56   # keymap-drawer's DrawConfig.key_h, when no drawer config says
 
 
 class KeymapError(Exception):
@@ -218,27 +225,6 @@ def flatten(rows):
         else:
             out.append(norm_key(row))
     return out
-
-
-def parse_layer_ids(text):
-    """The `// Layers` block of a config.dtsi (consecutive `#define NAME n` lines, blank lines
-    allowed) -> {NAME: n}."""
-    lines = text.splitlines()
-    try:
-        start = next(i for i, l in enumerate(lines) if l.strip().startswith("//") and "layers" in l.lower())
-    except StopIteration:
-        raise KeymapError("no '// Layers' block in the dtsi")
-    ids = {}
-    for line in lines[start + 1:]:
-        if not line.strip():
-            continue
-        m = DEFINE_RE.match(line)
-        if not m:
-            break
-        ids[m.group(1)] = int(m.group(2))
-    if not ids:
-        raise KeymapError("the '// Layers' block has no #define lines")
-    return ids
 
 
 def prettify(name):
@@ -550,17 +536,15 @@ def parse_layers_and_combos(doc, n_keys):
     return layers, combos
 
 
-def zmk_layer_table(layers_cfg, layer_names, dtsi_text, imported=None):
+def zmk_layer_table(layers_cfg, layer_names, imported=None):
     """ZMK layer id -> {id, name, drawer, label, cls}. Ids come from an import when there is one,
-    else from the dtsi when given, else from the YAML order (name = drawer layer). The config's
-    `map` refines drawer/label/class and wins over all of them."""
+    else from the drawing's order (name = drawer layer). The config's `map` refines
+    drawer/label/class and wins over both."""
     if imported:
         # A list, not a mapping: two layers may share a display name (a copy of a layer reached
         # another way), and a mapping would drop one and shift every id after it.
         pairs = [(v["name"], int(k)) for k, v in sorted(imported.items(), key=lambda kv: int(kv[0]))]
         seed = {str(k): v for k, v in imported.items()}
-    elif dtsi_text:
-        pairs, seed = sorted(parse_layer_ids(dtsi_text).items(), key=lambda kv: kv[1]), {}
     else:
         pairs, seed = [(name, i) for i, name in enumerate(layer_names)], {}
     lower = {n.lower(): n for n in layer_names}
@@ -592,14 +576,15 @@ def zmk_layer_table(layers_cfg, layer_names, dtsi_text, imported=None):
             else:
                 raise KeymapError(f"layers.map.{name}: expected a layer name, null or a mapping")
         if drawer is not None and drawer not in layer_names:
-            raise KeymapError(f"layers.map.{name}: drawer layer {drawer!r} is not in the keymap YAML")
+            raise KeymapError(f"layers.map.{name}: drawer layer {drawer!r} is not in the drawing")
         table[str(lid)] = {"id": lid, "name": name, "drawer": drawer, "label": label, "cls": cls}
     return table
 
 
-def activators(layers, extras):
+def activators(layers, extras, sticky_label="sticky"):
     """Keys that reach a layer: a hold legend naming a layer, a `type: held` key on the layer
-    itself, and (Diamond convention) `s: sticky` keys whose tap legend names a layer."""
+    itself, and a sticky key whose tap legend names a layer -- marked `s: sticky` (the Diamond's
+    convention), or `h: <sticky_label>`, which is how `keymap parse` draws an `&sl`."""
     out, seen = [], set()
 
     def add(layer, idx, kind):
@@ -611,7 +596,7 @@ def activators(layers, extras):
         for idx, key in enumerate(keys):
             if key["hold"] in layers and key["hold"] != name:
                 add(key["hold"], idx, "auto-sticky" if name != (extras or {}).get("base") and name in ((extras or {}).get("sticky") or []) else "hold")
-            if key["shifted"] == "sticky" and key["tap"] in layers:
+            if (key["shifted"] == "sticky" or key["hold"] == sticky_label) and key["tap"] in layers:
                 add(key["tap"], idx, "sticky")
             if key["type"].startswith("held"):
                 add(name, idx, "hold")
@@ -720,14 +705,82 @@ def resolve_glyphs(names, drawer_cfg, log=None, fetch=True):
     return out
 
 
-def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None, fetch_glyphs=True):
-    """Everything the page needs, from parsed config + keymap YAML dicts."""
+# ---------- the drawing: made at import time ----------
+
+def sticky_label_of(drawer_cfg):
+    """The hold legend keymap-drawer's parser gives a sticky key (its parse_config.sticky_label)."""
+    pc = (drawer_cfg or {}).get("parse_config") or {}
+    return pc.get("sticky_label") or "sticky"
+
+
+def drawn_key_h(doc, drawer_cfg):
+    """The key height keymap-drawer draws with -- the YAML's own draw_config over the drawer
+    config's, as `keymap draw` takes them -- which is the size of 1u in the drawing."""
+    for dc in ((doc or {}).get("draw_config") or {}, (drawer_cfg or {}).get("draw_config") or {}):
+        if dc.get("key_h"):
+            return float(dc["key_h"])
+    return float(DEFAULT_KEY_H)
+
+
+def qmk_keys(layout, key_h):
+    """The drawn keys in QMK info.json's terms (sizes in u, top-left corners, a rotation about a
+    point), which keymap-drawer takes back as a layout: each key rotated about its own centre, so it
+    lands where it was drawn. `session export` draws with it, and needs no layout file of the user's."""
+    out = []
+    for k in layout["keys"]:
+        cx, cy, w, h = k["x"] / key_h, k["y"] / key_h, k["w"] / key_h, k["h"] / key_h
+        key = {"x": cx - w / 2, "y": cy - h / 2, "w": w, "h": h}
+        if k.get("r"):
+            key.update(r=k["r"], rx=cx, ry=cy)
+        out.append(key)
+    return out
+
+
+def draw(doc, drawer_cfg=None, stagger=True, fetch=True, previous=None, log=None):
+    """The drawing the definitions carry, from a keymap-drawer YAML (as a dict) and its drawer
+    config: the physical layout, every layer's legends, the combos with their keys and the glyphs,
+    and keymap-drawer's own form of all of it, for `session export`. This is what import and sync
+    write, and the only code here that needs keymap-drawer or the network. A glyph that cannot be
+    fetched keeps the SVG it had in `previous`, the definitions written before."""
     layout = physical_layout(doc.get("layout"), drawer_cfg)
-    if cfg.get("stagger", True) is not False and plain_3x5_split(doc.get("layout")):
+    if stagger and plain_3x5_split(doc.get("layout")):
         layout = stagger_columns(layout)
+    layers, combos = parse_layers_and_combos(doc, len(layout["keys"]))
+    wanted = glyph_names(layers, combos)
+    glyphs = resolve_glyphs(wanted, drawer_cfg, log=log, fetch=fetch)
+    kept = ((previous or {}).get("drawing") or {}).get("glyphs") or {}
+    glyphs.update({name: kept[name] for name in wanted - set(glyphs) if name in kept})
+    return {
+        "drawing": {
+            "layout": layout,
+            "layer_order": list(layers),
+            "layers": layers,
+            "combos": combos,
+            # By name: resolve_glyphs puts what was cached before what it fetched, and the same
+            # sources are meant to write the same file.
+            "glyphs": {name: glyphs[name] for name in sorted(glyphs)},
+            "missing_glyphs": sorted(wanted - set(glyphs)),
+            "sticky_label": sticky_label_of(drawer_cfg),
+        },
+        "keymap_drawer": {
+            "layout": qmk_keys(layout, drawn_key_h(doc, drawer_cfg)),
+            "layers": doc.get("layers") or {},
+            "combos": doc.get("combos") or [],
+            "draw_config": doc.get("draw_config") or {},
+            "config": drawer_cfg or {},
+        },
+    }
+
+
+# ---------- the message: built at runtime ----------
+
+def build_message(cfg, drawing, source=""):
+    """Everything the page needs, from the parsed config -- with what was imported folded in
+    (merge_imported) -- and the definitions' drawing. Pure: no file, no keymap-drawer, no network."""
+    layout, layers, layer_names = drawing["layout"], drawing["layers"], list(drawing["layer_order"])
     n = len(layout["keys"])
-    layers, combos = parse_layers_and_combos(doc, n)
-    layer_names = list(layers)
+    # A copy: an override below changes a combo's layers, and the definitions are not the config's.
+    combos = [dict(c, layers=list(c["layers"])) for c in drawing["combos"]]
     for override in cfg.get("combos") or []:
         want = sorted(override.get("positions") or [])
         tap = override.get("tap")
@@ -736,7 +789,7 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None
         if not hits:
             raise KeymapError(f"combos: no combo on positions {override.get('positions')}"
                               + (f" with tap {tap!r}" if tap else "")
-                              + " (the drawer file may have moved it)")
+                              + " (the drawing may have moved it)")
         if len(hits) > 1:
             taps = ", ".join(repr(c["key"]["tap"]) for c in hits)
             raise KeymapError(f"combos: positions {override.get('positions')} carry {len(hits)} combos "
@@ -746,10 +799,10 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None
         if unknown:
             raise KeymapError(f"combos: positions {override.get('positions')}: unknown layers {unknown}")
         hits[0]["layers"] = [l for l in layers if l in named]
-    zmk_layers = zmk_layer_table(cfg.get("layers"), layer_names, dtsi_text, cfg.get("_imported_layers"))
+    zmk_layers = zmk_layer_table(cfg.get("layers"), layer_names, cfg.get("_imported_layers"))
     base = cfg.get("base") or (zmk_layers.get("0") or {}).get("drawer") or layer_names[0]
     if base not in layers:
-        raise KeymapError(f"base layer {base!r} is not in the keymap YAML")
+        raise KeymapError(f"base layer {base!r} is not in the drawing")
     extras = dict(cfg.get("extras") or {})
     extras.setdefault("base", base)
     extras.setdefault("sticky", [])
@@ -760,7 +813,6 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None
             raise KeymapError(f"extras.{key}: unknown layers {bad}")
     if extras.get("alpha2") and extras["alpha2"] not in layers:
         raise KeymapError(f"extras.alpha2: unknown layer {extras['alpha2']!r}")
-    glyphs = resolve_glyphs(glyph_names(layers, combos), drawer_cfg, log=log, fetch=fetch_glyphs)
     hud_cfg = dict(HUD_DEFAULTS)
     unknown = sorted(set(cfg.get("hud") or {}) - set(HUD_DEFAULTS))
     if unknown:
@@ -797,13 +849,13 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None
         # How long the keyboard must be idle before a combo (ZMK require-prior-idle-ms): a chord
         # struck sooner after another key is its keys. 0: no such rule.
         "combo_idle": int(cfg.get("combo_idle_ms") or 0),
-        "glyphs": glyphs,
+        "glyphs": drawing.get("glyphs") or {},
         "positions": pos_to_idx,
         "layout": layout,
         "layers": layers,
         "layer_order": layer_names,
         "combos": combos,
-        "activators": activators(layers, extras),
+        "activators": activators(layers, extras, drawing.get("sticky_label") or "sticky"),
         "zmk_layers": zmk_layers,
         "base": base,
         "extras": extras,
@@ -844,6 +896,27 @@ def imported_path(config_path):
     return f"{stem}.imported.yaml"
 
 
+def definitions_path(config_path):
+    """Where `zmk-layer-hud import` and `sync` write the HUD's definitions for this config: beside
+    it, named after it, and found beside a linked config's own path (abspath, not realpath), as the
+    imported file is."""
+    stem = os.path.splitext(os.path.abspath(config_path))[0]
+    return f"{stem}.definitions.json"
+
+
+def read_definitions(path):
+    """The definitions import and sync wrote, checked for their version."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            got = json.load(f)
+    except ValueError as e:
+        raise KeymapError(f"{path} is not JSON ({e}); run `zmk-layer-hud sync` to write it again")
+    if not isinstance(got, dict) or got.get("version") != DEFINITIONS_VERSION or not isinstance(got.get("drawing"), dict):
+        raise KeymapError(f"{path} was written by another version of zmk-layer-hud; "
+                          "run `zmk-layer-hud sync` to write it again")
+    return got
+
+
 def merge_imported(cfg, imported):
     """Fold what `zmk-layer-hud import` took out of the keyboard's own keymap into the config.
 
@@ -878,43 +951,32 @@ def find_config(path=None):
 
 
 class KeymapSource:
-    """Loads config + keymap files and knows when any of them changed."""
+    """The HUD's own two files -- the config, and the definitions import and sync write beside it --
+    and whether either has changed since they were read. Nothing else is opened: not the
+    keymap-drawer file or its config, not a ZMK keymap or dtsi, not the network."""
 
     def __init__(self, config_path=None, log=None):
         self.config_path = find_config(config_path)
         self.log = log or (lambda *a: print(*a, file=sys.stderr))
         self.cfg = {}
-        self.paths = []
+        self.definitions = None
+        self.paths = [self.config_path, definitions_path(self.config_path)]
         self.mtimes = {}
         self.message = None
+        self._said_dtsi = False
 
-    def _watch(self):
-        cfg = load_yaml(self.config_path)
-        if not isinstance(cfg, dict) or not cfg.get("keymap"):
-            raise KeymapError(f"{self.config_path}: `keymap:` (path to a keymap-drawer YAML) is required")
-        base = os.path.dirname(os.path.abspath(self.config_path))
-        paths = [self.config_path, expand(cfg["keymap"], base)]
-        if cfg.get("drawer_config"):
-            paths.append(expand(cfg["drawer_config"], base))
-        if (cfg.get("layers") or {}).get("dtsi"):
-            paths.append(expand(cfg["layers"]["dtsi"], base))
-        imported = imported_path(self.config_path)
-        if os.path.exists(imported):
-            paths.append(imported)
-            merge_imported(cfg, load_yaml(imported))
-        return cfg, paths
-
-    def changed(self):
-        try:
-            _, paths = self._watch()
-        except Exception:
-            paths = self.paths
+    def _stat(self):
         now = {}
-        for p in paths:
+        for p in self.paths:
             try:
-                now[p] = os.stat(p).st_mtime_ns
+                st = os.stat(p)
+                now[p] = (st.st_mtime_ns, st.st_ino, st.st_size)
             except OSError:
                 now[p] = None
+        return now
+
+    def changed(self):
+        now = self._stat()
         if now != self.mtimes:
             self.mtimes = now
             return True
@@ -922,32 +984,40 @@ class KeymapSource:
 
     def load(self):
         """(Re)build the message; raises KeymapError with a readable reason."""
-        cfg, paths = self._watch()
-        self.cfg, self.paths = cfg, paths
-        doc = load_yaml(paths[1])
-        drawer_cfg = load_yaml(paths[2]) if cfg.get("drawer_config") else None
-        dtsi_text = None
-        if (cfg.get("layers") or {}).get("dtsi"):
-            with open(paths[-1], encoding="utf-8") as f:
-                dtsi_text = f.read()
-        self.message = build_message(cfg, doc, drawer_cfg, dtsi_text,
-                                     source=os.path.relpath(paths[1], os.path.expanduser("~")), log=self.log,
-                                     fetch_glyphs=getattr(self, "fetch_glyphs", True))
-        self.changed()  # snapshot mtimes after a successful load
+        # Taken before the files are read: a write that lands while they are is then still a
+        # change, and is read again, rather than passing for what was just read.
+        seen = self._stat()
+        cfg = load_yaml(self.config_path)
+        if not isinstance(cfg, dict):
+            raise KeymapError(f"{self.config_path}: expected settings, one per line (`name: value`)")
+        self.cfg = cfg
+        if (cfg.get("layers") or {}).get("dtsi") and not self._said_dtsi:
+            self._said_dtsi = True
+            self.log(f"keymap: {self.config_path}: `layers.dtsi` is no longer read; "
+                     "`zmk-layer-hud import` takes the layer ids from the keymap itself")
+        path = self.paths[1]
+        if not os.path.isfile(path):
+            raise KeymapError(f"{self.config_path}: no definitions yet ({os.path.basename(path)}). Run "
+                              "`zmk-layer-hud import <your zmk-config>`, or name your keymap-drawer YAML "
+                              "as `keymap:` and run `zmk-layer-hud import`")
+        definitions = read_definitions(path)
+        merge_imported(cfg, definitions.get("zmk"))
+        self.message = build_message(cfg, definitions["drawing"], source=definitions.get("source") or "")
+        self.definitions = definitions
+        self.mtimes = seen
         return self.message
 
 
 def main(argv=None):
-    p = argparse.ArgumentParser(description="Convert the configured keymap-drawer YAML to the HUD's keymap message.")
+    p = argparse.ArgumentParser(description="The HUD's keymap message, from the config and the definitions "
+                                            "`zmk-layer-hud import` wrote beside it.")
     p.add_argument("--config", help=f"config file (default: $ZMKHUD_CONFIG or {DEFAULT_CONFIG})")
     p.add_argument("--dump", action="store_true", help="print the full JSON message (default: a summary)")
-    p.add_argument("--no-fetch", action="store_true", help="do not fetch missing glyphs (offline)")
     args = p.parse_args(argv)
     try:
         src = KeymapSource(args.config)
-        src.fetch_glyphs = not args.no_fetch
         msg = src.load()
-    except KeymapError as e:
+    except (KeymapError, OSError) as e:
         print(f"keymap: {e}", file=sys.stderr)
         return 1
     if args.dump:

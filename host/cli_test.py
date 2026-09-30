@@ -2,12 +2,16 @@
 through the symlink it is normally invoked by, and that the two verbs which pass their whole line
 to another parser keep doing so."""
 
+import argparse
+import contextlib
+import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -137,12 +141,54 @@ class SyncArgv(unittest.TestCase):
     def test_import_with_every_flag(self):
         self.assertEqual(
             ["import", "~/zmk-config", "--keyboard", "corne",
-             "--config", "/tmp/c.yaml", "--quiet"],
+             "--config", "/tmp/c.yaml", "--quiet", "--no-fetch"],
             self.run_cli(["import", "~/zmk-config", "--keyboard", "corne",
-                          "--config", "/tmp/c.yaml", "--quiet"]))
+                          "--config", "/tmp/c.yaml", "--quiet", "--no-fetch"]))
+
+    def test_import_needs_no_repo(self):
+        # A drawing alone, from the keymap-drawer YAML the config names.
+        self.assertEqual(["import", "--config", "/tmp/c.yaml"], self.run_cli(["import", "--config", "/tmp/c.yaml"]))
 
     def test_sync_takes_no_source(self):
-        self.assertEqual(["sync", "--quiet"], self.run_cli(["sync", "--quiet"]))
+        self.assertEqual(["sync", "--quiet", "--no-fetch"], self.run_cli(["sync", "--quiet", "--no-fetch"]))
+
+
+class ConfigLink(unittest.TestCase):
+    """A config kept in a repo is linked with its definitions and its imported record: each is found
+    beside the config's own path, not beside what it points at."""
+
+    def test_the_config_its_definitions_and_its_record_are_linked(self):
+        with tempfile.TemporaryDirectory() as d:
+            repo, home = os.path.join(d, "repo"), os.path.join(d, "home")
+            os.makedirs(repo)
+            for name in ("board.yaml", "board.definitions.json", "board.imported.yaml"):
+                with open(os.path.join(repo, name), "w", encoding="utf-8") as f:
+                    f.write(name)
+            with mock.patch.object(cli, "CONFIG_DIR", home), \
+                    mock.patch.object(cli, "CONFIG", os.path.join(home, "config.yaml")), \
+                    contextlib.redirect_stdout(io.StringIO()):
+                cli.config_link(argparse.Namespace(file=os.path.join(repo, "board.yaml")))
+            for name, target in (("config.yaml", "board.yaml"), ("config.definitions.json", "board.definitions.json"),
+                                 ("config.imported.yaml", "board.imported.yaml")):
+                self.assertEqual(os.path.join(repo, target), os.readlink(os.path.join(home, name)))
+
+
+class DefinitionsMissing(unittest.TestCase):
+    """start's refusal names the step the config is missing, and no more."""
+
+    def missing(self, text):
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+            with mock.patch.dict(os.environ, {"ZMKHUD_CONFIG": path}):
+                return cli.definitions_missing()
+
+    def test_a_config_naming_its_keymap_is_told_to_import(self):
+        self.assertTrue(self.missing("keymap: ~/k/keymap-drawer.yaml\n").endswith("run `zmk-layer-hud import`"))
+
+    def test_a_config_naming_nothing_is_told_where_from(self):
+        self.assertIn("github.com/you/zmk-config", self.missing("hud: {width: 500}\n"))
 
 
 class State(unittest.TestCase):

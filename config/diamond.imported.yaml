@@ -1,8 +1,9 @@
 # Written by `zmk-layer-hud import`. Do not edit: `zmk-layer-hud sync` rewrites it.
 #
-# What the keyboard's own ZMK keymap says, which the keymap-drawer file does not carry:
-# the id of every layer, and the layers each combo really fires on. Anything you set in
-# config.yaml wins over what is here, so corrections belong there and survive a sync.
+# What the keyboard's own ZMK keymap says, which a drawing does not carry: the id of every
+# layer, and the layers each combo really fires on. This copy is for reading; the HUD takes
+# the same from the definitions beside it. Anything you set in config.yaml wins over both,
+# so corrections belong there and survive a sync.
 #   source:   github.com/rafaelromao/keyboards
 #   keyboard: diamond
 
@@ -17,7 +18,7 @@ layers:
   3: { name: VISUAL, drawer: vim, label: Vim visual }
   4: { name: CHANGE, drawer: vim, label: Vim change }
   5: { name: INSERT, drawer: null, label: Vim insert }    # not drawn — set one in config.yaml if it should be
-  6: { name: REPLACE, drawer: vim, label: Vim replace }
+  6: { name: REPLACE, drawer: null, label: Vim replace }    # not drawn — set one in config.yaml if it should be
   7: { name: CMDLINE, drawer: null, label: Vim cmdline }    # not drawn — set one in config.yaml if it should be
   8: { name: CAPSWORD, drawer: shifted1, label: Caps word }
   9: { name: CAPSLINE, drawer: shifted1, label: Caps line }
@@ -44,7 +45,7 @@ layers:
 
 combos:
   - positions: [11, 12, 22]    # &lm_ent_vim
-    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, nav, media, text]
+    layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, numbers, symbols, nav, media, text]
   - positions: [0, 1, 21]    # &mc_save_esc_vim
     layers: [alpha1, alpha2, shifted1, shifted2, ç-extension, vim, numbers, symbols, shortcuts, nav, media, text]
   - positions: [7, 8, 21]    # &mc_save

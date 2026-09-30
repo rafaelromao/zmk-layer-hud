@@ -1,8 +1,8 @@
 """Tests for site/build.py: what the landing page is built from, and what it is allowed to publish.
 
 The steps are tested as functions on the repo's own files, with the standard library alone, since
-`make test-site` runs a Python without the venv. The whole build needs keymap-drawer and runs only
-where it is installed, the way keymap_test.py does."""
+`make test-site` runs a Python without the venv; and so is the whole build, which reads only the
+configs and the definitions committed beside them."""
 
 import filecmp
 import json
@@ -17,10 +17,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import build  # noqa: E402
 
 try:
-    import keymap_drawer  # noqa: F401
-    HAVE_DRAWER = True
+    import yaml  # noqa: F401
+    HAVE_YAML = True
 except ImportError:
-    HAVE_DRAWER = False
+    HAVE_YAML = bool(shutil.which("yq"))   # keymap.load_yaml's other way to read a config
 
 MESSAGE = {"kind": "keymap", "source": "projects/keyboards/docs/keymap.yaml", "title": "",
            "hud": {"opacity": 86, "press_ms": 320}, "layers": {"base": [{"tap": "A"}]}, "combos": [],
@@ -82,7 +82,8 @@ class HudFiles(unittest.TestCase):
 
 
 class Missing(unittest.TestCase):
-    """A board whose files are not on this machine: skipped with a line saying so, unless --strict."""
+    """A board with no definitions (nothing imported for its config): skipped with a line saying so,
+    unless --strict."""
 
     def board(self, tmp):
         config = os.path.join(tmp, "config.yaml")
@@ -159,7 +160,7 @@ class Stale(unittest.TestCase):
             self.assertEqual(sorted(os.path.basename(p) for p in build.stale(tmp)), ["hud.js", "site.css"])
 
 
-@unittest.skipUnless(HAVE_DRAWER, "keymap-drawer is not installed for this Python (make venv)")
+@unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
 class WholeBuild(unittest.TestCase):
     def test_the_page_is_built(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -1,8 +1,9 @@
 /* zmk-layer-hud — renderer + keymap resolver.
  *
- * The page carries no keymap: the host sends one, built at runtime from a keymap-drawer YAML by
- * host/keymap.py (physical layout, layers, combos, the ZMK layer id table, optional hints), and
- * sends it again whenever that file changes. The host drives the page through window.hud:
+ * The page carries no keymap: the host sends one, built by host/keymap.py from the HUD's config
+ * and the definitions `zmk-layer-hud import` wrote beside it (physical layout, layers, combos, the
+ * ZMK layer id table, optional hints), and sends it again whenever either file changes. The host
+ * drives the page through window.hud:
  *   hud.load(keymap)                   the {"kind":"keymap", ...} message
  *   hud.setLayers([ids])               the keyboard's active ZMK layer ids (ground truth; the
  *                                      firmware's layer signal, decoded by host/hudfeed.py)
@@ -1381,7 +1382,7 @@
   }
 
   const hud = {
-    // The keymap message. Re-sent by the host when the drawer file changes: geometry and legends
+    // The keymap message. Re-sent by the host when a sync rewrites it: geometry and legends
     // are rebuilt, the live layer set and the daemon code are kept.
     load(data) {
       if (typeof data === "string") data = JSON.parse(data);

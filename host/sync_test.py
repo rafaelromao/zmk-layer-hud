@@ -1,14 +1,18 @@
-"""Tests for host/sync.py — the parts that decide what `import` writes down.
+"""Tests for host/sync.py — what `import` and `sync` write down, and how.
 
-Reading a repo and running keymap-drawer over it are not tested here (they need both); what is
-tested is everything that turns what came back into config: the layer order, the mapping that is a
-human's to make, the coverage, and the delta a sync reports.
+Cloning a repo is not tested here, and keymap-drawer's own parser is faked where a test needs its
+output: what is tested is everything that turns what came back into the HUD's definitions -- the
+layer order and names, the mapping that is a human's to make, the coverage, the physical layout a
+drawing of the keymap is drawn on, the files and how they are written, and the delta a sync reports.
 """
 
+import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -19,6 +23,11 @@ try:
     HAVE_DRAWER = True
 except ImportError:
     HAVE_DRAWER = False
+try:
+    import yaml  # noqa: F401
+    HAVE_YAML = True
+except ImportError:
+    HAVE_YAML = bool(shutil.which("yq"))   # keymap.load_yaml's other way to read a config
 
 
 def write(directory, name, text):
@@ -280,6 +289,181 @@ class Quoting(unittest.TestCase):
     def test_anything_yaml_would_read_as_something_else_is_quoted(self):
         for value in ("off", "no", "true", "null", "ç-extension", "Media / mouse", "Ç EXTENSION"):
             self.assertTrue(sync.yq(value).startswith('"'), value)
+
+
+class Names(unittest.TestCase):
+    def test_every_layer_gets_a_name_of_its_own(self):
+        self.assertEqual(["DEFAULT", "NUMBERS", "NUMBERS 2", "NAV", "NUMBERS 3"],
+                         sync.unique_names(["DEFAULT", "NUMBERS", "NUMBERS", "NAV", "NUMBERS"]))
+
+    def test_keymap_drawers_config_flag_goes_before_the_subcommand(self):
+        with mock.patch.object(sync.shutil, "which", return_value="/venv/bin/keymap"):
+            cmd = sync.keymap_parse_cmd("x.keymap", "cfg.yaml", ["A", "B 2"])
+        self.assertEqual(["/venv/bin/keymap", "-c", "cfg.yaml", "parse", "-z", "x.keymap", "-l", "A", "B 2"], cmd)
+
+
+@unittest.skipUnless(HAVE_DRAWER, "reading the layer nodes needs keymap-drawer")
+class LayerNodes(unittest.TestCase):
+    RESERVED = KEYMAP.replace('num_copy      { display-name = "NUMBERS"; bindings = <&kp N1>; };',
+                              'spare { status = "reserved"; bindings = <&kp N1>; };')
+
+    def test_names_as_keymap_drawer_gives_them_in_id_order(self):
+        with tempfile.TemporaryDirectory() as d:
+            got = sync.layer_list(write(d, "b.keymap", KEYMAP), d)
+        self.assertEqual(["DEFAULT", "NUMBERS", "NUMBERS", "NAV"], [l["name"] for l in got])
+        self.assertTrue(all(l["drawn"] for l in got))
+
+    def test_a_reserved_layer_has_an_id_only_where_the_firmware_keeps_it(self):
+        with tempfile.TemporaryDirectory() as d:
+            path = write(d, "b.keymap", self.RESERVED)
+            self.assertEqual(["DEFAULT", "NUMBERS", "NAV"], [l["name"] for l in sync.layer_list(path, d)])
+            write(d, "config/b.conf", "CONFIG_ZMK_STUDIO=y\n")
+            got = sync.layer_list(path, d)
+        self.assertEqual(["DEFAULT", "NUMBERS", "spare", "NAV"], [l["name"] for l in got])
+        self.assertEqual([True, True, False, True], [l["drawn"] for l in got])
+
+
+class Layout(unittest.TestCase):
+    """The physical layout a drawing of the keymap itself is drawn on."""
+
+    def repo(self, d):
+        write(d, "boards/shields/corne/corne.keymap", KEYMAP)
+        write(d, "boards/shields/corne_ish/other.dtsi", 'x { compatible = "zmk,physical-layout"; };')
+        write(d, "modules/zmk/app/boards/corne.dtsi", 'x { compatible = "zmk,physical-layout"; };')
+        return os.path.join(d, "boards/shields/corne/corne.keymap")
+
+    def test_only_the_keyboards_own_files_are_looked_in(self):
+        with tempfile.TemporaryDirectory() as d:
+            keymap = self.repo(d)
+            own, beside = sync.boards_files(d, keymap)
+        self.assertEqual([keymap], own)
+        self.assertFalse(any("modules" in p or "corne_ish" in p for p in own + beside))
+
+    def test_the_configs_layout_wins_with_its_paths_taken_from_the_config(self):
+        with tempfile.TemporaryDirectory() as d:
+            spec = sync.layout_for_keymap({"layout": {"dts_layout": "shape.dtsi", "layout_name": "a"}},
+                                          os.path.join(d, "config.yaml"), d, self.repo(d), {})
+        self.assertEqual({"dts_layout": os.path.join(d, "shape.dtsi"), "layout_name": "a"}, spec)
+
+    def test_a_layout_zmk_shares_is_named_for_keymap_drawer_to_fetch(self):
+        with tempfile.TemporaryDirectory() as d:
+            keymap = self.repo(d)
+            write(d, "boards/shields/corne/corne.dtsi", "#include <layouts/foostan/corne.dtsi>\n")
+            spec = sync.layout_for_keymap({}, os.path.join(d, "c.yaml"), d, keymap, {"layers": {"A": ["x"]}})
+        self.assertEqual({"zmk_shared_layout": "foostan/corne"}, spec)
+
+    def test_with_nothing_to_go_on_it_asks_for_layout(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaisesRegex(sync.SyncError, "layout:"):
+                sync.layout_for_keymap({}, os.path.join(d, "c.yaml"), d, self.repo(d), {"layers": {"A": ["x"]}})
+
+
+class Drawn(unittest.TestCase):
+    def test_every_drawn_key_is_counted_not_the_rows(self):
+        drawing = {"layer_order": ["A"], "layout": {"keys": [{}] * 36},
+                   "combos": [{"positions": [1, 0]}, {"positions": [0, 1]}, {"positions": [2, 3]}]}
+        names, positions, counts = sync.drawn(drawing, {})
+        self.assertEqual(36, len(positions))       # examples/3x5.yaml's 9 rows once counted as 9 keys
+        self.assertEqual({(0, 1): 2, (2, 3): 1}, counts)
+
+
+BOARD_YAML = """layout: {ortho_layout: {rows: 1, columns: 2}}
+layers:
+  Base: [a, {t: b, h: Nav}]
+  Nav: [x, {type: held}]
+combos:
+  - {p: [0, 1], k: C}
+"""
+
+
+@unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
+class Import(unittest.TestCase):
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d)
+        write(self.d, "board.yaml", BOARD_YAML)
+        self.config = write(self.d, "config.yaml", "keymap: board.yaml\ntitle: T\n")
+        self.defs = sync.definitions_path(self.config)
+
+    def run_import(self, source=None, keyboard=None):
+        return sync.do_import(source, keyboard, self.config, quiet=True, fetch=False)
+
+    def test_a_drawing_alone_from_the_configs_keymap_drawer_file(self):
+        self.run_import()
+        with open(self.defs, encoding="utf-8") as f:
+            defs = json.load(f)
+        self.assertEqual(sync.keymap_mod.DEFINITIONS_VERSION, defs["version"])
+        self.assertEqual("board.yaml", defs["source"])
+        self.assertEqual({"drawing": "board.yaml"}, defs["sources"])
+        self.assertEqual(["Base", "Nav"], defs["drawing"]["layer_order"])
+        self.assertEqual(2, len(defs["keymap_drawer"]["layout"]))
+        self.assertNotIn("zmk", defs)
+        self.assertFalse(os.path.exists(sync.imported_path(self.config)))   # nothing from a repo to record
+
+    def test_an_unchanged_sync_writes_nothing(self):
+        self.run_import()
+        before = os.stat(self.defs)
+        self.run_import()
+        after = os.stat(self.defs)
+        self.assertEqual((before.st_ino, before.st_mtime_ns), (after.st_ino, after.st_mtime_ns))
+
+    def test_definitions_that_would_not_load_are_not_written(self):
+        write(self.d, "config.yaml", "keymap: board.yaml\nlayers: {map: {Nav: Nope}}\n")
+        with self.assertRaisesRegex(sync.SyncError, "nothing was written"):
+            self.run_import()
+        self.assertFalse(os.path.exists(self.defs))
+
+    def test_a_write_goes_through_a_symlink_to_the_file_it_points_at(self):
+        kept = os.path.join(self.d, "kept-in-a-repo.definitions.json")
+        with open(kept, "w", encoding="utf-8") as f:
+            f.write("{}")
+        os.symlink(kept, self.defs)
+        self.run_import()
+        self.assertTrue(os.path.islink(self.defs))
+        with open(kept, encoding="utf-8") as f:
+            self.assertIn('"layer_order"', f.read())
+
+    def test_a_drawing_alone_keeps_what_a_repo_import_said(self):
+        self.run_import()
+        with open(self.defs, encoding="utf-8") as f:
+            defs = json.load(f)
+        defs["zmk"] = {"layers": {"0": {"name": "BASE", "drawer": "Base", "label": "Base"}}, "combo_term_ms": 40}
+        defs["sources"].update(repo="github.com/you/zmk-config", keyboard="b")
+        with open(self.defs, "w", encoding="utf-8") as f:
+            json.dump(defs, f)
+        write(self.d, "board.yaml", BOARD_YAML.replace("[a,", "[z,"))
+        self.run_import()
+        with open(self.defs, encoding="utf-8") as f:
+            again = json.load(f)
+        self.assertEqual(40, again["zmk"]["combo_term_ms"])
+        self.assertEqual("github.com/you/zmk-config", again["sources"]["repo"])
+        self.assertEqual("z", again["drawing"]["layers"]["Base"][0]["tap"])
+
+    def test_a_config_that_is_not_there_is_started_from_the_example(self):
+        config = os.path.join(self.d, "new", "config.yaml")
+        with self.assertRaisesRegex(sync.SyncError, "needs a ZMK repo"):
+            sync.do_import(None, None, config, quiet=True, fetch=False)   # the example names no keymap
+        self.assertTrue(os.path.isfile(config))
+
+    def test_the_keymap_itself_drawn_layer_by_layer(self):
+        write(self.d, "config.yaml", "layout: {ortho_layout: {rows: 1, columns: 2}}\n")
+        repo = os.path.join(self.d, "repo")
+        write(repo, "config/b.keymap", KEYMAP)
+
+        def parsed(path, drawer_config=None, names=None):
+            # keymap-drawer's parse, as the names it was given make it: a layer each, in order.
+            return {"layers": {n: [n.lower(), {"t": "x", "h": "NAV"} if i == 0 else "y"]
+                               for i, n in enumerate(names or [])}, "combos": [{"p": [0, 1], "k": "C", "l": ["NAV"]}]}
+        with mock.patch.object(sync, "parse_keymap", side_effect=parsed):
+            self.run_import(repo, "b")
+        with open(self.defs, encoding="utf-8") as f:
+            defs = json.load(f)
+        self.assertEqual(["DEFAULT", "NUMBERS", "NUMBERS 2", "NAV"], defs["drawing"]["layer_order"])
+        self.assertEqual(["DEFAULT", "NUMBERS", "NUMBERS 2", "NAV"],
+                         [defs["zmk"]["layers"][str(i)]["drawer"] for i in range(4)])
+        self.assertEqual(["NAV"], defs["drawing"]["combos"][0]["layers"])
+        self.assertEqual(sync.os.path.abspath(repo), defs["sources"]["repo"])
+        self.assertTrue(os.path.isfile(sync.imported_path(self.config)))
 
 
 if __name__ == "__main__":

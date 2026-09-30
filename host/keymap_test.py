@@ -1,10 +1,16 @@
-"""Tests for host/keymap.py: the pure conversion from parsed dicts to the HUD's keymap message.
-keymap-drawer and PyYAML are optional here; the fallback paths are what run without them."""
+"""Tests for host/keymap.py: the drawing import makes of a keymap-drawer YAML (draw), the message
+the HUD builds from it at runtime (build_message), and what the runtime reads (KeymapSource): the
+config and the definitions, and nothing else. keymap-drawer and PyYAML are optional here; the
+fallback paths are what run without them."""
 
+import json
 import os
 import re
+import shutil
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -15,6 +21,18 @@ try:
     HAVE_DRAWER = True
 except ImportError:
     HAVE_DRAWER = False
+try:
+    import yaml  # noqa: F401
+    HAVE_YAML = True
+except ImportError:
+    HAVE_YAML = bool(shutil.which("yq"))   # load_yaml's other way to read a config
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+
+def message(cfg, doc):
+    """The message the HUD builds for `cfg` from what import draws of `doc`: the two halves, import
+    time and runtime, run back to back."""
+    return km.build_message(cfg, km.draw(doc, stagger=cfg.get("stagger", True) is not False, fetch=False)["drawing"])
 
 # A 2x2 + 1 thumb per hand keyboard: "22+1> 1<+22" = 10 keys, drawer layer order = ZMK order.
 DOC = {
@@ -26,7 +44,6 @@ DOC = {
     },
     "combos": [{"p": [0, 1], "k": "⎋", "layers": ["Base"]}, {"p": [2, 3], "k": "⇥"}],
 }
-DTSI = "// Layers\n\n#define BASE 0\n#define NAV 1\n#define SYM 2\n\n// Settings\n#define COMBO_TERM 30\n"
 
 # A 3x5+3 split drawn from its key count alone: examples/3x5.yaml's shape, and most 3x5s'.
 DOC_3X5 = {
@@ -120,7 +137,7 @@ class Ortho(unittest.TestCase):
 
     def test_ortho_through_build_message(self):
         doc = dict(DOC, layout={"ortho_layout": {"split": True, "rows": 2, "columns": 2, "thumbs": 1}})
-        msg = km.build_message({}, doc)
+        msg = message({}, doc)
         self.assertEqual(len(msg["layout"]["keys"]), 10)
 
 
@@ -136,7 +153,7 @@ class Stagger(unittest.TestCase):
         return [(k["y"] - top) / kh for k in layout["keys"]]
 
     def test_a_3x5_split_is_drawn_with_the_ferris_stagger(self):
-        drop = self.drop_of(km.build_message({}, DOC_3X5)["layout"])
+        drop = self.drop_of(message({}, DOC_3X5)["layout"])
         ferris = [0.93, 0.31, 0.0, 0.28, 0.42]
         for row in range(3):   # each row of both hands, the right one mirrored
             got = drop[row * 10:row * 10 + 10]
@@ -146,12 +163,12 @@ class Stagger(unittest.TestCase):
     def test_the_keys_keep_the_keymap_order(self):
         # Only y moves: key i is still the i-th binding, in the column it was drawn in.
         ortho = km.physical_layout(DOC_3X5["layout"], None)
-        staggered = km.build_message({}, DOC_3X5)["layout"]
+        staggered = message({}, DOC_3X5)["layout"]
         self.assertEqual([k["x"] for k in staggered["keys"]], [k["x"] for k in ortho["keys"]])
         self.assertGreater(staggered["height"], ortho["height"])
 
     def test_a_thumb_clears_every_column_above_it(self):
-        keys = km.build_message({}, DOC_3X5)["layout"]["keys"]
+        keys = message({}, DOC_3X5)["layout"]["keys"]
         for t in keys[30:]:
             above = [k for k in keys[:30] if abs(k["x"] - t["x"]) < (k["w"] + t["w"]) / 2 - 0.1]
             self.assertTrue(above)
@@ -160,11 +177,11 @@ class Stagger(unittest.TestCase):
 
     def test_the_same_split_through_ortho_layout(self):
         doc = dict(DOC_3X5, layout={"ortho_layout": {"split": True, "rows": 3, "columns": 5, "thumbs": 3}})
-        drop = self.drop_of(km.build_message({}, doc)["layout"])
+        drop = self.drop_of(message({}, doc)["layout"])
         self.assertAlmostEqual(drop[0] - drop[2], 0.93, places=2)   # pinky below middle
 
     def test_stagger_false_keeps_it_ortholinear(self):
-        layout = km.build_message({"stagger": False}, DOC_3X5)["layout"]
+        layout = message({"stagger": False}, DOC_3X5)["layout"]
         self.assertEqual(layout, km.physical_layout(DOC_3X5["layout"], None))
 
     def test_a_layout_that_says_more_is_the_boards_own(self):
@@ -179,21 +196,21 @@ class Stagger(unittest.TestCase):
 
 class Settings(unittest.TestCase):
     def test_hud_and_feed_defaults_are_filled_in(self):
-        msg = km.build_message({}, DOC)
+        msg = message({}, DOC)
         self.assertEqual(msg["hud"], km.HUD_DEFAULTS)
         self.assertEqual(msg["combo_term"], 50)
 
     def test_hud_overrides_and_validation(self):
-        msg = km.build_message({"hud": {"width": 700, "opacity": 40}, "combo_term_ms": 30}, DOC)
+        msg = message({"hud": {"width": 700, "opacity": 40}, "combo_term_ms": 30}, DOC)
         self.assertEqual((msg["hud"]["width"], msg["hud"]["opacity"], msg["combo_term"]), (700, 40, 30))
         with self.assertRaises(km.KeymapError):
-            km.build_message({"hud": {"nope": 1}}, DOC)
+            message({"hud": {"nope": 1}}, DOC)
         with self.assertRaises(km.KeymapError):
-            km.build_message({"hud": {"opacity": 120}}, DOC)
+            message({"hud": {"opacity": 120}}, DOC)
 
     def test_the_idle_a_combo_needs_reaches_the_page(self):
-        self.assertEqual(0, km.build_message({}, DOC)["combo_idle"])
-        self.assertEqual(150, km.build_message({"combo_idle_ms": 150}, DOC)["combo_idle"])
+        self.assertEqual(0, message({}, DOC)["combo_idle"])
+        self.assertEqual(150, message({"combo_idle_ms": 150}, DOC)["combo_idle"])
         cfg = {}
         km.merge_imported(cfg, {"combo_idle_ms": 120})
         self.assertEqual(120, cfg["combo_idle_ms"])
@@ -205,9 +222,9 @@ class Settings(unittest.TestCase):
         # Not a traceback, and not quietly something else.
         for bad in ("fast", "320ms", 2.5, True, None, [320]):
             with self.assertRaises(km.KeymapError) as e:
-                km.build_message({"hud": {"press_ms": bad}}, DOC)
+                message({"hud": {"press_ms": bad}}, DOC)
             self.assertIn("hud.press_ms must be a whole number", str(e.exception))
-        self.assertEqual(320, km.build_message({"hud": {"press_ms": 320.0}}, DOC)["hud"]["press_ms"])
+        self.assertEqual(320, message({"hud": {"press_ms": 320.0}}, DOC)["hud"]["press_ms"])
 
     def test_the_page_falls_back_to_the_same_defaults(self):
         # hud.js keeps its own copy for a keymap message without `hud` (a dump older than the
@@ -221,13 +238,13 @@ class Settings(unittest.TestCase):
         self.assertEqual(on_page, {k: v for k, v in km.HUD_DEFAULTS.items() if k != "width"})
 
     def test_the_bar_shows_the_chips_the_config_asks_for(self):
-        self.assertEqual(km.STATS_DEFAULTS, km.build_message({}, DOC)["stats"])
-        stats = km.build_message({"stats": {"sfb": True, "wpm": False}}, DOC)["stats"]
+        self.assertEqual(km.STATS_DEFAULTS, message({}, DOC)["stats"])
+        stats = message({"stats": {"sfb": True, "wpm": False}}, DOC)["stats"]
         self.assertEqual((True, False, True), (stats["sfb"], stats["wpm"], stats["keys"]))
-        self.assertTrue(km.build_message({"stats": {"sfb": 1}}, DOC)["stats"]["sfb"])
+        self.assertTrue(message({"stats": {"sfb": 1}}, DOC)["stats"]["sfb"])
         for bad in ({"sbf": True}, {"sfb": "yes"}, {"sfb": None}, {"sfb": 2}, ["sfb"]):
             with self.assertRaises(km.KeymapError):
-                km.build_message({"stats": bad}, DOC)
+                message({"stats": bad}, DOC)
 
     def test_the_page_falls_back_to_the_same_chips(self):
         page = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hud", "hud.js")
@@ -237,29 +254,29 @@ class Settings(unittest.TestCase):
 
     def test_a_split_boards_fingers_are_its_columns(self):
         # 3x5+3: five columns a hand, pinky to the index finger's two, and the thumbs.
-        f = km.build_message({}, DOC_3X5)["fingers"]
+        f = message({}, DOC_3X5)["fingers"]
         self.assertEqual(["lp", "lr", "lm", "li", "li", "ri", "ri", "rm", "rr", "rp"], f[:10])
         self.assertEqual((f[:10], f[:10]), (f[10:20], f[20:30]))
         self.assertEqual(["lt"] * 3 + ["rt"] * 3, f[30:])
         # 2x2+1: two columns a hand are the middle and index fingers.
-        self.assertEqual(["lm", "li", "ri", "rm", "lm", "li", "ri", "rm", "lt", "rt"], km.build_message({}, DOC)["fingers"])
+        self.assertEqual(["lm", "li", "ri", "rm", "lm", "li", "ri", "rm", "lt", "rt"], message({}, DOC)["fingers"])
 
     def test_a_board_that_is_not_split_has_no_fingers_unless_told(self):
         doc = {"layout": {"ortho_layout": {"split": False, "rows": 1, "columns": 4}}, "layers": {"Base": ["a", "b", "c", "d"]}}
-        self.assertIsNone(km.build_message({}, doc)["fingers"])
-        self.assertEqual(["lm", "li", "ri", "rm"], km.build_message({"fingers": "lm li ri rm"}, doc)["fingers"])
-        self.assertEqual([None, "li", "ri", "rm"], km.build_message({"fingers": [None, "LI", "ri", "rm"]}, doc)["fingers"])
+        self.assertIsNone(message({}, doc)["fingers"])
+        self.assertEqual(["lm", "li", "ri", "rm"], message({"fingers": "lm li ri rm"}, doc)["fingers"])
+        self.assertEqual([None, "li", "ri", "rm"], message({"fingers": [None, "LI", "ri", "rm"]}, doc)["fingers"])
         for bad in ("lm li ri", "lm li ri thumb", 3):
             with self.assertRaises(km.KeymapError):
-                km.build_message({"fingers": bad}, doc)
+                message({"fingers": bad}, doc)
 
     def test_positions_map(self):
-        msg = km.build_message({}, DOC)
+        msg = message({}, DOC)
         self.assertEqual(msg["positions"]["3"], 3)                       # identity by default
-        msg = km.build_message({"positions": [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]}, DOC)
+        msg = message({"positions": [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]}, DOC)
         self.assertEqual(msg["positions"]["9"], 0)
         with self.assertRaises(km.KeymapError):
-            km.build_message({"positions": [1, 2]}, DOC)
+            message({"positions": [1, 2]}, DOC)
 
     def test_relative_paths_resolve_against_the_config_dir(self):
         self.assertEqual(km.expand("../examples/x.yaml", "/a/b/config"), "/a/b/examples/x.yaml")
@@ -275,64 +292,169 @@ class Settings(unittest.TestCase):
 
 class Message(unittest.TestCase):
     def test_default_layer_ids_follow_yaml_order(self):
-        msg = km.build_message({}, DOC)
+        msg = message({}, DOC)
         self.assertEqual([z["name"] for z in msg["zmk_layers"].values()], ["Base", "Nav", "Sym"])
         self.assertEqual(msg["zmk_layers"]["1"]["drawer"], "Nav")
         self.assertEqual(msg["zmk_layers"]["0"]["cls"], "off")
         self.assertEqual(msg["base"], "Base")
 
-    def test_dtsi_ids_and_case_insensitive_drawer_match(self):
-        msg = km.build_message({"layers": {"dtsi": "x"}}, DOC, dtsi_text=DTSI)
+    def test_imported_ids_and_case_insensitive_drawer_match(self):
+        cfg = {"_imported_layers": {"0": {"name": "BASE"}, "1": {"name": "NAV"}, "2": {"name": "SYM"}}}
+        msg = message(cfg, DOC)
         self.assertEqual(msg["zmk_layers"]["2"], {"id": 2, "name": "SYM", "drawer": "Sym", "label": "Sym", "cls": "momentary"})
 
     def test_map_overrides(self):
         cfg = {"layers": {"map": {"Nav": {"label": "Navigation", "class": "vim"}, "2": None}}}
-        msg = km.build_message(cfg, DOC)
+        msg = message(cfg, DOC)
         self.assertEqual(msg["zmk_layers"]["1"]["label"], "Navigation")
         self.assertEqual(msg["zmk_layers"]["1"]["cls"], "vim")
         self.assertIsNone(msg["zmk_layers"]["2"]["drawer"])
 
     def test_map_to_unknown_drawer_layer_fails(self):
         with self.assertRaises(km.KeymapError):
-            km.build_message({"layers": {"map": {"Nav": "Nope"}}}, DOC)
+            message({"layers": {"map": {"Nav": "Nope"}}}, DOC)
 
     def test_combos_and_overrides(self):
-        msg = km.build_message({"combos": [{"positions": [2, 3], "layers": ["Nav"]}]}, DOC)
+        msg = message({"combos": [{"positions": [2, 3], "layers": ["Nav"]}]}, DOC)
         by_pos = {tuple(c["positions"]): c for c in msg["combos"]}
         self.assertEqual(by_pos[(0, 1)]["layers"], ["Base"])
         self.assertEqual(by_pos[(0, 1)]["key"]["tap"], "⎋")
         self.assertEqual(by_pos[(2, 3)]["layers"], ["Nav"])   # overridden (drawer said: all layers)
 
     def test_activators(self):
-        msg = km.build_message({"extras": {"sticky": ["Sym"]}}, DOC)
+        msg = message({"extras": {"sticky": ["Sym"]}}, DOC)
         kinds = {(a["layer"], a["idx"], a["kind"]) for a in msg["activators"]}
         self.assertIn(("Nav", 5, "hold"), kinds)      # hold legend "Nav" on Base key 5
         self.assertIn(("Sym", 8, "sticky"), kinds)    # s: sticky with tap "Sym"
         self.assertIn(("Nav", 9, "hold"), kinds)      # type: held on Nav itself
 
     def test_extras_are_validated_and_defaulted(self):
-        msg = km.build_message({}, DOC)
+        msg = message({}, DOC)
         self.assertEqual(msg["extras"]["search"], ["Nav", "Sym"])
         self.assertEqual(msg["extras"]["base"], "Base")
         with self.assertRaises(km.KeymapError):
-            km.build_message({"extras": {"alpha2": "Nope"}}, DOC)
+            message({"extras": {"alpha2": "Nope"}}, DOC)
 
     def test_layer_size_mismatch_fails(self):
         bad = {"layout": DOC["layout"], "layers": {"Base": [["a", "b"]]}}
         with self.assertRaises(km.KeymapError):
-            km.build_message({}, bad)
+            message({}, bad)
 
-    def test_parse_layer_ids(self):
-        self.assertEqual(km.parse_layer_ids(DTSI), {"BASE": 0, "NAV": 1, "SYM": 2})
-        with self.assertRaises(km.KeymapError):
-            km.parse_layer_ids("#define X 1\n")
+    def test_a_sticky_layer_key_as_keymap_parse_draws_it(self):
+        # `&sl Nav` comes out of `keymap parse` as {t: Nav, h: sticky}.
+        doc = dict(DOC, layers=dict(DOC["layers"], Base=[["a", "b", "c", "d"], ["e", "f", "g", "h"],
+                                                          {"t": "Nav", "h": "sticky"}, "␣"]))
+        kinds = {(a["layer"], a["idx"], a["kind"]) for a in message({}, doc)["activators"]}
+        self.assertIn(("Nav", 8, "sticky"), kinds)
+
+
+class Drawing(unittest.TestCase):
+    """What import writes: made once, from the drawer files, and then all the runtime has."""
+
+    def test_glyphs_are_sorted_and_one_not_had_now_is_kept_from_before(self):
+        doc = dict(DOC, layers=dict(DOC["layers"], Sym=[["$$mdi:zeta$$", "$$mdi:alpha$$", "#", "$"],
+                                                         ["%", "^", "&", "*"], "$$mdi:gone$$", "▽"]))
+        with mock.patch.object(km, "resolve_glyphs", return_value={"mdi:zeta": "<z/>", "mdi:alpha": "<a/>"}):
+            d = km.draw(doc, fetch=False, previous={"drawing": {"glyphs": {"mdi:gone": "<g/>"}}})["drawing"]
+        self.assertEqual(["mdi:alpha", "mdi:gone", "mdi:zeta"], list(d["glyphs"]))
+        self.assertEqual([], d["missing_glyphs"])
+        with mock.patch.object(km, "resolve_glyphs", return_value={}):
+            self.assertEqual(["mdi:alpha", "mdi:gone", "mdi:zeta"], km.draw(doc, fetch=False)["drawing"]["missing_glyphs"])
+
+    def test_overrides_leave_the_drawing_as_it_was(self):
+        drawing = km.draw(DOC, fetch=False)["drawing"]
+        before = json.dumps(drawing, sort_keys=True)
+        km.build_message({"combos": [{"positions": [2, 3], "layers": ["Nav"]}]}, drawing)
+        self.assertEqual(before, json.dumps(drawing, sort_keys=True))
+
+    @unittest.skipUnless(HAVE_DRAWER, "keymap-drawer not installed")
+    def test_the_qmk_layout_puts_each_key_back_where_it_was_drawn(self):
+        from io import BytesIO
+        from keymap_drawer.config import Config
+        from keymap_drawer.physical_layout import PhysicalLayoutGenerator
+        layout = {"width": 200, "height": 120, "keys": [
+            {"x": 28, "y": 28, "w": 56, "h": 56, "r": 0}, {"x": 120, "y": 40, "w": 84, "h": 56, "r": 15},
+            {"x": 60, "y": 92, "w": 56, "h": 56, "r": -30}]}
+        qmk = km.qmk_keys(layout, 56)
+        got = PhysicalLayoutGenerator(config=Config(), qmk_info_json=BytesIO(json.dumps(qmk).encode())).generate()
+        drawn = [(round(k.pos.x, 3), round(k.pos.y, 3), round(k.width, 3), round(k.rotation, 3)) for k in got.keys]
+        want = [(float(k["x"]), float(k["y"]), float(k["w"]), float(k["r"])) for k in layout["keys"]]
+        dx, dy = drawn[0][0] - want[0][0], drawn[0][1] - want[0][1]   # normalize() may move the whole board
+        self.assertEqual(want, [(round(x - dx, 3), round(y - dy, 3), w, r) for x, y, w, r in drawn])
+
+
+@unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
+class Runtime(unittest.TestCase):
+    """At runtime the HUD reads its config and the definitions beside it, and nothing else."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp)
+        self.config = os.path.join(self.tmp, "config.yaml")
+        with open(self.config, "w", encoding="utf-8") as f:
+            f.write(f"keymap: {self.tmp}/gone.yaml\ndrawer_config: {self.tmp}/gone-config.yaml\n"
+                    f"layers: {{dtsi: {self.tmp}}}\ntitle: T\n")
+        self.defs = km.definitions_path(self.config)
+
+    def write_definitions(self, **extra):
+        made = km.draw(DOC, fetch=False)
+        with open(self.defs, "w", encoding="utf-8") as f:
+            json.dump(dict({"version": km.DEFINITIONS_VERSION, "source": "board.yaml"}, **made, **extra), f)
+
+    def test_only_the_config_and_the_definitions_are_opened(self):
+        self.write_definitions()
+        opened, real = [], open
+        with mock.patch("builtins.open", lambda p, *a, **k: opened.append(os.path.abspath(p)) or real(p, *a, **k)):
+            msg = km.KeymapSource(self.config, log=lambda *a: None).load()
+        self.assertEqual("T", msg["title"])
+        self.assertTrue(opened and set(opened) <= {self.config, self.defs}, opened)
+
+    def test_neither_keymap_drawer_nor_the_network_is_needed(self):
+        blocked = {name: None for name in ("keymap_drawer", "keymap_drawer.config", "keymap_drawer.physical_layout",
+                                           "keymap_drawer.keymap")}
+        import urllib.request
+        with mock.patch.dict(sys.modules, blocked), \
+                mock.patch.object(urllib.request, "urlopen", side_effect=AssertionError("the network")):
+            for name in ("example-3x5", "example-4x12", "diamond"):
+                msg = km.KeymapSource(os.path.join(REPO, "config", f"{name}.yaml"), log=lambda *a: None).load()
+                self.assertTrue(msg["layout"]["keys"], name)
+
+    def test_without_definitions_it_says_what_to_run_and_keeps_the_config(self):
+        src = km.KeymapSource(self.config, log=lambda *a: None)
+        with self.assertRaisesRegex(km.KeymapError, "zmk-layer-hud import"):
+            src.load()
+        self.assertEqual("T", src.cfg["title"])      # the feed still reads its settings from it
+
+    def test_definitions_of_another_version_are_refused(self):
+        with open(self.defs, "w", encoding="utf-8") as f:
+            json.dump({"version": 0, "drawing": {}}, f)
+        with self.assertRaisesRegex(km.KeymapError, "sync"):
+            km.KeymapSource(self.config, log=lambda *a: None).load()
+
+    def test_a_sync_that_rewrites_the_definitions_is_seen(self):
+        self.write_definitions()
+        src = km.KeymapSource(self.config, log=lambda *a: None)
+        src.load()
+        self.assertFalse(src.changed())
+        tmp = self.defs + ".new"
+        with open(tmp, "w", encoding="utf-8") as f, open(self.defs, encoding="utf-8") as g:
+            f.write(g.read())
+        os.replace(tmp, self.defs)                   # the same bytes, a new file, as sync writes it
+        self.assertTrue(src.changed())
+
+    def test_what_was_imported_is_a_floor_under_the_config(self):
+        self.write_definitions(zmk={"layers": {"0": {"name": "BASE"}, "1": {"name": "NAV"}, "2": {"name": "SYM"}},
+                                    "combo_term_ms": 35})
+        msg = km.KeymapSource(self.config, log=lambda *a: None).load()
+        self.assertEqual(35, msg["combo_term"])
+        self.assertEqual("NAV", msg["zmk_layers"]["1"]["name"])
 
 
 @unittest.skipUnless(HAVE_DRAWER, "keymap-drawer not installed")
 class WithDrawer(unittest.TestCase):
     def test_ortho_layout_via_library(self):
         doc = dict(DOC, layout={"ortho_layout": {"split": True, "rows": 2, "columns": 2, "thumbs": 1}})
-        msg = km.build_message({}, doc)
+        msg = message({}, doc)
         self.assertEqual(len(msg["layout"]["keys"]), 10)
         self.assertTrue(all(k["w"] > 0 and k["h"] > 0 for k in msg["layout"]["keys"]))
 

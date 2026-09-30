@@ -5,9 +5,9 @@ The firmware module sends framed messages (host/signal_frame.py) on a channel of
 CDC-ACM serial interface over USB, GATT notifications over BLE — and this turns them into JSON
 messages for the pages, over a WebSocket (Linux panel) or on stdout (macOS Hammerspoon host):
 
-  {"kind":"keymap", ...}                  the keymap, built from the keymap-drawer YAML named in the
-                                          config by host/keymap.py; re-sent whenever that file, the
-                                          config or the layer dtsi changes
+  {"kind":"keymap", ...}                  the keymap, built by host/keymap.py from the config and
+                                          the definitions import wrote beside it; re-sent whenever
+                                          either changes (a sync rewrites the definitions)
   {"kind":"layers","ids":[2,22]}          active ZMK layer ids (layer 0 omitted: always active)
   {"kind":"device","name":"Diamond"}      a keyboard was opened (the page's title)
   {"kind":"press","pos":13}               a key at ZMK position 13 went down (firmware `positions;`)
@@ -43,9 +43,10 @@ access. The signal channel needs neither — /dev/cu.* is world-readable, and Li
 tty. Both grants are in contrib/udev/60-zmk-layer-hud.rules. --no-hid-keys drops the strip and the
 permission with it. BLE needs the keyboard bonded to this host, because the characteristic requires
 encryption.
-Dependencies: pyserial, keymap-drawer (`make venv`); bleak for BLE; python-websockets for the
-WebSocket; hidapi on macOS only -- Linux reads /dev/hidrawN itself (HidrawReader), because the
-wheel's Linux backend is libusb, which wants /dev/bus/usb and detaches the kernel HID driver.
+Dependencies: pyserial (`make venv`); bleak for BLE; python-websockets for the WebSocket; hidapi on
+macOS only -- Linux reads /dev/hidrawN itself (HidrawReader), because the wheel's Linux backend is
+libusb, which wants /dev/bus/usb and detaches the kernel HID driver; PyYAML (or yq) for the config.
+Not keymap-drawer: the drawing comes ready in the definitions `zmk-layer-hud import` wrote.
 """
 
 from __future__ import annotations
@@ -857,11 +858,11 @@ class HidKeysReader:
             stream.close()
 
 
-# ---------- keymap (config + keymap-drawer YAML, live reload) ----------
+# ---------- keymap (the config + its definitions, live reload) ----------
 
 class KeymapWatcher(threading.Thread):
-    """Emits the keymap message on start and whenever one of its source files changes. A broken
-    edit is logged and the last good keymap stays on screen."""
+    """Emits the keymap message on start and whenever the config or its definitions change (a
+    sync writes them again). A broken edit is logged and the last good keymap stays on screen."""
 
     def __init__(self, source, emit, log=print, poll=1.0):
         super().__init__(name="keymap-watch", daemon=True)

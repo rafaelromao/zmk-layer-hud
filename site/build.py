@@ -5,19 +5,21 @@ board its keymap message and its demo, played ahead of time.
     site/build.py [--strict] [--out docs]      build it (GitHub Pages serves docs/)
     site/build.py --check [--out docs]         say which published files are behind hud/ or site/
 
-It runs under the venv (make site): a board is converted the way the panel converts it, with
-keymap-drawer's layouts and glyphs, by host/keymap.py. A demo is compiled by host/play.py into the
-messages a keyboard would send and when, which the page plays back on its own clock.
+A board's keymap message is built the way the panel builds it, by host/keymap.py, from the
+config and the definitions committed beside it (config/*.definitions.json, which `make samples`
+writes again with `zmk-layer-hud import`). So nothing here needs keymap-drawer, a keyboard's repo
+or the network. A demo is compiled by host/play.py into the messages a keyboard would send and
+when, which the page plays back on its own clock.
 
 What it writes into --out is the page and nothing else: the names it is made of are removed and
 written afresh, and everything else there -- in docs/, the docs, the demo scripts and hud.gif,
 which the page uses where it is -- is left alone. The output is committed, so a build of
 unchanged sources changes nothing.
 
-Without --strict, a board whose files are not on this machine (the Diamond's keymap lives in
-rafaelromao/keyboards) is skipped with a line saying so. With it, a board that cannot be built, a
-glyph that fell back to text or a demo with a character its keymap cannot type fails the build:
-what is published is every board, drawn as it draws at home, or nothing.
+Without --strict, a board whose definitions are missing is skipped with a line saying so. With
+it, a board that cannot be built, a glyph that fell back to text or a demo with a character its
+keymap cannot type fails the build: what is published is every board, drawn as it draws at home,
+or nothing.
 """
 
 import argparse
@@ -188,12 +190,6 @@ def write_json(path, obj):
 
 def build(out, strict=False, boards=None):
     """Build the page into `out`; returns the boards built, as boards/index.json lists them."""
-    try:
-        import keymap_drawer  # noqa: F401
-    except ImportError:
-        # Without it keymap.py falls back to layouts of its own, which draw differently from the
-        # panel a visitor would install.
-        raise BuildError("keymap-drawer is not installed for this Python: make venv, then make site")
     boards = load_manifest() if boards is None else boards
     problems = manifest_problems(boards)
     if problems:

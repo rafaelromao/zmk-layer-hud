@@ -1,18 +1,26 @@
-# zmk-layer-hud config for any ZMK keyboard whose keymap-drawer YAML came from
-#   keymap parse -z my.keymap > my-keymap.yaml
-# There the YAML layer order is the ZMK layer order, so nothing else is needed:
-# layer id n is the n-th layer of the file.
+# zmk-layer-hud config: ~/.config/zmk-layer-hud/config.yaml, which `zmk-layer-hud setup` copies
+# this to. Nothing here is required. The HUD draws from its own definitions, which
+#   zmk-layer-hud import github.com/you/zmk-config
+# writes beside this file (config.definitions.json) and `zmk-layer-hud sync` writes again.
 #
-# Copy to ~/.config/zmk-layer-hud/config.yaml.
+# What import draws from -- read by import and sync only, never while the HUD runs:
 
-keymap: ~/path/to/my-keymap.yaml
+# Optional: a keymap-drawer YAML of your own to draw the board from, glyphs and key sizes included.
+# Without it, import draws the ZMK keymap itself, as `keymap parse` reads it.
+# keymap: ~/path/to/my-keymap.yaml
 
 # Optional: the keymap-drawer config you draw with (key sizes, glyphs).
 # drawer_config: ~/path/to/keymap-drawer-config.yaml
 
+# Optional, when the drawing comes from the ZMK keymap: how its keys sit, as a keymap-drawer
+# layout, when import cannot find the keyboard's own physical layout in its repo.
+# layout: { zmk_keyboard: corne }
+
 # Optional: a 3x5 split whose layout only counts its keys ("33333+3 3+33333", or an ortho_layout
 # of 3 rows and 5 columns) is drawn with a Ferris Sweep's column stagger; this keeps it ortholinear.
 # stagger: false
+#
+# What the HUD reads while it runs:
 
 # Optional: pick one keyboard when several ZMK boards are connected (substring of the product name).
 # keyboard: { vid: 0x1d50, pid: 0x615e, name: Corne }

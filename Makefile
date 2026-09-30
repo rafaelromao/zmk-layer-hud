@@ -23,7 +23,7 @@ NODE ?= $(shell command -v node)
 # The audit reads the keyboard's keymap with keymap-drawer, which lives in the venv.
 VENV_PYTHON := $(wildcard .venv/bin/python3)
 
-.PHONY: all install venv test test-firmware test-host test-hud test-site site audit fixture clean help
+.PHONY: all install venv test test-firmware test-host test-hud test-site site samples audit fixture clean help
 
 all: test
 
@@ -68,6 +68,11 @@ site: ## build the landing page into docs/, which GitHub Pages serves; commit wh
 
 audit: ## the drawing against the keyboard's own keymap (SOURCE=<working copy>, else the one import recorded)
 	$(or $(VENV_PYTHON),$(PYTHON)) host/ways.py --audit $(if $(CONFIG),--config $(CONFIG)) $(if $(SOURCE),--source $(SOURCE))
+
+samples: ## write the sample boards' definitions again, as import does (the Diamond's needs ~/projects/keyboards' drawer files)
+	$(or $(VENV_PYTHON),$(PYTHON)) host/sync.py import --config config/example-3x5.yaml
+	$(or $(VENV_PYTHON),$(PYTHON)) host/sync.py import --config config/example-4x12.yaml
+	$(or $(VENV_PYTHON),$(PYTHON)) host/sync.py sync --config config/diamond.yaml
 
 fixture: ## rebuild hud/tests/fixtures/diamond.json from the configured keymap, and the 3x5 sample's (glyphs placeheld)
 	$(PYTHON) host/keymap.py --dump | $(PYTHON) hud/tests/fixtures/make.py > hud/tests/fixtures/diamond.json

@@ -133,7 +133,33 @@ def python_for_setup():
 
 # ---------- start / stop / status / log ----------
 
+def definitions_missing():
+    """Why the HUD cannot start for want of its definitions, or None: it draws from nothing
+    else, and they are written by `zmk-layer-hud import`, never at start."""
+    sys.path.insert(0, os.path.join(ROOT, "host"))
+    import keymap as keymap_mod
+    try:
+        path = keymap_mod.find_config()
+    except keymap_mod.KeymapError:
+        return None                     # no config at all: the host script says so
+    defs = keymap_mod.definitions_path(path)
+    if os.path.isfile(defs):
+        return None
+    head = f"{path} has no definitions yet ({os.path.basename(defs)}), and the HUD draws from nothing else: "
+    # A config that already says where to import from needs the bare verb, not a lecture on
+    # sources. Read with a regex rather than a YAML parser: start runs before the venv.
+    with open(path, encoding="utf-8") as f:
+        names_keymap = re.search(r"^keymap:\s*\S", f.read(), re.M)
+    if names_keymap or os.path.isfile(keymap_mod.imported_path(path)):
+        return head + "run `zmk-layer-hud import`"
+    return head + ("run `zmk-layer-hud import github.com/you/zmk-config` -- or, to draw from a keymap-drawer "
+                   "YAML, name it as `keymap:` in the config and run `zmk-layer-hud import`")
+
+
 def cmd_start(args):
+    missing = definitions_missing()
+    if missing:
+        raise Fail(missing)
     return run_host("start", args.reserve)
 
 
@@ -142,6 +168,9 @@ def cmd_stop(args):
 
 
 def cmd_restart(args):
+    missing = definitions_missing()     # before the running HUD is stopped, not after
+    if missing:
+        raise Fail(missing)
     run_host("stop")
     return run_host("start", args.reserve)
 
@@ -257,8 +286,6 @@ def cmd_keymap(args):
         argv += ["--config", args.config]
     if args.dump:
         argv.append("--dump")
-    if args.no_fetch:
-        argv.append("--no-fetch")
     return keymap_mod.main(argv)
 
 
@@ -269,13 +296,16 @@ def cmd_sync(args, verb):
     import sync as sync_mod
     argv = [verb]
     if verb == "import":
-        argv.append(args.source)
+        if args.source:
+            argv.append(args.source)
         if args.keyboard:
             argv += ["--keyboard", args.keyboard]
     if args.config:
         argv += ["--config", args.config]
     if args.quiet:
         argv.append("--quiet")
+    if args.no_fetch:
+        argv.append("--no-fetch")
     return sync_mod.main(argv)
 
 
@@ -500,7 +530,7 @@ def cmd_session(args):
 
 
 def session_export(args, mod, d):
-    """`session export`: the session's heatmap, drawn by keymap-drawer over the configured keymap
+    """`session export`: the session's heatmap, drawn by keymap-drawer from the HUD's definitions
     (host/export.py). Runs in the venv (needs_venv)."""
     sys.path.insert(0, os.path.join(ROOT, "host"))
     import export as export_mod
@@ -513,17 +543,14 @@ def session_export(args, mod, d):
         _, s = mod.status(d)
     try:
         src = keymap_mod.KeymapSource(args.config)
-        src.fetch_glyphs = False     # the page's glyphs; keymap-drawer draws its own
         msg = src.load()
-        doc = keymap_mod.load_yaml(src.paths[1])
-        drawer_cfg = keymap_mod.load_yaml(src.paths[2]) if src.cfg.get("drawer_config") else None
     except keymap_mod.KeymapError as e:
         raise Fail(str(e))
     t = mod.summary(s)
     footer = f"{s['name']} · {args.mode} · {t['presses']:,} keys" + (f" · {t['wpm']} wpm" if t["wpm"] else "")
     layers = [x.strip() for x in args.layers.split(",") if x.strip()] if args.layers else None
     try:
-        text = export_mod.svg(s, msg, doc, drawer_cfg, mode=args.mode, layers=layers, footer=footer)
+        text = export_mod.svg(s, msg, src.definitions, mode=args.mode, layers=layers, footer=footer)
     except ValueError as e:
         raise Fail(str(e))
     except Exception as e:   # keymap-drawer's own checks: a layout it cannot build, a glyph it cannot fetch
@@ -582,16 +609,17 @@ def config_link(args):
     """For a config kept in a repo rather than one started from example.yaml: link it instead of
     copying it, so `git pull` is the whole of syncing a machine.
 
-    Both names are linked, and that is not a convenience. `<config>.imported.yaml` is found beside
-    the config *path*, not beside whatever that path points at, so linking only config.yaml would
-    leave the machine's stale imported file in play -- and the two can disagree about
-    combo_term_ms in ways that cancel out only while they travel together."""
+    Its definitions are linked with it, and its imported record, and that is not a convenience:
+    `<config>.definitions.json` is found beside the config *path*, not beside whatever that path
+    points at, so linking only config.yaml would leave the machine's stale definitions in play --
+    a drawing of another keymap, under a config written for this one."""
     src = os.path.abspath(os.path.expanduser(args.file))
     if not os.path.isfile(src):
         raise Fail(f"no such file: {args.file}")
     os.makedirs(CONFIG_DIR, exist_ok=True)
     stem = os.path.splitext(src)[0]
     for source, dest in ((src, CONFIG),
+                         (stem + ".definitions.json", os.path.join(CONFIG_DIR, "config.definitions.json")),
                          (stem + ".imported.yaml", os.path.join(CONFIG_DIR, "config.imported.yaml"))):
         if not os.path.exists(source):
             print(f"    no {source}, skipped")
@@ -807,7 +835,7 @@ def setup_config():
     os.makedirs(CONFIG_DIR, exist_ok=True)
     shutil.copy(os.path.join(ROOT, "config", "example.yaml"), CONFIG)
     print(f"    wrote {CONFIG} from config/example.yaml")
-    print("    set `keymap:` to your keymap-drawer YAML, then: zmk-layer-hud keymap")
+    print("    then: zmk-layer-hud import github.com/you/zmk-config   (the HUD draws from what import writes)")
 
 
 def link_command():
@@ -944,10 +972,40 @@ def check_config(results):
     rc = subprocess.call([VENV_PYTHON, os.path.join(ROOT, "host", "keymap.py")],
                          stdout=subprocess.DEVNULL)
     if rc == 0:
-        results.append(report(OK, "keymap", "the configured YAML converts"))
+        results.append(report(OK, "keymap", "the config and its definitions load"))
     else:
-        results.append(report(BAD, "keymap", "the configured YAML does not convert",
-                              "zmk-layer-hud keymap   (it prints the reason)"))
+        results.append(report(BAD, "keymap", "the config and its definitions do not load",
+                              "zmk-layer-hud keymap   (it says why; `zmk-layer-hud import` writes the definitions)"))
+        return
+    due = sync_due()
+    if due:
+        results.append(report(WARN, "definitions", f"{due} changed after the last sync", "zmk-layer-hud sync"))
+
+
+def sync_due():
+    """A source a sync reads that is newer than the definitions it wrote, or None. A look at file
+    times, for doctor alone: the HUD never reads these files."""
+    sys.path.insert(0, os.path.join(ROOT, "host"))
+    try:
+        import json
+        import keymap as keymap_mod
+        path = keymap_mod.find_config()
+        defs = keymap_mod.definitions_path(path)
+        cfg = keymap_mod.load_yaml(path)
+        base = os.path.dirname(os.path.abspath(path))
+        sources = [keymap_mod.expand(cfg[k], base) for k in ("keymap", "drawer_config") if cfg.get(k)]
+        with open(defs, encoding="utf-8") as f:
+            repo = (json.load(f).get("sources") or {}).get("repo")
+        repo = repo and os.path.expanduser(repo)
+        if repo and os.path.isdir(repo):
+            for b, dirs, files in os.walk(repo):
+                dirs[:] = [d for d in dirs if d not in (".git", "build", "modules", "zmk", "zephyr")]
+                sources += [os.path.join(b, n) for n in files if n.endswith(".keymap")]
+        made = os.stat(defs).st_mtime
+        newer = [p for p in sources if os.path.isfile(p) and os.stat(p).st_mtime > made]
+        return os.path.basename(newer[0]) if newer else None
+    except Exception:
+        return None
 
 
 def check_udev(results):
@@ -1197,22 +1255,24 @@ def build_parser():
     s.add_argument("--yes", action="store_true", help="do not ask")
     s.set_defaults(func=cmd_uninstall)
 
-    s = add("import", "read layer ids, key positions and combo layers out of a ZMK repo")
-    s.add_argument("source", metavar="REPO", help="a GitHub URL, or a path to a working copy")
+    s = add("import", "write the HUD's definitions: the drawing, and what a ZMK repo's keymap says of it")
+    s.add_argument("source", metavar="REPO", nargs="?",
+                   help="a GitHub URL, or a path to a working copy (none: draw from `keymap:` alone)")
     s.add_argument("--keyboard", help="which keyboard in that repo")
     s.add_argument("--config", help="config file (default: $ZMKHUD_CONFIG or ~/.config/...)")
     s.add_argument("--quiet", action="store_true", help="say nothing but errors")
+    s.add_argument("--no-fetch", action="store_true", help="fetch no glyphs: use keymap-drawer's cache only")
     s.set_defaults(func=lambda a: cmd_sync(a, "import"))
 
-    s = add("sync", "read the recorded source again, and say what changed")
+    s = add("sync", "write the definitions again from the same sources, and say what changed")
     s.add_argument("--config", help="config file")
     s.add_argument("--quiet", action="store_true", help="say nothing but errors")
+    s.add_argument("--no-fetch", action="store_true", help="fetch no glyphs: use keymap-drawer's cache only")
     s.set_defaults(func=lambda a: cmd_sync(a, "sync"))
 
-    s = add("keymap", "check the configured keymap-drawer YAML converts")
+    s = add("keymap", "check the HUD's own files load: the config and the definitions import wrote")
     s.add_argument("--config", help="config file")
     s.add_argument("--dump", action="store_true", help="print the full JSON message")
-    s.add_argument("--no-fetch", action="store_true", help="do not fetch missing glyphs (offline)")
     s.set_defaults(func=cmd_keymap)
 
     s = add("config", "where the config is, and what is in it")

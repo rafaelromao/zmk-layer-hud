@@ -27,7 +27,9 @@ DOC = {
     },
     "combos": [{"p": [0, 1], "k": "⎋", "layers": ["Base"]}],
 }
-MSG = km.build_message({}, DOC, fetch_glyphs=False)
+# The definitions import would write for it, and the message the HUD builds from them.
+DEFS = km.draw(DOC, fetch=False)
+MSG = km.build_message({}, DEFS["drawing"])
 SESSION = {
     "presses": {"Base": {"0": 500, "1": 40, "2": 3}, "Nav": {"0": 20, "4": 9}, "Sym": {}},
     "timed": {"Base": {"0": 100, "1": 10, "2": 2}},
@@ -58,7 +60,7 @@ class Levels(unittest.TestCase):
             export.levels(SESSION, MSG, "live")
 
     def test_positions_are_the_firmwares(self):
-        msg = km.build_message({"positions": [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]}, DOC, fetch_glyphs=False)
+        msg = km.build_message({"positions": [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]}, DEFS["drawing"])
         self.assertEqual(6, export.levels({"presses": {"Base": {"9": 5}}}, msg, "session")["Base"][0])
 
 
@@ -75,7 +77,7 @@ class Drawing(unittest.TestCase):
         return root, out
 
     def test_each_key_takes_its_step_and_the_steps_their_colours(self):
-        svg = export.svg(SESSION, MSG, DOC, mode="session", footer="week1 < week2")
+        svg = export.svg(SESSION, MSG, DEFS, mode="session", footer="week1 < week2")
         root, keys = self.classes_of(svg)
         self.assertIn("hs6", keys["keypos-0"][0])                    # Base, the first layer drawn
         self.assertFalse(any(n.startswith("hs") for n in keys["keypos-3"][0]))
@@ -86,13 +88,25 @@ class Drawing(unittest.TestCase):
         self.assertEqual(["Base:", "Nav:"], labels)                  # the layers with heat, in order
 
     def test_the_layers_asked_for(self):
-        root, _ = self.classes_of(export.svg(SESSION, MSG, DOC, layers=["Sym"]))
+        root, _ = self.classes_of(export.svg(SESSION, MSG, DEFS, layers=["Sym"]))
         labels = [t.text for t in root.iter("{http://www.w3.org/2000/svg}text") if t.get("class") == "label"]
         self.assertEqual(["Sym:"], labels)
         with self.assertRaises(ValueError):
-            export.svg(SESSION, MSG, DOC, layers=["Fn"])
+            export.svg(SESSION, MSG, DEFS, layers=["Fn"])
         with self.assertRaises(ValueError):
-            export.svg({"presses": {}}, MSG, DOC)                    # nothing to draw
+            export.svg({"presses": {}}, MSG, DEFS)                    # nothing to draw
+
+    def test_it_is_drawn_from_the_definitions_alone(self):
+        # No file of the user's and no network: the layout is the drawn keys, handed over as a QMK
+        # layout, and the glyphs are the ones the definitions carry.
+        import urllib.request
+        from unittest import mock
+        defs = km.draw(DOC, fetch=False)
+        defs["drawing"]["glyphs"] = {"mdi:x": "<svg xmlns='http://www.w3.org/2000/svg'/>"}
+        with mock.patch.object(urllib.request, "urlopen", side_effect=AssertionError("fetched")):
+            svg = export.svg(SESSION, MSG, defs)
+        root, keys = self.classes_of(svg)
+        self.assertEqual(10, len({k for k in keys}))                  # every key of the board, drawn
 
 
 if __name__ == "__main__":
