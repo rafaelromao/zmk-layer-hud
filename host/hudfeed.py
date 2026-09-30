@@ -1129,10 +1129,14 @@ class Hub:
     stronger: {"kind":"close"} from any local client calls os._exit(). Cosmetic messages are less
     power than that, not more. --no-inject closes it."""
 
-    def __init__(self, stdout=False, debug=False, inject=True, on_inject=None, sessions=None, tally_token=None):
+    def __init__(self, stdout=False, debug=False, inject=True, on_inject=None, sessions=None, tally_token=None,
+                 on_sent_in=None):
         self.stdout, self.debug, self.inject = stdout, debug, inject
         # Called after an injected message, so the keyboard's own state can be re-asserted.
         self.on_inject = on_inject
+        # Given each message sent in, as the clients got it: for a page that is not one of them
+        # (the macOS panel's, which the feed reaches through the panel's bridge).
+        self.on_sent_in = on_sent_in
         # The active session (session.Store), and the token a page must send its counts with: the
         # panel makes one per run and gives it to its own page alone, so a second page on the
         # socket (a browser pointed at it) shows the session but cannot add to it twice.
@@ -1159,7 +1163,10 @@ class Hub:
         """A message sent in -- by a client, or by the demo's player -- fanned out as the keyboard's
         would be, and marked as not the keyboard's (sent_in). The keyboard's own state is then
         asserted again, so a HUD with a keyboard behind it goes back to the truth by itself."""
-        await self.send(sent_in(msg))
+        msg = sent_in(msg)
+        await self.send(msg)
+        if self.on_sent_in is not None:
+            self.on_sent_in(msg)
         if self.on_inject is not None:
             self.on_inject()
 
@@ -1194,6 +1201,71 @@ class Hub:
                     await self.send_in(msg)
         finally:
             self.clients.discard(ws)
+
+
+class HubThread:
+    """A Hub served on a thread and an event loop of its own, for a host whose main thread is a
+    GUI's: the macOS panel runs the feed in-process, and this is its socket, the one the Linux
+    panel's feed serves -- a browser can watch the HUD, and `zmk-layer-hud poke` can drive it.
+    `send` may be called from any thread, before the socket is up too: the loop exists from the
+    start, and what is sent early (the keymap) waits for it and is cached for replay like the rest.
+    A port already taken is said, and the panel goes on without a socket."""
+
+    def __init__(self, hub, port, log=print, host="127.0.0.1"):
+        self.hub, self.port, self.log, self.host = hub, port, log, host
+        self.loop = asyncio.new_event_loop()
+        self.ready = threading.Event()      # set once it serves, or has given up
+        self.serving = False
+        self._stopping = None
+        self._thread = threading.Thread(target=self._run, name="socket", daemon=True)
+
+    def start(self):
+        self._thread.start()
+        return self
+
+    def send(self, msg):
+        # A socket that could not be opened has closed its loop: what it is sent goes nowhere.
+        with contextlib.suppress(RuntimeError):
+            self.loop.call_soon_threadsafe(lambda: asyncio.ensure_future(self.hub.send(msg)))
+
+    def stop(self):
+        if self._stopping is not None:
+            with contextlib.suppress(RuntimeError):
+                self.loop.call_soon_threadsafe(self._stopping.set)
+        self._thread.join(timeout=2)
+
+    def _run(self):
+        asyncio.set_event_loop(self.loop)
+        try:
+            self.loop.run_until_complete(self._serve())
+        finally:
+            # Sends still waiting when it stopped (or never started) are dropped, not left pending.
+            pending = asyncio.all_tasks(self.loop)
+            for task in pending:
+                task.cancel()
+            self.loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            self.ready.set()
+            self.loop.close()
+
+    async def _serve(self):
+        self._stopping = asyncio.Event()
+        try:
+            import websockets
+        except ImportError:
+            self.log("hudfeed: no socket: python-websockets is missing (make venv)")
+            return
+        try:
+            async with websockets.serve(self.hub.handler, self.host, self.port) as server:
+                self.port = server.sockets[0].getsockname()[1]      # the one taken, when asked for any (0)
+                self.serving = True
+                self.log(f"hudfeed: ws://{self.host}:{self.port}")
+                self.ready.set()
+                await self._stopping.wait()
+        except OSError as e:
+            self.log(f"hudfeed: no socket on {self.host}:{self.port} ({e.strerror or e}); "
+                     "`zmk-layer-hud poke` cannot reach this HUD")
+        finally:
+            self.serving = False
 
 
 def parse_args(argv=None):

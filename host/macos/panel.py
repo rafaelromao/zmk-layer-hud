@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """zmk-layer-hud macOS host: one transparent, always-on-top, non-activating window with the layer
 HUD and the typed-keys strip below it. The feed (host/hudfeed.py) runs in this process and its
-messages are injected straight into the page: no WebSocket, no other source than the keyboard.
+messages are injected straight into the page. They go out on the feed's WebSocket as well
+(ZMKHUD_PORT, 127.0.0.1 only), as on Linux, and what a client sends in there (`zmk-layer-hud
+poke`) is drawn on this page, marked as not the keyboard's.
 
     .venv/bin/python3 host/macos/panel.py            # or host/macos/start.sh
 
@@ -166,8 +168,19 @@ class Host:
         self.panel, self.web = panel, web
         log(f"HUD on {focused_screen().localizedName()} at {int(frame.origin.x)},{int(frame.origin.y)}")
 
-        # The feed runs in this process; its worker threads hand messages to the main thread.
-        self.feed = hudfeed.Feed(lambda msg: AppHelper.callAfter(self.deliver, msg), log=log).start()
+        # The feed runs in this process; its worker threads hand messages to the main thread, and
+        # to the socket the Linux panel's feed serves too (ZMKHUD_PORT): a browser can watch, and
+        # `zmk-layer-hud poke` drives this page -- what it sends in comes back here (on_sent_in).
+        # Counts reach the session through the bridge alone, so the socket gets no tally token.
+        hub = hudfeed.Hub(on_sent_in=lambda msg: AppHelper.callAfter(self.deliver, msg))
+        self.socket = hudfeed.HubThread(hub, int(os.environ.get("ZMKHUD_PORT", "8766")), log=log)
+
+        def emit(msg):
+            AppHelper.callAfter(self.deliver, msg)
+            self.socket.send(msg)
+        self.feed = hudfeed.Feed(emit, log=log).start()
+        hub.on_inject, hub.sessions = self.feed.resync, self.feed.sessions
+        self.socket.start()
         # Width from the config (hud.width); the height follows the page (see resize).
         width = ((self.feed.source.cfg if self.feed.source else {}).get("hud") or {}).get("width")
         if width:
@@ -194,7 +207,9 @@ class Host:
         data = json.dumps(msg, ensure_ascii=False)
         if DEBUG and msg["kind"] in ("layers", "press", "release"):
             log(f"{time.monotonic() * 1000:.0f}ms {data}")
-        if msg["kind"] == "keymap":
+        if msg.get("sent"):
+            js = f"hud.receive({data})"   # sent in (poke): lit the same, and never counted (`sent`)
+        elif msg["kind"] == "keymap":
             js = f"hud.load({data})"
         elif msg["kind"] == "layers":
             js = f"hud.setLayers({json.dumps(msg['ids'])})"
@@ -217,6 +232,7 @@ class Host:
 
     def stop(self):
         self.feed.stop()
+        self.socket.stop()
         self.panel.orderOut_(None)
 
 

@@ -87,8 +87,9 @@ between keystrokes, however fast the script says to go. `--speed` quickens the p
 and the pauses, and never the chords.
 
 Everything played is sent in (`"sent": true`, [protocol.md](protocol.md#inbound-messages)): the
-board lights, the bar times it and the keys glow, and no session counts it. The macOS panel has no
-socket to play into; `zmk-layer-hud demo --play` is the way to watch a script there.
+board lights, the bar times it and the keys glow, and no session counts it.
+`zmk-layer-hud poke --play FILE` plays into a running HUD on either host. The macOS panel serves
+the same socket as the Linux one ([protocol.md](protocol.md#the-socket)).
 
 For a GIF, `host/play.py --stills` gives the frames `docs/make-gif.sh` renders. Frames are
 themselves, text is a frame per keystroke with the strip it has typed so far, and a pause is

@@ -12,9 +12,12 @@ reading a HUD that looks right: only the keyboard proves anything.
 `zmk-layer-hud feed` serves `ws://127.0.0.1:8766` (`--port`, or `ZMKHUD_PORT`; `--no-ws` turns it
 off). This is how the Linux panel is fed, and it is what `zmk-layer-hud poke` talks to.
 
-The macOS panel runs the feed in-process and opens no socket. To drive that one, use the page's
-own API in a browser, or run `zmk-layer-hud feed` yourself and point a browser page at it with
-`index.html?ws=ws://127.0.0.1:8766`.
+The macOS panel runs the feed in-process and hands its messages to its page directly. It serves the
+same socket on the same port as well, so `poke` (and `poke --play`) drives it too, and a browser
+page pointed at `index.html?ws=ws://127.0.0.1:8766` watches it. What a client sends in there
+reaches the panel's page marked `sent`, like any typing sent in. The panel's page reports its
+counts through the panel's bridge, not the socket. If the port is taken (a `zmk-layer-hud feed`
+already running), the panel says so in its log and goes on without a socket.
 
 `zmk-layer-hud demo` serves a socket of its own, `ws://127.0.0.1:8767` (`--ws-port`), feeding its
 pages with no keyboard behind it: the same messages, `poke --url` sends to it, and a demo script

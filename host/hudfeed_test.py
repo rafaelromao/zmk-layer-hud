@@ -13,7 +13,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
-from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Hub, SecureInput, SignalDecoder, Stream,  # noqa: E402
+from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Hub, HubThread, SecureInput, SignalDecoder, Stream,  # noqa: E402
                      hid_scan_note, hidraw_match, sent_in, split_report)
 
 
@@ -485,6 +485,13 @@ class Sessions(unittest.TestCase):
         self.assertEqual([{"kind": "press", "pos": 3, "sent": True}], page.sent)
         self.assertEqual([1], again)
 
+    def test_a_page_that_is_no_client_is_given_what_was_sent_in(self):
+        # The macOS panel's page is reached through its bridge, not the socket.
+        given = []
+        hub = Hub(on_sent_in=given.append)
+        self.talk(hub, {"kind": "press", "pos": 3}, {"kind": "tally", "seq": 1}, {"kind": "keymap"})
+        self.assertEqual([{"kind": "press", "pos": 3, "sent": True}], given)
+
     def test_a_page_that_connects_gets_the_session(self):
         hub = Hub()
         asyncio.run(hub.send({"kind": "session", "id": "abc", "gen": 0}))
@@ -507,6 +514,65 @@ class Sessions(unittest.TestCase):
         finally:
             os._exit = real
         self.assertEqual(1, store.flushed)
+
+
+try:
+    import websockets
+    HAVE_WEBSOCKETS = True
+except ImportError:
+    HAVE_WEBSOCKETS = False
+
+
+def can_listen():
+    """Whether this process may open a local port at all (a sandbox may say no)."""
+    import socket
+    try:
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+        return True
+    except OSError:
+        return False
+
+
+@unittest.skipUnless(HAVE_WEBSOCKETS, "the socket needs python-websockets (the venv)")
+@unittest.skipUnless(can_listen(), "this process may not open a local port")
+class Socket(unittest.TestCase):
+    """The macOS panel's socket: a Hub on a thread of its own, fed from the panel's."""
+
+    def test_what_is_sent_early_is_there_for_a_client_and_what_it_sends_comes_back(self):
+        given = []
+        thread = HubThread(Hub(on_sent_in=given.append), 0, log=lambda *a: None)
+        thread.send({"kind": "keymap", "layers": {}})              # the feed starts before the socket
+        thread.start()
+        self.assertTrue(thread.ready.wait(5) and thread.serving)
+
+        async def client():
+            async with websockets.connect(f"ws://127.0.0.1:{thread.port}") as ws:
+                first = json.loads(await asyncio.wait_for(ws.recv(), 3))
+                await ws.send(json.dumps({"kind": "press", "pos": 5}))
+                echo = json.loads(await asyncio.wait_for(ws.recv(), 3))
+                return first, echo
+        try:
+            first, echo = asyncio.run(client())
+        finally:
+            thread.stop()
+        self.assertEqual("keymap", first["kind"])
+        self.assertEqual({"kind": "press", "pos": 5, "sent": True}, echo)
+        self.assertEqual([echo], given)
+
+    def test_a_port_taken_is_said_and_nothing_breaks(self):
+        said = []
+        first = HubThread(Hub(), 0, log=lambda *a: None).start()
+        self.assertTrue(first.ready.wait(5) and first.serving)
+        second = HubThread(Hub(), first.port, log=said.append).start()
+        try:
+            self.assertTrue(second.ready.wait(5))
+            self.assertFalse(second.serving)
+            second.send({"kind": "layers", "ids": []})               # goes nowhere, and raises nothing
+        finally:
+            first.stop()
+            second.stop()
+        self.assertTrue(any("poke" in m for m in said), said)
 
 
 if __name__ == "__main__":

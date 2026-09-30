@@ -442,9 +442,9 @@ beside anything that is wrong. What it cannot see:
 - Linux has nothing like macOS's secure input, so there the strip shows what is typed into a
   password field too, and the board lights its keys. Stop the HUD, or record with it hidden, when
   that matters.
-- The macOS panel runs the feed in-process and serves no WebSocket, so `zmk-layer-hud poke` cannot
-  reach it; drive that one from the page's own API, or run `zmk-layer-hud feed` separately. A demo
-  script plays on the demo page (`zmk-layer-hud demo --play`) on either host.
+- The HUD's socket takes one port (`ZMKHUD_PORT`, 8766). If something else holds it when the macOS
+  panel starts (a `zmk-layer-hud feed` of its own, say), the panel runs without a socket and
+  `zmk-layer-hud poke` cannot reach it. Its log says so.
 
 ## Contributing
 
