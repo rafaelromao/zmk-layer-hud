@@ -83,6 +83,7 @@
     heat: new Map(),          // key idx -> {h, t}: the live heatmap (see bumpHeat)
     heatTimer: null,
     heatMode: "live",         // what the keys glow with: live | session | off
+    secure: false,            // macOS secure input: a secret is being typed, and nothing of it shows
     demo: false,              // a GIF still (&demo=N): drawn as it always was, no heat, no counts
     ledger: [],               // keystrokes drawn and not counted yet (see "ledger")
     ledgerTimer: null,
@@ -321,8 +322,32 @@
     const a = activeSummary();
     $("layer").className = a.cls + (state.inferred ? " inferred" : "");
     $("layerName").textContent = a.name;
-    $("layerSub").textContent = a.sub;
+    $("layerSub").textContent = state.secure ? "secure input · typing hidden" : a.sub;
     $("board").className = a.cls;
+  }
+
+  /* macOS's secure input (host/hudfeed.py SecureInput): a secret is being typed, and the feed has
+   * stopped passing on keys. What is still on screen of the typing before it goes too -- the
+   * strip, the keys lit, their glow, the macro memory -- and the banner says why the board has
+   * stopped following. Anything that arrives anyway (sent in) is drawn nowhere until it ends. */
+  function setSecure(on) {
+    on = !!on;
+    if (on === state.secure) return;
+    state.secure = on;
+    document.body.classList.toggle("secure", on);
+    if (on) {
+      if (window.keys && window.keys.clear) window.keys.clear();
+      for (const id of state.timers.values()) clearTimeout(id);
+      state.timers.clear();
+      state.held.clear();
+      for (const e of state.keyEls) if (e) e.classList.remove("pressed", "combo", "inferred", "combo-key");
+      if (state.comboShown) { state.comboShown.remove(); state.comboShown = null; }
+      recent.length = 0;
+      state.heat.clear();
+      paintHeat();
+    }
+    if (state.data) renderBanner();
+    renderStats();
   }
 
   function renderFeed() {
@@ -1267,7 +1292,7 @@
     // stack draw that combo's pill. `sent`: this press was sent in, not the keyboard's (it lights
     // its key the same, and is never counted into a session).
     pressAt(pos, sent) {
-      if (!state.data) return;
+      if (!state.data || state.secure) return;
       const idx = idxAt(pos);
       const now = Date.now();
       // A key going down is a keystroke of its own: a layer change held back for the previous
@@ -1378,6 +1403,7 @@
     setDevice(name) { if ((name || "") !== state.device) { state.device = name || ""; renderTitle(); } },
     key(ev) {
       if (typeof ev === "string") ev = JSON.parse(ev);
+      if (state.secure) return;   // nothing typed shows while it is a secret (setSecure)
       statsKey(ev);   // before handleKey, which has nothing to do for it while positions are fresh
       handleKey(ev);
       if (window.keys) window.keys.key(ev);  // the typed-keys strip on the same page
@@ -1396,6 +1422,7 @@
       else if (m.kind === "press") hud.pressAt(m.pos, m.sent === true || m.synthetic === true);
       else if (m.kind === "release") hud.releaseAt(m.pos);
       else if (m.kind === "session") applySession(m);
+      else if (m.kind === "secure") setSecure(m.on);
       if (m.device) hud.setDevice(m.device);  // the keyboard that is typing names the panel
     },
     // What the keys glow with: "live" (what was just typed), "session" (every press counted) or

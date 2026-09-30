@@ -101,6 +101,9 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 .key.hs5::before { background: #fd8d3c; opacity: 0.9; }
 .key.hs6::before { background: #fc4e2a; opacity: 0.9; }
 .key.heated .hold, .key.heated .shifted { color: #2e3240; }
+/* macOS secure input (hud.js setSecure): the board has stopped following, and looks it. */
+body.secure #board { opacity: 0.55; }
+body.secure #layerSub { color: #e0af68; }
 /* A GIF still (&demo=N) is drawn as it always was. */
 body.demo .key::before, body.demo #stats { display: none; }
 

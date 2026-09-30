@@ -50,6 +50,11 @@ The active [session](../README.md#sessions) goes out whenever it changes:
 sorted). `gen` goes up when the session is reset. `acks` says, for each page that reports to it,
 the last batch the counts include (below).
 
+On macOS, `{"kind":"secure","on":true}` says a password field has focus. From then on the feed
+sends no `key`, `press` or `release` until `{"kind":"secure","on":false}`, and a page clears what
+is on screen of the typing. It is cached like the rest, so a page that connects in the middle is
+told.
+
 ## Inbound messages
 
 A client may send `layers`, `press`, `release`, `key` and `device`, and each is fanned out to every

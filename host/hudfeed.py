@@ -890,6 +890,71 @@ class KeymapWatcher(threading.Thread):
             self._stop.wait(self.poll)
 
 
+# ---------- secure input ----------
+
+def carbon_probe():
+    """macOS's IsSecureEventInputEnabled, or None where there is none (not macOS, or no Carbon)."""
+    if sys.platform != "darwin":
+        return None
+    try:
+        import ctypes
+        fn = ctypes.cdll.LoadLibrary("/System/Library/Frameworks/Carbon.framework/Carbon").IsSecureEventInputEnabled
+    except (OSError, AttributeError):
+        return None
+    fn.restype, fn.argtypes = ctypes.c_bool, []
+    return fn
+
+
+class SecureInput:
+    """macOS says when what is being typed is a secret: while a password field has focus, or a
+    terminal's Secure Keyboard Entry is on, secure event input is enabled and every app is asked
+    not to look. The feed cannot help seeing -- it reads the keyboard's own channel and its HID
+    reports, which that switch does not reach -- so for as long as it is on it passes on nothing
+    that could spell the secret: no character typed and no key pressed. Layers still go through,
+    and the page is told (`{"kind": "secure", "on": true}`), clears what is on screen and says why.
+
+    Asked at every keystroke, not only by the poll: the first key typed into a password field must
+    not slip through in the moment before a poll would have noticed. The poll is what tells the
+    page when nothing is being typed. Linux has no such switch."""
+
+    def __init__(self, emit, probe, poll_s=0.25, log=print):
+        self.emit, self.probe, self.poll_s, self.log = emit, probe, poll_s, log
+        self.on = False
+        self.lock = threading.Lock()
+        self._stop = threading.Event()
+        self._thread = None
+
+    def check(self):
+        try:
+            on = bool(self.probe())
+        except Exception:
+            on = self.on   # a probe that failed once says nothing new
+        with self.lock:
+            if on != self.on:
+                self.on = on
+                self.emit({"kind": "secure", "on": on})
+        return on
+
+    def allows(self, msg):
+        """Whether `msg` may go on: not a key or a position while secure input is on."""
+        if msg.get("kind") not in ("key", "press", "release"):
+            return True
+        return not self.check()
+
+    def start(self):
+        self.check()
+        self._thread = threading.Thread(target=self._run, name="secure-input", daemon=True)
+        self._thread.start()
+        return self
+
+    def _run(self):
+        while not self._stop.wait(self.poll_s):
+            self.check()
+
+    def stop(self):
+        self._stop.set()
+
+
 # ---------- the whole feed, embeddable ----------
 
 class Feed:
@@ -953,9 +1018,16 @@ class Feed:
                                               poll_s=feed_cfg["session_poll_s"], log=log)
             if self.source is not None and self.source.message:
                 self.sessions.keymap = os.path.basename(self.source.message.get("source") or "")
+        # While macOS says a secret is being typed, nothing typed goes on (SecureInput).
+        self.secure = None
+        probe = carbon_probe() if int(feed_cfg.get("secure_input", 1)) else None
+        if probe is not None:
+            self.secure = SecureInput(emit, probe, log=log)
 
     def _emit(self, msg):
         if not self.keys and msg["kind"] == "key":
+            return
+        if self.secure is not None and not self.secure.allows(msg):
             return
         if msg["kind"] in ("press", "release"):
             self._check_position(msg["pos"])
@@ -980,6 +1052,8 @@ class Feed:
             except (OSError, session_mod.SessionError) as e:
                 self.log(f"hudfeed: no sessions this run: {e}")
                 self.sessions = None
+        if self.secure:
+            self.secure.start()
         if self.watcher:
             self.watcher.start()
         self.reader.start()
@@ -1003,6 +1077,8 @@ class Feed:
             self.ble.stop()
         if self.hid:
             self.hid.stop()
+        if self.secure:
+            self.secure.stop()
         if self.sessions:
             self.sessions.stop()   # writes what is still only counted in memory
 
@@ -1064,7 +1140,7 @@ class Hub:
         print(*a, file=sys.stderr, flush=True)
 
     async def send(self, msg):
-        if msg["kind"] in ("keymap", "layers", "device", "session"):
+        if msg["kind"] in ("keymap", "layers", "device", "session", "secure"):
             self.cache[msg["kind"]] = msg
         if self.debug and msg["kind"] in ("layers", "press"):
             import time

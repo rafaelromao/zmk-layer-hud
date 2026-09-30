@@ -515,6 +515,30 @@ function main() {
     check("a page that does not report shows the session as the host has it", shown(r) === 4, shown(r));
   }
 
+  // ---------- macOS secure input ----------
+  {
+    const p = fresh();
+    const strip = () => p.document.getElementById("keys").children.map(c => c.textContent);
+    const lit = () => p.hud.state.keyEls.filter(e => e.classList.contains("pressed")).length;
+    p.hud.pressAt(A.pos);
+    p.hud.key({ type: "keyDown", name: "a", chars: "a", code: 4, flags: {}, repeat: false });
+    const counted = total(p.hud.stats.local());
+    p.hud.receive({ kind: "secure", on: true });
+    check("secure input clears the strip", strip().length === 0, JSON.stringify(strip()));
+    check("and the keys lit, and their glow", lit() === 0 && warmKeys(p).length === 0, `${lit()} lit, ${warmKeys(p).length} warm`);
+    check("and the banner says why", p.document.getElementById("layerSub").textContent === "secure input · typing hidden" &&
+          p.document.body.classList.contains("secure"));
+    p.hud.pressAt(B.pos);
+    p.hud.key({ type: "keyDown", name: "p", chars: "p", code: 19, flags: {}, repeat: false });
+    p.clock.advance(settle);
+    check("while it is on, nothing typed shows or counts",
+          strip().length === 0 && lit() === 0 && p.hud.stats.local().chars <= 1 && total(p.hud.stats.local()) <= counted + 1,
+          `${strip().length} chips, ${lit()} lit, ${total(p.hud.stats.local())} counted`);
+    p.hud.receive({ kind: "secure", on: false });
+    p.hud.pressAt(C.pos);
+    check("once it is off, the board follows again", lit() === 1 && p.document.getElementById("layerSub").textContent !== "secure input · typing hidden");
+  }
+
   for (const n of notes) console.log("note " + n);
   for (const f of fail) console.log("FAIL " + f);
   console.log(`${checked} heat, count and speed checks, ${fail.length} failures`);

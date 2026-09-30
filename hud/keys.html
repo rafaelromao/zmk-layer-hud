@@ -24,7 +24,11 @@
     const connect = () => {
       const s = new WebSocket(wsUrl);
       s.onopen = () => { connected = true; strip.classList.remove("nofeed"); };
-      s.onmessage = e => { const m = JSON.parse(e.data); if (m.kind === "key") window.keys.key(m); };
+      s.onmessage = e => {
+        const m = JSON.parse(e.data);
+        if (m.kind === "key") window.keys.key(m);
+        else if (m.kind === "secure" && m.on) window.keys.clear();   // a secret is being typed
+      };
       s.onclose = () => { connected = false; setTimeout(connect, 1000); };
     };
     connect();

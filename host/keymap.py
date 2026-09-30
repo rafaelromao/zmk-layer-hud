@@ -86,6 +86,7 @@ FEED_DEFAULTS = {
     "sessions": 1,             # keep the typing counts in session files (0: none, the HUD forgets them on exit)
     "session_flush_s": 5,      # how often what was counted is written to the session's file
     "session_poll_s": 1,       # how often the session files are looked at for `zmk-layer-hud session` changes
+    "secure_input": 1,         # (macOS) while a password field has focus, pass on nothing typed (0: pass it all)
 }
 
 # keymap-drawer glyph names -> text the HUD can show. The glyph id is kept too.

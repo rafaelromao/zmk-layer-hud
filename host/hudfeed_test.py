@@ -13,7 +13,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
-from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Hub, SignalDecoder, Stream,  # noqa: E402
+from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Hub, SecureInput, SignalDecoder, Stream,  # noqa: E402
                      hid_scan_note, hidraw_match, sent_in, split_report)
 
 
@@ -374,6 +374,50 @@ class SentIn(unittest.TestCase):
     def test_a_client_cannot_say_it_is_the_keyboard(self):
         for said in (False, None, "no"):
             self.assertIs(sent_in({**self.KEY, "sent": said})["sent"], True)
+
+
+class Secure(unittest.TestCase):
+    """While macOS says a secret is being typed, nothing typed goes on."""
+
+    def setUp(self):
+        self.secret = False
+        self.asked = 0
+        self.said = []
+
+        def probe():
+            self.asked += 1
+            return self.secret
+        self.secure = SecureInput(self.said.append, probe)
+
+    def test_keys_and_positions_stop_while_it_is_on(self):
+        key, press = {"kind": "key", "type": "keyDown", "chars": "p"}, {"kind": "press", "pos": 3}
+        self.assertTrue(self.secure.allows(key) and self.secure.allows(press))
+        self.secret = True
+        for msg in (key, press, {"kind": "release", "pos": 3}):
+            self.assertFalse(self.secure.allows(msg))
+        self.assertTrue(self.secure.allows({"kind": "layers", "ids": [2]}))   # the banner stays right
+        self.secret = False
+        self.assertTrue(self.secure.allows(key))
+
+    def test_it_is_asked_at_every_keystroke(self):
+        # Not only by the poll: the first key typed into a password field must not slip through.
+        self.secret = True
+        self.assertFalse(self.secure.allows({"kind": "key", "type": "keyDown", "chars": "p"}))
+        self.assertEqual(1, self.asked)
+
+    def test_the_page_is_told_when_it_changes(self):
+        self.secure.check()
+        self.secret = True
+        self.secure.check()
+        self.secure.check()
+        self.secret = False
+        self.secure.check()
+        self.assertEqual([{"kind": "secure", "on": True}, {"kind": "secure", "on": False}], self.said)
+
+    def test_a_page_that_connects_is_told_too(self):
+        hub = Hub()
+        asyncio.run(hub.send({"kind": "secure", "on": True}))
+        self.assertIn("secure", hub.cache)
 
 
 class FakeSocket:

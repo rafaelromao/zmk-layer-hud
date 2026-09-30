@@ -234,6 +234,13 @@ order, or when. Nothing leaves the machine. Only the keyboard's own typing is co
 the demo light the board and time their typing, and a session never sees them. `feed.sessions: 0`
 in the config (or `feed --no-sessions`) keeps no files, and `uninstall --purge` removes them.
 
+**Passwords.** On macOS, while a password field has focus (or a terminal's Secure Keyboard Entry
+is on), the system turns on secure input, and the feed then passes on nothing typed: no
+characters, no keys lit, nothing counted. The strip clears, the board dims and the banner says
+`secure input · typing hidden` until it is over. The HUD reads the keyboard itself, where that
+switch does not reach, so it holds back on its own. `feed.secure_input: 0` turns this off. Linux
+has no such switch; see [Limits](#limits).
+
 ### Keeping the config in a repo
 
 `zmk-layer-hud setup` copies `config/example.yaml` to `~/.config` once and then leaves your config
@@ -376,6 +383,9 @@ beside anything that is wrong. What it cannot see:
 - Layer ids 0–31, key positions 0–255.
 - Without keymap-drawer installed, only `cols_thumbs_notation` and `ortho_layout` layouts render
   and combos given as `trigger_keys` are skipped.
+- Linux has nothing like macOS's secure input, so there the strip shows what is typed into a
+  password field too, and the board lights its keys. Stop the HUD, or record with it hidden, when
+  that matters.
 - The macOS panel runs the feed in-process and serves no WebSocket, so `zmk-layer-hud poke` cannot
   reach it; drive that one from the page's own API, or run `zmk-layer-hud feed` separately. A demo
   script plays on the demo page (`zmk-layer-hud demo --play`) on either host.

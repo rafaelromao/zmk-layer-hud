@@ -57,5 +57,11 @@
       lastAt = now;
       armFade();
     },
+    // Everything on the strip, gone at once: what was typed has become a secret (hud.js setSecure).
+    clear() {
+      clearTimeout(timer);
+      host.innerHTML = "";
+      current = null;
+    },
   };
 })();
