@@ -80,11 +80,11 @@ def manifest_problems(boards, repo=REPO):
 
 def publish(message, board):
     """The keymap message as the page gets it: named by the board's public source rather than by a
-    path under the home folder of whoever built it, and on a solid panel, since what is behind it is
-    the page and not an editor."""
+    path under the home folder of whoever built it, on a solid panel, since what is behind it is the
+    page and not an editor, and with dark keys, the heat in indigo, as the page around it is dark."""
     out = dict(message)
     out["source"] = board["source"]
-    out["hud"] = dict(message.get("hud") or {}, opacity=100)
+    out["hud"] = dict(message.get("hud") or {}, opacity=100, dark=1)
     return out
 
 

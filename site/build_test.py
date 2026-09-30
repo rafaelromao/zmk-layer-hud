@@ -28,10 +28,10 @@ MESSAGE = {"kind": "keymap", "source": "projects/keyboards/docs/keymap.yaml", "t
 
 
 class Publish(unittest.TestCase):
-    def test_the_source_is_the_boards_public_one_and_the_panel_is_solid(self):
+    def test_the_source_is_the_boards_public_one_the_panel_solid_and_the_keys_dark(self):
         out = build.publish(MESSAGE, {"source": "examples/3x5.yaml"})
         self.assertEqual(out["source"], "examples/3x5.yaml")
-        self.assertEqual(out["hud"], {"opacity": 100, "press_ms": 320})
+        self.assertEqual(out["hud"], {"opacity": 100, "press_ms": 320, "dark": 1})
 
     def test_the_message_it_was_given_is_left_alone(self):
         build.publish(MESSAGE, {"source": "examples/3x5.yaml"})
@@ -177,7 +177,7 @@ class WholeBuild(unittest.TestCase):
                 with open(os.path.join(out, b["keymap"]), encoding="utf-8") as f:
                     msg = json.load(f)
                 self.assertEqual(msg["source"], manifest[b["id"]]["source"])
-                self.assertEqual(msg["hud"]["opacity"], 100)
+                self.assertEqual((msg["hud"]["opacity"], msg["hud"]["dark"]), (100, 1))
                 if b["demo"]:
                     with open(os.path.join(out, b["demo"]), encoding="utf-8") as f:
                         self.assertTrue(json.load(f)["timeline"])

@@ -11,6 +11,7 @@
   --muted: #9aa5ce;
   --link: #7aa2f7;
   --pressed: #ffb454;                         /* the HUD's pressed key: what to act on */
+  --heat: #6366f1;                            /* the heat on the HUD's dark keys (hud.css body.dark) */
   --layer: #bb9af7;
   --insert: #9ece6a;
   --raw: #f7768e;
@@ -109,7 +110,7 @@ pre code { background: none; padding: 0; font-size: inherit; white-space: pre; }
 .boards button { margin-bottom: -1px; }   /* the rule on the bar's own */
 .boards button:hover, .heat button:hover { color: var(--text); }
 .boards button[aria-pressed="true"], .heat button[aria-pressed="true"] { color: #e6e8ef; border-bottom-color: var(--layer); }
-.heat button[aria-pressed="true"] { border-bottom-color: var(--pressed); }
+.heat button[aria-pressed="true"] { border-bottom-color: var(--heat); }
 /* Play is a button like the code blocks' copy. */
 .play {
   min-width: 72px; padding: 5px 12px; margin: 0 0 4px auto; cursor: pointer;   /* right, even alone on a row */
