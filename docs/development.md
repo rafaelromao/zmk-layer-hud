@@ -68,8 +68,15 @@ does. A case the two disagree about is a hole in the shim.
 ## Driving the HUD without a keyboard
 
 `zmk-layer-hud poke` sends the feed the messages a keyboard would have produced, and
-`zmk-layer-hud demo` serves the pages against a sample keymap. The WebSocket both speak is
-documented in [protocol.md](protocol.md).
+`zmk-layer-hud demo` serves the pages against a sample keymap, on a socket of its own that `poke
+--url` reaches. The WebSocket both speak is documented in [protocol.md](protocol.md).
+
+A demo script ([demo-scripts.md](demo-scripts.md)) is compiled by `host/play.py` into the
+positions, layers and reports a keyboard would send, and when. `host/play_test.py` holds it to the
+keymap's own ways of typing each character (`host/ways.py`) and to what the page needs of the
+timing, and `hud/tests/play_test.js` plays the committed scripts on the page, keystroke by
+keystroke. `make fixture` also rebuilds `hud/tests/fixtures/example-3x5.json`, the 3x5 sample's
+keymap those scripts are typed on.
 
 ## The command line
 

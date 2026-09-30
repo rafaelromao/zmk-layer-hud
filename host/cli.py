@@ -450,50 +450,114 @@ def config_link(args):
 
 # ---------- the sample board ----------
 
+def demo_urls(port, ws_port):
+    """The page the demo opens, and the socket that feeds it (which `poke --url` takes)."""
+    ws = f"ws://127.0.0.1:{ws_port}"
+    return f"http://127.0.0.1:{port}/index.html?ws={ws}", ws
+
+
 def cmd_demo(args):
-    """The HUD's pages against a sample keymap, with no keyboard and no feed: what `examples/`
-    is for. The page's own API (`hud.setLayers([1])`, `hud.pressAt(13)`) drives it from the
-    browser console, and `zmk-layer-hud poke` drives it over the socket."""
-    import http.server
+    """The HUD's pages against a sample keymap, with no keyboard: what `examples/` is for. They are
+    served over http and fed by a socket of their own, the way the Linux panel's pages are, so
+    `zmk-layer-hud poke --url` drives them, the page's own API (`hud.setLayers([1])`,
+    `hud.pressAt(13)`) does from the browser console, and with --play a demo script is typed on
+    them in real time (host/play.py). There is no session behind the demo: the bar and the
+    session heatmap count what the page is shown, for as long as it is open."""
+    import asyncio
     import functools
+    import http.server
+    import io
+    import json
     import threading
-    import webbrowser
 
     sys.path.insert(0, os.path.join(ROOT, "host"))
     import keymap as keymap_mod
+    import play as play_mod
 
-    config = args.config or os.path.join(ROOT, "config", "example-3x5.yaml")
-    pages = os.path.join(ROOT, "hud")
-    out = os.path.join(pages, "keymap.json")
-    print(f"==> keymap from {config}")
-    import io
-    buf = io.StringIO()
-    stdout, sys.stdout = sys.stdout, buf
-    try:
-        rc = keymap_mod.main(["--config", config, "--dump"])
-    finally:
-        sys.stdout = stdout
-    if rc:
-        return rc
-    with open(out, "w", encoding="utf-8") as f:
-        f.write(buf.getvalue())
+    if args.keymap:
+        with open(args.keymap, encoding="utf-8") as f:
+            message = json.load(f)
+    else:
+        config = args.config or os.path.join(ROOT, "config", "example-3x5.yaml")
+        print(f"==> keymap from {config}")
+        buf = io.StringIO()
+        stdout, sys.stdout = sys.stdout, buf
+        try:
+            rc = keymap_mod.main(["--config", config, "--dump"])
+        finally:
+            sys.stdout = stdout
+        if rc:
+            return rc
+        message = json.loads(buf.getvalue())
 
-    url = f"http://localhost:{args.port}/index.html?keymap=keymap.json"
-    handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=pages)
-    handler.log_message = lambda *a, **k: None
+    compiled = None
+    if args.play:
+        try:
+            script = play_mod.load(args.play)
+            compiled = play_mod.compile(script, message, speed=args.speed)
+        except play_mod.PlayError as e:
+            raise Fail(str(e))
+        for problem in compiled.problems:
+            warn(play_mod.describe(problem, args.play))
+        if args.strict and any(p["level"] == "skip" for p in compiled.problems):
+            raise Fail(f"{args.play} types what this keymap cannot (--strict)")
+        if "opacity" in script:   # the keymap cannot be sent in, so the demo's own carries it
+            message = dict(message, hud=dict(message.get("hud") or {}, opacity=int(script["opacity"])))
+
+    class Quiet(http.server.SimpleHTTPRequestHandler):
+        """No request log; and never cached, or a page edited since opens as it was."""
+        def log_message(self, *a):
+            pass
+
+        def end_headers(self):
+            self.send_header("Cache-Control", "no-store")
+            super().end_headers()
+
     try:
-        server = http.server.ThreadingHTTPServer(("127.0.0.1", args.port), handler)
+        httpd = http.server.ThreadingHTTPServer(("127.0.0.1", args.port),
+                                                functools.partial(Quiet, directory=os.path.join(ROOT, "hud")))
     except OSError as e:
-        raise Fail(f"cannot serve on port {args.port}: {e}. Something else is on it -- "
-                   f"pass --port to pick another.")
-    print(f"==> {url}")
-    print("    hud.setLayers([1]) switches layers, hud.pressAt(13) lights a key; ^C to stop")
-    threading.Timer(0.5, lambda: webbrowser.open(url)).start()
+        raise Fail(f"cannot serve on port {args.port}: {e}. Something else is on it -- pass --port to pick another.")
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
     try:
-        server.serve_forever()
+        asyncio.run(demo_socket(args, message, compiled, play_mod))
     except KeyboardInterrupt:
         print()
+    finally:
+        httpd.shutdown()
     return 0
+
+
+async def demo_socket(args, message, compiled, play_mod):
+    import asyncio
+    import webbrowser
+    import hudfeed
+    try:
+        import websockets
+    except ImportError:
+        raise Fail("python-websockets is not in the venv: zmk-layer-hud setup")
+    page, ws_url = demo_urls(args.port, args.ws_port)
+    hub = hudfeed.Hub()
+    await hub.send(message)   # kept, and replayed to the page when it connects
+    try:
+        server = await websockets.serve(hub.handler, "127.0.0.1", args.ws_port, max_size=None)
+    except OSError as e:
+        raise Fail(f"cannot open the demo's socket on port {args.ws_port}: {e}. Pass --ws-port to pick another.")
+    async with server:
+        print(f"==> {page}")
+        print(f"    zmk-layer-hud poke --url {ws_url} --type hello   types on it; ^C to stop")
+        if not args.no_browser:
+            asyncio.get_running_loop().run_in_executor(None, webbrowser.open, page)
+        if compiled is not None:
+            # Keys are not kept for a page that is not there yet: wait for it, and for its keymap.
+            while not hub.clients:
+                await asyncio.sleep(0.1)
+            await asyncio.sleep(1.0)
+            again = args.loop or compiled.loop
+            print(f"==> playing {args.play}" + (", again and again" if again else ""))
+            await play_mod.play(compiled.timeline, hub.send_in, loop=again, duration_ms=compiled.duration_ms)
+            print("    played; the page stays up until ^C")
+        await asyncio.Event().wait()
 
 
 # ---------- this machine ----------
@@ -985,9 +1049,17 @@ def build_parser():
     s.add_argument("file", nargs="?", help="with `link`: the config to link at")
     s.set_defaults(func=cmd_config)
 
-    s = add("demo", "serve the pages against a sample keymap, with no keyboard")
+    s = add("demo", "serve the pages against a sample keymap, with no keyboard; --play types a script on them")
     s.add_argument("--config", help="a config to draw (default: config/example-3x5.yaml)")
-    s.add_argument("--port", type=int, default=8765, help="port to serve on (default 8765)")
+    s.add_argument("--keymap", metavar="FILE", help="a keymap message to draw instead (zmk-layer-hud keymap --dump)")
+    s.add_argument("--play", metavar="SCRIPT", help="type a demo script on it, in real time (docs/demo-scripts.md)")
+    s.add_argument("--loop", action="store_true", help="with --play: again and again")
+    s.add_argument("--speed", type=float, default=1.0, help="with --play: this many times as fast (default 1)")
+    s.add_argument("--strict", action="store_true", help="with --play: refuse a script this keymap cannot type all of")
+    s.add_argument("--port", type=int, default=8765, help="the pages' port (default 8765)")
+    s.add_argument("--ws-port", type=int, default=8767,
+                   help="the socket that feeds them (default 8767; a running HUD's feed has 8766)")
+    s.add_argument("--no-browser", action="store_true", help="do not open a browser")
     s.set_defaults(func=cmd_demo)
 
     # add_help=False on these two: their flags belong to hudpoke and hudfeed, and argparse would

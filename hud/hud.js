@@ -1458,9 +1458,12 @@
   //     "opacity": 100,             // override the config's hud.opacity for the rendering
   //     "steps": [
   //       { "layers": [2, 3],       // the keyboard's active ZMK layer ids -> hud.setLayers
+  //         "hold":   [32],         // ZMK positions down since before: a thumb holding its layer
   //         "press":  [17, 18],     // ZMK positions -> hud.pressAt: two of them inside the combo
   //                                 // term draw that combo's pill, exactly as a real chord does
   //         "keys":   ["y"] } ] }   // chips for the typed-keys strip: a string or a key event
+  // The same file plays in real time (docs/demo-scripts.md): steps then also take text to type
+  // and pauses, which host/play.py --stills turns into frames of this shape for the GIF.
   function demoFrame(script, n) {
     const steps = script.steps || [];
     const step = steps[Math.max(0, Math.min(steps.length - 1, n))];
@@ -1483,12 +1486,22 @@
     const schedule = window.setTimeout;
     window.setTimeout = () => 0;
     try {
+      // A key down since before this keystroke -- a thumb holding its layer, a Shift -- went down
+      // earlier than the chord beside it: pressed first, and dated past the combo term, so it holds
+      // its layer as it does on the keyboard rather than joining the chord.
+      const held = (step.hold || []).map(Number);
+      if (held.length) {
+        const now = Date.now, then = now() - (state.data.combo_term || 50) - T("combo_slack_ms") - 1;
+        Date.now = () => then;
+        try { for (const p of held) hud.pressAt(p); } finally { Date.now = now; }
+      }
       hud.setLayers(step.layers || []);
       // pressAt is the firmware's own path: it lights the exact key and resolves a combo on the
       // topmost active layer by itself — no second, shorter-lived flash on top of it.
-      for (const p of step.press || []) hud.pressAt(p);
-      // The strip only, so a frame shows the chips it scripts and nothing that inference adds.
-      for (const k of step.keys || []) {
+      for (const p of step.press || []) if (!held.includes(Number(p))) hud.pressAt(p);
+      // The strip only, so a frame shows the chips it scripts and nothing that inference adds. A
+      // script not compiled for stills (host/play.py --stills) shows its text as it would type.
+      for (const k of step.keys || (typeof step.type === "string" ? [...step.type] : [])) {
         if (window.keys) window.keys.key(Object.assign({ type: "keyDown", chars: "", name: null, flags: {} },
                                                        typeof k === "string" ? { chars: k } : k));
       }

@@ -50,15 +50,16 @@ done
 command -v ffmpeg >/dev/null || { echo "ffmpeg is required (brew install ffmpeg)" >&2; exit 1; }
 [ -f "$SCRIPT" ] || { echo "no such demo script: $SCRIPT" >&2; exit 1; }
 
-# The page fetches its script same-origin, so it is served beside the pages (gitignored).
-cp "$SCRIPT" "$ROOT/hud/demo.json"
-FRAMES="$("$PYTHON" -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["steps"]))' "$SCRIPT")"
-[ "$FRAMES" -gt 0 ] || { echo "$SCRIPT has no steps" >&2; exit 1; }
+"$PYTHON" "$ROOT/host/keymap.py" --config "$CONFIG" --dump > "$ROOT/hud/keymap.json"
+# The page fetches its script same-origin, so it is served beside the pages (gitignored). What it
+# gets is the script's frames (host/play.py --stills): text to type becomes a frame per keystroke,
+# a pause none, and a script of frames alone is itself.
+"$PYTHON" "$ROOT/host/play.py" "$SCRIPT" --keymap "$ROOT/hud/keymap.json" --stills --strict > "$ROOT/hud/demo.json"
+FRAMES="$("$PYTHON" -c 'import json,sys; print(len(json.load(open(sys.argv[1]))["steps"]))' "$ROOT/hud/demo.json")"
+[ "$FRAMES" -gt 0 ] || { echo "$SCRIPT has no frames" >&2; exit 1; }
 
 WORK="$(mktemp -d)"
 trap 'kill $SERVER 2>/dev/null || true; rm -rf "$WORK"' EXIT
-
-"$PYTHON" "$ROOT/host/keymap.py" --config "$CONFIG" --dump > "$ROOT/hud/keymap.json"
 # No subshell: $! must be the server itself, or the trap kills the wrapper and leaves the
 # server holding the port (which then silently breaks every later run).
 python3 -m http.server -d "$ROOT/hud" "$PORT" >/dev/null 2>&1 & SERVER=$!

@@ -1,0 +1,1401 @@
+{
+"activators": [
+{
+"idx": 32,
+"kind": "hold",
+"layer": "NAV"
+},
+{
+"idx": 33,
+"kind": "hold",
+"layer": "SYM"
+},
+{
+"idx": 32,
+"kind": "hold",
+"layer": "FUN"
+},
+{
+"idx": 33,
+"kind": "hold",
+"layer": "FUN"
+}
+],
+"base": "DEF",
+"combo_term": 50,
+"combos": [
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "`",
+"type": "key"
+},
+"layers": [
+"DEF"
+],
+"positions": [
+22,
+23
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "~",
+"type": "key"
+},
+"layers": [
+"DEF"
+],
+"positions": [
+21,
+22
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": ";",
+"type": "key"
+},
+"layers": [
+"DEF"
+],
+"positions": [
+6,
+7
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "(",
+"type": "key"
+},
+"layers": [
+"DEF"
+],
+"positions": [
+12,
+13
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": ")",
+"type": "key"
+},
+"layers": [
+"DEF"
+],
+"positions": [
+16,
+17
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "[",
+"type": "key"
+},
+"layers": [
+"DEF"
+],
+"positions": [
+11,
+12
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "]",
+"type": "key"
+},
+"layers": [
+"DEF"
+],
+"positions": [
+17,
+18
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "\\",
+"type": "key"
+},
+"layers": [
+"DEF"
+],
+"positions": [
+26,
+27
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "|",
+"type": "key"
+},
+"layers": [
+"DEF"
+],
+"positions": [
+27,
+28
+]
+}
+],
+"extras": {
+"base": "DEF",
+"search": [
+"SYM",
+"NAV",
+"FUN"
+],
+"sticky": []
+},
+"glyphs": {},
+"hud": {
+"activator_ms": 400,
+"combo_pill_ms": 1000,
+"combo_slack_ms": 20,
+"heatmap_ms": 3000,
+"held_timeout_ms": 5000,
+"momentary_ms": 700,
+"one_shot_ms": 450,
+"opacity": 86,
+"positions_fresh_ms": 3000,
+"press_ms": 320,
+"release_ms": 60,
+"sequence_max": 6,
+"sequence_ms": 200,
+"stats_bar": 1,
+"width": 598,
+"wpm_idle_ms": 3000,
+"wpm_window_ms": 10000
+},
+"kind": "keymap",
+"layer_order": [
+"DEF",
+"SYM",
+"NAV",
+"FUN"
+],
+"layers": {
+"DEF": [
+{
+"hold": "",
+"shifted": "",
+"tap": "Q",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "W",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "E",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "R",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "T",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Y",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "U",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "I",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "O",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "P",
+"type": "key"
+},
+{
+"hold": "Ctrl",
+"shifted": "",
+"tap": "A",
+"type": "key"
+},
+{
+"hold": "Gui",
+"shifted": "",
+"tap": "S",
+"type": "key"
+},
+{
+"hold": "Alt",
+"shifted": "",
+"tap": "D",
+"type": "key"
+},
+{
+"hold": "Shift",
+"shifted": "",
+"tap": "F",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "G",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "H",
+"type": "key"
+},
+{
+"hold": "Shift",
+"shifted": "",
+"tap": "J",
+"type": "key"
+},
+{
+"hold": "Alt",
+"shifted": "",
+"tap": "K",
+"type": "key"
+},
+{
+"hold": "Gui",
+"shifted": "",
+"tap": "L",
+"type": "key"
+},
+{
+"hold": "Ctrl",
+"shifted": "",
+"tap": "'",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Z",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "X",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "C",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "V",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "B",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "N",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "M",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": ",",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": ".",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "/",
+"type": "key"
+},
+{
+"hold": "Gui",
+"shifted": "",
+"tap": "Tab",
+"type": "ghost"
+},
+{
+"hold": "Ctrl",
+"shifted": "",
+"tap": "Esc",
+"type": "key"
+},
+{
+"hold": "NAV",
+"shifted": "",
+"tap": "BSpace",
+"type": "key"
+},
+{
+"hold": "SYM",
+"shifted": "",
+"tap": "Space",
+"type": "key"
+},
+{
+"hold": "Shift",
+"shifted": "",
+"tap": "Enter",
+"type": "key"
+},
+{
+"hold": "Alt",
+"shifted": "",
+"tap": "Delete",
+"type": "ghost"
+}
+],
+"FUN": [
+{
+"hold": "",
+"shifted": "",
+"tap": "F1",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F2",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F3",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F4",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F5",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Caps Lock",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "DEF",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "CLM",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "GME",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F6",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F7",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F8",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F9",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F10",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "BT1",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "BT2",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "BT3",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "BT4",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "BT5",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Desk Prev",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Desk Next",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F11",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F12",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Out USB",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Out BLE",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Print Scrn",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Pause Break",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "BT CLR",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Boot",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Reset",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Reset",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Boot",
+"type": "ghost"
+}
+],
+"NAV": [
+{
+"hold": "",
+"shifted": "",
+"tap": "Win Close",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Tab Prev",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Tab Next",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Tab Close",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Vol Up",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Home",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Page Down",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Page Up",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "End",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Ctrl",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Gui",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Alt",
+"type": "key"
+},
+{
+"hold": "Shift",
+"shifted": "",
+"tap": "Tab",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Vol Down",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Left",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Down",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Up",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Right",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Calc",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Win Prev",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Win Next",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Paste",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Play Pause",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Insert",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Delete",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Prev",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Next",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Gui",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Ctrl",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "FUN",
+"shifted": "",
+"tap": "Space",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Shift",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Alt",
+"type": "ghost"
+}
+],
+"SYM": [
+{
+"hold": "",
+"shifted": "",
+"tap": "!",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "@",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "#",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "$",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "%",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "\\",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "7",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "8",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "9",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": ",",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "+",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "=",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "_",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "-",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "^",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "0",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "4",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "5",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "6",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": ".",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "¿",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "*",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "&",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": ";",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "1",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "2",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "3",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "/",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Gui",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Space",
+"type": "key"
+},
+{
+"hold": "FUN",
+"shifted": "",
+"tap": "Bspace",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Shift",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Alt",
+"type": "ghost"
+}
+]
+},
+"layout": {
+"height": 266.0,
+"keys": [
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 30.0,
+"y": 80.08000000000001
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 90.0,
+"y": 45.36
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 150.0,
+"y": 28.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 210.0,
+"y": 43.68
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 270.0,
+"y": 51.519999999999996
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 360.0,
+"y": 51.519999999999996
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 420.0,
+"y": 43.68
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 480.0,
+"y": 28.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 540.0,
+"y": 45.36
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 600.0,
+"y": 80.08000000000001
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 30.0,
+"y": 136.08
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 90.0,
+"y": 101.36
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 150.0,
+"y": 84.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 210.0,
+"y": 99.68
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 270.0,
+"y": 107.52
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 360.0,
+"y": 107.52
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 420.0,
+"y": 99.68
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 480.0,
+"y": 84.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 540.0,
+"y": 101.36
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 600.0,
+"y": 136.08
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 30.0,
+"y": 192.08
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 90.0,
+"y": 157.36
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 150.0,
+"y": 140.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 210.0,
+"y": 155.68
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 270.0,
+"y": 163.52
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 360.0,
+"y": 163.52
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 420.0,
+"y": 155.68
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 480.0,
+"y": 140.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 540.0,
+"y": 157.36
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 600.0,
+"y": 192.08
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 150.0,
+"y": 214.48
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 210.0,
+"y": 230.16
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 270.0,
+"y": 238.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 360.0,
+"y": 238.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 420.0,
+"y": 230.16
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 480.0,
+"y": 214.48
+}
+],
+"width": 630.0
+},
+"positions": {
+"0": 0,
+"1": 1,
+"10": 10,
+"11": 11,
+"12": 12,
+"13": 13,
+"14": 14,
+"15": 15,
+"16": 16,
+"17": 17,
+"18": 18,
+"19": 19,
+"2": 2,
+"20": 20,
+"21": 21,
+"22": 22,
+"23": 23,
+"24": 24,
+"25": 25,
+"26": 26,
+"27": 27,
+"28": 28,
+"29": 29,
+"3": 3,
+"30": 30,
+"31": 31,
+"32": 32,
+"33": 33,
+"34": 34,
+"35": 35,
+"4": 4,
+"5": 5,
+"6": 6,
+"7": 7,
+"8": 8,
+"9": 9
+},
+"source": "examples/3x5.yaml",
+"title": "3x5 example",
+"zmk_layers": {
+"0": {
+"cls": "off",
+"drawer": "DEF",
+"id": 0,
+"label": "Def",
+"name": "DEF"
+},
+"1": {
+"cls": "momentary",
+"drawer": "SYM",
+"id": 1,
+"label": "Sym",
+"name": "SYM"
+},
+"2": {
+"cls": "momentary",
+"drawer": "NAV",
+"id": 2,
+"label": "Nav",
+"name": "NAV"
+},
+"3": {
+"cls": "momentary",
+"drawer": "FUN",
+"id": 3,
+"label": "Fun",
+"name": "FUN"
+}
+}
+}

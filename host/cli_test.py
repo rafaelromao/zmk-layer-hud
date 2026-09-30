@@ -47,6 +47,13 @@ class Parser(unittest.TestCase):
         # They only touch files, and must work on a machine where the venv is not built yet.
         self.assertFalse({"session", "heatmap"} & cli.NEEDS_VENV)
 
+    def test_demo_plays_a_script_on_a_socket_of_its_own(self):
+        args = self.parser.parse_args(["demo", "--play", "docs/demo-type.json", "--loop", "--no-browser"])
+        self.assertEqual(("docs/demo-type.json", True, True, 8767), (args.play, args.loop, args.no_browser, args.ws_port))
+        page, ws = cli.demo_urls(8765, 8767)
+        self.assertEqual("ws://127.0.0.1:8767", ws)
+        self.assertEqual("http://127.0.0.1:8765/index.html?ws=ws://127.0.0.1:8767", page)
+
     def test_session_takes_an_action_and_a_name(self):
         args = self.parser.parse_args(["session", "save", "week1"])
         self.assertEqual(("save", "week1"), (args.action, args.name))

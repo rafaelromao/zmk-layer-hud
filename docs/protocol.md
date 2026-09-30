@@ -16,6 +16,10 @@ The macOS panel runs the feed in-process and opens no socket. To drive that one,
 own API in a browser, or run `zmk-layer-hud feed` yourself and point a browser page at it with
 `index.html?ws=ws://127.0.0.1:8766`.
 
+`zmk-layer-hud demo` serves a socket of its own, `ws://127.0.0.1:8767` (`--ws-port`), feeding its
+pages with no keyboard behind it: the same messages, `poke --url` sends to it, and a demo script
+it plays (`--play`) goes through it as typing sent in.
+
 ## Outbound messages
 
 One JSON object per frame. A message produced by a keyboard also carries `"device"`, its name, so
@@ -124,7 +128,13 @@ zmk-layer-hud poke --legend 'á'            # one legend, composed as the decode
 zmk-layer-hud poke --layers 2,22           # set the active layer ids ('' clears)
 zmk-layer-hud poke --press 13              # light the key at ZMK position 13, then release it
 zmk-layer-hud poke --stdin < script.jsonl  # raw messages, one JSON per line
+zmk-layer-hud poke --play docs/demo-type.json   # a demo script, typed in real time
 ```
+
+`--play` takes the keymap the feed replays on connect (or `--keymap FILE`), types the script on it
+as a keyboard would, positions and layers and reports ([demo-scripts.md](demo-scripts.md)), and
+keeps to its clock; `--loop` and `--speed` as for `demo --play`. A connected keyboard's own layers
+come back within its heartbeat, since everything played is sent in.
 
 `--combos` draws what is typed with the keymap's combos ([Typing sent in](#typing-sent-in); without
 it, none). `--gap-ms` and `--hold-ms` set the timing, `-v` echoes what it sends, `--url` points it

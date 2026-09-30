@@ -1075,6 +1075,14 @@ class Hub:
         if self.clients:
             await asyncio.gather(*(c.send(data) for c in list(self.clients)), return_exceptions=True)
 
+    async def send_in(self, msg):
+        """A message sent in -- by a client, or by the demo's player -- fanned out as the keyboard's
+        would be, and marked as not the keyboard's (sent_in). The keyboard's own state is then
+        asserted again, so a HUD with a keyboard behind it goes back to the truth by itself."""
+        await self.send(sent_in(msg))
+        if self.on_inject is not None:
+            self.on_inject()
+
     async def handler(self, ws):
         self.clients.add(ws)
         try:
@@ -1103,9 +1111,7 @@ class Hub:
                             self.sessions.set_heatmap(msg.get("mode"))
                     continue
                 if self.inject and kind in INJECTABLE:
-                    await self.send(sent_in(msg))
-                    if self.on_inject is not None:
-                        self.on_inject()
+                    await self.send_in(msg)
         finally:
             self.clients.discard(ws)
 

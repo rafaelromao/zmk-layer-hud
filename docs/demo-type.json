@@ -1,0 +1,23 @@
+{
+  "device": "3x5 example",
+  "opacity": 100,
+  "wpm": 60,
+  "steps": [
+    { "note": "letters on their keys, a capital with its Shift held, ( and ) typed by their combos",
+      "type": "Hello (world)" },
+
+    { "wait": 900 },
+
+    { "note": "the digits live on SYM, and its thumb stays down for both",
+      "type": " 42", "stills": "last" },
+
+    { "wait": 1500 },
+
+    { "note": "a frame written by hand plays too: the NAV thumb held, then Down under it",
+      "layers": [2], "press": [32], "hold": [32] },
+
+    { "layers": [2], "press": [32, 16], "hold": [32], "keys": [{ "name": "down" }] },
+
+    { "layers": [] }
+  ]
+}

@@ -103,22 +103,34 @@ zmk-layer-hud demo --config ~/.local/share/zmk-layer-hud/config/example-4x12.yam
 ```
 
 (From a clone, the second is `--config config/example-4x12.yaml`.) That converts the keymap,
-serves the pages and opens them. In the browser console, `hud.setLayers([1])` switches layers,
-`hud.pressAt(13)` lights a key and `hud.releaseAt(13)` lets it go, so the whole page can be
-exercised without hardware.
+serves the pages and opens them, fed by a socket of their own the way the Linux panel's are. In
+the browser console, `hud.setLayers([1])` switches layers, `hud.pressAt(13)` lights a key and
+`hud.releaseAt(13)` lets it go; `zmk-layer-hud poke --url ws://127.0.0.1:8767 --type hello` types
+on it from a terminal.
 
-**A GIF of your own.** The same calls can be scripted: `docs/make-gif.sh` steps through a JSON
-demo script in a headless Chromium-family browser and assembles the frames with `ffmpeg`. With no
-options it renders the 3x5 sample:
+**A demo that types.** A script says what the keyboard does, and the demo plays it in real time:
+
+```bash
+zmk-layer-hud demo --play ~/.local/share/zmk-layer-hud/docs/demo-type.json --loop
+```
+
+Text in a script is typed through the keymap, every character on its key or combo and the layer
+it lives on, and the board, the bar and the heatmap follow it as they would the keyboard.
+`zmk-layer-hud poke --play FILE` plays one into a running HUD's feed.
+[docs/demo-scripts.md](docs/demo-scripts.md) has the format.
+
+**A GIF of your own.** `docs/make-gif.sh` renders the same scripts frame by frame in a headless
+Chromium-family browser and assembles them with `ffmpeg`. With no options it renders the 3x5
+sample:
 
 ```bash
 bash ~/.local/share/zmk-layer-hud/docs/make-gif.sh --out demo.gif
 ```
 
 The animation at the top of this page is `--config config/diamond.yaml --script
-docs/demo-vim.json`. A script's shape is documented above `demoFrame` in `hud/hud.js`, and
-`&demo=N` in the page's URL renders its step N alone (`&script=<url>`, or `demo.json` beside the
-page). The browser needs unix sockets, so this cannot run inside a sandbox that denies them.
+docs/demo-vim.json`. `&demo=N` in the page's URL renders frame N alone (`&script=<url>`, or
+`demo.json` beside the page). The browser needs unix sockets, so this cannot run inside a sandbox
+that denies them.
 
 ### Updating and uninstalling
 
@@ -146,7 +158,7 @@ one of them.
 | `keymap` | check the configured keymap-drawer YAML converts |
 | `import <repo>`, `sync` | take layer ids, key positions and combo layers from a ZMK repo |
 | `config path\|show\|edit\|link` | where the config is, what is in it, and linking one kept in a repo |
-| `demo` | serve the pages against a sample keymap, with no keyboard |
+| `demo [--play SCRIPT]` | serve the pages against a sample keymap, with no keyboard; type a demo script on them |
 | `poke`, `feed` | drive the HUD without a keyboard; run the feed alone |
 | `version` | what this is and where it lives |
 
@@ -365,7 +377,8 @@ beside anything that is wrong. What it cannot see:
 - Without keymap-drawer installed, only `cols_thumbs_notation` and `ortho_layout` layouts render
   and combos given as `trigger_keys` are skipped.
 - The macOS panel runs the feed in-process and serves no WebSocket, so `zmk-layer-hud poke` cannot
-  reach it; drive that one from the page's own API, or run `zmk-layer-hud feed` separately.
+  reach it; drive that one from the page's own API, or run `zmk-layer-hud feed` separately. A demo
+  script plays on the demo page (`zmk-layer-hud demo --play`) on either host.
 
 ## Contributing
 

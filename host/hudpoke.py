@@ -9,6 +9,7 @@ pages exactly as it fans out the keyboard's own (see Hub.INJECTABLE). This is th
     host/hudpoke.py --layers 2,22             set the active layer ids
     host/hudpoke.py --press 13                light key at position 13, then release it
     host/hudpoke.py --legend 'á'              one legend, composed as the decoder would
+    host/hudpoke.py --play docs/demo-type.json   a demo script, played in real time (host/play.py)
     echo '{"kind":"layers","ids":[1]}' | host/hudpoke.py    raw messages, one JSON per line
 
 What this proves and what it does not: the page, its layout, its legends, its strip and its combo
@@ -79,6 +80,56 @@ def says_combos(pairs, combos):
         yield wait_ms, msg
 
 
+async def replayed_keymap(ws, timeout):
+    """The keymap the feed replays to every client that connects, or None when none comes."""
+    async def first():
+        async for raw in ws:
+            msg = json.loads(raw)
+            if isinstance(msg, dict) and msg.get("kind") == "keymap":
+                return msg
+        return None
+    try:
+        return await asyncio.wait_for(first(), timeout)
+    except asyncio.TimeoutError:
+        return None
+
+
+async def play_script(args, url, websockets):
+    """A demo script (host/play.py), typed on the keymap the feed is drawing, in real time."""
+    import play as play_mod
+    try:
+        script = play_mod.load(args.play)
+    except play_mod.PlayError as e:
+        sys.exit(f"hudpoke: {e}")
+    async with websockets.connect(url, max_size=None) as ws:
+        if args.keymap:
+            with open(args.keymap, encoding="utf-8") as f:
+                keymap = json.load(f)
+        else:
+            keymap = await replayed_keymap(ws, 3.0)
+        if keymap is None:
+            sys.exit("hudpoke: the feed sent no keymap to type on; "
+                     "`zmk-layer-hud keymap --dump > keymap.json` and pass --keymap keymap.json")
+        c = play_mod.compile(script, keymap, speed=args.speed, combos=True if args.combos else None)
+        for pr in c.problems:
+            print(play_mod.describe(pr, args.play), file=sys.stderr)
+        if args.strict and any(pr["level"] == "skip" for pr in c.problems):
+            sys.exit(1)
+
+        # The feed sends every client what it fans out, this one included. A client that stops
+        # reading is not read from either, and its keepalive gives out within a minute.
+        async def drain():
+            async for _ in ws:
+                pass
+        drainer = asyncio.ensure_future(drain())
+        try:
+            sent = await play_mod.play(c.timeline, lambda m: ws.send(json.dumps(m, ensure_ascii=False)),
+                                       loop=args.loop or c.loop, duration_ms=c.duration_ms)
+        finally:
+            drainer.cancel()
+    print(f"hudpoke: played {args.play}: {sent} messages to {url}", file=sys.stderr)
+
+
 async def main(args):
     try:
         import websockets
@@ -86,6 +137,8 @@ async def main(args):
         sys.exit("python-websockets is required: pip install websockets (or make venv)")
 
     url = args.url or f"ws://127.0.0.1:{os.environ.get('ZMKHUD_PORT', '8766')}"
+    if args.play:
+        return await play_script(args, url, websockets)
     sent = 0
     async with websockets.connect(url) as ws:
         for wait_ms, msg in says_combos(messages(args), args.combos):
@@ -113,10 +166,18 @@ def parse_args(argv=None):
     p.add_argument("--gap-ms", type=int, default=90, help="wait between keystrokes (default 90)")
     p.add_argument("--hold-ms", type=int, default=120, help="how long a position stays pressed (default 120)")
     p.add_argument("--stdin", action="store_true", help="read raw messages from stdin, one JSON per line")
+    p.add_argument("--play", metavar="SCRIPT", help="play a demo script in real time (docs/demo-scripts.md)")
+    p.add_argument("--keymap", metavar="FILE", help="with --play: the keymap to type on (default: the feed's)")
+    p.add_argument("--loop", action="store_true", help="with --play: play it again and again")
+    p.add_argument("--speed", type=float, default=1.0, help="with --play: this many times as fast")
+    p.add_argument("--strict", action="store_true", help="with --play: stop at a character the keymap cannot type")
     p.add_argument("-v", "--verbose", action="store_true", help="print each message as it is sent")
     args = p.parse_args(argv)
-    if not any((args.type, args.legend, args.layers is not None, args.press, args.stdin)):
-        p.error("nothing to send: pass --type, --legend, --layers, --press or --stdin")
+    others = (args.type, args.legend, args.layers is not None, args.press, args.stdin)
+    if args.play and any(others):
+        p.error("--play plays a script on its own: drop --type, --legend, --layers, --press and --stdin")
+    if not args.play and not any(others):
+        p.error("nothing to send: pass --type, --legend, --layers, --press, --stdin or --play")
     return args
 
 

@@ -431,6 +431,16 @@ class Sessions(unittest.TestCase):
         self.talk(Hub(sessions=store), {"kind": "tally", "seq": 1, "token": None}, {"kind": "tally", "seq": 2, "token": ""})
         self.assertEqual([], store.applied)
 
+    def test_sent_in_is_marked_and_the_keyboard_said_again(self):
+        # The demo's player and every client go this one way.
+        again = []
+        hub = Hub(on_inject=lambda: again.append(1))
+        page = FakeSocket()
+        hub.clients.add(page)
+        asyncio.run(hub.send_in({"kind": "press", "pos": 3}))
+        self.assertEqual([{"kind": "press", "pos": 3, "sent": True}], page.sent)
+        self.assertEqual([1], again)
+
     def test_a_page_that_connects_gets_the_session(self):
         hub = Hub()
         asyncio.run(hub.send({"kind": "session", "id": "abc", "gen": 0}))

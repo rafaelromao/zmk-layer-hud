@@ -50,14 +50,16 @@ test-hud: ## the HUD page: every key and combo, the heatmap, the strip, and ever
 	  $(NODE) hud/tests/hud_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
 	  $(NODE) hud/tests/stats_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/strip_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
-	  PYTHON="$(PYTHON)" $(NODE) hud/tests/words_test.js $(if $(KEYMAP),--keymap $(KEYMAP)); \
+	  PYTHON="$(PYTHON)" $(NODE) hud/tests/words_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
+	  PYTHON="$(PYTHON)" $(NODE) hud/tests/play_test.js; \
 	fi
 
 audit: ## the drawing against the keyboard's own keymap (SOURCE=<working copy>, else the one import recorded)
 	$(or $(VENV_PYTHON),$(PYTHON)) host/ways.py --audit $(if $(CONFIG),--config $(CONFIG)) $(if $(SOURCE),--source $(SOURCE))
 
-fixture: ## rebuild hud/tests/fixtures/diamond.json from the configured keymap (glyphs placeheld)
+fixture: ## rebuild hud/tests/fixtures/diamond.json from the configured keymap, and the 3x5 sample's (glyphs placeheld)
 	$(PYTHON) host/keymap.py --dump | $(PYTHON) hud/tests/fixtures/make.py > hud/tests/fixtures/diamond.json
+	$(or $(VENV_PYTHON),$(PYTHON)) host/keymap.py --config config/example-3x5.yaml --dump | $(PYTHON) hud/tests/fixtures/make.py examples/3x5.yaml > hud/tests/fixtures/example-3x5.json
 
 clean:
 	rm -rf build host/__pycache__

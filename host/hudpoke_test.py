@@ -43,5 +43,34 @@ class Combos(unittest.TestCase):
         self.assertIs(next(hudpoke.says_combos(iter(raw), False))[1]["combos"], True)
 
 
+class Play(unittest.TestCase):
+    def test_a_script_is_something_to_send(self):
+        args = hudpoke.parse_args(["--play", "docs/demo-type.json", "--loop", "--speed", "2"])
+        self.assertEqual(("docs/demo-type.json", True, 2.0), (args.play, args.loop, args.speed))
+
+    def test_a_script_plays_alone(self):
+        with self.assertRaises(SystemExit):
+            hudpoke.parse_args(["--play", "docs/demo-type.json", "--type", "hi"])
+
+    def test_the_keymap_is_the_one_the_feed_replays(self):
+        import asyncio
+        import json
+
+        class Replay:
+            def __init__(self, *msgs):
+                self.msgs = [json.dumps(m) for m in msgs]
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if not self.msgs:
+                    raise StopAsyncIteration
+                return self.msgs.pop(0)
+        ws = Replay({"kind": "layers", "ids": []}, {"kind": "device", "name": "x"}, {"kind": "keymap", "base": "b"})
+        self.assertEqual("b", asyncio.run(hudpoke.replayed_keymap(ws, 1.0))["base"])
+        self.assertIsNone(asyncio.run(hudpoke.replayed_keymap(Replay({"kind": "layers", "ids": []}), 1.0)))
+
+
 if __name__ == "__main__":
     unittest.main()
