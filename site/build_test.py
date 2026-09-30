@@ -53,7 +53,7 @@ class Manifest(unittest.TestCase):
     def test_the_committed_manifest_is_whole(self):
         boards = build.load_manifest()
         self.assertEqual(build.manifest_problems(boards), [])
-        self.assertEqual([b["id"] for b in boards][0], "3x5")   # the one the page opens on
+        self.assertEqual([b["id"] for b in boards][0], "diamond")   # the one the page opens on
 
     def test_what_a_broken_one_is_told(self):
         boards = [{"id": "3x5", "label": "a", "blurb": "b", "config": "config/example-3x5.yaml", "source": "s"},
@@ -171,7 +171,7 @@ class WholeBuild(unittest.TestCase):
             finally:
                 build.log = log
             ids = [b["id"] for b in built]
-            self.assertEqual(ids[:1], ["3x5"])
+            self.assertEqual(ids[:1], ["diamond"])
             manifest = {b["id"]: b for b in build.load_manifest()}
             for b in built:
                 with open(os.path.join(out, b["keymap"]), encoding="utf-8") as f:

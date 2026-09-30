@@ -1,20 +1,20 @@
 {
   "boards": [
     {
-      "id": "3x5",
-      "label": "3x5+3 split",
-      "blurb": "keymap-drawer's 3x5 example: home-row mods, four layers and nine combos, drawn with a Ferris Sweep's column stagger.",
-      "config": "config/example-3x5.yaml",
-      "source": "examples/3x5.yaml",
-      "demo": "docs/demo-type.json"
-    },
-    {
       "id": "diamond",
       "label": "Diamond · vim mode",
       "blurb": "The author's board running zmk-vim-mode: a combo into vim mode, then NORMAL, VISUAL and INSERT, each a layer the keyboard reports.",
       "config": "config/diamond.yaml",
       "source": "rafaelromao/keyboards: docs/img/diagrams/keymap-drawer/keymap-drawer.yaml",
       "demo": "docs/demo-vim.json"
+    },
+    {
+      "id": "3x5",
+      "label": "3x5+3 split",
+      "blurb": "keymap-drawer's 3x5 example: home-row mods, four layers and nine combos, drawn with a Ferris Sweep's column stagger.",
+      "config": "config/example-3x5.yaml",
+      "source": "examples/3x5.yaml",
+      "demo": "docs/demo-type.json"
     },
     {
       "id": "4x12",
