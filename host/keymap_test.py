@@ -220,6 +220,39 @@ class Settings(unittest.TestCase):
         on_page = {k: int(v) for k, v in re.findall(r"(\w+):\s*(\d+)", block)}
         self.assertEqual(on_page, {k: v for k, v in km.HUD_DEFAULTS.items() if k != "width"})
 
+    def test_the_bar_shows_the_chips_the_config_asks_for(self):
+        self.assertEqual(km.STATS_DEFAULTS, km.build_message({}, DOC)["stats"])
+        stats = km.build_message({"stats": {"sfb": True, "wpm": False}}, DOC)["stats"]
+        self.assertEqual((True, False, True), (stats["sfb"], stats["wpm"], stats["keys"]))
+        self.assertTrue(km.build_message({"stats": {"sfb": 1}}, DOC)["stats"]["sfb"])
+        for bad in ({"sbf": True}, {"sfb": "yes"}, {"sfb": None}, {"sfb": 2}, ["sfb"]):
+            with self.assertRaises(km.KeymapError):
+                km.build_message({"stats": bad}, DOC)
+
+    def test_the_page_falls_back_to_the_same_chips(self):
+        page = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hud", "hud.js")
+        with open(page, encoding="utf-8") as f:
+            block = re.search(r"const STAT_DEFAULTS = \{(.*?)\};", f.read(), re.S).group(1)
+        self.assertEqual({k: v == "true" for k, v in re.findall(r"(\w+):\s*(true|false)", block)}, km.STATS_DEFAULTS)
+
+    def test_a_split_boards_fingers_are_its_columns(self):
+        # 3x5+3: five columns a hand, pinky to the index finger's two, and the thumbs.
+        f = km.build_message({}, DOC_3X5)["fingers"]
+        self.assertEqual(["lp", "lr", "lm", "li", "li", "ri", "ri", "rm", "rr", "rp"], f[:10])
+        self.assertEqual((f[:10], f[:10]), (f[10:20], f[20:30]))
+        self.assertEqual(["lt"] * 3 + ["rt"] * 3, f[30:])
+        # 2x2+1: two columns a hand are the middle and index fingers.
+        self.assertEqual(["lm", "li", "ri", "rm", "lm", "li", "ri", "rm", "lt", "rt"], km.build_message({}, DOC)["fingers"])
+
+    def test_a_board_that_is_not_split_has_no_fingers_unless_told(self):
+        doc = {"layout": {"ortho_layout": {"split": False, "rows": 1, "columns": 4}}, "layers": {"Base": ["a", "b", "c", "d"]}}
+        self.assertIsNone(km.build_message({}, doc)["fingers"])
+        self.assertEqual(["lm", "li", "ri", "rm"], km.build_message({"fingers": "lm li ri rm"}, doc)["fingers"])
+        self.assertEqual([None, "li", "ri", "rm"], km.build_message({"fingers": [None, "LI", "ri", "rm"]}, doc)["fingers"])
+        for bad in ("lm li ri", "lm li ri thumb", 3):
+            with self.assertRaises(km.KeymapError):
+                km.build_message({"fingers": bad}, doc)
+
     def test_positions_map(self):
         msg = km.build_message({}, DOC)
         self.assertEqual(msg["positions"]["3"], 3)                       # identity by default

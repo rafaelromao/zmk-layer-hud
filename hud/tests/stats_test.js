@@ -481,6 +481,183 @@ function main() {
     check("and live glows again", heat(p, B.idx) !== "");
   }
 
+  // ---------- strokes: the time a key takes, and same-finger bigrams ----------
+  {
+    // Keys that can only be tapped: no hold of their own, no layer brought up with them.
+    const isPlain = k => { const b = data.layers[base][k.idx]; return !b.hold && !(data.activators || []).some(a => a.idx === k.idx); };
+    const plain = onBase.filter(isPlain);
+    if (plain.length >= 4) {
+      const [P, Q, R, S] = plain;
+      const fingersFor = assign => data.layout.keys.map((k, i) => (assign[i] !== undefined ? assign[i] : null));
+      const withFingers = (assign, extra) => {
+        const page = loadPage();
+        page.hud.load(Object.assign({}, data, { fingers: fingersFor(assign) }, extra || {}));
+        page.hud.setLayers([]);
+        return page;
+      };
+      // P and Q on one finger, R on another, S a thumb.
+      const hands = { [P.idx]: "li", [Q.idx]: "li", [R.idx]: "ri", [S.idx]: "lt" };
+      const ms = (t, pos, layer) => ((t.ms[layer || base] || {})[pos] || 0);
+      const timed = (t, pos, layer) => ((t.timed[layer || base] || {})[pos] || 0);
+      const played = (keys, gap) => {
+        const q = withFingers(hands);
+        for (const k of keys) { tap(q, k.pos); q.clock.advance(gap || 50); }
+        q.clock.advance(settle);
+        return q.hud.stats.local();
+      };
+
+      let t = played([P, Q]);          // Q goes down 150 ms after P did
+      check("a key's time is from the keystroke before it", ms(t, Q.pos) === 150 && timed(t, Q.pos) === 1,
+            JSON.stringify([t.ms, t.timed]));
+      check("the first of a burst has none", timed(t, P.pos) === 0);
+      check("one finger on two keys in a row is a same-finger bigram", t.sfb === 1 && t.bigrams === 1, `${t.sfb}/${t.bigrams}`);
+      t = played([P, R]);
+      check("two fingers are a bigram, not a same-finger one", t.sfb === 0 && t.bigrams === 1, `${t.sfb}/${t.bigrams}`);
+      t = played([P, P]);
+      check("one key twice is not a same-finger bigram", t.sfb === 0 && t.bigrams === 1, `${t.sfb}/${t.bigrams}`);
+      t = played([P, S, Q]);
+      check("a thumb's keystroke between two keys makes no bigram of them", t.bigrams === 0, `${t.sfb}/${t.bigrams}`);
+      check("and the key after it is timed from it", ms(t, Q.pos) === 150, ms(t, Q.pos));
+      t = played([P, Q], idle + 100);
+      check("a pause makes no bigram, and the key after it starts a burst", t.bigrams === 0 && timed(t, Q.pos) === 0,
+            `${t.bigrams}, ${timed(t, Q.pos)}`);
+
+      const chord = data.combos.find(c => c.layers.includes(base) && c.positions.length === 2 &&
+                                          c.positions.every(i => posOf.has(i) && i !== P.idx && i !== Q.idx));
+      if (chord) {
+        const q = withFingers(hands);
+        const [c1, c2] = chord.positions.map(i => posOf.get(i));
+        tap(q, P.pos); q.clock.advance(50);
+        q.hud.pressAt(c1); q.clock.advance(CHORD_MS); q.hud.pressAt(c2);
+        q.clock.advance(SPACED_MS); q.hud.releaseAt(c1); q.hud.releaseAt(c2);
+        q.clock.advance(50); tap(q, Q.pos);
+        q.clock.advance(settle);
+        const u = q.hud.stats.local();
+        check("a chord between two keys makes no bigram of them", u.bigrams === 0 && u.sfb === 0 && combosOf(u) === 1,
+              `${u.sfb}/${u.bigrams}, ${combosOf(u)} combos`);
+      } else notes.push("no two-key combo on the base: a chord between keystrokes not checked");
+
+      // A thumb holding a layer is no keystroke: the key struck on the layer follows the one before.
+      const held = (data.activators || []).map(a => ({ a, id: idOf(a.layer) }))
+        .find(({ a, id }) => a.kind === "hold" && id !== null && a.layer !== base && posOf.has(a.idx));
+      const K = held && [...posOf.keys()].find(i => i !== held.a.idx && i !== P.idx && binding(i, [held.a.layer, base]) === held.a.layer &&
+                                                   !onBaseCombo([held.a.idx, i]) && !onBaseCombo([i, held.a.idx]));
+      if (held && K !== undefined) {
+        const q = withFingers(Object.assign({}, hands, { [K]: "li", [held.a.idx]: "lt" }));
+        const thumb = posOf.get(held.a.idx), kpos = posOf.get(K);
+        tap(q, P.pos); q.clock.advance(50);
+        q.hud.pressAt(thumb); q.clock.advance(60);
+        q.hud.pressAt(kpos); q.clock.advance(3); q.hud.setLayers([held.id]);
+        q.clock.advance(SPACED_MS); q.hud.releaseAt(kpos);
+        q.clock.advance(30); q.hud.releaseAt(thumb); q.hud.setLayers([]);
+        q.clock.advance(settle);
+        const u = q.hud.stats.local();
+        check(`a key held for a layer is not a keystroke (${held.a.layer})`,
+              u.sfb === 1 && u.bigrams === 1 && timed(u, kpos, held.a.layer) === 1 && ms(u, kpos, held.a.layer) === 210,
+              JSON.stringify([u.sfb, u.bigrams, u.ms, u.timed]));
+      } else notes.push("no held layer with a key of its own: a layer hold between keystrokes not checked");
+
+      // A home-row mod: rolled into the next key it typed its letter; held over it, it did not.
+      const H = onBase.find(k => data.layers[base][k.idx].hold && !(data.activators || []).some(a => a.idx === k.idx) &&
+                                 k.idx !== P.idx && k.idx !== Q.idx);
+      if (H) {
+        const both = Object.assign({}, hands, { [H.idx]: "lm" });
+        const r1 = withFingers(both);
+        tap(r1, P.pos); r1.clock.advance(50);
+        r1.hud.pressAt(H.pos); r1.clock.advance(SPACED_MS); r1.hud.pressAt(Q.pos);
+        r1.clock.advance(30); r1.hud.releaseAt(H.pos); r1.clock.advance(40); r1.hud.releaseAt(Q.pos);
+        r1.clock.advance(settle);
+        const u = r1.hud.stats.local();
+        check("a key with a hold, rolled into the next, is a keystroke", u.bigrams === 2 && u.sfb === 0, `${u.sfb}/${u.bigrams}`);
+        const r2 = withFingers(both);
+        tap(r2, P.pos); r2.clock.advance(50);
+        r2.hud.pressAt(H.pos); r2.clock.advance(SPACED_MS); r2.hud.pressAt(Q.pos);
+        r2.clock.advance(60); r2.hud.releaseAt(Q.pos); r2.clock.advance(30); r2.hud.releaseAt(H.pos);
+        r2.clock.advance(settle);
+        const w = r2.hud.stats.local();
+        check("held over it, it is not", w.bigrams === 1 && w.sfb === 1, `${w.sfb}/${w.bigrams}`);
+      } else notes.push("no base key with a hold: home-row mods' taps and holds not checked");
+
+      // Typing sent in is timed for what the page shows, never for the session.
+      const s = withFingers(hands);
+      tap(s, P.pos); s.clock.advance(50);
+      s.hud.pressAt(Q.pos, true); s.clock.advance(SPACED_MS); s.hud.releaseAt(Q.pos); s.clock.advance(50);
+      tap(s, R.pos);
+      s.clock.advance(settle);
+      const loc = s.hud.stats.local(), own = s.hud.stats.unsent();
+      check("typing sent in is timed on the page, and not for the session", loc.bigrams === 2 && own.bigrams === 1 &&
+            timed(own, Q.pos) === 0 && timed(own, R.pos) === 1, `${loc.bigrams} ${own.bigrams} ${JSON.stringify(own.timed)}`);
+
+      // The chips: off until the config asks for them; hands and bigrams only with fingers.
+      const shown = (page, name) => !page.document.getElementById("stats").querySelectorAll(".stat")
+        .find(x => x.classList.contains(name)).classList.contains("off");
+      const plainPage = fresh();
+      check("the new chips are off unless asked for", ["time", "hands", "sfb", "slow"].every(n => !shown(plainPage, n)) &&
+            ["wpm", "session", "acc", "keys", "layer", "mode"].every(n => shown(plainPage, n)));
+      const asked = Object.assign({}, data.stats, { time: true, hands: true, sfb: true, slow: true, wpm: false });
+      const blind = loadPage();
+      blind.hud.load(Object.assign({}, data, { stats: asked, fingers: null }));
+      check("hands and same-finger need to know the fingers", !shown(blind, "hands") && !shown(blind, "sfb") &&
+            shown(blind, "time") && shown(blind, "slow") && !shown(blind, "wpm"));
+      const c = withFingers(hands, { stats: asked });
+      const txt = name => c.document.getElementById("stats").querySelectorAll(".stat")
+        .find(x => x.classList.contains(name)).children.map(x => x.textContent).join("");
+      for (let i = 0; i < 12; i++) { tap(c, P.pos); c.clock.advance(20); tap(c, R.pos); c.clock.advance(200); }
+      tap(c, Q.pos); tap(c, P.pos); tap(c, Q.pos);
+      c.clock.advance(settle);
+      // P after R: 300 ms, eleven times, and once 100 ms after Q; R after P: 120 ms. Of 26
+      // bigrams, Q-P and P-Q are one finger's.
+      check("the slowest key and its time", txt("slow").startsWith("slowest ") &&
+            txt("slow").endsWith(` ${Math.round((11 * 300 + 100) / 12)} ms`), txt("slow"));
+      check("same-finger bigrams as a share", txt("sfb") === `${(Math.round(2 / 26 * 1000) / 10).toFixed(1)}% same finger`, txt("sfb"));
+      check("each hand's share", txt("hands") === `L ${Math.round(15 / 27 * 100)}% · R ${Math.round(12 / 27 * 100)}%`, txt("hands"));
+      typeText(c, "x".repeat(60), 200);
+      check("and the time spent typing", txt("time") === "11s typing", txt("time"));
+
+      // The heatmaps the session's counts make besides its own: every layer at once, and speed.
+      const other = data.layer_order.find(l => l !== base && idOf(l) !== null && binding(P.idx, [l, base]) === l &&
+                                               binding(Q.idx, [l, base]) !== base);
+      if (other) {
+        const h = withFingers(hands);
+        tap(h, P.pos); for (let i = 0; i < 3; i++) tap(h, Q.pos);
+        h.hud.setLayers([idOf(other)]);
+        h.clock.advance(1000);
+        for (let i = 0; i < 9; i++) tap(h, P.pos);       // 10 in all against Q's 3: steps apart on a log scale
+        h.hud.setLayers([]);
+        h.clock.advance(1000 + settle);
+        h.hud.setHeatmap("session");
+        const byLayer = [sessionLevel(h, P.idx), sessionLevel(h, Q.idx)];
+        h.hud.setHeatmap("physical");
+        const physical = [sessionLevel(h, P.idx), sessionLevel(h, Q.idx)];
+        check(`physical adds up every layer's presses of a key (${other})`, byLayer[0] < byLayer[1] && physical[0] > physical[1],
+              JSON.stringify({ byLayer, physical }));
+      } else notes.push("no layer binding a key of its own over the base: the physical heatmap not checked");
+      const sp = withFingers(hands);
+      for (let i = 0; i < 4; i++) { tap(sp, P.pos); sp.clock.advance(20); tap(sp, R.pos); sp.clock.advance(300); }
+      sp.clock.advance(settle);
+      sp.hud.setHeatmap("speed");
+      check("speed: the slower key is the hotter", sessionLevel(sp, P.idx) === 6 && sessionLevel(sp, R.idx) === 1,
+            `${sessionLevel(sp, P.idx)} vs ${sessionLevel(sp, R.idx)}`);
+      check("and a key timed too seldom has none", sessionLevel(sp, Q.idx) === 0);
+
+      // The session gets them, and shows what it has.
+      const posted = [];
+      const b = loadPage();
+      b.window.webkit = { messageHandlers: { zmkhud: { postMessage: m => { const x = JSON.parse(m); if (x.kind === "tally") posted.push(x); } } } };
+      b.hud.load(Object.assign({}, data, { fingers: fingersFor(hands) }));
+      b.hud.setLayers([]);
+      tap(b, P.pos); b.clock.advance(50); tap(b, Q.pos);
+      b.clock.advance(settle + 2500);
+      const got = posted.reduce((n, m) => ({ bigrams: n.bigrams + m.bigrams, sfb: n.sfb + m.sfb, timed: n.timed + timed(m, Q.pos) }),
+                                { bigrams: 0, sfb: 0, timed: 0 });
+      check("the session is sent each key's time and the bigrams", got.timed === 1 && got.bigrams === 1 && got.sfb === 1, JSON.stringify(posted));
+      b.hud.receive({ kind: "session", v: 1, id: "s1", gen: 0, name: "w", heatmap: "live", presses: {}, combos: {},
+                      ms: { [base]: { [P.pos]: 900 } }, timed: { [base]: { [P.pos]: 3 } }, totals: { sfb: 2, bigrams: 40 }, acks: {} });
+      const v = b.hud.stats.view();
+      check("and shows the session's own", timed(v, P.pos) === 3 && ms(v, P.pos) === 900 && v.bigrams === 41, JSON.stringify(v));
+    } else notes.push("fewer than four base keys without a hold: key times and same-finger bigrams not checked");
+  }
+
   // ---------- the panel's size ----------
   {
     // The Linux panel sizes its surface from the page on a handler of its own; it is not the

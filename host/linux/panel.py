@@ -36,8 +36,8 @@ PAGES = ROOT / "hud"
 # ZMKHUD_STATE; the default is repeated so running this directly still works.
 RUN = Path(os.environ.get("ZMKHUD_STATE") or
            Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "zmk-layer-hud")
-# Until the page says how big it is (follow_page): the board, the banner and the stats bar above
-# them (hud/hud.css #stats: 26px + 6px).
+# Until the page says how big it is (follow_page): the board, the banner and one row of the stats
+# bar above them (hud/hud.css #stats: 26px + 6px).
 STATS_H = 32
 HUD_W, HUD_H = 598, 392 + STATS_H
 KEYS_W, KEYS_H = 598, 96

@@ -273,6 +273,32 @@ class StoreTest(Base):
         self.assertEqual("session", self.sent[-1]["heatmap"])
         self.assertEqual("session", session.status(self.dir)[0]["heatmap"])
 
+    def test_key_times_and_bigrams_are_kept(self):
+        st = self.store()
+        st.apply(batch(1, presses={"base": {"3": 2}}, ms={"base": {"3": 300}}, timed={"base": {"3": 2}}, sfb=1, bigrams=30))
+        st.apply(batch(2, ms={"base": {"3": 150}}, timed={"base": {"3": 1}}, bigrams=2))   # timed after its press was sent
+        self.assertEqual(3, self.sent[-1]["timed"]["base"]["3"])
+        st.flush()
+        s = self.active()
+        self.assertEqual(({"base": {"3": 450}}, {"base": {"3": 3}}, 1, 32),
+                         (s["ms"], s["timed"], s["totals"]["sfb"], s["totals"]["bigrams"]))
+        self.assertAlmostEqual(1 / 32, session.summary(s)["sfb"])
+        st.apply(batch(3, ms={"base": {"3": -5}}))
+        st.apply(batch(4, ms={"base": {"x": 5}}))
+        st.flush()
+        self.assertEqual(450, self.active()["ms"]["base"]["3"])
+        session.rename_layer(self.dir, "base", "alpha")
+        self.assertEqual(({"alpha": {"3": 450}}, {"alpha": {"3": 3}}), (self.active()["ms"], self.active()["timed"]))
+
+    def test_a_session_from_before_key_times_reads(self):
+        _, s = session.status(self.dir)
+        for kind in ("ms", "timed"):
+            del s[kind]
+        del s["totals"]["sfb"]
+        session.write_json(session.path_of(self.dir, s["name"]), s)
+        s = self.active()
+        self.assertEqual(({}, {}, 0, None), (s["ms"], s["timed"], s["totals"]["sfb"], session.summary(s)["sfb"]))
+
     def test_the_keymaps_layers_go_into_the_session(self):
         st = self.store()
         st.set_keymap({"source": "/home/me/zmk/board.yaml", "layers": {"base": {}, "sym": {}}})

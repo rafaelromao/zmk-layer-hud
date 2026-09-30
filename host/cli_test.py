@@ -62,6 +62,9 @@ class Parser(unittest.TestCase):
         self.assertIsNone(self.parser.parse_args(["heatmap"]).mode)
         with self.assertRaises(SystemExit):
             self.parser.parse_args(["heatmap", "sometimes"])
+        import session   # the verb names the modes without importing it; they must be the same
+        for mode in session.HEATMAP_MODES:
+            self.assertEqual(mode, self.parser.parse_args(["heatmap", mode]).mode)
         args = self.parser.parse_args(["session", "rename-layer", "sym", "symbols", "--all"])
         self.assertEqual(("rename-layer", "sym", "symbols", True), (args.action, args.name, args.other, args.all))
 

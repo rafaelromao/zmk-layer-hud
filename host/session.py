@@ -33,13 +33,20 @@ import threading
 import time
 
 VERSION = 1
-HEATMAP_MODES = ("live", "session", "off")
+# What the keys glow with: what was just typed; the session's presses on the layer on screen;
+# its presses on every layer, by where the fingers went; the time each key takes; nothing.
+HEATMAP_MODES = ("live", "session", "physical", "speed", "off")
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
-# Added up from what the page reports; peak_wpm is kept as a maximum instead.
-TOTALS = ("chars", "deleted", "active_ms", "active_net")
+# Added up from what the page reports; peak_wpm is kept as a maximum instead. sfb and bigrams:
+# two keystrokes in a row on one finger, of two keystrokes in a row by any two (hud.js "strokes").
+TOTALS = ("chars", "deleted", "active_ms", "active_net", "sfb", "bigrams")
+# Counts by layer, then by key: presses and combos (their keys "p,q"), and for each key the time
+# from the keystroke before it, in ms and in how many presses were timed.
+MAPS = ("presses", "combos", "ms", "timed")
 # A batch the page sends covers two seconds of typing: anything past these is not typing.
 MAX_COUNT = 100000
 MAX_ENTRIES = 4096
+SFB_MIN = 20           # a share of same-finger bigrams is said once there are this many bigrams
 LATE_S = 10.0          # a batch for a session replaced this recently still lands in it
 PAGES_KEPT = 4         # acknowledgements kept, one per page that has reported
 
@@ -77,7 +84,7 @@ def empty(name, named):
     t = _now()
     return {"version": VERSION, "id": os.urandom(8).hex(), "gen": 0, "name": name, "named": bool(named),
             "created": t, "updated": t, "keyboards": [], "keymap": "", "layers": [],
-            "presses": {}, "combos": {}, "totals": dict({k: 0 for k in TOTALS}, peak_wpm=0)}
+            **{kind: {} for kind in MAPS}, "totals": dict({k: 0 for k in TOTALS}, peak_wpm=0)}
 
 
 def is_empty(s):
@@ -161,6 +168,9 @@ def read_session(path, log=None):
     s.setdefault("keyboards", [])
     s.setdefault("keymap", "")
     s.setdefault("layers", [])
+    for kind in MAPS:
+        if not isinstance(s.get(kind), dict):
+            s[kind] = {}             # a session from before the key times were kept
     for k in TOTALS + ("peak_wpm",):
         s["totals"].setdefault(k, 0)
     return s
@@ -222,7 +232,7 @@ def peek(directory=None, log=None):
 
 def add(s, delta):
     """Counts the page reported, added to a session in place."""
-    for kind in ("presses", "combos"):
+    for kind in MAPS:
         for layer, counts in (delta.get(kind) or {}).items():
             into = s[kind].setdefault(layer, {})
             for k, n in counts.items():
@@ -389,12 +399,13 @@ def rename_layer(directory=None, old=None, new=None, every=False, log=None):
         moved = []
         for s in (sessions(directory, log).values() if every else [current]):
             n = [0, 0]
-            for i, kind in enumerate(("presses", "combos")):
+            for kind in MAPS:
                 src = s[kind].pop(old, None) or {}
                 into = s[kind].setdefault(new, {}) if src else None
                 for k, c in src.items():
                     into[k] = into.get(k, 0) + c
-                    n[i] += c
+                    if kind in ("presses", "combos"):
+                        n[kind == "combos"] += c
             if any(n):
                 write_json(path_of(directory, s["name"]), s)
                 moved.append((s["name"], n[0], n[1]))
@@ -410,13 +421,14 @@ def summary(s):
     presses = sum(n for m in s["presses"].values() for n in m.values())
     combos = sum(n for m in s["combos"].values() for n in m.values())
     wpm = round(t["active_net"] / 5 / (t["active_ms"] / 60000)) if t.get("active_ms", 0) >= 10000 else None
-    return {"presses": presses, "combos": combos, "chars": t["chars"], "deleted": t["deleted"],
+    sfb = t["sfb"] / t["bigrams"] if t.get("bigrams", 0) >= SFB_MIN else None
+    return {"presses": presses, "combos": combos, "chars": t["chars"], "deleted": t["deleted"], "sfb": sfb,
             "active_ms": t["active_ms"], "wpm": wpm, "peak_wpm": t.get("peak_wpm") or None}
 
 
 # ---------- the feed's side ----------
 
-def _counts(value, depth):
+def _counts(value, depth, most=MAX_COUNT):
     """A reported count map, checked: {layer: {key: n}} with sane names and numbers, or None."""
     if not isinstance(value, dict) or len(value) > MAX_ENTRIES:
         return None
@@ -428,7 +440,7 @@ def _counts(value, depth):
         for k, n in m.items():
             if not isinstance(k, str) or not re.match(r"^\d{1,3}(,\d{1,3}){0,%d}$" % depth, k):
                 return None
-            if not isinstance(n, int) or isinstance(n, bool) or not 0 <= n <= MAX_COUNT:
+            if not isinstance(n, int) or isinstance(n, bool) or not 0 <= n <= most:
                 return None
             if n:
                 inner[k] = n
@@ -439,10 +451,10 @@ def _counts(value, depth):
 
 def _batch(msg):
     """The counts in a page's tally message, checked, or None."""
-    presses, combos = _counts(msg.get("presses", {}), 0), _counts(msg.get("combos", {}), 15)
-    if presses is None or combos is None:
+    delta = {"presses": _counts(msg.get("presses", {}), 0), "combos": _counts(msg.get("combos", {}), 15),
+             "ms": _counts(msg.get("ms", {}), 0, MAX_COUNT * 1000), "timed": _counts(msg.get("timed", {}), 0)}
+    if any(m is None for m in delta.values()):
         return None
-    delta = {"presses": presses, "combos": combos}
     for k in TOTALS + ("peak_wpm",):
         n = msg.get(k, 0)
         if not isinstance(n, int) or isinstance(n, bool) or not 0 <= n <= MAX_COUNT * 1000:
@@ -566,7 +578,7 @@ class Store:
                 return
             mine = (self.session["id"], self.session["gen"])
             if self.layers and self.session.get("layers") != self.layers and mine not in pending:
-                pending[mine] = {"presses": {}, "combos": {}, "totals": {}}   # the layers alone
+                pending[mine] = _new_pending()   # the layers alone
             if not pending:
                 return
             # Something else wrote since we last looked (a command): after our own write, poll must
@@ -579,7 +591,7 @@ class Store:
                                          self.log, layers=self.layers)
                 except OSError as e:
                     error = e
-                    _merge_delta(self.pending.setdefault((sid, gen), {"presses": {}, "combos": {}, "totals": {}}),
+                    _merge_delta(self.pending.setdefault((sid, gen), _new_pending()),
                                  _pending_as_delta(p))
                     continue
                 if written is not None and written["id"] == self.session["id"]:
@@ -610,7 +622,7 @@ class Store:
             elif sid != self.session["id"] and sid not in self.replaced:
                 return   # a session long gone
             key = (sid, gen)
-            into = self.pending.setdefault(key, {"presses": {}, "combos": {}, "totals": {}})
+            into = self.pending.setdefault(key, _new_pending())
             _merge_delta(into, delta)
             if isinstance(msg.get("device"), str) and msg["device"]:
                 self.devices.add(msg["device"][:64])
@@ -642,7 +654,7 @@ class Store:
                 add(s, _pending_as_delta(mine))
             return {"kind": "session", "v": VERSION, "id": s["id"], "gen": s["gen"], "name": s["name"],
                     "named": s.get("named", False), "heatmap": self.heatmap, "presses": s["presses"],
-                    "combos": s["combos"], "totals": s["totals"], "acks": dict(self.acks),
+                    "combos": s["combos"], "ms": s["ms"], "timed": s["timed"], "totals": s["totals"], "acks": dict(self.acks),
                     "keyboards": s.get("keyboards", []), "created": s.get("created"), "updated": s.get("updated")}
 
     def announce(self):
@@ -650,9 +662,13 @@ class Store:
 
 
 # What the store holds per session until it is written: the counts, and the totals apart.
+def _new_pending():
+    return dict({kind: {} for kind in MAPS}, totals={})
+
+
 def _merge_delta(into, delta):
-    for kind in ("presses", "combos"):
-        for layer, counts in delta[kind].items():
+    for kind in MAPS:
+        for layer, counts in (delta.get(kind) or {}).items():
             m = into[kind].setdefault(layer, {})
             for k, n in counts.items():
                 m[k] = m.get(k, 0) + n
@@ -663,4 +679,4 @@ def _merge_delta(into, delta):
 
 
 def _pending_as_delta(p):
-    return dict(p["totals"], presses=p["presses"], combos=p["combos"])
+    return dict(p["totals"], **{kind: p[kind] for kind in MAPS})

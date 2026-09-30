@@ -337,6 +337,8 @@ def session_line(s, mod):
         parts.append(f"{t['wpm']} wpm")
     if t["peak_wpm"]:
         parts.append(f"top {t['peak_wpm']}")
+    if t["sfb"] is not None:
+        parts.append(f"{t['sfb'] * 100:.1f}% same-finger")
     return " · ".join(parts)
 
 
@@ -1012,8 +1014,10 @@ def build_parser():
     s.set_defaults(func=cmd_session)
 
     s = add("heatmap", "what the keys glow with: the live heatmap, the session's, or none")
-    s.add_argument("mode", nargs="?", choices=("live", "session", "off"),
-                   help="live (what was just typed), session (every press counted), off; none: say which")
+    s.add_argument("mode", nargs="?", choices=("live", "session", "physical", "speed", "off"),
+                   help="live (what was just typed), session (every press counted, on the layer on screen), "
+                        "physical (every press, all layers together), speed (the time each key takes), off; "
+                        "none: say which")
     s.set_defaults(func=cmd_heatmap)
 
     s = add("log", "follow the panel and feed logs")

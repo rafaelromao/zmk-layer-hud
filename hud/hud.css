@@ -104,10 +104,11 @@ body.secure #layerSub { color: #e0af68; }
 body.demo .key::before, body.demo #stats { display: none; }
 
 /* The stats bar above the panel (hud.js "the stats bar"): chips of their own, like the strip's
-   below, so they read with nothing behind them. A fixed height: the macOS window takes its size
-   once the keymap loads, and the Linux surface is sized for it (host/linux/panel.py STATS_H). */
-#stats { display: flex; gap: 5px; height: 26px; margin-bottom: 6px; overflow: hidden; white-space: nowrap; font-family: var(--font); }
-#stats.off { display: none; }
+   below, so they read with nothing behind them. Which chips it has is the config's `stats:`; one
+   it leaves out is .off. More than a row's worth go on a second row, and the page tells the panel
+   it is taller (followBar): the macOS window and the Linux surface both take the page's size. */
+#stats { display: flex; flex-wrap: wrap; gap: 4px 5px; max-height: 56px; margin-bottom: 6px; overflow: hidden; white-space: nowrap; font-family: var(--font); }
+#stats.off, #stats .stat.off { display: none; }
 #stats .stat {
   flex: none; padding: 0 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--panel-border);
   color: #8b91a3; font-size: 11px; line-height: 24px; font-variant-numeric: tabular-nums;

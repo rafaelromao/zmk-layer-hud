@@ -43,6 +43,11 @@ keymap: ~/path/to/my-keymap.yaml
 # hud: { width: 700, press_ms: 320 }
 # feed: { dead_key_ms: 60 }
 
+# Optional: the stats bar's chips (see config/diamond.yaml for all of them), and the finger that
+# strikes each key when the HUD cannot tell from a split board's columns.
+# stats: { sfb: true, slow: true, layer: false }
+# fingers: [lp, lr, lm, li, li, ri, ri, rm, rr, rp, ...]
+
 # Optional: layers entered for one key (sticky-key style), shown as one-shot while inferring.
 # extras:
 #   sticky: [Sym]

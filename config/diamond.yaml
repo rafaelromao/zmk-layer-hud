@@ -30,6 +30,22 @@ hud:
   wpm_idle_ms: 3000           # a pause longer than this starts a new burst, and is not counted as typing time
   stats_bar: 1                # the stats bar above the panel (0 hides it)
 
+# The stats bar's chips, left to right (true shows one). Shown with the defaults.
+stats:
+  wpm: true                   # live words per minute
+  session: true               # the session's average and top speed
+  accuracy: true              # the share of what was typed that was not deleted again
+  keys: true                  # keystrokes, and the share of them that were combos
+  layer: true                 # the layer on screen, and its share of the keystrokes
+  time: false                 # how long the session has been typing, pauses left out
+  hands: false                # the left and the right hand's shares of the keystrokes
+  sfb: false                  # same-finger bigrams: two keys in a row struck by one finger
+  slow: false                 # the key that takes longest to strike after the key before it
+  heatmap: true               # the session's name and what the keys glow with; a click changes it
+# The finger that strikes each drawer key, for `hands` and `sfb`. The Diamond's are worked out
+# from its columns; a board they cannot be read off says them here, in drawer order:
+# fingers: [lr, lm, li, ri, rm, rr, lp, lr, lm, li, ri, rm, rr, rp, lr, lm, li, ri, rm, rr, lt, lt, rt, rt]
+
 # The reader's timings.
 feed:
   dead_key_ms: 60             # dead key + letter within this = one accented character

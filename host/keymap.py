@@ -16,6 +16,9 @@ Config keys (all paths may use ~):
   title:          text in the panel's corner (default: the keyboard's HID name)   (optional)
   hud:            every size and timing the page uses; see HUD_DEFAULTS below      (optional)
   feed:           the reader's timings; see FEED_DEFAULTS below                     (optional)
+  stats:          which chips the stats bar shows, true or false; see STATS_DEFAULTS  (optional)
+  fingers:        the finger that strikes each drawer key (FINGERS), in drawer order, for the
+                  hands' shares and same-finger bigrams; worked out for a split board's columns (optional)
   drawer_config:  keymap-drawer config YAML (key sizes, glyphs); defaults otherwise (optional)
   keyboard:       {vid, pid, name} of the keyboard to read the layer signal from    (optional)
   serial:         {port, probe_s} of its CDC-ACM interface, when finding it fails   (optional)
@@ -81,6 +84,21 @@ HUD_DEFAULTS = {
     "wpm_idle_ms": 3000,       # a pause longer than this starts a new burst, and is not counted as typing time
     "stats_bar": 1,            # the stats bar above the panel (0 hides it)
 }
+# `stats:` section: which chips the stats bar shows, left to right (true shows one, false hides it).
+STATS_DEFAULTS = {
+    "wpm": True,               # live words per minute
+    "session": True,           # the session's average and top speed
+    "accuracy": True,          # the share of what was typed that was not deleted again
+    "keys": True,              # keystrokes, and the share of them that were combos
+    "layer": True,             # the layer on screen, and its share of the keystrokes
+    "time": False,             # how long the session has been typing, pauses left out
+    "hands": False,            # the left and the right hand's shares of the keystrokes (needs fingers)
+    "sfb": False,              # same-finger bigrams: two keys in a row struck by one finger (needs fingers)
+    "slow": False,             # the key that takes longest to strike after the key before it
+    "heatmap": True,           # the session's name and what the keys glow with; a click changes it
+}
+# `fingers:` names, left pinky to right pinky; a thumb is lt or rt.
+FINGERS = ("lp", "lr", "lm", "li", "lt", "rt", "ri", "rm", "rr", "rp")
 # `feed:` section: the reader's timings.
 FEED_DEFAULTS = {
     "dead_key_ms": 60,         # a dead key followed by a letter within this is one accented character
@@ -386,6 +404,86 @@ def stagger_columns(layout):
     return {"width": layout["width"], "height": max(k["y"] + k["h"] / 2 for k in keys), "keys": keys}
 
 
+def column_fingers(n):
+    """The fingers of a hand's n columns, from the outside in. From five columns on, the index
+    finger takes the two inner ones and the pinky whatever is left outside the ring finger's."""
+    if n <= 0:
+        return []
+    return ["p", "r", "m", "i"][-n:] if n <= 4 else ["p"] * (n - 4) + ["r", "m", "i", "i"]
+
+
+def infer_fingers(layout):
+    """Which finger strikes each drawn key, on a split board drawn the usual way: row by row, left
+    to right, the thumbs last. The last row is the thumbs' when it is shorter than the one above
+    it; each hand's other keys fall into columns by where they are drawn, and the columns are
+    fingers from the outside in (column_fingers). None when the board is not split -- a row-
+    staggered board's columns are not its fingers -- and `fingers:` in the config says it then."""
+    keys = layout["keys"]
+    if len(keys) < 4:
+        return None
+    key_w = sorted(k["w"] for k in keys)[len(keys) // 2]
+    xs = sorted({round(k["x"], 1) for k in keys})
+    widest, mid = max(((b - a, (a + b) / 2) for a, b in zip(xs, xs[1:])), default=(0, 0))
+    if widest < 1.25 * key_w:
+        return None     # no gap between the hands wider than the gap between two keys
+    rows, row = [], [0]
+    for i in range(1, len(keys)):
+        if keys[i]["x"] < keys[i - 1]["x"] - 0.1:     # back to the left: the next row
+            rows.append(row)
+            row = []
+        row.append(i)
+    rows.append(row)
+    thumbs = set(rows[-1]) if len(rows) > 1 and len(rows[-1]) < len(rows[-2]) else set()
+    out = [None] * len(keys)
+    for hand in ("l", "r"):
+        side = [i for i, k in enumerate(keys) if (k["x"] < mid) == (hand == "l")]
+        cols = []       # column centres, from the outside in
+        for x in sorted((keys[i]["x"] for i in side if i not in thumbs), reverse=hand == "r"):
+            if not cols or abs(x - cols[-1]) >= key_w / 2:
+                cols.append(x)
+        names = column_fingers(len(cols))
+        for i in side:
+            if i in thumbs:
+                out[i] = hand + "t"
+            elif cols:
+                out[i] = hand + names[min(range(len(cols)), key=lambda c: abs(keys[i]["x"] - cols[c]))]
+    return out
+
+
+def configured_fingers(value, n):
+    """`fingers:` from the config: one finger per drawer key, in drawer order, as a list or one
+    string of names; null for a key no finger is meant to strike."""
+    if isinstance(value, str):
+        value = value.split()
+    if not isinstance(value, list) or len(value) != n:
+        got = f"{len(value)} entries" if isinstance(value, list) else repr(value)
+        raise KeymapError(f"fingers: {got} for {n} drawer keys; give one per key, in drawer order")
+    out = []
+    for i, f in enumerate(value):
+        name = None if f is None else str(f).lower()
+        if name is not None and name not in FINGERS:
+            raise KeymapError(f"fingers: key {i} is {f!r}; a finger is one of {', '.join(FINGERS)}, or null")
+        out.append(name)
+    return out
+
+
+def stats_settings(value):
+    """`stats:` from the config: the chips the stats bar shows, over STATS_DEFAULTS."""
+    out = dict(STATS_DEFAULTS)
+    if value is None:
+        return out
+    if not isinstance(value, dict):
+        raise KeymapError(f"stats: a mapping of chips to true or false (it is {value!r}); known: {', '.join(STATS_DEFAULTS)}")
+    unknown = [k for k in value if k not in STATS_DEFAULTS]
+    if unknown:
+        raise KeymapError(f"stats: unknown chips {unknown}; known: {', '.join(STATS_DEFAULTS)}")
+    for k, v in value.items():
+        if isinstance(v, str) or v not in (True, False):     # 1 and 0 are True and False; "yes" is not
+            raise KeymapError(f"stats.{k} is true or false (it is {v!r})")
+        out[k] = bool(v)
+    return out
+
+
 def physical_layout(layout_spec, drawer_cfg):
     """keymap-drawer `layout` mapping -> {width, height, keys:[{x,y,w,h,r}]} with centred keys.
     Uses keymap_drawer when importable; else handles cols_thumbs_notation and ortho_layout."""
@@ -684,11 +782,16 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None
         if len(positions) != n:
             raise KeymapError(f"positions: {len(positions)} entries for {n} drawer keys")
         pos_to_idx = {str(int(p)): i for i, p in enumerate(positions)}
+    fingers = configured_fingers(cfg["fingers"], n) if cfg.get("fingers") is not None else infer_fingers(layout)
     return {
         "kind": "keymap",
         "source": source,
         "title": cfg.get("title") or "",
         "hud": hud_cfg,
+        "stats": stats_settings(cfg.get("stats")),
+        # The finger that strikes each drawer key (FINGERS), or null: for the hands' shares and
+        # same-finger bigrams, which are not shown without it.
+        "fingers": fingers,
         # The keyboard's combo term: positions pressed within it form a combo (+ hud.combo_slack_ms).
         "combo_term": int(cfg.get("combo_term_ms", 50)),
         # How long the keyboard must be idle before a combo (ZMK require-prior-idle-ms): a chord

@@ -155,7 +155,7 @@ one of them.
 | `status` | is it running, and which of the keyboard's two channels is live |
 | `log` | follow the panel and feed logs |
 | `session [list\|new\|save\|load\|reset\|delete\|rename-layer]` | the typing sessions: the active one, naming it, starting or loading another |
-| `heatmap [live\|session\|off]` | what the keys glow with: what was just typed, every press this session, or nothing |
+| `heatmap [live\|session\|physical\|speed\|off]` | what the keys glow with: what was just typed, every press this session on the layer on screen or on all of them, each key's time, or nothing |
 | `doctor` | check this machine and say what is missing |
 | `setup` | prepare this machine: packages, virtualenv, config, permissions |
 | `update`, `uninstall` | fetch a newer tree; remove the tree and the command |
@@ -192,6 +192,8 @@ key with its default and a comment:
 | `title` | corner text (default: the name of the keyboard that is typing) |
 | `stagger` | a 3x5 split whose `layout` only counts its keys is drawn with a Ferris Sweep's column stagger; `false` keeps it ortholinear |
 | `hud`, `feed` | every size and timing: panel width and opacity, flash and pill durations, combo slack, how long a key's glow takes to fade, dead-key window … |
+| `stats` | which chips the [stats bar](#how-it-works) shows: `true` or `false` for each |
+| `fingers` | the finger that strikes each drawer key (`lp` … `li`, `lt`, `rt`, `ri` … `rp`), when the HUD cannot tell from the layout |
 | `extras` | inference hints, used only with firmware that reports no positions |
 
 For a YAML produced by `keymap parse`, layer order and key order already match the keymap and
@@ -328,10 +330,35 @@ Above the panel, a bar says how the typing goes:
 - keystrokes, and the share of them made as combos;
 - the share of typing done on the layer on screen.
 
-Its last chip names the [session](#sessions) and switches the heatmap between `live`, `session`
-(how often each key has been pressed, on the layer on screen) and `off`. Every keystroke the
-board draws is counted once, when nothing can take it back: a combo counts as one keystroke, and
-a report that beats its own position is not counted twice. `hud.stats_bar: 0` hides the bar.
+Its last chip names the [session](#sessions) and switches the heatmap: `live`; `session`, how
+often each key was pressed on the layer on screen; `physical`, every layer's presses of a key
+added up, which is where the fingers went; `speed`, how long each key takes after the key before
+it, the slowest the hottest; and `off`. Every keystroke the board draws is counted once, when
+nothing can take it back: a combo counts as one keystroke, and a report that beats its own
+position is not counted twice. `hud.stats_bar: 0` hides the bar.
+
+Four more chips are there for the asking, in the config's `stats:` section, which turns any chip
+on or off:
+
+```yaml
+stats:
+  time: true     # how long the session has been typing, pauses left out
+  hands: true    # the left and the right hand's shares of the keystrokes
+  sfb: true      # same-finger bigrams: two keys in a row struck by one finger, of all such pairs
+  slow: true     # the key slowest to strike after the key before it, and its average
+  layer: false   # ...and any of the others off: wpm, session, accuracy, keys, layer, heatmap
+```
+
+A key's time runs from the keystroke before it, within `hud.wpm_idle_ms`. A key that can be held
+(a layer key, a home-row mod) is a keystroke only when it was tapped: held, it typed nothing, and
+the key struck under it is timed from the keystroke before. It counts as held when a layer came
+up with it, when it stayed down past 400 ms, or when another key went down and came up inside it,
+which is how ZMK's balanced hold-tap decides. A thumb or a chord between two keys makes no bigram
+of them. `hands` and `sfb` need to know which finger strikes each key. On a split board drawn
+the usual way, row by row with the thumbs last, the HUD works that out from the columns: pinky
+to index from the outside in, with the index finger taking the two inner columns of a hand of
+five or more. Otherwise, say it in drawer order with `fingers: [lp, lr, lm, li, …, lt, rt, …]`.
+Neither chip shows until the fingers are known.
 
 ### Where the messages come from
 

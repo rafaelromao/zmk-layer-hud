@@ -42,13 +42,16 @@ The active [session](../README.md#sessions) goes out whenever it changes:
 ```json
 {"kind":"session","v":1,"id":"9f2c…","gen":0,"name":"colemak-1","named":true,"heatmap":"live",
  "presses":{"alpha1":{"13":412}},"combos":{"alpha1":{"1,2":37}},
- "totals":{"chars":1904,"deleted":61,"active_ms":402000,"active_net":1843,"peak_wpm":88},
+ "ms":{"alpha1":{"13":61200}},"timed":{"alpha1":{"13":380}},
+ "totals":{"chars":1904,"deleted":61,"active_ms":402000,"active_net":1843,"sfb":41,"bigrams":1520,"peak_wpm":88},
  "acks":{"k3v9x0a2qe":57},"keyboards":["Diamond"],"created":"…","updated":"…"}
 ```
 
 `presses` and `combos` are counts per drawer layer, by ZMK position (a combo by its positions,
-sorted). `gen` goes up when the session is reset. `acks` says, for each page that reports to it,
-the last batch the counts include (below).
+sorted). `ms` and `timed` are, per key, the milliseconds from the keystroke before it and how
+many presses were timed; `sfb` and `bigrams` count same-finger bigrams and all bigrams (the
+README's [stats bar](../README.md#how-it-works)). `gen` goes up when the session is reset.
+`acks` says, for each page that reports to it, the last batch the counts include (below).
 
 On macOS, `{"kind":"secure","on":true}` says a password field has focus. From then on the feed
 sends no `key`, `press` or `release` until `{"kind":"secure","on":false}`, and a page clears what
@@ -84,9 +87,14 @@ seconds; it also says when its heatmap chip is switched:
 
 ```json
 {"kind":"tally","v":1,"token":"…","page":"k3v9x0a2qe","seq":58,"session":"9f2c…","gen":0,
- "presses":{"alpha1":{"13":9}},"combos":{},"chars":11,"deleted":1,"active_ms":2100,"active_net":10,"peak_wpm":0}
+ "presses":{"alpha1":{"13":9}},"combos":{},"ms":{"alpha1":{"13":1450}},"timed":{"alpha1":{"13":8}},
+ "chars":11,"deleted":1,"active_ms":2100,"active_net":10,"sfb":0,"bigrams":9,"peak_wpm":0}
 {"kind":"heatmap","v":1,"token":"…","mode":"session"}
 ```
+
+`mode` is one of `live`, `session`, `physical`, `speed` and `off`. A key that can be held is a
+keystroke only once its release says it was tapped, so its time and bigram can come in a later
+batch than its press.
 
 These are taken only with `token`, which the Linux panel makes for each run and gives to the feed
 (`ZMKHUD_TALLY_TOKEN`) and to its own page alone (`index.html?…&tally=`): a second page on the
