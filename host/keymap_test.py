@@ -191,6 +191,14 @@ class Settings(unittest.TestCase):
         with self.assertRaises(km.KeymapError):
             km.build_message({"hud": {"opacity": 120}}, DOC)
 
+    def test_a_setting_that_is_not_a_number_says_so(self):
+        # Not a traceback, and not quietly something else.
+        for bad in ("fast", "320ms", 2.5, True, None, [320]):
+            with self.assertRaises(km.KeymapError) as e:
+                km.build_message({"hud": {"press_ms": bad}}, DOC)
+            self.assertIn("hud.press_ms must be a whole number", str(e.exception))
+        self.assertEqual(320, km.build_message({"hud": {"press_ms": 320.0}}, DOC)["hud"]["press_ms"])
+
     def test_the_page_falls_back_to_the_same_defaults(self):
         # hud.js keeps its own copy for a keymap message without `hud` (a dump older than the
         # setting, the committed test fixture). A setting added here and not there reads as

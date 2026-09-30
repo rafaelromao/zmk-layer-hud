@@ -665,7 +665,12 @@ def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None
     unknown = sorted(set(cfg.get("hud") or {}) - set(HUD_DEFAULTS))
     if unknown:
         raise KeymapError(f"hud: unknown settings {unknown}; known: {sorted(HUD_DEFAULTS)}")
-    hud_cfg.update({k: int(v) for k, v in (cfg.get("hud") or {}).items()})
+    for k, v in (cfg.get("hud") or {}).items():
+        # A whole number and nothing else: int("fast") is a traceback, int(2.5) quietly 2, and a
+        # YAML `yes` is True, which int() takes for 1.
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != int(v):
+            raise KeymapError(f"hud.{k} must be a whole number (it is {v!r}); the default is {HUD_DEFAULTS[k]}")
+        hud_cfg[k] = int(v)
     if not 0 <= hud_cfg["opacity"] <= 100:
         raise KeymapError("hud.opacity must be between 0 and 100")
     # ZMK key position -> drawer key index (firmware `positions;`). Default: the drawer's key
