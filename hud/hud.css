@@ -14,6 +14,7 @@
   --held: #c5d6ff;
   --pressed: #ffb454;
   --combo: #ffd68a;
+  --heat-live: #ff5a36;                      /* the live heatmap's glow, set apart from --pressed */
   --chip: #2a2f3d;
   --chip-fg: #e6e8ef;
   --chip-vim: #7aa2f7;
@@ -53,6 +54,7 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
   display: grid; grid-template-rows: calc(var(--kh, 62px) * 0.23) 1fr calc(var(--kh, 62px) * 0.23);
   align-items: center; justify-items: center;
   transition: background 90ms ease, transform 90ms ease, box-shadow 90ms ease;
+  isolation: isolate;                        /* the heat overlay's own stacking context (.key::before) */
 }
 /* Legends scale with the key height (--kh, set by hud.js from the drawn layout). */
 /* line-height leaves room for a mark above a capital. At 1 the line box is exactly the font size,
@@ -78,6 +80,19 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 /* A key the HUD could not place on the keyboard's real layer stack (host-only inference,
    e.g. synthesized keys in a rehearsal): same flash, dashed edge. */
 .key.pressed.inferred { border: 2px dashed #a86a1a; }
+/* The heatmap (hud.js heat): an overlay above the key's own fill and below its legends -- z-index
+   -1 inside the stacking context `isolation` gives each key. An overlay, not a background: the
+   board's layer tints (#board.off .key …) outrank any class on a key and would hide it on the base
+   layer. Inset 3px, so the rings drawn inside a key's edge (activator, mod) stay in sight. hud.js
+   writes --heat, the overlay's opacity, on the key; the transition smooths its coarse steps.
+   Longhand offsets, not `inset`: the page runs in WebKit builds older than that property. */
+.key::before {
+  content: ""; position: absolute; top: 3px; right: 3px; bottom: 3px; left: 3px; border-radius: 6px;
+  z-index: -1; pointer-events: none; background: var(--heat-live); opacity: var(--heat, 0);
+  transition: opacity 120ms linear;
+}
+/* A GIF still (&demo=N) is drawn as it always was. */
+body.demo .key::before { display: none; }
 #layer.inferred { border-bottom-style: dashed; }
 #status { font-size: 12px; color: #aab0c0; min-height: 16px; display: flex; }
 #feed { color: #e0af68; }

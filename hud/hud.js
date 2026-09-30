@@ -29,10 +29,11 @@
   "use strict";
 
   const GAP = 6;             // px between keys at the drawn scale
-  // Every timing the page uses comes from the config's `hud:` section (host/keymap.py fills the
-  // defaults in); these are only the fallbacks for a keymap message without it.
+  // Every timing worth tuning comes from the config's `hud:` section (host/keymap.py fills the
+  // defaults in); these are only the fallbacks for a keymap message without it. What is left as a
+  // constant (HEAT_TICK_MS) is how often the page redraws, not anything a user would notice.
   const DEFAULTS = { opacity: 86, press_ms: 320, release_ms: 60, held_timeout_ms: 5000, momentary_ms: 700, combo_slack_ms: 20, activator_ms: 400,
-    positions_fresh_ms: 3000, combo_pill_ms: 1000, sequence_ms: 200, sequence_max: 6, one_shot_ms: 450 };
+    positions_fresh_ms: 3000, combo_pill_ms: 1000, sequence_ms: 200, sequence_max: 6, one_shot_ms: 450, heatmap_ms: 3000 };
   const T = name => (state.data && state.data.hud && state.data.hud[name] != null) ? state.data.hud[name] : DEFAULTS[name];
   const recentPos = [];
 
@@ -68,6 +69,9 @@
     keyEls: [],
     timers: new Map(),
     scale: 1,
+    heat: new Map(),          // key idx -> {h, t}: the live heatmap (see bumpHeat)
+    heatTimer: null,
+    demo: false,              // a GIF still (&demo=N): drawn as it always was, no heat
   };
 
   const $ = id => document.getElementById(id);
@@ -114,6 +118,7 @@
       board.appendChild(e);
       state.keyEls[idx] = e;
     });
+    paintHeat();   // the glow lives by index, not on the elements just replaced
   }
 
   // ZMK layer id → keymap entry ({name, drawer, label, cls}); falls back to the YAML order.
@@ -320,6 +325,83 @@
     try { window.webkit.messageHandlers.zmkhud.postMessage(JSON.stringify({ kind: "size", width, height })); } catch (e) { /* not WebKit */ }
   }
 
+  // ---------- heat ----------
+
+  /* The live heatmap: a key glows when it goes down and cools over hud.heatmap_ms, the way QMK's
+   * typing heatmap warms a key's LED. A press closes HEAT_STEP of the gap to full heat, so a key
+   * struck again and again reads hotter than one struck once without ever saturating, and heat
+   * falls at one rate from wherever it was left: a key pressed once is cold after heatmap_ms, one
+   * that was hammered stays warm up to 1/HEAT_STEP times as long.
+   *
+   * Heat is kept here by drawer index, not on the key elements: buildBoard replaces all of them on
+   * a keymap reload, a resize and every WebSocket reconnect (the Hub replays the keymap), and a
+   * glow must not go out because the socket blinked. One timer serves every key and runs only
+   * while one is warm. Not requestAnimationFrame: the tests' clock runs rAF inline, where a loop
+   * that re-arms itself would never return. The tick is coarse; the overlay's opacity transition
+   * (hud.css .key::before) is what makes the fade smooth. */
+  const HEAT_TICK_MS = 100;
+  const HEAT_STEP = 0.4;      // of the gap to full heat, closed by one press
+  const HEAT_MAX = 0.55;      // the overlay's opacity at full heat: the legends must stay readable
+  const HEAT_LEVELS = 20;     // opacity is written in this many steps, so a fading key is touched ~20 times
+  const HEAT_GAMMA = 0.6;     // drawn as heat^0.6: a key pressed once still shows, not a faint blush
+
+  function heatAt(e, now) {
+    const ms = T("heatmap_ms");
+    if (!(ms > 0)) return 0;
+    // A clock that went backwards (sleep, a time change) must not heat a key up.
+    return Math.max(0, e.h - Math.max(0, now - e.t) * HEAT_STEP / ms);
+  }
+
+  function bumpHeat(idx) {
+    if (state.demo || !(T("heatmap_ms") > 0) || !state.keyEls[idx]) return;
+    const now = Date.now();
+    const e = state.heat.get(idx);
+    const v = e ? heatAt(e, now) : 0;
+    state.heat.set(idx, { h: 1 - (1 - v) * (1 - HEAT_STEP), t: now });
+    paintKeyHeat(idx, now);
+    armHeat();
+  }
+
+  function armHeat() {
+    if (state.heatTimer === null && state.heat.size) state.heatTimer = setTimeout(heatTick, HEAT_TICK_MS);
+  }
+
+  function heatTick() {
+    state.heatTimer = null;
+    const now = Date.now();
+    for (const idx of [...state.heat.keys()]) paintKeyHeat(idx, now);
+    armHeat();
+  }
+
+  // The key's --heat, the overlay's opacity, written only when its step changes. A key that has
+  // cooled is forgotten and the property cleared, not left at 0.
+  function paintKeyHeat(idx, now) {
+    const e = state.heat.get(idx);
+    const v = e ? heatAt(e, now) : 0;
+    if (e && v <= 0) state.heat.delete(idx);
+    const el = state.keyEls[idx];
+    if (!el) return;
+    const step = Math.ceil(Math.pow(v, HEAT_GAMMA) * HEAT_LEVELS);   // ceil: a key still warm never paints cold
+    const value = step > 0 ? String(Math.round(step / HEAT_LEVELS * HEAT_MAX * 1000) / 1000) : "";
+    if (el.style.getPropertyValue("--heat") !== value) el.style.setProperty("--heat", value);
+  }
+
+  // Every key, onto a board buildBoard has just replaced.
+  function paintHeat() {
+    const now = Date.now();
+    state.keyEls.forEach((el, idx) => paintKeyHeat(idx, now));
+  }
+
+  /* A key lit from a report alone (no position said which key it was) warms only while the page
+   * has never been sent a position. With positions coming, a report that beats its own position
+   * lights a guess that pressAt then takes down -- sometimes the wrong key, and a glow outlives
+   * the flash by seconds. `idxs` are the keys that typed the character, never the activators lit
+   * beside them for show. */
+  function heatGuess(idxs) {
+    if (state.posAt) return;
+    for (const idx of idxs) bumpHeat(idx);
+  }
+
   // ---------- resolver ----------
 
   // A combo is drawn the way keymap-drawer draws it: a pill with the combo's legend at the
@@ -498,6 +580,7 @@
       // "()" inside "();"): unlight them, pill included, and light the longer match.
       for (const p of parts) unlight(p);
       flash(r.hit, r.hit.length > 1 ? "combo" : null);
+      heatGuess(r.hit);
       let pill = null;
       if (r.hit.length > 1) { const c = comboFor(r.layer, seq); if (c) pill = showCombo(r.hit, c.key); }
       setInferred(false);
@@ -569,6 +652,7 @@
       if (r) {
         const extra = r.viaShift ? activatorsOf(r.layer) : [];
         flash(r.hit.concat(extra), r.hit.length > 1 ? "combo" : null);
+        heatGuess(r.hit);
         // The pill is remembered with the keys, so whatever supersedes this guess -- a macro's
         // longer legend, or the positions arriving after it -- takes the pill down too.
         let pill = null;
@@ -603,6 +687,7 @@
         const shiftLayer = (ex.sticky || []).find(l => /shift/i.test(l));
         const extra = activatorsOf(ex.alpha2).concat(/^\p{Lu}$/u.test(token) && shiftLayer ? activatorsOf(shiftLayer) : []);
         flash([direct].concat(extra), inferredCls);
+        heatGuess([direct]);
         remember(token, [direct], null, ex.alpha2);
         afterKey();
         return;
@@ -618,6 +703,7 @@
       if (r) {
         const extra = r.viaShift ? activatorsOf(r.layer) : [];
         flash(r.hit.concat(extra), [r.hit.length > 1 ? "combo" : "", inferredCls].join(" ").trim() || null);
+        heatGuess(r.hit);
         let pill = null;
         if (r.hit.length > 1) { const c = comboFor(r.layer, token); if (c) pill = showCombo(r.hit, c.key); }
         remember(token, r.hit.concat(extra), pill, r.layer);
@@ -634,6 +720,7 @@
           if (sticky.has(layer)) state.oneShot = layer; else armMomentary(layer);
           render();
           flash(hit.concat(activatorsOf(layer)), [hit.length > 1 ? "combo" : "", inferredCls].join(" ").trim() || null);
+          heatGuess(hit);
           let pill = null;
           if (hit.length > 1) { const c = comboFor(layer, token); if (c) pill = showCombo(hit, c.key); }
           remember(token, hit.concat(activatorsOf(layer)), pill, layer);
@@ -715,6 +802,8 @@
       state.momentary = []; state.oneShot = null;
       state.activatorOf = {}; state.drawnSince = {}; state.held.clear(); state.comboShown = null;
       state.baseLayers = [data.base];
+      // Heat outlives a reload (it fades in seconds anyway), but not on keys this layout lacks.
+      for (const idx of [...state.heat.keys()]) if (idx >= data.layout.keys.length) state.heat.delete(idx);
       document.documentElement.style.setProperty("--panel-alpha", String(T("opacity") / 100));
       buildBoard();
       const t = $("title");
@@ -797,6 +886,7 @@
         }
       }
       flash([idx]);
+      bumpHeat(idx);   // a position is never taken back, so it warms its key at once
       // Stay lit until the release arrives (a safety timeout covers a lost report).
       clearTimeout(state.timers.get(idx));
       state.timers.set(idx, setTimeout(() => hud.releaseAt(pos), T('held_timeout_ms')));
@@ -889,6 +979,9 @@
   // Generic host: index.html?ws=ws://127.0.0.1:8766 — messages are
   //   {"kind":"keymap",…}  {"kind":"key", ...event}  {"kind":"layers","ids":[…]}   (host/hudfeed.py speaks this).
   const params = new URLSearchParams(location.search);
+  // A GIF still is drawn as it always was: no glow, whatever demoFrame presses. Said here, before
+  // anything loads -- demoShown arrives only after the frame's keys have gone down.
+  if (params.get("demo") !== null) { state.demo = true; document.body.classList.add("demo"); }
   const wsUrl = params.get("ws");
   if (wsUrl) {
     const connect = () => {

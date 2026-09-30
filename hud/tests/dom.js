@@ -232,8 +232,12 @@ function makeDocument() {
 // ---------- the page ----------
 
 /* Load hud.js and keys.js into one sandbox, exactly as index.html loads them (keys.js first, so
- * window.keys exists by the time hud.key forwards to it). Returns the handles a test needs. */
-function loadPage() {
+ * window.keys exists by the time hud.key forwards to it). Returns the handles a test needs.
+ *
+ * `search` is the page's query string, for what hud.js decides from it at load (a GIF still's
+ * &demo=N). A query that names a keymap makes the page fetch it; `fetch` here never settles, so the
+ * page stays exactly as the test loads it rather than racing a second load in. */
+function loadPage(opts = {}) {
   const clock = new Clock();
   const document = makeDocument();
   const board = document.getElementById("board");
@@ -241,7 +245,8 @@ function loadPage() {
 
   const sandbox = {
     document,
-    location: { search: "", protocol: "file:", href: "file:///hud/index.html" },
+    location: { search: opts.search || "", protocol: "file:", href: "file:///hud/index.html" + (opts.search || "") },
+    fetch: () => new Promise(() => {}),
     navigator: { userAgent: "node" },
     console,
     URLSearchParams,

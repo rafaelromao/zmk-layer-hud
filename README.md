@@ -171,7 +171,7 @@ key with its default and a comment:
 | `combos` | layer coverage for a combo the import gets wrong |
 | `keyboard`, `serial`, `ble` | pick one of several ZMK boards; name its serial port; its BLE address |
 | `title` | corner text (default: the name of the keyboard that is typing) |
-| `hud`, `feed` | every size and timing: panel width and opacity, flash and pill durations, combo slack, dead-key window … |
+| `hud`, `feed` | every size and timing: panel width and opacity, flash and pill durations, combo slack, how long a key's glow takes to fade, dead-key window … |
 | `extras` | inference hints, used only with firmware that reports no positions |
 
 For a YAML produced by `keymap parse`, layer order and key order already match the keymap and
@@ -258,6 +258,8 @@ WebSocket.
 **The page** (`hud/`) draws the physical layout, lights the exact key for each position while it
 is held, groups positions pressed within the combo term into the combo the drawer defines, keeps
 a one-shot layer on screen through its key's flash, and shows typed characters in a strip below.
+A key also glows once it is pressed, and cools over `hud.heatmap_ms` (3 s; `0` turns it off): a
+live heatmap of what was just typed, where a key struck again and again stays warm longest.
 
 ### Where the messages come from
 

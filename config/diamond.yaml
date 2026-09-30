@@ -24,6 +24,7 @@ hud:
   momentary_ms: 700           # (no positions) an inferred held layer stays this long after its last key
   sequence_ms: 200            # (no positions) keys within this may spell one multi-key legend
   sequence_max: 6             # (no positions) longest such sequence, in keys
+  heatmap_ms: 3000            # a key pressed once glows and fades over this (0: no heatmap); pressed often, it stays warm longer
 
 # The reader's timings.
 feed:

@@ -74,6 +74,7 @@ HUD_DEFAULTS = {
     "sequence_ms": 200,        # keys typed within this may spell one multi-key legend (no positions)
     "sequence_max": 6,         # longest such sequence, in keys
     "positions_fresh_ms": 3000,  # after a position report, characters stop lighting keys for this long
+    "heatmap_ms": 3000,        # a key pressed once glows and fades over this (0: no heatmap); pressed often, it stays warm longer
 }
 # `feed:` section: the reader's timings.
 FEED_DEFAULTS = {

@@ -43,11 +43,12 @@ test-firmware: ## host-side tests for the module's pure encode/decode policy
 test-host: ## Python tests: the wire format, the signal decoder, the keymap-drawer conversion
 	$(PYTHON) -m unittest discover -s host -p '*_test.py' -v
 
-test-hud: ## the HUD page: every key and combo, the strip, and every way to type every legend on every channel
+test-hud: ## the HUD page: every key and combo, the heatmap, the strip, and every way to type every legend on every channel
 	@if [ -z "$(NODE)" ]; then \
 	  echo "test-hud: node not found, skipping (brew install node)"; \
 	else \
 	  $(NODE) hud/tests/hud_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
+	  $(NODE) hud/tests/stats_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/strip_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/words_test.js $(if $(KEYMAP),--keymap $(KEYMAP)); \
 	fi

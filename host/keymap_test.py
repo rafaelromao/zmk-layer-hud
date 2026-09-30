@@ -2,6 +2,7 @@
 keymap-drawer and PyYAML are optional here; the fallback paths are what run without them."""
 
 import os
+import re
 import sys
 import unittest
 
@@ -130,6 +131,17 @@ class Settings(unittest.TestCase):
             km.build_message({"hud": {"nope": 1}}, DOC)
         with self.assertRaises(km.KeymapError):
             km.build_message({"hud": {"opacity": 120}}, DOC)
+
+    def test_the_page_falls_back_to_the_same_defaults(self):
+        # hud.js keeps its own copy for a keymap message without `hud` (a dump older than the
+        # setting, the committed test fixture). A setting added here and not there reads as
+        # undefined on the page: a timer of NaN ms, a glow that never shows. `width` is the one
+        # the page takes from the message alone (postSize).
+        page = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hud", "hud.js")
+        with open(page, encoding="utf-8") as f:
+            block = re.search(r"const DEFAULTS = \{(.*?)\};", f.read(), re.S).group(1)
+        on_page = {k: int(v) for k, v in re.findall(r"(\w+):\s*(\d+)", block)}
+        self.assertEqual(on_page, {k: v for k, v in km.HUD_DEFAULTS.items() if k != "width"})
 
     def test_positions_map(self):
         msg = km.build_message({}, DOC)
