@@ -20,8 +20,9 @@ builds just the virtualenv, which is what the error messages that mention it mea
 ## The suites
 
 ```bash
-make test        # firmware wire policy (C) + host decoder and keymap conversion (Python) + the page (node)
+make test        # firmware wire policy (C) + host decoder and keymap conversion (Python) + the page (node) + the landing page
 make test-hud    # just the page; KEYMAP=hud/keymap.json runs it against your own board
+make test-site   # just the landing page: what it is built from, and its demo on the HUD page
 make audit       # the drawing against the keyboard's own keymap; SOURCE=path/to/zmk-config for a working copy
 make fixture     # rebuild the committed test keymap from the configured one
 ```
@@ -77,6 +78,55 @@ keymap's own ways of typing each character (`host/ways.py`) and to what the page
 timing, and `hud/tests/play_test.js` plays the committed scripts on the page, keystroke by
 keystroke. `make fixture` also rebuilds `hud/tests/fixtures/example-3x5.json`, the 3x5 sample's
 keymap those scripts are typed on.
+
+## The landing page
+
+`site/` is the page at <https://rafaelromao.github.io/zmk-layer-hud/>. GitHub Pages serves `docs/`
+from `main`, so `make site` builds the page into `docs/`, and it is published by committing what
+that writes. `STRICT=1` fails, rather than skips, on anything that would not be drawn as it is at
+home.
+
+`site/build.py` puts together the page's own files, the HUD page as it ships (the files
+`hud/index.html` names, nothing else), and for each board in `site/boards.json` its keymap message
+and its demo. A board is converted the way the panel converts it, under the venv with
+keymap-drawer's layouts and glyphs, and its `source` is replaced with a public one: a dump names the
+keymap by a path under the home folder of whoever built it. A demo is compiled ahead of time by
+`host/play.py`, in the shape `--capture` prints. A board whose files are not on this machine is
+skipped with a line saying so: the Diamond's keymap lives in
+[rafaelromao/keyboards](https://github.com/rafaelromao/keyboards).
+
+In `docs/` the page is `index.html` and its files beside it, `hud/` and `boards/`; `hud.gif` is
+used where it is. A build removes and rewrites exactly those names and leaves the docs, the demo
+scripts and everything else in `docs/` alone, and a build of unchanged sources writes the same
+bytes, so `git status` after `make site` shows only what really changed. Jekyll renders the
+Markdown in `docs/` beside the page, as before; the page's own files have no front matter and are
+served as they are. `make test-site` ends with `site/build.py --check`, which says which published
+files are behind `hud/` or `site/`: a change to the HUD reaches the page only once `make site` has
+been run and its output committed.
+
+The page runs the HUD in a frame, `hud/index.html?embed`. With `?embed` the HUD installs no keydown
+listener of its own and hides the ✕, because the page around it owns the keyboard. `site/demo.js`
+turns the browser's key and input events into the feed's own key messages (typing sent in: `sent`,
+and `synthetic`, since no firmware position stands behind them) and plays a compiled demo on a
+clock of its own; `site/site.js` hands both to the frame through `hud.receive`. The frame never gets
+`?ws=`: there is no feed behind a public page. To look at it, serve `docs`
+(`python3 -m http.server -d docs 8790`) and open <http://localhost:8790>.
+
+`site/og.png`, the card that link previews show, is rendered by hand from `site/og.html` and
+committed; `make site` then copies it into `docs/`. `og.html` draws the real HUD as the 3x5 demo
+leaves it 1450 ms in:
+
+```bash
+make site
+python3 -m http.server -d docs 8791 --bind 127.0.0.1 &
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless=new --disable-gpu \
+  --no-first-run --user-data-dir="$(mktemp -d)" --hide-scrollbars --window-size=1200,630 \
+  --virtual-time-budget=3000 --screenshot="$PWD/site/og.png" http://127.0.0.1:8791/og.html
+kill %1
+make site
+```
+
+On Linux, `google-chrome` or `chromium` in place of the macOS path.
 
 ## The command line
 

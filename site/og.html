@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>zmk-layer-hud · social card</title>
+<!-- The 1200×630 card link previews show (og:image). Rendered once into site/og.png, with the
+     command in docs/development.md; not linked from the page. The HUD in it is the real one, drawn
+     as the 3x5 demo leaves it 1450 ms in: the ( combo's pill up, "Hello " still warm. -->
+<style>
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; background: #1a1b26; color: #c0caf5; }
+  .card { display: grid; grid-template-columns: 430px 1fr; gap: 40px; align-items: center;
+          height: 100%; padding: 0 56px; box-sizing: border-box; }
+  h1 { margin: 0 0 22px; font: 800 46px/1.1 "Hack Nerd Font", "JetBrains Mono", Menlo, monospace; color: #e6e8ef; }
+  h1 span { display: inline-block; padding-bottom: 8px; border-bottom: 5px solid #bb9af7; }
+  p { margin: 0 0 18px; font: 30px/1.35 system-ui, -apple-system, "Segoe UI", sans-serif; color: #c0caf5; }
+  p.small { font-size: 22px; color: #9aa5ce; }
+  b { color: #ffb454; font-weight: 700; }
+  iframe { width: 100%; height: 520px; border: 0; color-scheme: light; }   /* as site.css says why */
+</style>
+</head>
+<body>
+<div class="card">
+  <div>
+    <h1><span>zmk-layer-hud</span></h1>
+    <p>The layer you're on, and every key you press, <b>reported by the keyboard itself</b>.</p>
+    <p class="small">An on-screen HUD for ZMK, drawn from your keymap-drawer file. Try it in the browser.</p>
+  </div>
+  <iframe src="hud/index.html?embed&amp;keymap=../boards/3x5.json&amp;timeline=../boards/3x5-demo.json&amp;at=1450"></iframe>
+</div>
+</body>
+</html>

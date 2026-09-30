@@ -181,8 +181,9 @@ class Host:
         self.feed = hudfeed.Feed(emit, log=log).start()
         hub.on_inject, hub.sessions = self.feed.resync, self.feed.sessions
         self.socket.start()
-        # Width from the config (hud.width); the height follows the page (see resize).
-        width = ((self.feed.source.cfg if self.feed.source else {}).get("hud") or {}).get("width")
+        # Width from the config (hud.width), whether or not its keymap converts; the height follows
+        # the page (see resize).
+        width = (self.feed.cfg.get("hud") or {}).get("width")
         if width:
             self.resize(int(width), None)
 

@@ -136,6 +136,48 @@ function checkSyntheticFreshness(page, data) {
   return [];
 }
 
+/* Framed by another page (index.html?embed, the landing page's demo), the page around the frame
+ * has the keyboard. The dev keydown listener, which takes every key but F5 and ⌘ chords, must not
+ * be installed there: it would swallow Tab, which is the way out of the frame. On a plain http page
+ * it still is, since that is how the page is tried in a browser. A Tab keydown shows both. */
+function checkEmbed() {
+  const fails = [];
+  for (const embed of [false, true]) {
+    const page = loadPage({ protocol: "http:", search: embed ? "?embed" : "" });
+    let typed = 0, prevented = 0;
+    page.hud.key = () => { typed++; };   // the listener calls hud.key on this same object
+    page.dispatch("keydown", { key: "Tab", metaKey: false, preventDefault: () => { prevented++; } });
+    const where = embed ? "?embed" : "a plain http page";
+    const want = embed ? 0 : 1;
+    if (typed !== want) fails.push(`${where}: Tab reached hud.key ${typed} times, want ${want}`);
+    if (prevented !== want) fails.push(`${where}: Tab was prevented ${prevented} times, want ${want}`);
+    if (page.document.documentElement.classList.contains("embed") !== embed) {
+      fails.push(`${where}: <html> ${embed ? "lacks" : "has"} the embed class`);
+    }
+  }
+  return fails;
+}
+
+/* A board drawn in capitals, the way `keymap parse` draws letters (the committed 3x5 sample): the
+ * page places typing sent in by itself, and a lowercase letter is found on its capital's key -- the
+ * legend is the keycap. h and H light the same key. */
+function checkCapitals() {
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "example-3x5.json"), "utf8"));
+  const idx = (data.layers[data.base] || []).findIndex(k => k.tap === "H");
+  if (idx < 0) return ["the 3x5 fixture has no H on its base layer"];
+  const page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  const lit = () => page.hud.state.keyEls.flatMap((el, i) => (el.classList.contains("pressed") ? [i] : []));
+  const fails = [];
+  for (const ch of ["h", "H"]) {
+    page.hud.key({ type: "keyDown", name: ch, chars: ch, flags: { shift: ch === "H" }, repeat: false, combos: false });
+    if (lit().join() !== String(idx)) fails.push(`typed-in ${ch} should light the H key (${idx}); lit [${lit()}]`);
+    page.clock.advance(6000);
+  }
+  return fails;
+}
+
 async function main() {
   const opt = parseArgs(process.argv.slice(2));
   if (!fs.existsSync(opt.keymap)) {
@@ -154,6 +196,18 @@ async function main() {
   const freshnessFailures = checkSyntheticFreshness(page, data);
   if (freshnessFailures.length) {
     for (const failure of freshnessFailures) console.error(`FAIL synthetic-freshness: ${failure}`);
+    process.exit(1);
+  }
+
+  const embedFailures = checkEmbed();
+  if (embedFailures.length) {
+    for (const failure of embedFailures) console.error(`FAIL embed: ${failure}`);
+    process.exit(1);
+  }
+
+  const capitalFailures = checkCapitals();
+  if (capitalFailures.length) {
+    for (const failure of capitalFailures) console.error(`FAIL capitals: ${failure}`);
     process.exit(1);
   }
 

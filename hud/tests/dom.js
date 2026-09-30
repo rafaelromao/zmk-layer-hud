@@ -7,7 +7,9 @@
  *
  * The tail of hud.js is inert here on purpose: location.search is empty, so `?keymap=` never
  * fetches (the loader at the end of hud.js), and location.protocol is not http, so no keydown listener is installed
- * (the one after it). What is left is window.hud and window.keys, which is all the tests want.
+ * (the one after it). What is left is window.hud and window.keys, which is all the tests want. A
+ * test that wants the listener asks for `protocol: "http:"`; window listeners are recorded, and
+ * the page's `dispatch(type, event)` calls them.
  *
  * Geometry is real, not stubbed: getBoundingClientRect() reports back the px that hud.js itself
  * wrote into element.style, so showCombo's midpoint arithmetic runs for real.
@@ -235,17 +237,21 @@ function makeDocument() {
  * window.keys exists by the time hud.key forwards to it). Returns the handles a test needs.
  *
  * `search` is the page's query string, for what hud.js decides from it at load (a GIF still's
- * &demo=N). A query that names a keymap makes the page fetch it; `fetch` here never settles, so the
- * page stays exactly as the test loads it rather than racing a second load in. */
+ * &demo=N, ?embed). A query that names a keymap makes the page fetch it; `fetch` here never settles,
+ * so the page stays exactly as the test loads it rather than racing a second load in. `protocol`
+ * is "file:" unless given: "http:" is a page in a browser, which installs the dev keydown listener. */
 function loadPage(opts = {}) {
   const clock = new Clock();
   const document = makeDocument();
   const board = document.getElementById("board");
   board.ownerBoard = board;
+  const protocol = opts.protocol || "file:";
+  const listeners = new Map();   // window's, by event type
 
   const sandbox = {
     document,
-    location: { search: opts.search || "", protocol: "file:", href: "file:///hud/index.html" + (opts.search || "") },
+    location: { search: opts.search || "", protocol,
+                href: (protocol === "file:" ? "file:///" : protocol + "//localhost/") + "hud/index.html" + (opts.search || "") },
     fetch: () => new Promise(() => {}),
     navigator: { userAgent: "node" },
     console,
@@ -259,15 +265,23 @@ function loadPage(opts = {}) {
   };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
-  sandbox.addEventListener = () => {};
-  sandbox.removeEventListener = () => {};
+  sandbox.addEventListener = (type, fn) => {
+    if (!listeners.has(type)) listeners.set(type, []);
+    listeners.get(type).push(fn);
+  };
+  sandbox.removeEventListener = (type, fn) => {
+    const fns = listeners.get(type) || [];
+    if (fns.indexOf(fn) >= 0) fns.splice(fns.indexOf(fn), 1);
+  };
+  // What a browser does with an event on window: every listener for its type, in the order added.
+  const dispatch = (type, event) => { for (const fn of (listeners.get(type) || []).slice()) fn(event); };
 
   vm.createContext(sandbox);
   for (const file of ["keys.js", "hud.js"]) {
     const src = fs.readFileSync(path.join(HUD_DIR, file), "utf8");
     vm.runInContext(src, sandbox, { filename: path.join(HUD_DIR, file) });
   }
-  return { hud: sandbox.hud, keys: sandbox.keys, document, board, clock, window: sandbox };
+  return { hud: sandbox.hud, keys: sandbox.keys, document, board, clock, window: sandbox, dispatch };
 }
 
 // Date with a movable now(). hud.js only ever calls Date.now(), but keep the rest of the class

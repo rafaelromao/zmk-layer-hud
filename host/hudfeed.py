@@ -959,6 +959,16 @@ class SecureInput:
 
 # ---------- the whole feed, embeddable ----------
 
+def read_config(path=None):
+    """The config as written, or {} when there is none to read -- without its keymap, which may be
+    what failed."""
+    try:
+        cfg = keymap_mod.load_yaml(keymap_mod.find_config(path))
+    except Exception:
+        return {}
+    return cfg if isinstance(cfg, dict) else {}
+
+
 class Feed:
     """Everything a host needs: load the config, watch the keymap, read the keyboard(s). `emit`
     is called from worker threads with each message; hosts marshal it to their UI thread.
@@ -967,17 +977,20 @@ class Feed:
     def __init__(self, emit, log=print, config=None, keys=True, keymap=True, vid=None, pid=None, name=None,
                  port=None, ble=True, ble_address=None, hid_keys=True, raw=False, sessions=True):
         self.emit, self.log = emit, log
-        self.source, cfg = None, {}
+        self.source = None
         try:
             self.source = keymap_mod.KeymapSource(config)
             self.source.load()  # fail early with a readable reason
-            cfg = self.source.cfg
         except keymap_mod.KeymapError as e:
             log(f"hudfeed: {e}")
             if keymap:
                 log("hudfeed: continuing without a keymap; the pages show nothing until one arrives")
         except Exception as e:
             log(f"hudfeed: config/keymap failed: {type(e).__name__}: {e}")
+        # Which keyboard to read, on which port and with which timings is the config's own: a keymap
+        # that does not convert must not also send the reader to the default keyboard. The source
+        # has the config (and what was imported) once it got that far; else it is read on its own.
+        self.cfg = cfg = (self.source.cfg if self.source is not None else {}) or read_config(config)
         kb = cfg.get("keyboard") or {}
         ser = cfg.get("serial") or {}
         bt = cfg.get("ble") or {}

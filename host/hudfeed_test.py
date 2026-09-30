@@ -7,14 +7,22 @@ what is tested here is what the HUD gets told. Stream ties the two together.
 import asyncio
 import json
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
-from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Hub, HubThread, SecureInput, SignalDecoder, Stream,  # noqa: E402
-                     hid_scan_note, hidraw_match, sent_in, split_report)
+from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SignalDecoder,  # noqa: E402
+                     Stream, hid_scan_note, hidraw_match, sent_in, split_report)
+
+try:
+    import yaml  # noqa: F401
+    HAVE_YAML = True
+except ImportError:
+    HAVE_YAML = bool(shutil.which("yq"))   # keymap.load_yaml's other way to read a config
 
 
 def K(mods=0, *keys):
@@ -573,6 +581,44 @@ class Socket(unittest.TestCase):
             first.stop()
             second.stop()
         self.assertTrue(any("poke" in m for m in said), said)
+
+
+@unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
+class ReaderSettings(unittest.TestCase):
+    """Which keyboard to read, on which port, and with which timings is the config's own business.
+    A keymap that does not convert -- a drawer file that moved, a config with no `keymap:` yet --
+    must not also send the feed to the default keyboard, or leave it without its port, while the
+    keymap is being fixed."""
+
+    SETTINGS = ("keyboard: {name: Test Board, vid: 4660, pid: 22136}\n"
+                "serial: {port: /dev/cu.test, probe_s: 3}\n"
+                "ble: {enabled: false}\n"
+                "hud: {width: 700}\n"
+                "feed: {rescan_s: 7, secure_input: 0}\n")
+
+    def feed_for(self, text):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+            said = []
+            # Readers are built, never started: nothing here opens a device.
+            return Feed(lambda msg: None, log=said.append, config=path, keys=False, sessions=False), said
+
+    def check(self, feed, said):
+        r = feed.reader
+        self.assertEqual((r.name, r.vid, r.pid, r.port), ("Test Board", 4660, 22136, "/dev/cu.test"))
+        self.assertEqual((r.probe_s, r.rescan), (3.0, 7.0))
+        self.assertIsNone(feed.ble)                       # ble: {enabled: false}
+        self.assertIsNone(feed.secure)                    # feed.secure_input: 0
+        self.assertEqual(feed.cfg["hud"]["width"], 700)   # the macOS panel sizes itself from this
+        self.assertTrue(any(s.startswith("hudfeed:") for s in said), said)   # and it says why there is no keymap
+
+    def test_a_keymap_that_does_not_convert(self):
+        self.check(*self.feed_for("keymap: /nowhere/keymap-drawer.yaml\n" + self.SETTINGS))
+
+    def test_a_config_with_no_keymap_yet(self):
+        self.check(*self.feed_for(self.SETTINGS))
 
 
 if __name__ == "__main__":

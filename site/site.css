@@ -1,0 +1,229 @@
+/* zmk-layer-hud landing page. Its colours are the HUD's own (hud/hud.css), which are Tokyo
+   Night's: the page is the panel's surroundings, not a second design. Dark only, like the panel. */
+:root {
+  color-scheme: dark;
+  --bg: #1a1b26;
+  --surface: #1f2335;
+  --surface-2: #24283b;
+  --code-bg: #16161e;
+  --border: rgba(255, 255, 255, 0.08);
+  --text: #c0caf5;
+  --muted: #9aa5ce;
+  --link: #7aa2f7;
+  --pressed: #ffb454;                         /* the HUD's pressed key: what to act on */
+  --layer: #bb9af7;
+  --insert: #9ece6a;
+  --raw: #f7768e;
+  --cmdline: #e0af68;
+  --key-bg: #f5f6fa;
+  --key-fg: #1f2430;
+  --key-border: #c9ccd6;
+  --mono: "Hack Nerd Font", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  --wide: 980px;
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); scroll-padding-top: 72px; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 17px/1.6 var(--sans); -webkit-text-size-adjust: 100%;
+}
+a { color: var(--link); text-underline-offset: 3px; }
+a:hover { color: #9ab8ff; }
+:focus-visible { outline: 2px solid var(--pressed); outline-offset: 2px; border-radius: 4px; }
+code, pre, kbd, .mark, .banner, h3 { font-family: var(--mono); }
+code { font-size: 0.88em; background: var(--surface-2); padding: 1px 5px; border-radius: 5px; }
+b { color: #e6e8ef; }
+
+/* ---------- header ---------- */
+.top {
+  position: sticky; top: 0; z-index: 2;
+  display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  padding: 12px max(16px, calc((100% - var(--wide)) / 2));
+  background: rgba(26, 27, 38, 0.92); border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.mark { color: var(--text); font-weight: 800; text-decoration: none; letter-spacing: 0.02em; }
+.mark::before {
+  content: ""; display: inline-block; width: 14px; height: 14px; margin-right: 8px; vertical-align: -1px;
+  border-radius: 4px; background: var(--key-bg); box-shadow: inset 0 -3px 0 var(--layer), 0 0 0 2px var(--pressed);
+}
+.top nav { display: flex; gap: 18px; flex-wrap: wrap; justify-content: flex-end; }
+.top nav a { color: var(--muted); text-decoration: none; font-size: 15px; }
+.top nav a:hover { color: var(--text); }
+
+/* ---------- sections ---------- */
+main { padding: 0 16px; }
+section { max-width: var(--wide); margin: 0 auto; padding: 56px 0 8px; }
+section > p, section > ul, section > ol, section > dl, section > pre, section > .table { max-width: 760px; }
+h1 {
+  font: 800 clamp(30px, 5.2vw, 50px)/1.1 var(--mono); letter-spacing: -0.01em;
+  margin: 0 0 18px; color: #e6e8ef;
+}
+.lead { font-size: 19px; color: var(--text); max-width: 760px; margin: 0 0 28px; }
+/* A section's heading is drawn like the HUD's layer banner (hud.css #layer): uppercase, heavy, on
+   a rule in a layer's colour. */
+.banner {
+  display: inline-block; margin: 0 0 18px; padding-bottom: 6px;
+  font-size: 22px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; color: #e6e8ef;
+  border-bottom: 3px solid var(--rule, var(--layer));
+}
+#drawer { --rule: var(--link); }
+#how { --rule: var(--layer); }
+#draws { --rule: var(--insert); }
+#setup { --rule: var(--pressed); }
+#runs { --rule: var(--cmdline); }
+#hack { --rule: var(--raw); }
+#faq { --rule: #565f89; }
+h3 { font-size: 16px; font-weight: 800; letter-spacing: 0.02em; margin: 0 0 6px; color: #e6e8ef; }
+
+pre {
+  position: relative; margin: 14px 0 18px; padding: 14px 16px; overflow-x: auto;
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
+  font-size: 14px; line-height: 1.55; color: #c0caf5;
+}
+pre code { background: none; padding: 0; font-size: inherit; white-space: pre; }
+.copy {
+  position: absolute; top: 8px; right: 8px; padding: 2px 9px;
+  font: 700 12px/20px var(--mono); color: var(--muted);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; cursor: pointer;
+}
+.copy:hover { color: var(--text); }
+.copy.done { color: var(--insert); }
+
+/* ---------- the demo ---------- */
+.hero { padding-top: 44px; }
+.demo {
+  max-width: 800px; padding: 16px; margin: 0 0 26px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
+}
+.demo-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.boards { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Buttons are keycaps: light when pressed, the way a pressed key lights on the HUD. */
+.boards button, .heat button, .play {
+  font: 700 14px/1 var(--mono); padding: 9px 13px; border-radius: 9px; cursor: pointer;
+  color: var(--text); background: var(--surface-2); border: 1px solid var(--border);
+}
+.boards button:hover, .heat button:hover, .play:hover { border-color: rgba(255, 255, 255, 0.24); }
+.boards button[aria-pressed="true"], .heat button[aria-pressed="true"] {
+  color: var(--key-fg); background: var(--key-bg); border-color: var(--key-border);
+  box-shadow: 0 0 0 2px var(--pressed);
+}
+.play { min-width: 80px; }
+.blurb { margin: 12px 2px 12px; font-size: 15px; color: var(--muted); min-height: 1.6em; }
+/* The HUD's page is transparent and declares no colour scheme, so it is light. A frame whose own
+   scheme differs from its document's gets an opaque canvas behind it -- a white box here -- and a
+   frame left `normal` takes this page's dark: it is said light, to match. */
+.frame iframe {
+  display: block; width: 100%; height: 340px; border: 0; color-scheme: light;
+  pointer-events: none;                    /* every control is on this page; the frame takes no focus */
+}
+.frame noscript img { display: block; max-width: 100%; height: auto; border-radius: 12px; }
+.try { margin-top: 10px; }
+.try label[for="type"] { display: block; font: 700 14px/1.4 var(--mono); color: var(--muted); margin: 0 0 6px; }
+.try textarea {
+  display: block; width: 100%; resize: vertical; min-height: 58px; padding: 10px 12px;
+  font: 16px/1.5 var(--mono); color: var(--text);
+  background: var(--code-bg); border: 1px solid var(--border); border-radius: 10px;
+}
+.try textarea:focus { outline: 2px solid var(--pressed); outline-offset: 1px; }
+.controls { display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; margin: 12px 0 4px; }
+.toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; cursor: pointer; }
+.toggle input { width: 18px; height: 18px; accent-color: var(--pressed); }
+.heat { display: flex; align-items: center; gap: 6px; }
+.heat-label { font: 700 13px var(--mono); color: var(--muted); margin-right: 4px; }
+.hint { font-size: 14px; color: var(--muted); margin: 10px 0 0; }
+.nojs .needs-js { display: none; }
+
+.install { max-width: 800px; }
+.install > p { margin: 0; color: var(--muted); font-size: 15px; }
+.install pre { margin: 8px 0 10px; }
+.more { font-size: 15px; }
+.more span { color: var(--muted); margin: 0 6px; }
+
+/* ---------- how it works ---------- */
+.flow { display: flex; align-items: stretch; gap: 10px; margin: 24px 0 26px; }
+.node {
+  flex: 1 1 0; min-width: 0; padding: 14px; border-radius: 14px;
+  background: var(--surface-2); border: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.node b { font: 800 15px var(--mono); letter-spacing: 0.04em; text-transform: uppercase; }
+.node span { font-size: 14px; color: var(--muted); line-height: 1.4; }
+.edges { flex: 1.1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 10px; }
+.edges.one { flex: 0.8 1 0; }
+.edge {
+  position: relative; padding: 4px 18px 8px 4px; font-size: 13px; line-height: 1.35;
+  border-bottom: 2px solid var(--muted);
+}
+.edge::after {
+  content: ""; position: absolute; right: -2px; bottom: -6px;
+  border: 5px solid transparent; border-left: 9px solid var(--muted); border-right: 0;
+}
+.edge span { display: block; color: var(--text); font-weight: 600; }
+.edge small { display: block; color: var(--muted); font-size: 12px; }
+.edge.signal { border-color: var(--layer); }
+.edge.signal::after { border-left-color: var(--layer); }
+.edge.hid { border-color: var(--insert); }
+.edge.hid::after { border-left-color: var(--insert); }
+
+.facts { padding-left: 20px; }
+.facts li { margin: 0 0 8px; }
+.table { overflow-x: auto; margin: 18px 0; }
+table { border-collapse: collapse; width: 100%; font-size: 15px; }
+th, td { text-align: left; vertical-align: top; padding: 9px 12px; border-bottom: 1px solid var(--border); }
+th { font: 700 13px var(--mono); color: var(--muted); letter-spacing: 0.04em; text-transform: uppercase; }
+
+/* ---------- what it draws ---------- */
+.grid {
+  list-style: none; padding: 0; margin: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px;
+}
+.grid li { padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; }
+.grid p { margin: 0; font-size: 15px; color: var(--muted); }
+
+/* ---------- setup ---------- */
+.steps { list-style: none; padding: 0; counter-reset: step; }
+.steps > li { counter-increment: step; position: relative; padding-left: 48px; margin: 0 0 22px; }
+/* The step's number is a keycap. */
+.steps > li::before {
+  content: counter(step); position: absolute; left: 0; top: -2px;
+  width: 32px; height: 32px; border-radius: 8px;
+  display: grid; place-items: center; font: 800 16px var(--mono);
+  color: var(--key-fg); background: var(--key-bg); border: 1px solid var(--key-border);
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.12);
+}
+.steps h3 { font-size: 17px; padding-top: 3px; }
+
+/* ---------- lists of terms ---------- */
+.hosts, .faq { margin: 0; }
+.hosts > div, .faq > div { padding: 12px 0; border-bottom: 1px solid var(--border); }
+dt { font: 800 15px var(--mono); color: #e6e8ef; margin-bottom: 2px; }
+dd { margin: 0; color: var(--text); }
+
+footer {
+  max-width: var(--wide); margin: 56px auto 0; padding: 22px 16px 40px;
+  border-top: 1px solid var(--border); font-size: 14px; color: var(--muted);
+}
+footer p { margin: 0 0 8px; max-width: 760px; }
+
+/* ---------- narrow screens ---------- */
+@media (max-width: 720px) {
+  body { font-size: 16px; }
+  .top nav a:not([href^="https"]) { display: none; }
+  section { padding-top: 40px; }
+  .hero { padding-top: 28px; }
+  .lead { font-size: 17px; }
+  .demo { padding: 10px; border-radius: 14px; margin-left: -6px; margin-right: -6px; }
+  .flow { flex-direction: column; }
+  .edges, .edges.one { flex: none; padding: 0 12px; }
+  .edge { border-bottom: 0; border-left: 2px solid var(--muted); padding: 4px 0 4px 12px; }
+  .edge::after { display: none; }
+  .edge.signal { border-left-color: var(--layer); }
+  .edge.hid { border-left-color: var(--insert); }
+  .steps > li { padding-left: 42px; }
+  pre { font-size: 12.5px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  html { scroll-behavior: smooth; }
+}
