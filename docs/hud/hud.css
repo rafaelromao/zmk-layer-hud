@@ -1,6 +1,6 @@
-/* zmk-layer-hud panel. Visual language borrowed from keymap-drawer:
-   rounded light keys, tap legend centred, hold legend at the bottom, shifted legend
-   at the top, held keys tinted blue. Dark translucent panel so it reads on any editor. */
+/* zmk-layer-hud panel. Visual language borrowed from keymap-drawer: light keys, tap legend
+   centred, hold legend at the bottom, shifted legend at the top, held keys tinted blue. Corners
+   are barely rounded, keys and chips alike. Dark translucent panel so it reads on any editor. */
 :root {
   --key: 62px;
   --gap: 6px;
@@ -28,11 +28,11 @@ html, body { margin: 0; background: transparent; }
 body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 #hud {
   display: flex; flex-direction: column; gap: 10px; width: 100%; box-sizing: border-box;
-  padding: 12px 14px 14px; border-radius: 16px;
+  padding: 12px 14px 14px; border-radius: 8px;
   background: var(--panel); border: 1px solid var(--panel-border);
 }
 .chip {
-  padding: 3px 10px; border-radius: 999px; background: var(--chip);
+  padding: 3px 10px; border-radius: 4px; background: var(--chip);
   font-size: 14px; font-weight: 700; letter-spacing: 0.04em; line-height: 20px;
   transition: background 120ms ease, color 120ms ease;
 }
@@ -48,7 +48,7 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 #board { position: relative; width: 100%; min-height: 40px; }
 .key {
   position: absolute;
-  box-sizing: border-box; border-radius: 9px;
+  box-sizing: border-box; border-radius: 4px;
   background: var(--key-bg); color: var(--key-fg); border: 1px solid var(--key-border);
   display: grid; grid-template-rows: calc(var(--kh, 62px) * 0.23) 1fr calc(var(--kh, 62px) * 0.23);
   align-items: center; justify-items: center;
@@ -71,21 +71,29 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 .key.blank { background: #dcdfe8; border-style: dashed; }
 .key.ghost { background: #e6e8ef; border-style: dotted; opacity: 0.75; }   /* keymap-drawer `type: ghost` */
 .key.held { background: var(--held); }
-.key.activator { background: var(--held); box-shadow: inset 0 0 0 2px #7aa2f7; }
-.key.pressed { background: var(--pressed); transform: translateY(2px); box-shadow: 0 0 0 3px rgba(255,180,84,0.55); }
+.key.activator { background: var(--held); --ring: #7aa2f7; }
+.key.pressed { background: var(--pressed); transform: translateY(2px); box-shadow: 0 0 0 3px rgba(255,180,84,0.55); --ring: transparent; }
 .key.pressed.combo { background: var(--combo); }
-.key.combo-key { box-shadow: 0 0 0 3px #7aa2f7, 0 0 18px rgba(122,162,247,0.6); z-index: 2; }
-.key.mod { box-shadow: inset 0 0 0 2px #9ece6a; }
+.key.combo-key { box-shadow: 0 0 0 3px #7aa2f7, 0 0 18px rgba(122,162,247,0.6); z-index: 2; --ring: transparent; }
+.key.mod { box-shadow: none; --ring: #9ece6a; }
 /* The heatmap (hud.js heat): an overlay above the key's own fill and below its legends -- z-index
    -1 inside the stacking context `isolation` gives each key. An overlay, not a background: the
    board's layer tints (#board.off .key …) outrank any class on a key and would hide it on the base
-   layer. Inset 3px, so the rings drawn inside a key's edge (activator, mod) stay in sight. hud.js
-   writes --heat, the overlay's opacity, on the key; the transition smooths its coarse steps.
-   Longhand offsets, not `inset`: the page runs in WebKit builds older than that property. */
+   layer. It fills the key inside its border. hud.js writes --heat, the overlay's opacity, on the
+   key; the transition smooths its coarse steps. Longhand offsets, not `inset`: the page runs in
+   WebKit builds older than that property. */
 .key::before {
-  content: ""; position: absolute; top: 3px; right: 3px; bottom: 3px; left: 3px; border-radius: 6px;
+  content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; border-radius: 3px;
   z-index: -1; pointer-events: none; background: var(--heat-live); opacity: var(--heat, 0);
   transition: opacity 120ms linear;
+}
+/* The ring inside a key's edge, in --ring's colour (.activator, .mod): on its own layer after the
+   heat's, so a warm key keeps it. As when it was the key's own box-shadow, a pressed or combo key
+   drops the activator's ring for its glow, and a modifier's ring takes the place of any glow. */
+.key::after {
+  content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; border-radius: 3px;
+  z-index: -1; pointer-events: none; box-shadow: inset 0 0 0 2px var(--ring, transparent);
+  transition: box-shadow 90ms ease;
 }
 /* The session heatmap (hud.js paintSessionHeat): six steps of how often a key was pressed, on the
    same overlay. ColorBrewer YlOrRd's light half, so the dark tap legend reads on every step;
@@ -110,7 +118,7 @@ body.demo .key::before, body.demo #stats { display: none; }
 #stats { display: flex; flex-wrap: wrap; gap: 4px 5px; max-height: 56px; margin-bottom: 6px; overflow: hidden; white-space: nowrap; font-family: var(--font); }
 #stats.off, #stats .stat.off { display: none; }
 #stats .stat {
-  flex: none; padding: 0 8px; border-radius: 8px; background: var(--panel); border: 1px solid var(--panel-border);
+  flex: none; padding: 0 8px; border-radius: 4px; background: var(--panel); border: 1px solid var(--panel-border);
   color: #8b91a3; font-size: 11px; line-height: 24px; font-variant-numeric: tabular-nums;
 }
 #stats .stat b { color: #e6e8ef; font-weight: 700; }
@@ -151,7 +159,7 @@ body.demo .key::before, body.demo #stats { display: none; }
 /* Combo pill (keymap-drawer style): appears at the midpoint of the combo's keys when typed. */
 .combo-pill {
   position: absolute; transform: translate(-50%, -50%) scale(0.6); z-index: 5;
-  min-width: 44px; padding: 4px 8px; border-radius: 8px; text-align: center;
+  min-width: 44px; padding: 4px 8px; border-radius: 4px; text-align: center;
   background: var(--held); color: var(--key-fg); border: 2px solid #7aa2f7;
   opacity: 0; pointer-events: none;
   transition: opacity 120ms ease, transform 120ms ease;
@@ -168,7 +176,7 @@ body.demo .key::before, body.demo #stats { display: none; }
 /* Typed-keys strip: below the panel in index.html, alone in keys.html. */
 #keys { display: flex; align-items: flex-end; gap: 10px; padding: 8px 12px; min-height: 56px; font-family: var(--font); }
 #keys .chip {
-  padding: 8px 14px; border-radius: 12px; background: var(--panel); color: #e6e8ef;
+  padding: 8px 14px; border-radius: 4px; background: var(--panel); color: #e6e8ef;
   border: 1px solid rgba(255,255,255,0.1);
   font-size: 26px; font-weight: 700; line-height: 1; white-space: pre; letter-spacing: 0.02em;
   opacity: 0; transform: translateY(6px); transition: opacity 120ms ease, transform 120ms ease;
@@ -180,11 +188,11 @@ body.demo .key::before, body.demo #stats { display: none; }
 /* Standalone only (keys.html sets this): nothing is feeding the strip. An empty strip is
    transparent, so without this a surface with no feed and a surface that never mapped look
    exactly alike. Dim, because it is a resting state and not an error. */
-#keys.nofeed::before { content: "no feed"; padding: 8px 14px; border-radius: 12px;
+#keys.nofeed::before { content: "no feed"; padding: 8px 14px; border-radius: 4px;
   background: var(--panel); color: var(--chip-off); font-size: 16px; font-weight: 700; line-height: 1; }
 
 /* Close button: closes the HUD (the host receives "close"). */
-#close { margin-left: 10px; width: 22px; height: 22px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12);
+#close { margin-left: 10px; width: 22px; height: 22px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.12);
   background: rgba(255,255,255,0.06); color: #aab0c0; font: 13px/1 var(--font); cursor: pointer; padding: 0; }
 #close:hover { background: var(--chip-raw); color: #101420; }
 
