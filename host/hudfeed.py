@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import sys
@@ -59,6 +60,7 @@ import threading
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import keymap as keymap_mod  # noqa: E402  (host/keymap.py)
+import session as session_mod  # noqa: E402  (host/session.py)
 import signal_frame  # noqa: E402  (host/signal_frame.py)
 
 ZMK_VID, ZMK_PID = 0x1D50, 0x615E
@@ -896,7 +898,7 @@ class Feed:
     Used in-process by host/macos/panel.py and by main() below for the WebSocket/stdout modes."""
 
     def __init__(self, emit, log=print, config=None, keys=True, keymap=True, vid=None, pid=None, name=None,
-                 port=None, ble=True, ble_address=None, hid_keys=True, raw=False):
+                 port=None, ble=True, ble_address=None, hid_keys=True, raw=False, sessions=True):
         self.emit, self.log = emit, log
         self.source, cfg = None, {}
         try:
@@ -943,6 +945,14 @@ class Feed:
                 pid=pid if pid is not None else int(kb.get('pid', ZMK_PID)),
                 name=kb_name)
         self.watcher = KeymapWatcher(self.source, self._emit, log) if (self.source is not None and keymap) else None
+        # The active session: the page counts what it draws and reports it here (Hub.handler on
+        # a WebSocket host, the panel's bridge on macOS), and this keeps it in the session's file.
+        self.sessions = None
+        if sessions and int(feed_cfg.get("sessions", 1)):
+            self.sessions = session_mod.Store(emit, flush_s=feed_cfg["session_flush_s"],
+                                              poll_s=feed_cfg["session_poll_s"], log=log)
+            if self.source is not None and self.source.message:
+                self.sessions.keymap = os.path.basename(self.source.message.get("source") or "")
 
     def _emit(self, msg):
         if not self.keys and msg["kind"] == "key":
@@ -964,6 +974,12 @@ class Feed:
                      "see config/diamond.yaml")
 
     def start(self):
+        if self.sessions:
+            try:
+                self.sessions.start()
+            except (OSError, session_mod.SessionError) as e:
+                self.log(f"hudfeed: no sessions this run: {e}")
+                self.sessions = None
         if self.watcher:
             self.watcher.start()
         self.reader.start()
@@ -987,6 +1003,8 @@ class Feed:
             self.ble.stop()
         if self.hid:
             self.hid.stop()
+        if self.sessions:
+            self.sessions.stop()   # writes what is still only counted in memory
 
 
 # ---------- outputs ----------
@@ -1031,18 +1049,22 @@ class Hub:
     stronger: {"kind":"close"} from any local client calls os._exit(). Cosmetic messages are less
     power than that, not more. --no-inject closes it."""
 
-    def __init__(self, stdout=False, debug=False, inject=True, on_inject=None):
+    def __init__(self, stdout=False, debug=False, inject=True, on_inject=None, sessions=None, tally_token=None):
         self.stdout, self.debug, self.inject = stdout, debug, inject
         # Called after an injected message, so the keyboard's own state can be re-asserted.
         self.on_inject = on_inject
+        # The active session (session.Store), and the token a page must send its counts with: the
+        # panel makes one per run and gives it to its own page alone, so a second page on the
+        # socket (a browser pointed at it) shows the session but cannot add to it twice.
+        self.sessions, self.tally_token = sessions, tally_token
         self.clients = set()
-        self.cache = {}  # kind -> last message, for "keymap" and "layers"
+        self.cache = {}  # kind -> last message, for "keymap", "layers", "device" and "session"
 
     def log(self, *a):
         print(*a, file=sys.stderr, flush=True)
 
     async def send(self, msg):
-        if msg["kind"] in ("keymap", "layers", "device"):
+        if msg["kind"] in ("keymap", "layers", "device", "session"):
             self.cache[msg["kind"]] = msg
         if self.debug and msg["kind"] in ("layers", "press"):
             import time
@@ -1068,7 +1090,18 @@ class Hub:
                 kind = msg.get("kind")
                 if kind == "close":
                     self.log("hudfeed: close requested by the page")
+                    if self.sessions is not None:
+                        self.sessions.flush()   # os._exit runs no cleanup: what was counted goes first
                     os._exit(0)
+                if kind in ("tally", "heatmap"):
+                    # A page's counts, or the heatmap it switched to: only from the page the token
+                    # was given to. `--no-inject` is about drawing, not this.
+                    if self.sessions is not None and self.tally_token and msg.get("token") == self.tally_token:
+                        if kind == "tally":
+                            self.sessions.apply(msg)
+                        else:
+                            self.sessions.set_heatmap(msg.get("mode"))
+                    continue
                 if self.inject and kind in INJECTABLE:
                     await self.send(sent_in(msg))
                     if self.on_inject is not None:
@@ -1099,13 +1132,16 @@ def parse_args(argv=None):
     p.add_argument("--no-inject", action="store_true",
                    help=f"refuse messages sent in by a WebSocket client ({', '.join(INJECTABLE)}), "
                         "which host/hudpoke.py uses to drive the page without a keyboard")
+    p.add_argument("--no-sessions", action="store_true",
+                   help="keep no session files (config `feed.sessions: 0`): the counts last as long as the page")
     p.add_argument("--debug", action="store_true", help="log layer messages to stderr")
     p.add_argument("--raw", action="store_true", help="DEBUG ONLY: log every decoded frame (includes your typing)")
     return p.parse_args(argv)
 
 
 async def main(args):
-    hub = Hub(stdout=args.stdout, debug=args.debug, inject=not args.no_inject)
+    hub = Hub(stdout=args.stdout, debug=args.debug, inject=not args.no_inject,
+              tally_token=os.environ.get("ZMKHUD_TALLY_TOKEN") or None)
     loop = asyncio.get_running_loop()
 
     def emit(msg):
@@ -1114,19 +1150,30 @@ async def main(args):
     feed = Feed(emit, log=hub.log, config=args.config, keys=not args.no_keys, keymap=not args.no_keymap,
                 vid=args.vid, pid=args.pid, name=args.name, port=args.serial,
                 ble=not args.no_ble, ble_address=args.ble_address,
-                hid_keys=not args.no_hid_keys, raw=args.raw).start()
+                hid_keys=not args.no_hid_keys, raw=args.raw, sessions=not args.no_sessions).start()
     hub.on_inject = feed.resync
+    hub.sessions = feed.sessions
 
-    if not args.no_ws:
-        try:
-            import websockets
-        except ImportError:
-            sys.exit("python-websockets is required for the WebSocket (or pass --no-ws): pip install websockets")
-        async with websockets.serve(hub.handler, "127.0.0.1", args.port):
-            hub.log(f"hudfeed: ws://127.0.0.1:{args.port}")
-            await asyncio.Event().wait()
-    else:
-        await asyncio.Event().wait()
+    # The Linux panel stops this with SIGTERM. Unhandled, it ends the process where it stands and
+    # the last seconds of counting with it; handled, the feed stops and writes them first.
+    stopping = asyncio.Event()
+    import signal
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        with contextlib.suppress(NotImplementedError, RuntimeError):
+            loop.add_signal_handler(sig, stopping.set)
+    try:
+        if not args.no_ws:
+            try:
+                import websockets
+            except ImportError:
+                sys.exit("python-websockets is required for the WebSocket (or pass --no-ws): pip install websockets")
+            async with websockets.serve(hub.handler, "127.0.0.1", args.port):
+                hub.log(f"hudfeed: ws://127.0.0.1:{args.port}")
+                await stopping.wait()
+        else:
+            await stopping.wait()
+    finally:
+        feed.stop()
 
 
 if __name__ == "__main__":

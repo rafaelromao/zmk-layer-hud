@@ -138,6 +138,8 @@ one of them.
 | `start`, `stop`, `restart` | start the HUD; stop it; stop and start again |
 | `status` | is it running, and which of the keyboard's two channels is live |
 | `log` | follow the panel and feed logs |
+| `session [list\|new\|save\|load\|reset\|delete]` | the typing sessions: the active one, naming it, starting or loading another |
+| `heatmap [live\|session\|off]` | what the keys glow with: what was just typed, every press this session, or nothing |
 | `doctor` | check this machine and say what is missing |
 | `setup` | prepare this machine: packages, virtualenv, config, permissions |
 | `update`, `uninstall` | fetch a newer tree; remove the tree and the command |
@@ -183,7 +185,7 @@ Where things live, and what moves them:
 | | default | |
 |---|---|---|
 | `ZMKHUD_CONFIG` | `~/.config/zmk-layer-hud/config.yaml` | the config to read |
-| `ZMKHUD_STATE` | `~/.local/state/zmk-layer-hud` | where `panel.log` and `hudfeed.log` go |
+| `ZMKHUD_STATE` | `~/.local/state/zmk-layer-hud` | where `panel.log`, `hudfeed.log` and the `sessions/` go |
 | `ZMKHUD_ROOT` | the installed tree | the tree the command runs from |
 | `ZMKHUD_HOME` | `~/.local/share/zmk-layer-hud` | where `install.sh` puts the tree |
 | `ZMKHUD_BIN_DIR` | `~/.local/bin` | where `setup` puts the command |
@@ -193,6 +195,32 @@ Where things live, and what moves them:
 | `ZMKHUD_REF` | `main` | the branch `install.sh` and `update` fetch |
 | `ZMKHUD_RESERVE` | `0` | what `start --reserve` sets |
 | `ZMKHUD_DEBUG` | unset | the macOS panel logs every layer and position message |
+
+### Sessions
+
+What the keyboard types is counted into a session, and there is always one, the active one. A
+new session is named after when it began, and typing adds to it until another takes its place:
+
+```bash
+zmk-layer-hud session                 # the active one: keys, combos, typing time, speed
+zmk-layer-hud session save colemak-1  # name it
+zmk-layer-hud session new             # start another; the one before stays saved
+zmk-layer-hud session list
+zmk-layer-hud session load colemak-1  # make it the active one again: typing adds to it
+zmk-layer-hud heatmap session         # the keys glow with how often each one was pressed
+```
+
+`save` on a session that already has a name keeps it as it is and goes on in a copy under the
+new one. `reset` zeroes the active session and `delete` removes one that is not active; both ask
+first (`--yes` does not). The commands work whether the HUD is running or not, and it follows
+what they do within a second.
+
+A session is kept in `$ZMKHUD_STATE/sessions/<name>.json` (the directory 0700, each file 0600),
+and it holds counts: how often each key was pressed on each layer, each combo, how many characters
+were typed and deleted, the time spent typing and the best speed. Never what was typed, in what
+order, or when. Nothing leaves the machine. Only the keyboard's own typing is counted: `poke` and
+the demo light the board and time their typing, and a session never sees them. `feed.sessions: 0`
+in the config (or `feed --no-sessions`) keeps no files, and `uninstall --purge` removes them.
 
 ### Keeping the config in a repo
 
@@ -270,10 +298,10 @@ Above the panel, a bar says how the typing goes:
 - keystrokes, and the share of them made as combos;
 - the share of typing done on the layer on screen.
 
-Its last chip switches the heatmap between `live`, `session` (how often each key has been pressed,
-on the layer on screen) and `off`. Every keystroke the board draws is counted once, when nothing
-can take it back: a combo counts as one keystroke, and a report that beats its own position is
-not counted twice. `hud.stats_bar: 0` hides the bar.
+Its last chip names the [session](#sessions) and switches the heatmap between `live`, `session`
+(how often each key has been pressed, on the layer on screen) and `off`. Every keystroke the
+board draws is counted once, when nothing can take it back: a combo counts as one keystroke, and
+a report that beats its own position is not counted twice. `hud.stats_bar: 0` hides the bar.
 
 ### Where the messages come from
 

@@ -16,6 +16,9 @@
  *                                      a press sent in, lit the same and never counted in a session
  *   hud.press([idx...])                light keys directly (tests)
  *   hud.setHeatmap(mode)               what the keys glow with: live, session or off
+ *   hud.receive(message)               any feed message (the WebSocket's dispatcher), including
+ *                                      {"kind":"session"}: the host's active session, which the
+ *                                      page reports the keyboard's own counts to
  *   hud.stats                          the counts behind the bar and the session heatmap (tests)
  *
  * Every keystroke drawn is also counted (the ledger, once nothing can take it back), and typing
@@ -91,6 +94,11 @@
     typing: newTyping(),      // live WPM, over everything shown
     ownTyping: newTyping(),   // ...and over the keyboard's own typing, for the session's peak
     wpmTimer: null,
+    session: null,            // the host's active session ({"kind":"session"}), when it keeps one
+    inflight: [],             // counts sent to it that it has not said it has
+    seq: 0,
+    tallyTimer: null,
+    viewCache: null,
   };
 
   const $ = id => document.getElementById(id);
@@ -443,13 +451,16 @@
   }
 
   // live | session | off. Leaving live lets its glow go at once rather than fade under the other.
+  // A choice made here is the host's to keep (it survives a restart, and `zmk-layer-hud heatmap`
+  // reads it); one the host sends is only applied.
   const HEAT_MODES = ["live", "session", "off"];
-  function setHeatmap(mode) {
+  function setHeatmap(mode, fromHost) {
     if (!HEAT_MODES.includes(mode) || mode === state.heatMode) return;
     state.heatMode = mode;
     if (mode !== "live") state.heat.clear();
     paintHeat();
     renderStats();
+    if (!fromHost) postToHost({ kind: "heatmap", v: 1, mode });
   }
 
   // ---------- ledger ----------
@@ -511,7 +522,7 @@
       counted = true;
     }
     state.ledger = keep;
-    if (counted) { paintSessionHeat(); renderStats(); }
+    if (counted) { state.viewCache = null; armTally(); paintSessionHeat(); renderStats(); }
   }
 
   function countEntry(e) {
@@ -613,7 +624,8 @@
     if (!k) return;
     const now = Date.now();
     typed(state.typing, state.local, k, now);
-    if (fromKeyboard(ev)) typed(state.ownTyping, state.unsent, k, now);
+    if (fromKeyboard(ev)) { typed(state.ownTyping, state.unsent, k, now); armTally(); }
+    state.viewCache = null;
     armWpm();
     renderStats();
   }
@@ -630,10 +642,97 @@
     if (state.typing.win.length || state.ownTyping.win.length) armWpm();
   }
 
-  // ---------- the stats bar ----------
+  // ---------- the session ----------
 
-  // The counts the bar and the session heatmap show: the page's own, until a host keeps a session.
-  function view() { return state.local; }
+  /* A host that keeps sessions (host/session.py) is sent the keyboard's own counts every
+   * TALLY_MS, and sends back the active session: its counts so far, which session and which reset
+   * of it (id, gen), and in `acks` the last batch of each page it has added. The macOS panel's
+   * bridge is this page's alone; on a WebSocket, only a page given the panel's token (`tally=` in
+   * its URL) sends anything, so a second page on the socket does not count the same keys twice. */
+  const TALLY_MS = 2000;
+  const INFLIGHT_MS = 15000;   // a batch the host has not acknowledged by then is not coming back
+  const PAGE_ID = Math.random().toString(36).slice(2, 12);
+  const TALLY_TOKEN = new URLSearchParams(location.search).get("tally");
+
+  function bridge() {
+    try { return window.webkit.messageHandlers.zmkhud || null; } catch (e) { return null; }
+  }
+  function tallies() { return !!(bridge() || (TALLY_TOKEN && hud.socket)); }
+  function postToHost(obj) {
+    const b = bridge();
+    if (b) { b.postMessage(JSON.stringify(obj)); return true; }
+    if (TALLY_TOKEN && hud.socket && hud.socket.readyState === 1) {
+      hud.socket.send(JSON.stringify(Object.assign({ token: TALLY_TOKEN }, obj)));
+      return true;
+    }
+    return false;
+  }
+
+  const hasCounts = t => Object.keys(t.presses).length || Object.keys(t.combos).length || t.chars || t.deleted || t.active_ms;
+  function addTally(into, t) {
+    for (const kind of ["presses", "combos"]) {
+      for (const layer in t[kind]) for (const k in t[kind][layer]) {
+        const m = into[kind][layer] || (into[kind][layer] = {});
+        m[k] = (m[k] || 0) + t[kind][layer][k];
+      }
+    }
+    for (const k of ["chars", "deleted", "active_ms", "active_net"]) into[k] += t[k] || 0;
+    into.peak_wpm = Math.max(into.peak_wpm, t.peak_wpm || 0);
+  }
+
+  function armTally() {
+    if (state.tallyTimer === null && hasCounts(state.unsent) && tallies()) {
+      state.tallyTimer = setTimeout(() => { state.tallyTimer = null; sendTally(); }, TALLY_MS);
+    }
+  }
+  // What the keyboard typed since the last batch, for the session it was typed in (`to`, else
+  // the one active now).
+  function sendTally(to) {
+    if (!hasCounts(state.unsent)) return;
+    const s = to || state.session;
+    const batch = Object.assign({ kind: "tally", v: 1, page: PAGE_ID, seq: state.seq + 1,
+                                  session: s ? s.id : null, gen: s ? s.gen : null, device: state.device || "" }, state.unsent);
+    if (!postToHost(batch)) return;
+    state.seq++;
+    state.inflight.push({ seq: batch.seq, at: Date.now(), session: batch.session, counts: state.unsent });
+    state.unsent = emptyTally();
+    state.viewCache = null;
+  }
+
+  function applySession(m) {
+    if (!m || typeof m.id !== "string") return;
+    const was = state.session;
+    if (was && (was.id !== m.id || was.gen !== m.gen)) {
+      // Another session, or this one reset: what was typed before belongs to the one before.
+      sendTally(was);
+      state.inflight = [];
+    }
+    state.session = { id: m.id, gen: m.gen, name: m.name || "", presses: m.presses || {}, combos: m.combos || {},
+                      totals: m.totals || {} };
+    const acked = (m.acks || {})[PAGE_ID] || 0, now = Date.now();
+    state.inflight = state.inflight.filter(b => b.seq > acked && now - b.at < INFLIGHT_MS &&
+                                                (b.session === null || b.session === m.id));
+    state.viewCache = null;
+    if (HEAT_MODES.includes(m.heatmap)) setHeatmap(m.heatmap, true);
+    paintSessionHeat();
+    renderStats();
+  }
+
+  /* The counts the bar and the session heatmap show. With a host keeping a session: its counts,
+   * and -- on the page that reports to it -- what is on the way and what is not sent yet. With
+   * none (the demo, a page in a browser): everything this page has been shown since it loaded. */
+  function view() {
+    if (!state.session) return state.local;
+    if (state.viewCache) return state.viewCache;
+    const s = state.session, t = s.totals;
+    const out = { presses: {}, combos: {}, chars: t.chars || 0, deleted: t.deleted || 0, active_ms: t.active_ms || 0,
+                  active_net: t.active_net || 0, peak_wpm: t.peak_wpm || 0 };
+    addTally(out, { presses: s.presses, combos: s.combos });
+    if (tallies()) { for (const b of state.inflight) addTally(out, b.counts); addTally(out, state.unsent); }
+    return (state.viewCache = out);
+  }
+
+  // ---------- the stats bar ----------
 
   const sum = m => { let n = 0; for (const k in m) n += m[k]; return n; };
   function fmtCount(n) {
@@ -665,7 +764,7 @@
     bar.acc = chip("acc", [null, " accurate"]);
     bar.keys = chip("keys", [null, " keys · ", null, " combos"]);
     bar.layer = chip("layer", [null, " ", null]);
-    bar.mode = chip("mode", ["heat ", null]);
+    bar.mode = chip("mode", [null, "heat ", null]);
     bar.mode.chip.title = "click: live, session, off";
     bar.mode.chip.addEventListener("click", () => setHeatmap(HEAT_MODES[(HEAT_MODES.indexOf(state.heatMode) + 1) % HEAT_MODES.length]));
   }
@@ -695,7 +794,7 @@
     put(bar.keys, [fmtCount(presses), strokes > 0 ? pct(combos / strokes) : "—"]);
     const top = state.data ? stack()[0] : null;
     put(bar.layer, [top ? layerLabel(top) : "—", top && presses ? pct(sum(v.presses[top] || {}) / presses) : "—"]);
-    put(bar.mode, [state.heatMode]);
+    put(bar.mode, [state.session && state.session.name ? state.session.name + " · " : "", state.heatMode]);
   }
 
   // ---------- resolver ----------
@@ -1284,6 +1383,21 @@
       if (window.keys) window.keys.key(ev);  // the typed-keys strip on the same page
     },
     press(indices) { flash(indices); },
+    // Any feed message, as a host sends it: the one dispatcher, for the WebSocket, the macOS panel
+    // (for what it has no call of its own for) and the demo. Kinds this page does not know are
+    // left alone.
+    receive(m) {
+      if (typeof m === "string") m = JSON.parse(m);
+      if (!m || typeof m !== "object") return;
+      if (m.kind === "keymap") hud.load(m);
+      else if (m.kind === "key") hud.key(m);
+      else if (m.kind === "layers") hud.setLayers(m.ids);
+      else if (m.kind === "device") hud.setDevice(m.name);
+      else if (m.kind === "press") hud.pressAt(m.pos, m.sent === true || m.synthetic === true);
+      else if (m.kind === "release") hud.releaseAt(m.pos);
+      else if (m.kind === "session") applySession(m);
+      if (m.device) hud.setDevice(m.device);  // the keyboard that is typing names the panel
+    },
     // What the keys glow with: "live" (what was just typed), "session" (every press counted) or
     // "off". The bar's last chip cycles it too.
     setHeatmap(mode) { setHeatmap(mode); },
@@ -1294,6 +1408,7 @@
       unsent: () => JSON.parse(JSON.stringify(state.unsent)),
       pending: () => state.ledger.length,
       wpm: () => Math.round(wpmOf(state.typing, Date.now())),
+      view: () => JSON.parse(JSON.stringify(view())),   // what the bar shows
     },
     state,
   };
@@ -1303,6 +1418,7 @@
   // WebSocket host receives {"kind":"close"}.
   const closeBtn = $("close");
   if (closeBtn) closeBtn.addEventListener("click", () => {
+    sendTally();   // what was counted and not sent yet goes before the host does
     try { window.webkit.messageHandlers.zmkhud.postMessage("close"); } catch (e) { /* not WebKit */ }
     if (hud.socket && hud.socket.readyState === 1) hud.socket.send(JSON.stringify({ kind: "close" }));
   });
@@ -1324,16 +1440,7 @@
     const connect = () => {
       const s = new WebSocket(wsUrl);
       hud.socket = s;
-      s.onmessage = e => {
-        const m = JSON.parse(e.data);
-        if (m.kind === "keymap") hud.load(m);
-        else if (m.kind === "key") hud.key(m);
-        else if (m.kind === "layers") hud.setLayers(m.ids);
-        else if (m.kind === "device") hud.setDevice(m.name);
-        else if (m.kind === "press") hud.pressAt(m.pos, m.sent === true || m.synthetic === true);
-        else if (m.kind === "release") hud.releaseAt(m.pos);
-        if (m.device) hud.setDevice(m.device);  // the keyboard that is typing names the panel
-      };
+      s.onmessage = e => hud.receive(e.data);
       s.onclose = () => setTimeout(connect, 1000);
     };
     connect();

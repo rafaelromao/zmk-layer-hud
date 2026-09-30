@@ -4,6 +4,7 @@
 `bin/zmk-layer-hud` finds an interpreter and hands off here. The verbs split in two:
 
   the HUD          start, stop, restart, status, log
+  the typing       session, heatmap
   the keymap       keymap, import, sync, config
   this machine     setup, doctor, update, uninstall, version
   without a board  demo, poke, feed
@@ -226,6 +227,10 @@ def cmd_status(args):
                 print(line)
     else:
         print(f"keys:  nothing has run yet (no logs in {STATE})")
+    mod = sessions_mod()
+    st, s = mod.peek()
+    print("session: " + (f"{s['name']} · {session_line(s, mod)} · heatmap {st['heatmap']}" if s
+                         else "none yet (the HUD starts one)"))
     if platform.system() == "Linux":
         hypr_surfaces()
     return 0
@@ -304,6 +309,95 @@ def cmd_poke(args):
 
 def cmd_feed(args):
     return passthrough("hudfeed", "feed", args.rest)
+
+
+# ---------- the typing ----------
+
+def sessions_mod():
+    """host/session.py: the standard library only, so these verbs need no venv."""
+    sys.path.insert(0, os.path.join(ROOT, "host"))
+    import session
+    return session
+
+
+def duration(ms):
+    s = int(ms // 1000)
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m"
+    return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+
+
+def session_line(s, mod):
+    t = mod.summary(s)
+    parts = [f"{t['presses']:,} keys", f"{t['combos']:,} combos", f"{t['chars']:,} typed",
+             f"{t['deleted']:,} deleted", duration(t["active_ms"]) + " of typing"]
+    if t["wpm"] is not None:
+        parts.append(f"{t['wpm']} wpm")
+    if t["peak_wpm"]:
+        parts.append(f"top {t['peak_wpm']}")
+    return " · ".join(parts)
+
+
+def cmd_session(args):
+    mod = sessions_mod()
+    d = mod.default_dir()
+    act, name = args.action, args.name
+    if act in ("save", "load", "delete") and not name:
+        raise Fail(f"`session {act}` needs the session's name")
+    try:
+        if act == "status":
+            st, s = mod.status(d)
+            print(f"{s['name']}{'' if s.get('named') else ' (not named yet: session save NAME)'}")
+            print("  " + session_line(s, mod))
+            print(f"  heatmap {st['heatmap']} · {mod.path_of(d, s['name'])}")
+        elif act == "list":
+            st, _ = mod.status(d)
+            every = mod.sessions(d)
+            for n in sorted(every, key=lambda n: every[n].get("updated", ""), reverse=True):
+                mark = "*" if n == st.get("active") else " "
+                print(f"{mark} {n:<24} {session_line(every[n], mod)}   (updated {every[n].get('updated', '?')})")
+        elif act == "new":
+            s = mod.new(d, name)
+            print(f"started {s['name']}; typing counts there now")
+        elif act == "save":
+            s = mod.save(d, name)
+            print(f"the active session is {s['name']}")
+        elif act == "load":
+            s = mod.load(d, name)
+            print(f"loaded {s['name']}; typing adds to it from now on")
+        elif act == "reset":
+            _, s = mod.status(d)
+            if not confirm(f"zero every count in {s['name']}?", args):
+                print("nothing was reset")
+                return 1
+            mod.reset(d)
+            print(f"{s['name']} is empty again")
+        elif act == "delete":
+            if not confirm(f"delete the session {name}?", args):
+                print("nothing was deleted")
+                return 1
+            mod.delete(d, name)
+            print(f"deleted {name}")
+    except mod.SessionError as e:
+        raise Fail(str(e))
+    return 0
+
+
+def cmd_heatmap(args):
+    mod = sessions_mod()
+    d = mod.default_dir()
+    try:
+        if args.mode is None:
+            st, _ = mod.status(d)
+            print(st["heatmap"])
+        else:
+            mod.set_heatmap(d, args.mode)
+            print(f"heatmap {args.mode}")
+    except mod.SessionError as e:
+        raise Fail(str(e))
+    return 0
 
 
 # ---------- the config ----------
@@ -754,7 +848,7 @@ def cmd_uninstall(args):
         raise Fail(f"{ROOT} is a git clone -- delete it yourself if that is what you want")
     print(f"this will remove {BIN_LINK} and {ROOT}")
     if args.purge:
-        print(f"      and, because of --purge, {CONFIG_DIR}, {STATE} and "
+        print(f"      and, because of --purge, {CONFIG_DIR}, {STATE} (the logs and every session) and "
               f"{os.path.expanduser('~/.cache/zmk-layer-hud')}")
     if not confirm("proceed?", args):
         print("nothing was removed")
@@ -770,7 +864,7 @@ def cmd_uninstall(args):
             shutil.rmtree(path, ignore_errors=True)
             print(f"    removed {path}")
     else:
-        print(f"    left {CONFIG_DIR} alone (--purge removes it too)")
+        print(f"    left {CONFIG_DIR} and the sessions in {STATE} alone (--purge removes them too)")
     if platform.system() == "Linux":
         print("    the udev rule is still installed; remove it with:")
         print("        sudo rm /etc/udev/rules.d/60-zmk-layer-hud.rules")
@@ -824,6 +918,19 @@ def build_parser():
     s.set_defaults(func=cmd_restart)
 
     add("status", "is it running, and what is it reading").set_defaults(func=cmd_status)
+
+    s = add("session", "the typing sessions: the active one, naming it, starting or loading another")
+    s.add_argument("action", nargs="?", default="status",
+                   choices=("status", "list", "new", "save", "load", "reset", "delete"),
+                   help="status (default), list, new [NAME], save NAME, load NAME, reset, delete NAME")
+    s.add_argument("name", nargs="?", help="the session, for new, save, load and delete")
+    s.add_argument("--yes", action="store_true", help="do not ask before reset or delete")
+    s.set_defaults(func=cmd_session)
+
+    s = add("heatmap", "what the keys glow with: the live heatmap, the session's, or none")
+    s.add_argument("mode", nargs="?", choices=("live", "session", "off"),
+                   help="live (what was just typed), session (every press counted), off; none: say which")
+    s.set_defaults(func=cmd_heatmap)
 
     s = add("log", "follow the panel and feed logs")
     s.add_argument("-n", "--lines", type=int, default=40, help="lines of history (default 40)")

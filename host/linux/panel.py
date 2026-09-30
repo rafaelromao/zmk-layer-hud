@@ -13,6 +13,7 @@ every window on the output, which is too much for a HUD to do because it was sta
 import json
 import os
 from pathlib import Path
+import secrets
 import signal
 import subprocess
 import sys
@@ -44,9 +45,12 @@ INSET = 8
 WINDOWS = []
 # Taking room from every window on the output is a recording decision, not a HUD one.
 RESERVE = os.environ.get("ZMKHUD_RESERVE") == "1"
+# The session takes counts only from the page this panel shows: the feed and that page are given
+# this, and a browser pointed at the socket is not.
+TALLY_TOKEN = secrets.token_hex(16)
 
 
-def surface(monitor, page, namespace, width, height):
+def surface(monitor, page, namespace, width, height, query=""):
     window = Gtk.Window()
     window.set_app_paintable(True)
     window.set_visual(window.get_screen().get_rgba_visual())
@@ -74,7 +78,7 @@ def surface(monitor, page, namespace, width, height):
     view.set_background_color(Gdk.RGBA(0, 0, 0, 0))
     view.set_size_request(width, height)
     view.load_uri((PAGES / page).as_uri() +
-                  f"?ws=ws://127.0.0.1:{os.environ.get('ZMKHUD_PORT', '8766')}")
+                  f"?ws=ws://127.0.0.1:{os.environ.get('ZMKHUD_PORT', '8766')}" + query)
     window.add(view)
     WINDOWS.append(window)
     return window
@@ -105,7 +109,7 @@ def main():
                      default=monitor.get_geometry().width - info["reserved"][2])
     right = monitor.get_geometry().width - right_edge + INSET
 
-    hud = surface(monitor, "index.html", "zmkhud-layer", HUD_W, HUD_H)
+    hud = surface(monitor, "index.html", "zmkhud-layer", HUD_W, HUD_H, query=f"&tally={TALLY_TOKEN}")
     GtkLayerShell.set_anchor(hud, GtkLayerShell.Edge.TOP, True)
     GtkLayerShell.set_anchor(hud, GtkLayerShell.Edge.RIGHT, True)
     # Explicit coordinates include the top bar; ignore other panels' exclusive zones.
@@ -160,7 +164,8 @@ def main():
     with (RUN / "hudfeed.log").open("w") as output:
         feed_python = os.environ.get("ZMKHUD_PYTHON", sys.executable)
         feed = subprocess.Popen([feed_python, "-u", str(ROOT / "host" / "hudfeed.py"), "--debug"],
-                                stdout=output, stderr=output, start_new_session=True)
+                                stdout=output, stderr=output, start_new_session=True,
+                                env=dict(os.environ, ZMKHUD_TALLY_TOKEN=TALLY_TOKEN))
     def watch_feed():
         if feed.poll() is not None:
             quit_host()

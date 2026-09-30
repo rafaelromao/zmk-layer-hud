@@ -87,7 +87,9 @@ class DragWebView(WKWebView):
 
 
 class Bridge(NSObject):
-    """Page → host messages (the ✕ posts "close") and window events."""
+    """Page → host messages (the ✕ posts "close"; the page's counts and the heatmap it switched
+    to go to the session) and window events. Only this panel's own page can post here, so it needs
+    no token the way a WebSocket client does."""
 
     def userContentController_didReceiveScriptMessage_(self, controller, message):
         body = str(message.body())
@@ -99,8 +101,17 @@ class Bridge(NSObject):
             msg = json.loads(body)
         except ValueError:
             return
-        if msg.get("kind") == "size":
+        kind = msg.get("kind") if isinstance(msg, dict) else None
+        if kind == "size":
             Host.instance.resize(msg.get("width"), msg.get("height"))
+        elif kind in ("tally", "heatmap"):
+            store = Host.instance.feed.sessions if Host.instance and Host.instance.feed else None
+            if store is None:
+                return
+            try:
+                store.apply(msg) if kind == "tally" else store.set_heatmap(msg.get("mode"))
+            except Exception as e:  # a count that could not be kept must not take the panel down
+                log(f"session: {type(e).__name__}: {e}")
 
     def windowDidMove_(self, notification):
         f = notification.object().frame()
@@ -192,7 +203,7 @@ class Host:
         elif msg["kind"] == "release":
             js = f"hud.releaseAt({int(msg['pos'])})"
         else:
-            return
+            js = f"hud.receive({data})"   # the rest (the session) through the page's own dispatcher
         if msg.get("device"):
             js = f"hud.setDevice({json.dumps(msg['device'])}); " + js
         if self.ready:

@@ -4,6 +4,8 @@ The wire format itself is host/signal_frame.py's business and is tested in signa
 what is tested here is what the HUD gets told. Stream ties the two together.
 """
 
+import asyncio
+import json
 import os
 import sys
 import unittest
@@ -11,7 +13,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
-from hudfeed import (COMBOS_DEFAULT, INJECTABLE, SignalDecoder, Stream,  # noqa: E402
+from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Hub, SignalDecoder, Stream,  # noqa: E402
                      hid_scan_note, hidraw_match, sent_in, split_report)
 
 
@@ -372,6 +374,85 @@ class SentIn(unittest.TestCase):
     def test_a_client_cannot_say_it_is_the_keyboard(self):
         for said in (False, None, "no"):
             self.assertIs(sent_in({**self.KEY, "sent": said})["sent"], True)
+
+
+class FakeSocket:
+    """A client of the Hub: what it sends, then the end of the connection."""
+
+    def __init__(self, *incoming):
+        self.incoming = [json.dumps(m) for m in incoming]
+        self.sent = []
+
+    async def send(self, data):
+        self.sent.append(json.loads(data))
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        if not self.incoming:
+            raise StopAsyncIteration
+        return self.incoming.pop(0)
+
+
+class FakeStore:
+    def __init__(self):
+        self.applied, self.modes, self.flushed = [], [], 0
+
+    def apply(self, msg):
+        self.applied.append(msg)
+
+    def set_heatmap(self, mode):
+        self.modes.append(mode)
+
+    def flush(self):
+        self.flushed += 1
+
+
+class Sessions(unittest.TestCase):
+    """The page reports its counts over the socket; only the panel's own page may."""
+
+    def talk(self, hub, *incoming):
+        ws = FakeSocket(*incoming)
+        asyncio.run(hub.handler(ws))
+        return ws
+
+    def test_counts_come_only_with_the_panels_token(self):
+        store = FakeStore()
+        hub = Hub(sessions=store, tally_token="t0k")
+        self.talk(hub, {"kind": "tally", "seq": 1}, {"kind": "tally", "seq": 2, "token": "guess"},
+                  {"kind": "tally", "seq": 3, "token": "t0k"}, {"kind": "heatmap", "mode": "session", "token": "t0k"},
+                  {"kind": "heatmap", "mode": "off"})
+        self.assertEqual([3], [m["seq"] for m in store.applied])
+        self.assertEqual(["session"], store.modes)
+
+    def test_without_a_token_nothing_counts(self):
+        store = FakeStore()
+        self.talk(Hub(sessions=store), {"kind": "tally", "seq": 1, "token": None}, {"kind": "tally", "seq": 2, "token": ""})
+        self.assertEqual([], store.applied)
+
+    def test_a_page_that_connects_gets_the_session(self):
+        hub = Hub()
+        asyncio.run(hub.send({"kind": "session", "id": "abc", "gen": 0}))
+        ws = self.talk(hub)
+        self.assertEqual(["session"], [m["kind"] for m in ws.sent])
+
+    def test_close_writes_the_counts_before_it_exits(self):
+        store = FakeStore()
+
+        class Exited(Exception):
+            pass
+
+        def exit_(code):
+            raise Exited(code)
+        real = os._exit
+        os._exit = exit_
+        try:
+            with self.assertRaises(Exited):
+                self.talk(Hub(sessions=store), {"kind": "close"})
+        finally:
+            os._exit = real
+        self.assertEqual(1, store.flushed)
 
 
 if __name__ == "__main__":

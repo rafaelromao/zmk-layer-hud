@@ -29,9 +29,22 @@ a page can show which keyboard is typing.
 | `{"kind":"press","pos":13}` / `{"kind":"release","pos":13}` | a key at that ZMK position went down / up |
 | `{"kind":"key","type":"keyDown","name":"a","chars":"a","code":4,"flags":{"cmd":false,"ctrl":false,"alt":false,"shift":false,"fn":false},"repeat":false}` | a key or modifier change, decoded from the HID reports |
 
-`type` is `keyDown`, `keyUp` or `flagsChanged`. The last `keymap`, `layers` and `device` are cached
-and replayed to every new client, so a page that connects late — or reconnects — is right
-immediately rather than blank until you touch something.
+`type` is `keyDown`, `keyUp` or `flagsChanged`. The last `keymap`, `layers`, `device` and
+`session` are cached and replayed to every new client, so a page that connects late — or
+reconnects — is right immediately rather than blank until you touch something.
+
+The active [session](../README.md#sessions) goes out whenever it changes:
+
+```json
+{"kind":"session","v":1,"id":"9f2c…","gen":0,"name":"colemak-1","named":true,"heatmap":"live",
+ "presses":{"alpha1":{"13":412}},"combos":{"alpha1":{"1,2":37}},
+ "totals":{"chars":1904,"deleted":61,"active_ms":402000,"active_net":1843,"peak_wpm":88},
+ "acks":{"k3v9x0a2qe":57},"keyboards":["Diamond"],"created":"…","updated":"…"}
+```
+
+`presses` and `combos` are counts per drawer layer, by ZMK position (a combo by its positions,
+sorted). `gen` goes up when the session is reset. `acks` says, for each page that reports to it,
+the last batch the counts include (below).
 
 ## Inbound messages
 
@@ -56,6 +69,21 @@ typing.
 
 `{"kind":"close"}` from any client exits the feed and takes the HUD down with it — that is what the
 page's ✕ sends. `--no-inject` refuses the five message kinds above; it does not disable `close`.
+
+The page counts what it draws and reports the keyboard's own counts to the session every two
+seconds; it also says when its heatmap chip is switched:
+
+```json
+{"kind":"tally","v":1,"token":"…","page":"k3v9x0a2qe","seq":58,"session":"9f2c…","gen":0,
+ "presses":{"alpha1":{"13":9}},"combos":{},"chars":11,"deleted":1,"active_ms":2100,"active_net":10,"peak_wpm":0}
+{"kind":"heatmap","v":1,"token":"…","mode":"session"}
+```
+
+These are taken only with `token`, which the Linux panel makes for each run and gives to the feed
+(`ZMKHUD_TALLY_TOKEN`) and to its own page alone (`index.html?…&tally=`): a second page on the
+socket shows the session without adding its counts a second time. The macOS panel's page reports
+through the panel's own bridge and needs no token. A batch names the session and `gen` it was
+typed under, so what was on the way when a session was loaded or reset lands where it belongs.
 
 The keymap is not injectable: it is large, it is built from files the feed already watches, and a
 page given a wrong one has no way back.

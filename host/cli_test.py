@@ -40,8 +40,20 @@ class Parser(unittest.TestCase):
     def test_the_documented_verbs_are_all_there(self):
         expected = {"start", "stop", "restart", "status", "log", "doctor", "setup", "update",
                     "uninstall", "import", "sync", "keymap", "config", "demo", "poke", "feed",
-                    "version"}
+                    "version", "session", "heatmap"}
         self.assertEqual(expected, set(self.verbs))
+
+    def test_the_session_verbs_need_no_venv(self):
+        # They only touch files, and must work on a machine where the venv is not built yet.
+        self.assertFalse({"session", "heatmap"} & cli.NEEDS_VENV)
+
+    def test_session_takes_an_action_and_a_name(self):
+        args = self.parser.parse_args(["session", "save", "week1"])
+        self.assertEqual(("save", "week1"), (args.action, args.name))
+        self.assertEqual("status", self.parser.parse_args(["session"]).action)
+        self.assertIsNone(self.parser.parse_args(["heatmap"]).mode)
+        with self.assertRaises(SystemExit):
+            self.parser.parse_args(["heatmap", "sometimes"])
 
     def test_needs_venv_names_real_verbs(self):
         # NEEDS_VENV is consulted by name before the parser runs, so a typo there would silently
@@ -120,6 +132,28 @@ class Shim(unittest.TestCase):
                                  cwd=tmp, env={**os.environ, "ZMKHUD_ROOT": "", "PATH": os.environ["PATH"]})
             self.assertEqual(0, out.returncode, out.stderr)
             self.assertIn(f"tree   {ROOT}", out.stdout)
+
+    def test_sessions_are_named_listed_and_loaded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {**os.environ, "ZMKHUD_STATE": tmp}
+            run = lambda *a: subprocess.run(["sh", SHIM] + list(a), capture_output=True, text=True, env=env)
+            out = run("session")
+            self.assertEqual(0, out.returncode, out.stderr)
+            self.assertIn("not named yet", out.stdout)
+            self.assertEqual(0, run("session", "save", "week1").returncode)
+            self.assertEqual(0, run("session", "new", "week2").returncode)
+            listing = run("session", "list").stdout
+            self.assertIn("* week2", listing)
+            self.assertIn("week1", listing)
+            self.assertEqual(0, run("session", "load", "week1").returncode)
+            self.assertTrue(run("session").stdout.startswith("week1"))
+            self.assertEqual(0, run("heatmap", "session").returncode)
+            self.assertEqual("session", run("heatmap").stdout.strip())
+            bad = run("session", "delete", "week1", "--yes")
+            self.assertEqual(1, bad.returncode)          # the active one
+            self.assertIn("active session", bad.stderr)
+            self.assertEqual(0, run("session", "delete", "week2", "--yes").returncode)
+            self.assertNotIn("week2", run("session", "list").stdout)
 
     def test_tree_is_found_through_a_chain_of_symlinks(self):
         with tempfile.TemporaryDirectory() as tmp:

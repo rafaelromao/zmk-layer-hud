@@ -452,6 +452,69 @@ function main() {
     check("and live glows again", heat(p, B.idx) !== "");
   }
 
+  // ---------- a session the host keeps ----------
+  {
+    const TALLY_MS = 2000;
+    const bridged = () => {
+      const posted = [];
+      const p = loadPage();
+      // The macOS panel's bridge: the one page that may report the keyboard's counts.
+      p.window.webkit = { messageHandlers: { zmkhud: { postMessage: s => {
+        const m = JSON.parse(s); if (m.kind === "tally" || m.kind === "heatmap") posted.push(m);
+      } } } };
+      p.hud.load(data);
+      p.hud.setLayers([]);
+      return { p, posted };
+    };
+    const sessionMsg = (extra) => Object.assign({ kind: "session", v: 1, id: "s1", gen: 0, name: "week1", heatmap: "live",
+                                                  presses: {}, combos: {}, totals: {}, acks: {} }, extra);
+    const shown = p => total(p.hud.stats.view());
+
+    const { p, posted } = bridged();
+    tap(p, A.pos);
+    p.clock.advance(settle + TALLY_MS);
+    const first = posted.find(m => m.kind === "tally");
+    check("the keyboard's counts are sent to the host", first && first.seq === 1 && count(first, base, A.pos) === 1,
+          JSON.stringify(posted));
+    // The host has it, and says so: shown once, not once from the host and once from the page.
+    p.hud.receive(sessionMsg({ presses: { [base]: { [A.pos]: 1 } }, acks: { [first.page]: 1 } }));
+    check("what the host has acknowledged is not counted again", shown(p) === 1, shown(p));
+    tap(p, B.pos);
+    p.clock.advance(settle + TALLY_MS);
+    check("what it has not yet is shown with it", shown(p) === 2 && posted.filter(m => m.kind === "tally").length === 2, shown(p));
+    p.hud.receive(sessionMsg({ presses: { [base]: { [A.pos]: 1, [B.pos]: 1 } }, acks: { [first.page]: 2 } }));
+    check("and once it has it, once", shown(p) === 2, shown(p));
+    const text = p.document.getElementById("stats").querySelectorAll(".stat").find(c => c.classList.contains("mode"))
+      .children.map(x => x.textContent).join("");
+    check("the bar names the session", text === "week1 · heat live", text);
+
+    // A reset (or another session loaded): what was on the way belongs to the one before.
+    tap(p, C.pos);
+    p.clock.advance(settle + TALLY_MS);
+    p.hud.receive(sessionMsg({ gen: 1, acks: {} }));
+    check("a reset leaves nothing of the session before on the bar", shown(p) === 0, shown(p));
+
+    p.hud.receive(sessionMsg({ gen: 1, heatmap: "session" }));
+    check("the host's heatmap is the page's", p.hud.state.heatMode === "session");
+    const before = posted.filter(m => m.kind === "heatmap").length;
+    p.hud.setHeatmap("off");
+    check("and the page's choice is sent to it", posted.filter(m => m.kind === "heatmap").length === before + 1 &&
+          posted[posted.length - 1].mode === "off");
+
+    // Typing sent in lights and counts on the page, but is never sent.
+    const q = bridged();
+    tap(q.p, A.pos, true);
+    q.p.clock.advance(settle + TALLY_MS);
+    check("typing sent in is never sent to the session", !q.posted.some(m => m.kind === "tally"));
+
+    // A page that does not report (a browser on the socket): the host's counts, and none of its own.
+    const r = fresh();
+    tap(r, A.pos);
+    r.clock.advance(settle);
+    r.hud.receive(sessionMsg({ presses: { [base]: { [B.pos]: 4 } } }));
+    check("a page that does not report shows the session as the host has it", shown(r) === 4, shown(r));
+  }
+
   for (const n of notes) console.log("note " + n);
   for (const f of fail) console.log("FAIL " + f);
   console.log(`${checked} heat, count and speed checks, ${fail.length} failures`);
