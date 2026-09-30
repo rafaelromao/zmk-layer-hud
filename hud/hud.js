@@ -377,7 +377,12 @@
   function postSize() {
     const width = (state.data && state.data.hud && state.data.hud.width) || null;
     const height = Math.ceil(document.body.scrollHeight);
-    try { window.webkit.messageHandlers.zmkhud.postMessage(JSON.stringify({ kind: "size", width, height })); } catch (e) { /* not WebKit */ }
+    // The macOS panel reads it on its bridge. The Linux panel has a handler for nothing else
+    // (host/linux/panel.py), named apart so that the page never takes it for the bridge a
+    // session's counts go through (bridge(), below).
+    for (const name of ["zmkhud", "zmkhudsize"]) {
+      try { window.webkit.messageHandlers[name].postMessage(JSON.stringify({ kind: "size", width, height })); } catch (e) { /* not this host */ }
+    }
   }
 
   // ---------- heat ----------

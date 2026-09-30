@@ -36,7 +36,8 @@ PAGES = ROOT / "hud"
 # ZMKHUD_STATE; the default is repeated so running this directly still works.
 RUN = Path(os.environ.get("ZMKHUD_STATE") or
            Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "zmk-layer-hud")
-# The page's stats bar sits above the panel at a fixed height (hud/hud.css #stats: 26px + 6px).
+# Until the page says how big it is (follow_page): the board, the banner and the stats bar above
+# them (hud/hud.css #stats: 26px + 6px).
 STATS_H = 32
 HUD_W, HUD_H = 598, 392 + STATS_H
 KEYS_W, KEYS_H = 598, 96
@@ -50,7 +51,7 @@ RESERVE = os.environ.get("ZMKHUD_RESERVE") == "1"
 TALLY_TOKEN = secrets.token_hex(16)
 
 
-def surface(monitor, page, namespace, width, height, query=""):
+def surface(monitor, page, namespace, width, height, query="", on_size=None):
     window = Gtk.Window()
     window.set_app_paintable(True)
     window.set_visual(window.get_screen().get_rgba_visual())
@@ -74,6 +75,13 @@ def surface(monitor, page, namespace, width, height, query=""):
     manager.add_style_sheet(WebKit2.UserStyleSheet.new(
         sheet, WebKit2.UserContentInjectedFrames.ALL_FRAMES,
         WebKit2.UserStyleLevel.USER, None, None))
+    if on_size is not None:
+        # The page says how big its layout is (hud.js postSize). Not on a handler called zmkhud:
+        # that is the macOS panel's bridge, and a page that finds one reports its session's counts
+        # through it instead of the socket, where the feed keeps them.
+        manager.register_script_message_handler("zmkhudsize")
+        manager.connect("script-message-received::zmkhudsize",
+                        lambda _manager, result: on_size(result.get_js_value().to_string()))
     view = WebKit2.WebView.new_with_user_content_manager(manager)
     view.set_background_color(Gdk.RGBA(0, 0, 0, 0))
     view.set_size_request(width, height)
@@ -109,7 +117,8 @@ def main():
                      default=monitor.get_geometry().width - info["reserved"][2])
     right = monitor.get_geometry().width - right_edge + INSET
 
-    hud = surface(monitor, "index.html", "zmkhud-layer", HUD_W, HUD_H, query=f"&tally={TALLY_TOKEN}")
+    hud = surface(monitor, "index.html", "zmkhud-layer", HUD_W, HUD_H, query=f"&tally={TALLY_TOKEN}",
+                  on_size=lambda body: follow_page(body))
     GtkLayerShell.set_anchor(hud, GtkLayerShell.Edge.TOP, True)
     GtkLayerShell.set_anchor(hud, GtkLayerShell.Edge.RIGHT, True)
     # Explicit coordinates include the top bar; ignore other panels' exclusive zones.
@@ -125,7 +134,7 @@ def main():
         rail = Gtk.Window()
         rail.set_app_paintable(True)
         rail.set_visual(rail.get_screen().get_rgba_visual())
-        rail_width = 598 + right + INSET
+        rail_width = HUD_W + right + INSET
         rail.set_size_request(rail_width, 1)
         GtkLayerShell.init_for_window(rail)
         GtkLayerShell.set_namespace(rail, "zmkhud-reserved")
@@ -145,6 +154,29 @@ def main():
     GtkLayerShell.set_exclusive_zone(keys, -1)
     GtkLayerShell.set_margin(keys, GtkLayerShell.Edge.TOP, top + HUD_H + KEYS_GAP)
     GtkLayerShell.set_margin(keys, GtkLayerShell.Edge.RIGHT, right)
+
+    size = [HUD_W, HUD_H]
+
+    def follow_page(body):
+        """The HUD's surface as big as the page's layout -- its width is the config's hud.width,
+        its height the board's and the stats bar's -- and the strip just below it, as on macOS."""
+        try:
+            msg = json.loads(body)
+            w, h = int(msg.get("width") or size[0]), int(msg.get("height") or 0)
+        except (ValueError, TypeError, AttributeError):
+            return
+        if msg.get("kind") != "size" or not (100 <= w <= 4000 and 50 <= h <= 4000) or [w, h] == size:
+            return
+        size[:] = [w, h]
+        hud.get_child().set_size_request(w, h)
+        hud.resize(w, h)     # a layer surface is the window's size, smaller as well as larger
+        keys.get_child().set_size_request(w, KEYS_H)
+        keys.resize(w, KEYS_H)
+        GtkLayerShell.set_margin(keys, GtkLayerShell.Edge.TOP, top + h + KEYS_GAP)
+        if rail is not None:
+            rail.set_size_request(w + right + INSET, 1)
+            GtkLayerShell.set_exclusive_zone(rail, w + right + INSET)
+
     if rail is not None:
         rail.show_all()
     keys.show_all()

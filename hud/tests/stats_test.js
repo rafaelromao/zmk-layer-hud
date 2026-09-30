@@ -481,6 +481,23 @@ function main() {
     check("and live glows again", heat(p, B.idx) !== "");
   }
 
+  // ---------- the panel's size ----------
+  {
+    // The Linux panel sizes its surface from the page on a handler of its own; it is not the
+    // bridge a session's counts go through, which on Linux is the socket and its token.
+    const p = loadPage();
+    const posted = [];
+    p.window.webkit = { messageHandlers: { zmkhudsize: { postMessage: s => posted.push(JSON.parse(s)) } } };
+    p.hud.load(data);
+    p.hud.setLayers([]);
+    const size = posted.find(m => m.kind === "size");
+    // (The tests' DOM does no layout, so the height itself is 0 here.)
+    check("the Linux panel is told how tall the page is", size && Number.isInteger(size.height), JSON.stringify(posted));
+    tap(p, A.pos);
+    p.clock.advance(settle + 3000);
+    check("and is never sent the counts", posted.every(m => m.kind === "size"), JSON.stringify(posted.map(m => m.kind)));
+  }
+
   // ---------- a session the host keeps ----------
   {
     const TALLY_MS = 2000;
