@@ -14,6 +14,7 @@
   const card = $("demo"), holder = $("frame"), boardsEl = $("boards"), blurb = $("blurb");
   const playBtn = $("play"), field = $("type"), combosBox = $("combos");
   const heatButtons = Array.prototype.slice.call(document.querySelectorAll("[data-heat]"));
+  const themeButtons = Array.prototype.slice.call(document.querySelectorAll("[data-theme]"));
   const reduced = !!(window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches);
 
   const frame = document.createElement("iframe");
@@ -23,7 +24,7 @@
 
   const state = {
     boards: [], board: null, hud: null, demo: null, played: false, height: 0,
-    heat: "live", paused: reduced, typing: false, visible: !document.hidden, onScreen: true,
+    heat: "live", theme: storedTheme() || "dark", paused: reduced, typing: false, visible: !document.hidden, onScreen: true,
     queue: [],   // what was typed while a fresh frame loads
   };
   const cache = new Map();
@@ -65,6 +66,7 @@
       state.hud.receive({ kind: "layers", ids: [] });   // live, as on a real board: the stack is the keyboard's
       state.hud.receive({ kind: "device", name: (capture && capture.device) || board.label });
       state.hud.setHeatmap(state.heat);
+      state.hud.setPref("theme", state.theme);
       win.addEventListener("resize", () => requestAnimationFrame(fit));
       fit();
       for (const m of state.queue.splice(0)) state.hud.receive(m);
@@ -141,6 +143,23 @@
       if (state.hud) state.hud.setHeatmap(state.heat);
     });
   }
+
+  /* The keys light or dark. The frame's page keeps the choice itself, in its own storage on this
+   * origin (hud.js setPref), so a board chosen next, and a visit after this one, start in it. */
+  function storedTheme() {
+    try { return (JSON.parse(localStorage.getItem("zmkhud.prefs") || "{}") || {}).theme || null; } catch (e) { return null; }
+  }
+  function renderTheme() {
+    for (const b of themeButtons) b.setAttribute("aria-pressed", String(b.dataset.theme === state.theme));
+  }
+  for (const b of themeButtons) {
+    b.addEventListener("click", () => {
+      state.theme = b.dataset.theme;
+      renderTheme();
+      if (state.hud) state.hud.setPref("theme", state.theme);
+    });
+  }
+  renderTheme();
 
   // ---------- code blocks ----------
 
