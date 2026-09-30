@@ -213,7 +213,7 @@ options:
 ## sync
 
 ```text
-usage: zmk-layer-hud sync [-h] [--config CONFIG] [--quiet] [--no-fetch]
+usage: zmk-layer-hud sync [-h] [--config CONFIG] [--quiet] [--no-fetch] [--watch]
 
 write the definitions again from the same sources, and say what changed
 
@@ -222,6 +222,8 @@ options:
   --config CONFIG  config file
   --quiet          say nothing but errors
   --no-fetch       fetch no glyphs: use keymap-drawer's cache only
+  --watch          stay, and sync again each time the config, the keymap-drawer files or a working
+                   copy's keymap is edited; the running HUD redraws (Ctrl-C stops)
 ```
 
 ## keymap

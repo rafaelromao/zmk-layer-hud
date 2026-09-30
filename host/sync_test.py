@@ -565,5 +565,61 @@ class Import(unittest.TestCase):
         self.assertTrue(os.path.isfile(sync.imported_path(self.config)))
 
 
+@unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
+class Watch(unittest.TestCase):
+    """`sync --watch`: a sync each time a file it reads is edited, and none in between."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d)
+        write(self.d, "board.yaml", BOARD_YAML)
+        self.config = write(self.d, "config.yaml", "keymap: board.yaml\ntitle: T\n")
+        self.defs = sync.definitions_path(self.config)
+
+    def watch(self, *rounds):
+        """The watch for as many rounds as it is given, each one's edit made while it waits;
+        returns how many syncs ran and what they said went wrong."""
+        steps = iter(rounds)
+        err = io.StringIO()
+        with mock.patch.object(sync, "do_import", wraps=sync.do_import) as syncs, contextlib.redirect_stderr(err):
+            sync.watch(self.config, quiet=True, fetch=False, sleep=lambda _: next(steps)(), rounds=len(rounds))
+        return syncs.call_count, err.getvalue()
+
+    def first_key(self):
+        with open(self.defs, encoding="utf-8") as f:
+            return json.load(f)["drawing"]["layers"]["Base"][0]["tap"]
+
+    def test_an_edit_is_synced_and_a_quiet_round_is_not(self):
+        edit = lambda: write(self.d, "board.yaml", BOARD_YAML.replace("Base: [a,", "Base: [zz,"))  # noqa: E731
+        count, _ = self.watch(lambda: None, edit, lambda: None)
+        self.assertEqual(2, count)                       # the first sync, and the edit's
+        self.assertEqual("zz", self.first_key())
+
+    def test_a_sync_that_fails_is_said_and_the_watch_goes_on(self):
+        broken = lambda: write(self.d, "board.yaml", "layers: [\n")  # noqa: E731
+        whole = lambda: write(self.d, "board.yaml", BOARD_YAML.replace("Base: [a,", "Base: [q,"))  # noqa: E731
+        count, said = self.watch(broken, whole)
+        self.assertEqual(3, count)
+        self.assertIn("zmk-layer-hud sync:", said)
+        self.assertEqual("q", self.first_key())
+
+    def test_what_is_watched(self):
+        write(self.d, "config.yaml", "keymap: board.yaml\ndrawer_config: ~/nowhere/drawer.yaml\n")
+        repo = os.path.join(self.d, "repo")
+        keymap = write(repo, "config/b.keymap", '#include "defs.dtsi"\n' + KEYMAP)
+        write(repo, "config/defs.dtsi", "#define X 1\n")
+        files = sync.watched(self.config, repo, "b")
+        self.assertIn(os.path.join(self.d, "board.yaml"), files)
+        self.assertIn(os.path.expanduser("~/nowhere/drawer.yaml"), files)   # watched for when it appears
+        self.assertIn(keymap, files)
+        self.assertIn(os.path.join(repo, "config", "defs.dtsi"), files)
+        self.assertNotIn(self.defs, files)                                  # what it writes, never
+
+    def test_a_repo_by_url_is_not_watched(self):
+        with mock.patch.object(sync, "recorded", return_value=("https://github.com/you/zmk-config", None)):
+            with self.assertRaisesRegex(sync.SyncError, "cannot be watched"):
+                sync.watch(self.config, quiet=True, fetch=False, sleep=lambda _: None, rounds=1)
+
+
 if __name__ == "__main__":
     unittest.main()

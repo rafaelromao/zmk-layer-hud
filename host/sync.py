@@ -17,6 +17,7 @@ again from the same sources and says what changed. They hold two things:
     zmk-layer-hud import --pristine --keep-custom        # ...but keep what only they had, and redo the rest
     zmk-layer-hud import --pristine --keep-custom=2      # ...just the second thing it lists
     zmk-layer-hud sync                                   # read the recorded sources again
+    zmk-layer-hud sync --watch                           # and again each time one is edited, till Ctrl-C
 
 This is the only part of zmk-layer-hud that reads the keymap-drawer file, the drawer config, the ZMK
 keymap or the network; the HUD itself reads its config and these definitions. The config stays
@@ -25,6 +26,11 @@ keymap says is also written to be read, in `config.imported.yaml`. When the draw
 keymap-drawer file, the one thing import cannot know is which drawn layer shows which ZMK layer --
 your names, not the keymap's -- so it drafts that mapping there and marks the lines it had to leave
 undecided; correct those once in the config.
+
+`sync --watch` stays, and syncs again whenever a file it reads where it is changes: the config, the
+keymap-drawer YAML and the drawer config, and in a working copy the keymap and everything it
+includes. A running HUD reloads the definitions, so it redraws as you edit. A repo imported by URL
+is fetched, not watched: `sync` after a push reads it again.
 """
 
 import json
@@ -34,6 +40,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -414,7 +421,7 @@ def drawing_from_yaml(cfg, config_path, previous, fetch, log):
     try:
         doc = keymap_mod.load_yaml(keymap_mod.expand(cfg["keymap"], base))
         drawer_cfg = keymap_mod.load_yaml(keymap_mod.expand(cfg["drawer_config"], base)) if cfg.get("drawer_config") else None
-    except (OSError, keymap_mod.KeymapError) as e:
+    except Exception as e:   # the YAML parser's own errors too: a file saved half-edited
         raise SyncError(f"could not read the keymap-drawer file the config names: {e}")
     try:
         return keymap_mod.draw(doc, drawer_cfg, stagger=cfg.get("stagger", True) is not False,
@@ -900,6 +907,87 @@ def recorded(config_path):
     return None, None
 
 
+# ---------- watching ----------
+
+def is_url(repo):
+    return "://" in repo or repo.startswith("git@")
+
+
+def watched(config_path, repo=None, keyboard=None):
+    """The files a sync of this config reads where they are: the config, the keymap-drawer YAML,
+    the drawer config and the layout files it names, and in a working copy, the keyboard's keymap,
+    everything it includes, and the files its physical layout can be in."""
+    config_path = os.path.abspath(config_path)
+    base = os.path.dirname(config_path)
+    files = [config_path]
+    try:
+        cfg = keymap_mod.load_yaml(config_path)
+    except Exception:
+        cfg = None                        # saved half-edited: the config alone, until it reads again
+    if isinstance(cfg, dict):
+        named = [cfg.get("keymap"), cfg.get("drawer_config")]
+        if isinstance(cfg.get("layout"), dict):
+            named += [cfg["layout"].get(k) for k in ("qmk_info_json", "dts_layout")]
+        files += [keymap_mod.expand(p, base) for p in named if isinstance(p, str) and "://" not in p]
+    if repo and os.path.isdir(repo):
+        try:
+            keymap_path = find_keymap(repo, keyboard)
+        except SyncError:
+            keymap_path = None
+        if keymap_path:
+            own, beside = boards_files(repo, keymap_path)
+            files += [path for path, _ in reachable(keymap_path)] + own + beside
+    return sorted({os.path.abspath(f) for f in files})
+
+
+def stat_of(path):
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    return st.st_mtime_ns, st.st_size, st.st_ino
+
+
+def watch(config_path, quiet=False, fetch=True, interval=1.0, sleep=time.sleep, rounds=None):
+    """`sync --watch`: sync, then sync again each time a file watched() lists changes, until
+    interrupted. What a sync is about to read is noted before it runs, so a file saved again while
+    it runs is synced once more. A sync that fails says why and the watch goes on: a keymap saved
+    half-edited is taken once it is whole. Each sync reads the glyphs afresh, so one that could not
+    be had is tried again. `rounds` bounds the loop, for the tests."""
+    repo, keyboard = recorded(config_path)
+    if repo and is_url(repo):
+        raise SyncError(f"the repo was imported by URL ({repo}), which cannot be watched: import a working copy "
+                        "(`zmk-layer-hud import path/to/zmk-config`) to watch it, or `sync` after each push")
+
+    def snapshot():
+        return {path: stat_of(path) for path in watched(config_path, repo, keyboard)}
+
+    def once():
+        keymap_mod._glyph_memo.clear()
+        try:
+            do_import(repo, keyboard, config_path, quiet, fetch)
+        except (SyncError, keymap_mod.KeymapError, OSError) as e:
+            print(f"zmk-layer-hud sync: {e}", file=sys.stderr)
+        except Exception as e:            # the config saved half-edited, say: the next save is taken
+            print(f"zmk-layer-hud sync: {type(e).__name__}: {e}", file=sys.stderr)
+
+    seen = snapshot()
+    once()
+    say(quiet, f"watching {len(seen)} file(s) for changes; Ctrl-C stops")
+    while rounds is None or rounds > 0:
+        if rounds is not None:
+            rounds -= 1
+        sleep(interval)
+        now = snapshot()
+        if now == seen:
+            continue
+        changed = [p for p in sorted(set(now) | set(seen)) if now.get(p) != seen.get(p)]
+        say(quiet, "changed: " + ", ".join(os.path.basename(p) for p in changed[:5]) + (" …" if len(changed) > 5 else ""))
+        seen = now
+        once()
+    return 0
+
+
 def say(quiet, msg):
     if not quiet:
         print(msg, file=sys.stderr)
@@ -923,7 +1011,7 @@ def main(argv=None):
         a = argv.pop(0)
         if a in ("--keyboard", "--config"):
             opts[a.lstrip("-")] = argv.pop(0) if argv else ""
-        elif a in ("--quiet", "--no-fetch", "--pristine", "--keep-custom", "--drop-custom"):
+        elif a in ("--quiet", "--no-fetch", "--pristine", "--keep-custom", "--drop-custom", "--watch"):
             opts[a.lstrip("-")] = True
         elif a.startswith("--keep-custom="):
             try:
@@ -950,6 +1038,11 @@ def main(argv=None):
             if repo is None and not keymap_mod.load_yaml(config_path).get("keymap"):
                 raise SyncError("nothing to sync: import a ZMK repo (`zmk-layer-hud import <repo>`), "
                                 "or name your keymap-drawer YAML as `keymap:` in the config")
+            if opts.get("watch"):
+                try:
+                    return watch(config_path, opts.get("quiet", False), fetch)
+                except KeyboardInterrupt:
+                    return 0
             return do_import(repo, keyboard, config_path, opts.get("quiet", False), fetch)
         raise SyncError(f"unknown command {cmd!r}; try `import` or `sync`")
     except (SyncError, keymap_mod.KeymapError, OSError) as e:

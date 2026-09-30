@@ -316,6 +316,8 @@ def cmd_sync(args, verb):
         argv.append("--quiet")
     if args.no_fetch:
         argv.append("--no-fetch")
+    if getattr(args, "watch", False):
+        argv.append("--watch")
     return sync_mod.main(argv)
 
 
@@ -1288,6 +1290,9 @@ def build_parser():
     s.add_argument("--config", help="config file")
     s.add_argument("--quiet", action="store_true", help="say nothing but errors")
     s.add_argument("--no-fetch", action="store_true", help="fetch no glyphs: use keymap-drawer's cache only")
+    s.add_argument("--watch", action="store_true",
+                   help="stay, and sync again each time the config, the keymap-drawer files or a working copy's "
+                        "keymap is edited; the running HUD redraws (Ctrl-C stops)")
     s.set_defaults(func=lambda a: cmd_sync(a, "sync"))
 
     s = add("keymap", "check the HUD's own files load: the config and the definitions import wrote")
