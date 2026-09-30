@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en" class="nojs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>zmk-layer-hud · an on-screen HUD for ZMK keyboards</title>
+<meta name="description" content="An on-screen HUD for ZMK keyboards: the layer you are on, and every key, combo and macro as you press it, drawn from your keymap-drawer file and reported by the keyboard itself.">
+<link rel="canonical" href="https://rafaelromao.github.io/zmk-layer-hud/">
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#1a1b26">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="zmk-layer-hud">
+<meta property="og:title" content="zmk-layer-hud · an on-screen HUD for ZMK keyboards">
+<meta property="og:description" content="The layer you are on, and every key, combo and macro as you press it, drawn from your keymap-drawer file and reported by the keyboard itself. Try it in the browser.">
+<meta property="og:url" content="https://rafaelromao.github.io/zmk-layer-hud/">
+<meta property="og:image" content="https://rafaelromao.github.io/zmk-layer-hud/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The HUD drawing a 3x5 split keyboard, with a combo lit on it">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="site.css">
+</head>
+<body>
+<header class="top">
+  <a class="mark" href="#top">zmk-layer-hud</a>
+  <nav aria-label="Sections">
+    <a href="#how">How it works</a>
+    <a href="#setup">Setup</a>
+    <a href="#faq">Questions</a>
+    <a href="https://github.com/rafaelromao/zmk-layer-hud">GitHub</a>
+  </nav>
+</header>
+
+<main id="top">
+  <section class="hero" aria-labelledby="title">
+    <h1 id="title">The layer you're on, and every key you press</h1>
+    <p class="lead">An on-screen HUD for ZMK keyboards. It shows the layer you are on and lights the
+      keys, combos and macros as you press them, drawn from the same
+      <a href="https://github.com/caksoylar/keymap-drawer">keymap-drawer</a> file you document your
+      layout with. The keyboard itself reports its layers and key positions, so nothing is guessed.</p>
+
+    <div class="demo" id="demo">
+      <div class="demo-bar needs-js">
+        <div class="boards" id="boards" role="group" aria-label="Board"></div>
+        <button type="button" class="play" id="play" hidden>Pause</button>
+      </div>
+      <p class="blurb needs-js" id="blurb" aria-live="polite"></p>
+      <div class="frame" id="frame">
+        <noscript><img src="hud.gif" width="640" height="430" alt="The HUD following a keyboard through its vim layers: a combo into vim mode, NORMAL with h j k l lit one at a time, VISUAL, a yank and a put, then INSERT and Esc out."></noscript>
+      </div>
+      <div class="try needs-js">
+        <label for="type">Type here, on your own keyboard</label>
+        <textarea id="type" rows="2" spellcheck="false" autocomplete="off" autocapitalize="off"
+                  autocorrect="off" placeholder="hello (world)"></textarea>
+        <div class="controls">
+          <label class="toggle"><input type="checkbox" id="combos"> Type through combos</label>
+          <div class="heat" role="group" aria-label="What the keys glow with">
+            <span class="heat-label">Heat</span>
+            <button type="button" data-heat="live" aria-pressed="true">Live</button>
+            <button type="button" data-heat="session" aria-pressed="false">Session</button>
+            <button type="button" data-heat="off" aria-pressed="false">Off</button>
+          </div>
+        </div>
+        <p class="hint">The words per minute are yours; the keys that light are where each character
+          lives on this layout. <b>Session</b> shows everything typed since the board was chosen.
+          What you type stays in this page: nothing is sent or kept.</p>
+      </div>
+    </div>
+
+    <div class="install">
+      <p>On macOS, or Linux on Hyprland:</p>
+      <pre><code>curl -fsSL https://raw.githubusercontent.com/rafaelromao/zmk-layer-hud/main/install.sh | sh</code></pre>
+      <p class="more"><a href="#setup">Set up your keyboard ↓</a>
+        <span aria-hidden="true">·</span> <a href="https://github.com/rafaelromao/zmk-layer-hud">The source, on GitHub</a></p>
+    </div>
+  </section>
+
+  <section id="drawer" aria-labelledby="drawer-title">
+    <h2 class="banner" id="drawer-title">Drawn from your keymap-drawer file</h2>
+    <p>The board on screen is the YAML you already keep for your keymap's diagram, glyphs and key
+      sizes included: the config's one required line points at it. Edit the file and the HUD redraws.</p>
+    <p>No YAML yet? keymap-drawer makes one from your keymap, and the installer has already put it in
+      the HUD's own virtualenv. A YAML made this way needs nothing else: its layer and key order are
+      the keymap's.</p>
+    <pre><code>~/.local/share/zmk-layer-hud/.venv/bin/keymap parse -z path/to/your.keymap &gt; keymap.yaml</code></pre>
+    <p>A curated drawing does not carry three things the HUD needs: the id of each ZMK layer, the
+      position of each drawn key, and which layers a combo really fires on. <code>import</code> takes
+      them from your zmk-config once, and <code>sync</code> reads it again after you push:</p>
+    <pre><code>zmk-layer-hud import github.com/you/zmk-config
+zmk-layer-hud sync</code></pre>
+    <p>The config can live in that repo too. After <code>zmk-layer-hud config link path/to/config.yaml</code>,
+      <code>git pull</code> is the whole of setting up a second machine.</p>
+  </section>
+
+  <section id="how" aria-labelledby="how-title">
+    <h2 class="banner" id="how-title">Nothing is guessed</h2>
+    <p>An overlay that watches the operating system sees keycodes, not layers: <code>&amp;mo</code>,
+      <code>&amp;sl</code> and <code>&amp;tog</code> send none, and a combo arrives as whatever key it
+      types. Here the keyboard says it. A small ZMK module sends the active layers, and with
+      <code>positions;</code> each key's press and release by position, on a channel of its own.</p>
+
+    <div class="flow" role="img" aria-label="The keyboard sends layers and key positions on the module's own channel, and what is typed in its HID reports; the host's feed reads both and draws the HUD.">
+      <div class="node">
+        <b>Keyboard</b>
+        <span>ZMK and the module, on the central half or the dongle</span>
+      </div>
+      <div class="edges">
+        <div class="edge signal"><span>layers, and each key by position</span><small>the module's CDC-ACM interface</small></div>
+        <div class="edge hid"><span>what is typed</span><small>the keyboard's own HID reports</small></div>
+      </div>
+      <div class="node">
+        <b>Feed</b>
+        <span>reads both, and converts your keymap-drawer YAML</span>
+      </div>
+      <div class="edges one">
+        <div class="edge"><span>messages</span><small>in the panel, or on a local WebSocket</small></div>
+      </div>
+      <div class="node">
+        <b>HUD</b>
+        <span>the board, the layer, the strip of what was typed</span>
+      </div>
+    </div>
+
+    <ul class="facts">
+      <li>Every way of switching layers is reported: <code>&amp;mo</code>, <code>&amp;lt</code>,
+        <code>&amp;sl</code>, <code>&amp;to</code>, <code>&amp;tog</code>, conditional layers,
+        auto-layers, other modules. No binding changes.</li>
+      <li>Nothing rides in the keyboard report. A signal carried there reaches the operating system as
+        a key, and on Linux arrives as phantom key presses; on a channel of its own nothing can be
+        mistaken for one.</li>
+      <li>The module drops a frame rather than wait for one, so it never delays a keystroke. The next
+        layer change, or the heartbeat, puts the HUD right.</li>
+      <li>Flash the central half, or the dongle. Peripherals need nothing.</li>
+    </ul>
+
+    <div class="table">
+      <table>
+        <thead><tr><th>Channel</th><th>Carries</th><th>Needs</th></tr></thead>
+        <tbody>
+          <tr><td>the module's own (CDC-ACM over USB)</td><td>the active layers, and each key press and release by position</td><td>the tty: the udev rule on Linux, nothing on macOS</td></tr>
+          <tr><td>the keyboard's HID reports</td><td>what you type, and the modifiers</td><td>Input Monitoring on macOS; on Linux, the same udev rule</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>Lose the first and the board stops following you; lose the second and the strip stays empty
+      while everything else works. <code>zmk-layer-hud status</code> says which one is live, and
+      <code>zmk-layer-hud doctor</code> says why when one is not.</p>
+  </section>
+
+  <section id="draws" aria-labelledby="draws-title">
+    <h2 class="banner" id="draws-title">What it draws</h2>
+    <ul class="grid">
+      <li><h3>The exact key</h3><p>Lit by its position while it is held, whatever it produced: a
+        chord, a macro, a modifier or a layer key.</p></li>
+      <li><h3>Combos</h3><p>Keys pressed within the combo term become the combo the drawer draws,
+        pill and all, on the layers it really fires on.</p></li>
+      <li><h3>Layers as they are</h3><p>Held, toggled or one-shot. A one-shot layer stays up through
+        its key's flash, and transparent keys resolve through the live stack.</p></li>
+      <li><h3>Holds</h3><p>A layer's activator and a held modifier are ringed, and Shift capitalises
+        the legends.</p></li>
+      <li><h3>Macros</h3><p>Keys typed back to back that spell a legend light the key or the combo
+        that has it.</p></li>
+      <li><h3>What was typed</h3><p>A strip under the board shows the characters, with dead keys
+        composed.</p></li>
+      <li><h3>Heat</h3><p>A pressed key glows and cools over a few seconds; one struck again and
+        again stays warm.</p></li>
+      <li><h3>Speed</h3><p>A bar above the panel shows words per minute, the session's average and
+        top speed, accuracy, combo share, and the share of the layer on screen.</p></li>
+      <li><h3>Sessions</h3><p>There is always one, kept like a tmux session: name it, save it, load it
+        back, and see its heatmap. Counts only, never what was typed, in files only you can read.</p></li>
+    </ul>
+  </section>
+
+  <section id="setup" aria-labelledby="setup-title">
+    <h2 class="banner" id="setup-title">Setup</h2>
+    <ol class="steps">
+      <li>
+        <h3>The firmware</h3>
+        <p>Add the module to your zmk-config's <code>config/west.yml</code>:</p>
+        <pre><code>manifest:
+  remotes:
+    - name: zmkfirmware
+      url-base: https://github.com/zmkfirmware
+    - name: rafaelromao                         # &lt;-- new
+      url-base: https://github.com/rafaelromao   # &lt;-- new
+  projects:
+    - name: zmk
+      remote: zmkfirmware
+      revision: main
+      import: app/west.yml
+    - name: zmk-layer-hud                       # &lt;-- new
+      remote: rafaelromao                       # &lt;-- new
+      revision: main                            # &lt;-- new
+  self:
+    path: config</code></pre>
+        <p>Put the node anywhere at the root of your keymap:</p>
+        <pre><code>/ {
+    layer_signal {
+        compatible = "zmk,layer-signal";
+        heartbeat-ms = &lt;2000&gt;;   // re-send the layers every 2 s, so a HUD started late catches up
+        positions;               // also report every key press by position
+    };
+};</code></pre>
+        <p>Over USB the signal needs a serial interface of its own, which the module's snippet adds,
+          the way ZMK Studio's <code>studio-rpc-usb-uart</code> adds one for Studio. Name it on the
+          board's entry in <code>build.yaml</code> when GitHub Actions builds the firmware, or pass
+          <code>-S layer-hud-usb-uart</code> to a local <code>west build</code>:</p>
+        <pre><code>include:
+  - board: nice_nano_v2
+    shield: corne_left
+    snippet: layer-hud-usb-uart   # &lt;-- new</code></pre>
+        <p>Then build and flash the central half, or the dongle.</p>
+      </li>
+      <li>
+        <h3>The host</h3>
+        <pre><code>curl -fsSL https://raw.githubusercontent.com/rafaelromao/zmk-layer-hud/main/install.sh | sh</code></pre>
+        <p>That puts the tree in <code>~/.local/share/zmk-layer-hud</code> and runs
+          <code>zmk-layer-hud setup</code>, which prepares the machine: the packages, a virtualenv, a
+          config to start from, and the command on your PATH. Nothing runs as root without printing
+          the command and asking first.</p>
+      </li>
+      <li>
+        <h3>Your keymap</h3>
+        <pre><code>zmk-layer-hud config edit                        # point keymap: at your keymap-drawer YAML
+zmk-layer-hud import github.com/you/zmk-config   # layer ids, positions, combo layers
+zmk-layer-hud start</code></pre>
+        <p>The panel opens, and within two seconds it follows your keyboard. When it does not,
+          <code>zmk-layer-hud doctor</code> checks the interpreter, the packages, the config, the
+          permissions and both channels, and names what is missing. The channel alone:</p>
+        <pre><code>zmk-layer-hud feed --stdout --no-ws --no-keymap --no-keys --debug</code></pre>
+        <p>prints <code>{"kind":"layers","ids":[]}</code> within two seconds, and a layer's id while
+          you hold its key.</p>
+      </li>
+    </ol>
+    <p>Every step, and why: <a href="https://github.com/rafaelromao/zmk-layer-hud/blob/main/docs/zmk-setup.md">docs/zmk-setup.md</a>.</p>
+  </section>
+
+  <section id="runs" aria-labelledby="runs-title">
+    <h2 class="banner" id="runs-title">Runs on</h2>
+    <dl class="hosts">
+      <div><dt>macOS</dt><dd>An overlay panel over every Space and full-screen app. Drag it anywhere;
+        it stays where it was put.</dd></div>
+      <div><dt>Linux on Hyprland</dt><dd>A layer-shell overlay that takes no room from your windows.
+        <code>start --reserve</code> tiles them beside it instead, for recording. On pacman systems
+        the GTK packages are installed for you.</dd></div>
+      <div><dt>Anything else</dt><dd><code>zmk-layer-hud feed</code> serves every message on a local
+        WebSocket (<a href="https://github.com/rafaelromao/zmk-layer-hud/blob/main/docs/protocol.md">docs/protocol.md</a>).
+        Windows is not supported.</dd></div>
+    </dl>
+    <p>It needs Python 3.10 or newer, and a ZMK keyboard whose firmware you build.</p>
+  </section>
+
+  <section id="hack" aria-labelledby="hack-title">
+    <h2 class="banner" id="hack-title">Hack on it</h2>
+    <ul class="facts">
+      <li><b>The protocol.</b> The feed's WebSocket carries the keymap, the layers, the positions and
+        the keys, replays the last keymap, layers and device to a new client, and takes layers,
+        positions and keys in. <code>zmk-layer-hud poke</code> is a client of it.</li>
+      <li><b>Demos.</b> A demo script is a JSON file of frames, text and pauses.
+        <code>zmk-layer-hud demo --play</code> plays one live, and <code>docs/make-gif.sh</code>
+        renders one to a GIF. The demos on this page are those scripts.</li>
+      <li><b>Tests.</b> <code>make test</code> runs the firmware's wire policy in C, the host in
+        Python, and the HUD page and this one under node. No npm, nothing to build.</li>
+    </ul>
+  </section>
+
+  <section id="faq" aria-labelledby="faq-title">
+    <h2 class="banner" id="faq-title">Limits and questions</h2>
+    <dl class="faq">
+      <div><dt>How many layers and keys?</dt><dd>Layer ids 0 to 31, and key positions 0 to 255.</dd></div>
+      <div><dt>What does it read, and where does it go?</dt><dd>Layers and positions come from the
+        module. What you type comes from the keyboard's HID reports and feeds the strip; on macOS
+        that needs Input Monitoring, and <code>--no-hid-keys</code> drops both the strip and the
+        permission. While macOS says a password is being typed, the HUD shows and counts nothing of
+        it. Sessions keep counts, never what was typed, and nothing leaves the machine.</dd></div>
+      <div><dt>Does it get in ZMK Studio's way?</dt><dd>No. The feed tries each serial port the board
+        exposes and moves on from one that says nothing, so a Studio or logging port beside the
+        signal is left alone.</dd></div>
+      <div><dt>Bluetooth?</dt><dd>The module has a GATT service for it, but reading a board over
+        Bluetooth has not been checked on hardware yet. A dongle is USB, and works.</dd></div>
+      <div><dt>Which ZMK?</dt><dd>The module follows ZMK <code>main</code>; there is no tagged release
+        to pin yet.</dd></div>
+    </dl>
+  </section>
+</main>
+
+<footer>
+  <p>MIT © Rafael Romão · <a href="https://github.com/rafaelromao/zmk-layer-hud">GitHub</a> ·
+    <a href="https://github.com/rafaelromao/zmk-layer-hud/blob/main/README.md">README</a> ·
+    <a href="https://github.com/rafaelromao/zmk-layer-hud/blob/main/docs/development.md">Development</a></p>
+  <p>Built on <a href="https://zmk.dev">ZMK</a> and <a href="https://github.com/caksoylar/keymap-drawer">keymap-drawer</a>,
+    whose layouts and glyphs draw the boards. The Diamond runs
+    <a href="https://github.com/rafaelromao/zmk-vim-mode">zmk-vim-mode</a>, and its keymap is in
+    <a href="https://github.com/rafaelromao/keyboards">rafaelromao/keyboards</a>.</p>
+  <p class="built">Built from <!--commit-->.</p>
+</footer>
+<script src="demo.js"></script>
+<script src="site.js"></script>
+</body>
+</html>

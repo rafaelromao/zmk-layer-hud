@@ -6,6 +6,9 @@ and macros as you press them, drawn from the same
 The keyboard itself reports its layers and key positions, so nothing is guessed. Keep it on
 screen while you learn a layout, or while you record or share your screen.
 
+**Try it in your browser:** [rafaelromao.github.io/zmk-layer-hud](https://rafaelromao.github.io/zmk-layer-hud/)
+runs this HUD on three sample boards, and you can type on them.
+
 ![The HUD following a keyboard through its vim layers: typing on the base layer, a combo into vim
 mode, NORMAL with h j k l lit one at a time, v into VISUAL to select a word, yank and put it back,
 then i into INSERT and Esc out](docs/hud.gif)

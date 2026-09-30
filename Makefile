@@ -23,7 +23,7 @@ NODE ?= $(shell command -v node)
 # The audit reads the keyboard's keymap with keymap-drawer, which lives in the venv.
 VENV_PYTHON := $(wildcard .venv/bin/python3)
 
-.PHONY: all install venv test test-firmware test-host test-hud audit fixture clean help
+.PHONY: all install venv test test-firmware test-host test-hud test-site site audit fixture clean help
 
 all: test
 
@@ -33,7 +33,7 @@ install: ## set this machine up and put zmk-layer-hud on your PATH, pointing at 
 venv: ## just the virtualenv the feed and the tests run under
 	bin/zmk-layer-hud setup --venv-only
 
-test: test-firmware test-host test-hud ## run every test suite
+test: test-firmware test-host test-hud test-site ## run every test suite
 
 test-firmware: ## host-side tests for the module's pure encode/decode policy
 	@mkdir -p build
@@ -53,6 +53,17 @@ test-hud: ## the HUD page: every key and combo, the heatmap, the strip, and ever
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/words_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/play_test.js; \
 	fi
+
+test-site: ## the landing page: what it is built from, and its demo on the HUD page
+	$(PYTHON) -m unittest discover -s site -p '*_test.py'
+	@if [ -z "$(NODE)" ]; then \
+	  echo "test-site: node not found, skipping the demo (brew install node)"; \
+	else \
+	  PYTHON="$(PYTHON)" $(NODE) site/tests/demo_test.js; \
+	fi
+
+site: ## build the landing page into build/site (STRICT=1: every board, or fail, as CI builds it)
+	$(or $(VENV_PYTHON),$(PYTHON)) site/build.py $(if $(STRICT),--strict)
 
 audit: ## the drawing against the keyboard's own keymap (SOURCE=<working copy>, else the one import recorded)
 	$(or $(VENV_PYTHON),$(PYTHON)) host/ways.py --audit $(if $(CONFIG),--config $(CONFIG)) $(if $(SOURCE),--source $(SOURCE))
