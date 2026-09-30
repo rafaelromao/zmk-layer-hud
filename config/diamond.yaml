@@ -8,6 +8,7 @@
 keymap: ~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawer.yaml
 drawer_config: ~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawer-config.yaml
 # title: Magic Romak          # default: the name of whichever keyboard is typing (Diamond, Rommana)
+# stagger: false              # a 3x5 split drawn from its key count gets a Ferris Sweep's column stagger; false: ortholinear
 
 # Every size and timing the HUD uses (ms unless noted). Shown with the defaults; drop any line.
 hud:

@@ -171,6 +171,7 @@ key with its default and a comment:
 | `combos` | layer coverage for a combo the import gets wrong |
 | `keyboard`, `serial`, `ble` | pick one of several ZMK boards; name its serial port; its BLE address |
 | `title` | corner text (default: the name of the keyboard that is typing) |
+| `stagger` | a 3x5 split whose `layout` only counts its keys is drawn with a Ferris Sweep's column stagger; `false` keeps it ortholinear |
 | `hud`, `feed` | every size and timing: panel width and opacity, flash and pill durations, combo slack, how long a key's glow takes to fade, dead-key window … |
 | `extras` | inference hints, used only with firmware that reports no positions |
 

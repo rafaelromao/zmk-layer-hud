@@ -2,7 +2,9 @@
 # home-row mods, four layers and nine combos. One change: the original takes its physical layout
 # from keymap-drawer's QMK database (`qmk_keyboard: corne_rotated`, `layout_name:
 # LAYOUT_split_3x5_3`), which needs the library; the equivalent cols+thumbs notation below
-# renders everywhere. Swap the two lines back if you have keymap-drawer installed.
+# renders everywhere. Swap the two lines back if you have keymap-drawer installed. The notation
+# only counts keys, so the HUD draws it with a Ferris Sweep's column stagger (`stagger:` in the
+# config, host/keymap.py stagger_columns), as a 3x5 board looks.
 layout:
   cols_thumbs_notation: "33333+3 3+33333"
 layers:

@@ -319,6 +319,64 @@ def ortho_layout(spec, key_w=70.0, key_h=68.0, split_gap=30.0):
     return {"width": width, "height": height, "keys": keys}
 
 
+# A 3x5 split drawn from a spec that only counts its keys ("33333+3 3+33333", or an ortho_layout of
+# three rows and five columns) comes out of keymap-drawer ortholinear, and hardly a 3x5 board is:
+# the Ferris Sweep, the Corne and Aurora Sweep's 3x5s, the Totem all stagger their columns. So the
+# HUD draws one with the Ferris Sweep's stagger -- QMK's ferris/sweep LAYOUT_split_3x5_2, the
+# middle column highest and the pinky's lowest -- unless the config says `stagger: false`. A spec
+# that says more than a key count (a column shifted with ^ or v, a board from QMK's or ZMK's
+# database, a dts file) is the board's own shape and is drawn as it is.
+FERRIS_STAGGER = (0.93, 0.31, 0.0, 0.28, 0.42)  # key heights below the middle column, pinky to inner index
+THUMB_CLEARANCE = 0.33                         # the Ferris's gap under its inner column, in key heights
+
+
+def plain_3x5_split(layout_spec):
+    """A 3x5 split whose `layout` only counts keys: the kind keymap-drawer draws ortholinear."""
+    cpt = layout_spec.get("cols_thumbs_notation")
+    if isinstance(cpt, str):
+        parts = [p for p in re.split(r"[ _]+", cpt) if p]
+        alphas = [re.sub(r"^\d[><lr]*\+|\+\d[><lr]*$", "", p) for p in parts]
+        return len(parts) == 2 and all(a == "33333" for a in alphas)
+    ortho = layout_spec.get("ortho_layout")
+    if isinstance(ortho, dict):
+        return (bool(ortho.get("split")) and ortho.get("rows") == 3 and ortho.get("columns") == 5
+                and not isinstance(ortho.get("thumbs"), str)
+                and not ortho.get("drop_pinky") and not ortho.get("drop_inner"))
+    return False
+
+
+def stagger_columns(layout):
+    """The Ferris Sweep's column stagger on a 3x5 split that keymap-drawer drew ortholinear.
+
+    Keys only move down, and none changes its index: the order is the keymap's and every binding
+    follows it, which is why this is done here to the drawn keys and not in the notation --
+    keymap-drawer orders keys by the row they fall in, so a column shifted a whole key with `vv`
+    would take its bottom key into the thumb row and every binding after it one key along.
+    Columns are found by where they are drawn, outside in on each hand, and each thumb goes down
+    far enough to clear the lowest column above it."""
+    keys = [dict(k) for k in layout["keys"]]
+    key_h = min(k["h"] for k in keys)
+    rows = sorted({round(k["y"], 1) for k in keys})
+    thumbs_y = rows[3] if len(rows) == 4 else None     # three rows of alphas, then the thumbs
+    alphas = [k for k in keys if round(k["y"], 1) != thumbs_y]
+    mid = (min(k["x"] for k in keys) + max(k["x"] for k in keys)) / 2
+    drop = {}   # column centre x -> how far it goes down
+    for left in (True, False):
+        cols = sorted({round(k["x"], 1) for k in alphas if (k["x"] < mid) == left}, reverse=not left)
+        if len(cols) != len(FERRIS_STAGGER):
+            return layout   # not the shape plain_3x5_split promised; draw it as keymap-drawer did
+        drop.update({x: dy * key_h for x, dy in zip(cols, FERRIS_STAGGER)})
+    widths = {round(k["x"], 1): k["w"] for k in alphas}
+    for k in alphas:
+        k["y"] += drop[round(k["x"], 1)]
+    for k in keys:
+        if thumbs_y is None or round(k["y"], 1) != thumbs_y:
+            continue
+        above = [dy for x, dy in drop.items() if abs(x - k["x"]) < (widths[x] + k["w"]) / 2 - 0.1]
+        k["y"] += max(above, default=0.0) + THUMB_CLEARANCE * key_h
+    return {"width": layout["width"], "height": max(k["y"] + k["h"] / 2 for k in keys), "keys": keys}
+
+
 def physical_layout(layout_spec, drawer_cfg):
     """keymap-drawer `layout` mapping -> {width, height, keys:[{x,y,w,h,r}]} with centred keys.
     Uses keymap_drawer when importable; else handles cols_thumbs_notation and ortho_layout."""
@@ -558,6 +616,8 @@ def resolve_glyphs(names, drawer_cfg, log=None, fetch=True):
 def build_message(cfg, doc, drawer_cfg=None, dtsi_text=None, source="", log=None, fetch_glyphs=True):
     """Everything the page needs, from parsed config + keymap YAML dicts."""
     layout = physical_layout(doc.get("layout"), drawer_cfg)
+    if cfg.get("stagger", True) is not False and plain_3x5_split(doc.get("layout")):
+        layout = stagger_columns(layout)
     n = len(layout["keys"])
     layers, combos = parse_layers_and_combos(doc, n)
     layer_names = list(layers)

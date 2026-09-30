@@ -28,6 +28,12 @@ DOC = {
 }
 DTSI = "// Layers\n\n#define BASE 0\n#define NAV 1\n#define SYM 2\n\n// Settings\n#define COMBO_TERM 30\n"
 
+# A 3x5+3 split drawn from its key count alone: examples/3x5.yaml's shape, and most 3x5s'.
+DOC_3X5 = {
+    "layout": {"cols_thumbs_notation": "33333+3 3+33333"},
+    "layers": {"Base": [f"k{i}" for i in range(36)]},
+}
+
 
 class Keys(unittest.TestCase):
     def test_norm_key_forms(self):
@@ -116,6 +122,59 @@ class Ortho(unittest.TestCase):
         doc = dict(DOC, layout={"ortho_layout": {"split": True, "rows": 2, "columns": 2, "thumbs": 1}})
         msg = km.build_message({}, doc)
         self.assertEqual(len(msg["layout"]["keys"]), 10)
+
+
+class Stagger(unittest.TestCase):
+    """A 3x5 split that keymap-drawer would draw ortholinear is drawn with a Ferris Sweep's
+    column stagger (QMK ferris/sweep: pinky 0.93 of a key below the middle column, ring 0.31,
+    index 0.28, inner index 0.42), and nothing else moves."""
+
+    def drop_of(self, layout):
+        """Each key's distance below the highest key, in key heights."""
+        kh = min(k["h"] for k in layout["keys"])
+        top = min(k["y"] for k in layout["keys"])
+        return [(k["y"] - top) / kh for k in layout["keys"]]
+
+    def test_a_3x5_split_is_drawn_with_the_ferris_stagger(self):
+        drop = self.drop_of(km.build_message({}, DOC_3X5)["layout"])
+        ferris = [0.93, 0.31, 0.0, 0.28, 0.42]
+        for row in range(3):   # each row of both hands, the right one mirrored
+            got = drop[row * 10:row * 10 + 10]
+            for got_, want in zip(got, [row + d for d in ferris + ferris[::-1]]):
+                self.assertAlmostEqual(got_, want, places=2)
+
+    def test_the_keys_keep_the_keymap_order(self):
+        # Only y moves: key i is still the i-th binding, in the column it was drawn in.
+        ortho = km.physical_layout(DOC_3X5["layout"], None)
+        staggered = km.build_message({}, DOC_3X5)["layout"]
+        self.assertEqual([k["x"] for k in staggered["keys"]], [k["x"] for k in ortho["keys"]])
+        self.assertGreater(staggered["height"], ortho["height"])
+
+    def test_a_thumb_clears_every_column_above_it(self):
+        keys = km.build_message({}, DOC_3X5)["layout"]["keys"]
+        for t in keys[30:]:
+            above = [k for k in keys[:30] if abs(k["x"] - t["x"]) < (k["w"] + t["w"]) / 2 - 0.1]
+            self.assertTrue(above)
+            gap = min((t["y"] - t["h"] / 2) - (k["y"] + k["h"] / 2) for k in above) / t["h"]
+            self.assertAlmostEqual(gap, km.THUMB_CLEARANCE, places=2)
+
+    def test_the_same_split_through_ortho_layout(self):
+        doc = dict(DOC_3X5, layout={"ortho_layout": {"split": True, "rows": 3, "columns": 5, "thumbs": 3}})
+        drop = self.drop_of(km.build_message({}, doc)["layout"])
+        self.assertAlmostEqual(drop[0] - drop[2], 0.93, places=2)   # pinky below middle
+
+    def test_stagger_false_keeps_it_ortholinear(self):
+        layout = km.build_message({"stagger": False}, DOC_3X5)["layout"]
+        self.assertEqual(layout, km.physical_layout(DOC_3X5["layout"], None))
+
+    def test_a_layout_that_says_more_is_the_boards_own(self):
+        for spec in ("33333+3 3+33333", "33333 33333", "33333+2> 2<+33333"):
+            self.assertTrue(km.plain_3x5_split({"cols_thumbs_notation": spec}), spec)
+        for spec in ("3v3333+3 3+33333", "33333^+3 3+33333", "333333+3 3+333333", "33333+3", "3333333333"):
+            self.assertFalse(km.plain_3x5_split({"cols_thumbs_notation": spec}), spec)
+        self.assertFalse(km.plain_3x5_split({"ortho_layout": {"split": True, "rows": 4, "columns": 5}}))
+        self.assertFalse(km.plain_3x5_split({"ortho_layout": {"split": True, "rows": 3, "columns": 5, "drop_pinky": True}}))
+        self.assertFalse(km.plain_3x5_split({"qmk_keyboard": "ferris/sweep"}))
 
 
 class Settings(unittest.TestCase):

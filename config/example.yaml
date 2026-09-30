@@ -10,6 +10,10 @@ keymap: ~/path/to/my-keymap.yaml
 # Optional: the keymap-drawer config you draw with (key sizes, glyphs).
 # drawer_config: ~/path/to/keymap-drawer-config.yaml
 
+# Optional: a 3x5 split whose layout only counts its keys ("33333+3 3+33333", or an ortho_layout
+# of 3 rows and 5 columns) is drawn with a Ferris Sweep's column stagger; this keeps it ortholinear.
+# stagger: false
+
 # Optional: pick one keyboard when several ZMK boards are connected (substring of the product name).
 # keyboard: { vid: 0x1d50, pid: 0x615e, name: Corne }
 
