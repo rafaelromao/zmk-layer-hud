@@ -26,8 +26,8 @@
  *
  * Two modes:
  *   live      after the first setLayers: the stack is exactly what the keyboard reports; a key is
- *             resolved on that stack (combos included). A key that cannot be placed there is
- *             attributed by inference and drawn dashed ("inferred").
+ *             resolved on that stack (combos included). A key that cannot be placed there lights
+ *             nothing: guessing another layer would be wrong.
  *   emulated  before any setLayers (firmware without the module): only the base layer is known
  *             and everything else is inferred from the typed characters, guided by `extras`.
  *
@@ -67,7 +67,6 @@
     data: null,
     baseLayers: [],           // emulated mode: just the base layer
     live: null,               // {ids: [..], at} once the keyboard has reported its layers
-    inferred: false,          // last key was placed by inference while live
     momentary: [],            // [{layer, until}]  (inference only)
     oneShot: null,            // layer name        (inference only)
     mods: {},                 // flag -> true while held
@@ -320,7 +319,7 @@
 
   function renderBanner() {
     const a = activeSummary();
-    $("layer").className = a.cls + (state.inferred ? " inferred" : "");
+    $("layer").className = a.cls;
     $("layerName").textContent = a.name;
     $("layerSub").textContent = state.secure ? "secure input · typing hidden" : a.sub;
     $("board").className = a.cls;
@@ -340,7 +339,7 @@
       for (const id of state.timers.values()) clearTimeout(id);
       state.timers.clear();
       state.held.clear();
-      for (const e of state.keyEls) if (e) e.classList.remove("pressed", "combo", "inferred", "combo-key");
+      for (const e of state.keyEls) if (e) e.classList.remove("pressed", "combo", "combo-key");
       if (state.comboShown) { state.comboShown.remove(); state.comboShown = null; }
       recent.length = 0;
       state.heat.clear();
@@ -882,7 +881,7 @@
       e.classList.add("pressed");
       if (cls) for (const c of cls.split(" ")) if (c) e.classList.add(c);
       clearTimeout(state.timers.get(idx));
-      state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo", "inferred"), T('press_ms')));
+      state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo"), T('press_ms')));
     }
   }
 
@@ -948,12 +947,6 @@
     if (state.momentary.length !== before) render();
   }
 
-  function setInferred(on) {
-    if (state.inferred === on) return;
-    state.inferred = on;
-    renderBanner();
-  }
-
   // Resolve a typed token on the given stack (top first). Returns {hit, layer} or null.
   // An uppercase letter may live on a shifted layer the config names among the sticky ones.
   function resolveOnStack(token, layers, commandLayersActive, noCombos) {
@@ -1004,7 +997,6 @@
       flash(r.hit, r.hit.length > 1 ? "combo" : null);
       let pill = null;
       if (r.hit.length > 1) { const c = comboFor(r.layer, seq); if (c) pill = showCombo(r.hit, c.key); }
-      setInferred(false);
       // Keep the tokens: a still longer legend may follow (";" after "()", "⏎" after "do {").
       guess(remember(token, r.hit, pill, r.layer), r.hit, r.layer, ev);
       afterKey();
@@ -1015,7 +1007,7 @@
   function unlight(entry) {
     for (const idx of entry.lit) {
       const e = state.keyEls[idx];
-      if (e) { e.classList.remove("pressed", "combo", "inferred", "combo-key"); clearTimeout(state.timers.get(idx)); }
+      if (e) { e.classList.remove("pressed", "combo", "combo-key"); clearTimeout(state.timers.get(idx)); }
     }
     if (entry.pill) entry.pill.remove();
     if (entry.guess) entry.guess.cancelled = true;   // taken back before it was counted
@@ -1079,7 +1071,6 @@
         let pill = null;
         if (r.hit.length > 1) { const c = comboFor(r.layer, token); if (c) pill = showCombo(r.hit, c.key); }
         guess(remember(token, r.hit.concat(extra), pill, r.layer), r.hit, r.layer, ev);
-        setInferred(false);
         touchLayer(r.layer);
         afterKey();
         return;
@@ -1091,9 +1082,6 @@
       return;
     }
 
-    // Dashed when the keyboard's own stack could not explain it; typing sent in was never the
-    // keyboard's to explain.
-    const inferredCls = state.live && !sent ? "inferred" : "";
     const ex = extras();
     const sticky = new Set(ex.sticky || []);
     // 0. Typing goes through two alpha layers when the config names a secondary one: a letter
@@ -1107,7 +1095,7 @@
         render();
         const shiftLayer = (ex.sticky || []).find(l => /shift/i.test(l));
         const extra = activatorsOf(ex.alpha2).concat(/^\p{Lu}$/u.test(token) && shiftLayer ? activatorsOf(shiftLayer) : []);
-        flash([direct].concat(extra), inferredCls);
+        flash([direct].concat(extra));
         guess(remember(token, [direct], null, ex.alpha2), [direct], ex.alpha2, ev);
         afterKey();
         return;
@@ -1122,7 +1110,7 @@
       const r = resolveOnStack(token, layers, cmdActive, noCombos);
       if (r) {
         const extra = r.viaShift ? activatorsOf(r.layer) : [];
-        flash(r.hit.concat(extra), [r.hit.length > 1 ? "combo" : "", inferredCls].join(" ").trim() || null);
+        flash(r.hit.concat(extra), r.hit.length > 1 ? "combo" : null);
         let pill = null;
         if (r.hit.length > 1) { const c = comboFor(r.layer, token); if (c) pill = showCombo(r.hit, c.key); }
         guess(remember(token, r.hit.concat(extra), pill, r.layer), r.hit, r.layer, ev);
@@ -1138,7 +1126,7 @@
         if (hit) {
           if (sticky.has(layer)) state.oneShot = layer; else armMomentary(layer);
           render();
-          flash(hit.concat(activatorsOf(layer)), [hit.length > 1 ? "combo" : "", inferredCls].join(" ").trim() || null);
+          flash(hit.concat(activatorsOf(layer)), hit.length > 1 ? "combo" : null);
           let pill = null;
           if (hit.length > 1) { const c = comboFor(layer, token); if (c) pill = showCombo(hit, c.key); }
           guess(remember(token, hit.concat(activatorsOf(layer)), pill, layer), hit, layer, ev);
@@ -1200,7 +1188,7 @@
     for (const name of Object.keys(state.activatorOf)) if (!drawnNow.has(name)) delete state.activatorOf[name];
     for (const name of Object.keys(state.drawnSince)) if (!drawnNow.has(name)) delete state.drawnSince[name];
     state.live = { ids, at: now };
-    state.momentary = []; state.oneShot = null; state.inferred = false;
+    state.momentary = []; state.oneShot = null;
     if (gained.length) recredit(gained, now);
     render();
   }
@@ -1396,7 +1384,7 @@
       state.held.delete(idx);
       for (const name of Object.keys(state.activatorOf)) if (state.activatorOf[name] === idx) state.activatorOf[name] = null;
       clearTimeout(state.timers.get(idx));
-      state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo", "inferred"), T('release_ms')));
+      state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo"), T('release_ms')));
     },
     // The keyboard that was opened (its HID product name): the default title.
     setDevice(name) { if ((name || "") !== state.device) { state.device = name || ""; renderTitle(); } },
