@@ -2,8 +2,9 @@
 
 The drawing is keymap-drawer's own of the configured keymap -- its legends, glyphs and combos, and
 the drawer config's styles -- with each key given a class for its step of heat (hs1 to hs6), and
-the steps coloured by a stylesheet keymap-drawer puts after its own (svg_extra_style). The steps
-are the page's (hud/hud.js heatLevels, hud/hud.css):
+the steps coloured by a stylesheet keymap-drawer puts after its own (svg_extra_style), in the
+HUD's light keys or its dark ones (`dark`). The steps are the page's (hud/hud.js heatLevels,
+hud/hud.css):
 
   session   how often each key was pressed on each layer, ln(1+count)/ln(1+most) of the layer's
             own keys: a transparent key draws another layer's legend, and is left out.
@@ -25,6 +26,13 @@ MODES = ("session", "physical", "speed")
 # ColorBrewer YlOrRd's light half, as hud/hud.css draws .hs1 to .hs6: the dark legends read on all.
 RAMP = ("#ffffcc", "#ffeda0", "#fed976", "#feb24c", "#fd8d3c", "#fc4e2a")
 LEGEND = "#24292e"
+# The dark keys (hud/hud.css body.dark), the way LayoutMaster draws its board: dark keys, and the
+# steps one indigo over them, brighter the hotter, under light legends.
+DARK_BOARD = {"background": "#1a1b26", "key": "#24283b", "stroke": "#3b4261", "text": "#e6e8ef",
+              "small": "#a9b1d6", "trans": "#545c7e", "combo": "#2f334d", "held": "#5a3b46",
+              "dendron": "#565f89"}
+DARK_RAMP = ("#313460", "#3a3e7b", "#444796", "#4d50b1", "#585bd0", "#6366f1")
+DARK_LEGEND = "#d5d8ff"   # a heated key's hold and shifted legends
 
 
 def _log_steps(counts):
@@ -73,20 +81,36 @@ def levels(session, message, mode="session"):
     return out
 
 
-def stylesheet():
-    """The steps' colours, after keymap-drawer's own: the key's fill, and dark legends on it whatever
-    the drawer config's dark mode made of them."""
-    rules = [f"rect.key.hs{i + 1} {{ fill: {c}; }}" for i, c in enumerate(RAMP)]
-    rules.append(", ".join(f"g.hs{i + 1} text" for i in range(LEVELS)) + f" {{ fill: {LEGEND}; }}")
+def stylesheet(dark=False):
+    """The steps' colours, after keymap-drawer's own styles and whatever the drawer config's dark
+    mode made of them. On light keys: the key's fill, and dark legends on it. `dark`: the HUD's dark
+    keys, the steps' fills over them, and light legends."""
+    if not dark:
+        rules = [f"rect.key.hs{i + 1} {{ fill: {c}; }}" for i, c in enumerate(RAMP)]
+        rules.append(", ".join(f"g.hs{i + 1} text" for i in range(LEVELS)) + f" {{ fill: {LEGEND}; }}")
+    else:
+        b = DARK_BOARD
+        rules = [f"svg.keymap {{ fill: {b['text']}; background-color: {b['background']}; }}",
+                 f"rect.key {{ fill: {b['key']}; }}",
+                 f"rect.key, rect.combo {{ stroke: {b['stroke']}; }}",
+                 f"rect.combo, rect.combo-separate {{ fill: {b['combo']}; }}",
+                 f"rect.held, rect.combo.held {{ fill: {b['held']}; }}",
+                 f"text.label, text.footer {{ stroke: {b['background']}; }}",
+                 f"text.hold, text.shifted {{ fill: {b['small']}; }}",
+                 f"text.trans {{ fill: {b['trans']}; }}",
+                 f"path.combo {{ stroke: {b['dendron']}; }}"]
+        rules += [f"rect.key.hs{i + 1} {{ fill: {c}; }}" for i, c in enumerate(DARK_RAMP)]
+        rules.append(", ".join(f"g.hs{i + 1} text.{t}" for i in range(LEVELS) for t in ("hold", "shifted"))
+                     + f" {{ fill: {DARK_LEGEND}; }}")
     return "/* zmk-layer-hud: the session's heatmap */\n" + "\n".join(rules)
 
 
-def svg(session, message, definitions, mode="session", layers=None, footer=""):
+def svg(session, message, definitions, mode="session", layers=None, footer="", dark=False):
     """The SVG text, drawn from the HUD's definitions alone (`zmk-layer-hud import` wrote them):
     keymap-drawer's own form of the drawing -- its layers and combos, the drawer config -- on the
     drawn keys, handed to keymap-drawer as a QMK layout, and with the glyphs the definitions carry,
     so nothing is fetched and no file of the user's is read. `layers` picks which to draw (default:
-    those with any heat, in the keymap's order)."""
+    those with any heat, in the keymap's order); `dark`, the HUD's dark keys over its light ones."""
     import json
     from io import BytesIO, StringIO
 
@@ -115,7 +139,7 @@ def svg(session, message, definitions, mode="session", layers=None, footer=""):
     # The drawer YAML's own draw_config, over the drawer config's, as `keymap draw` does.
     if doc.get("draw_config"):
         config.draw_config = DrawConfig.model_validate(config.draw_config.model_dump() | doc["draw_config"])
-    extra = "\n".join(s for s in (config.draw_config.svg_extra_style, stylesheet()) if s)
+    extra = "\n".join(s for s in (config.draw_config.svg_extra_style, stylesheet(dark)) if s)
     config.draw_config = config.draw_config.model_copy(update={"svg_extra_style": extra,
                                                                "footer_text": html.escape(footer)})
     # Every layer goes in, the drawn ones with their heat: a combo names layers that must exist.

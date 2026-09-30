@@ -324,7 +324,15 @@ class Shim(unittest.TestCase):
                                  capture_output=True, text=True, env=env)
             self.assertEqual(0, run.returncode, run.stderr)
             with open(out, encoding="utf-8") as f:
-                self.assertIn("rect.key.hs6", f.read())
+                self.assertIn("rect.key.hs6 { fill: #fc4e2a; }", f.read())   # the config's light keys
+            # Dark keys chosen on this machine: the export is drawn in them too.
+            session.set_pref(os.path.join(tmp, "sessions"), "theme", "dark")
+            run = subprocess.run(["sh", SHIM, "session", "export", "-o", out, "--mode", "physical",
+                                  "--config", os.path.join(ROOT, "config", "example-3x5.yaml")],
+                                 capture_output=True, text=True, env=env)
+            self.assertEqual(0, run.returncode, run.stderr)
+            with open(out, encoding="utf-8") as f:
+                self.assertIn("rect.key.hs6 { fill: #6366f1; }", f.read())
 
     def test_tree_is_found_through_a_chain_of_symlinks(self):
         with tempfile.TemporaryDirectory() as tmp:

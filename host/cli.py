@@ -545,22 +545,23 @@ def session_export(args, mod, d):
     sys.path.insert(0, os.path.join(ROOT, "host"))
     import export as export_mod
     import keymap as keymap_mod
+    st, s = mod.status(d)
     if args.name:
         s = mod.sessions(d).get(args.name)
         if s is None:
             raise Fail(f"there is no session called {args.name}; `zmk-layer-hud session list` shows them")
-    else:
-        _, s = mod.status(d)
     try:
         src = keymap_mod.KeymapSource(args.config)
         msg = src.load()
     except keymap_mod.KeymapError as e:
         raise Fail(str(e))
+    # In the keys the HUD is in: the theme chosen on this machine, else the config's hud.dark.
+    dark = st["theme"] == "dark" if st.get("theme") else bool((msg.get("hud") or {}).get("dark"))
     t = mod.summary(s)
     footer = f"{s['name']} · {args.mode} · {t['presses']:,} keys" + (f" · {t['wpm']} wpm" if t["wpm"] else "")
     layers = [x.strip() for x in args.layers.split(",") if x.strip()] if args.layers else None
     try:
-        text = export_mod.svg(s, msg, src.definitions, mode=args.mode, layers=layers, footer=footer)
+        text = export_mod.svg(s, msg, src.definitions, mode=args.mode, layers=layers, footer=footer, dark=dark)
     except ValueError as e:
         raise Fail(str(e))
     except Exception as e:   # keymap-drawer's own checks: a layout it cannot build, a glyph it cannot fetch

@@ -2,11 +2,13 @@
 them. The steps need nothing but the standard library; the drawing needs keymap-drawer (the venv)."""
 
 import os
+import re
 import sys
 import unittest
 import xml.etree.ElementTree as ET
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
 
 import export  # noqa: E402
 import keymap as km  # noqa: E402
@@ -64,6 +66,31 @@ class Levels(unittest.TestCase):
         self.assertEqual(6, export.levels({"presses": {"Base": {"9": 5}}}, msg, "session")["Base"][0])
 
 
+class Themes(unittest.TestCase):
+    """The steps in the HUD's two themes: YlOrRd on keymap-drawer's light keys, and on the dark keys
+    one indigo, the way LayoutMaster draws its board."""
+
+    def test_the_steps_are_the_huds_own(self):
+        with open(os.path.join(os.path.dirname(HERE), "hud", "hud.css"), encoding="utf-8") as f:
+            css = f.read()
+        light = re.findall(r"^\.key\.hs(\d)::before \{ background: (#[0-9a-f]{6})", css, re.M)
+        dark = re.findall(r"^body\.dark \.key\.hs(\d)::before \{ background: (#[0-9a-f]{6})", css, re.M)
+        self.assertEqual(export.RAMP, tuple(c for _, c in sorted(light)))
+        self.assertEqual(export.DARK_RAMP, tuple(c for _, c in sorted(dark)))
+
+    def test_light_keys_are_keymap_drawers_under_the_steps(self):
+        style = export.stylesheet()
+        self.assertIn(f"rect.key.hs6 {{ fill: {export.RAMP[-1]}; }}", style)
+        self.assertNotIn("rect.key {", style)                    # the key's own fill stays keymap-drawer's
+
+    def test_dark_keys_are_the_huds_dark_board(self):
+        style = export.stylesheet(dark=True)
+        self.assertIn(f"rect.key {{ fill: {export.DARK_BOARD['key']}; }}", style)
+        self.assertIn(f"rect.key.hs6 {{ fill: {export.DARK_RAMP[-1]}; }}", style)
+        self.assertIn(f"background-color: {export.DARK_BOARD['background']}", style)
+        self.assertNotIn(export.RAMP[-1], style)
+
+
 @unittest.skipUnless(HAVE_DRAWER, "drawing needs keymap-drawer (the venv)")
 class Drawing(unittest.TestCase):
     def classes_of(self, svg):
@@ -84,6 +111,8 @@ class Drawing(unittest.TestCase):
         style = "".join(s.text or "" for s in root.iter("{http://www.w3.org/2000/svg}style"))
         self.assertIn(f"rect.key.hs6 {{ fill: {export.RAMP[-1]}; }}", style)
         self.assertIn("week1 &lt; week2", svg)
+        dark = export.svg(SESSION, MSG, DEFS, mode="session", dark=True)
+        self.assertIn(f"rect.key.hs6 {{ fill: {export.DARK_RAMP[-1]}; }}", dark)
         labels = [t.text for t in root.iter("{http://www.w3.org/2000/svg}text") if t.get("class") == "label"]
         self.assertEqual(["Base:", "Nav:"], labels)                  # the layers with heat, in order
 
