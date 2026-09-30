@@ -186,9 +186,16 @@ body.demo .key::before, body.demo #stats { display: none; }
 #stats .stat.opacity .slider::-moz-range-progress { height: 4px; border-radius: 2px; background: #7aa2f7; }
 #stats .stat.opacity .slider::-moz-range-thumb { width: 8px; height: 8px; border-radius: 50%; background: #c0caf5; border: 2px solid #7aa2f7; }
 /* The two that change something when clicked say so: their value in the link blue, and a hover. */
-#stats .stat.mode, #stats .stat.theme { cursor: pointer; }
+#stats .stat.mode, #stats .stat.theme, #stats .stat.layer { cursor: pointer; }
 #stats .stat.mode .row b, #stats .stat.theme .row b { color: #7aa2f7; }
-#stats .stat.mode:hover, #stats .stat.theme:hover { background: rgba(122, 162, 247, 0.16); border-color: rgba(122, 162, 247, 0.35); }
+#stats .stat.mode:hover, #stats .stat.theme:hover, #stats .stat.layer:hover { background: rgba(122, 162, 247, 0.16); border-color: rgba(122, 162, 247, 0.35); }
+/* The layer tile's list (hud.js renderLayerMenu): a layer to look at until the next keystroke. */
+#stats .layer-menu { display: flex; flex-wrap: wrap; gap: 3px; margin: 4px 0 3px; }
+#stats .layer-menu.off { display: none; }
+#stats .layer-menu button { font: 700 10px/18px var(--font); padding: 0 6px; border-radius: 3px; cursor: pointer;
+  color: #c0caf5; background: rgba(255, 255, 255, 0.06); border: 1px solid var(--panel-border); }
+#stats .layer-menu button:hover { border-color: rgba(122, 162, 247, 0.5); }
+#stats .layer-menu button[aria-pressed="true"] { background: var(--chip-layer); color: #1f1f2e; }
 /* Too narrow for a block beside the panel (the landing page on a phone): under it, two across. */
 @media (max-width: 560px) {
   #frame { flex-direction: column; align-items: stretch; }

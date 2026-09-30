@@ -217,6 +217,32 @@ function checkModRings(data) {
   return fails;
 }
 
+/* A layer picked from the stats' layer tile is drawn until the next keystroke, from the firmware's
+ * positions or the keyboard's reports alike; then the board follows the keyboard again. */
+function checkLayerPick(data) {
+  const other = (data.layer_order || []).find(n => n !== data.base);
+  const pos = Object.keys(data.positions || {})[0];
+  if (!other || pos === undefined) return ["the fixture needs a second layer and a key position"];
+  const page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  const banner = () => page.document.getElementById("layerName").textContent;
+  const before = banner();
+  const fails = [];
+  page.hud.pickLayer(other);
+  if (page.hud.state.pick !== other || banner() === before) fails.push(`picking ${other} should draw it; banner ${banner()}`);
+  page.hud.pressAt(Number(pos));
+  if (page.hud.state.pick !== null || banner() !== before) fails.push(`a key down should hand the board back; banner ${banner()}`);
+  page.hud.releaseAt(Number(pos));
+  page.clock.advance(6000);
+  page.hud.pickLayer(other);
+  page.hud.key({ type: "keyDown", name: "a", chars: "a", code: 0, flags: {}, synthetic: true });
+  if (page.hud.state.pick !== null) fails.push("a key typed should hand the board back too");
+  page.hud.pickLayer("no such layer");
+  if (page.hud.state.pick !== null) fails.push("a layer the keymap does not have is not picked");
+  return fails;
+}
+
 async function main() {
   const opt = parseArgs(process.argv.slice(2));
   if (!fs.existsSync(opt.keymap)) {
@@ -241,6 +267,12 @@ async function main() {
   const embedFailures = checkEmbed();
   if (embedFailures.length) {
     for (const failure of embedFailures) console.error(`FAIL embed: ${failure}`);
+    process.exit(1);
+  }
+
+  const pickFailures = checkLayerPick(data);
+  if (pickFailures.length) {
+    for (const failure of pickFailures) console.error(`FAIL layer-pick: ${failure}`);
     process.exit(1);
   }
 

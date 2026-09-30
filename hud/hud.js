@@ -79,6 +79,8 @@
     device: "",               // the keyboard's HID product name
     activatorOf: {},          // drawn layer -> the key idx that brought it in (positions)
     modSource: {},            // modifier flag -> the key idx that turned it on, null: none known (positions)
+    pick: null,               // a layer the viewer picked to look at (the stats' layer tile), until a keystroke
+    picking: false,           // the tile's list of layers is open
     drawnSince: {},           // drawn layer -> when it appeared (applyLayers)
     pendingLayers: null,      // a layer change held back for a flash (setLayers)
     pendingDue: null,         // ...and when it applies, fixed at the first drop
@@ -191,6 +193,8 @@
   }
 
   function stack() {
+    // A layer picked to look at is drawn over the base alone, until the next keystroke (unpick).
+    if (state.pick) return state.pick === base() ? [base()] : [state.pick, base()];
     const s = [];
     if (state.oneShot) s.push(state.oneShot);
     for (let i = state.momentary.length - 1; i >= 0; i--) s.push(state.momentary[i].layer);
@@ -340,6 +344,7 @@
 
   // What to print on the banner: an inferred held/one-shot layer on top of the base, else the base.
   function activeSummary() {
+    if (state.pick) return { name: layerLabel(state.pick), cls: state.pick === base() ? "off" : "momentary", sub: "picked · type to follow the keyboard" };
     const b = baseSummary();
     const top = state.oneShot || (state.momentary.length ? state.momentary[state.momentary.length - 1].layer : null);
     if (!top) return b;
@@ -387,6 +392,17 @@
     f.textContent = state.live ? "" : "waiting for the keyboard's layers…";
     f.className = state.live ? "live" : "";
   }
+
+  // Look at another layer: drawn over the base, the banner saying so, until a keystroke. null
+  // (the list's "auto") follows the keyboard again.
+  function pickLayer(name) {
+    if (name != null && !(state.data && state.data.layers[name])) return;
+    state.pick = name == null ? null : name;
+    state.picking = false;
+    render();
+    postSize();
+  }
+  function unpick() { if (state.pick || state.picking) pickLayer(null); }
 
   function render() {
     if (!state.data) { renderFeed(); renderStats(); return; }
@@ -1010,6 +1026,11 @@
     bar.accuracy = chip("acc", ["accurate"]);
     bar.keys = chip("keys", ["keys", "combos"]);
     bar.layer = chip("layer", [null]);
+    // A click lists every drawn layer; one picked is drawn until the next keystroke (pickLayer).
+    bar.layer.chip.title = "click: look at another layer";
+    bar.layer.chip.addEventListener("click", () => { state.picking = !state.picking; renderStats(); postSize(); });
+    bar.menu = el("div", "layer-menu off");
+    bar.layer.chip.appendChild(bar.menu);
     bar.time = chip("time", ["typing"]);
     bar.hands = chip("hands", ["left hand", "right hand"]);
     bar.sfb = chip("sfb", ["same finger"]);
@@ -1039,6 +1060,29 @@
     bar.opacity.chip.appendChild(slider);
     bar.opacity.slider = slider;
   }
+  // The layer tile's list: "auto", following the keyboard, then every drawn layer, the one on
+  // screen pressed. Built again only when the keymap changes.
+  function renderLayerMenu() {
+    const menu = bar.menu;
+    if (!menu || !state.data) return;
+    if (menu.classList.contains("off") === state.picking) menu.classList.toggle("off", !state.picking);
+    if (bar.menuFor !== state.data) {
+      bar.menuFor = state.data;
+      menu.textContent = "";
+      bar.menuButtons = [null].concat(state.data.layer_order || []).map(name => {
+        const b = el("button", null, name ? layerLabel(name) : "auto");
+        b.type = "button";
+        b.addEventListener("click", e => { e.stopPropagation(); pickLayer(name); });
+        menu.appendChild(b);
+        return { name, b };
+      });
+    }
+    for (const { name, b } of bar.menuButtons) {
+      const on = String(name === state.pick);
+      if (b.getAttribute("aria-pressed") !== on) b.setAttribute("aria-pressed", on);
+    }
+  }
+
   function put(chip, values, names) {
     values.forEach((v, i) => { if (chip.vals[i].textContent !== v) chip.vals[i].textContent = v; });
     (names || []).forEach((v, i) => { if (chip.names[i].textContent !== v) chip.names[i].textContent = v; });
@@ -1110,7 +1154,9 @@
     const strokes = presses - members + combos;
     put(bar.keys, [fmtCount(presses), strokes > 0 ? pct(combos / strokes) : "—"]);
     const top = state.data ? stack()[0] : null;
-    put(bar.layer, [top && presses ? pct(sum(v.presses[top] || {}) / presses) : "—"], [top ? drawingLabel(top) : "layer"]);
+    put(bar.layer, [top && presses ? pct(sum(v.presses[top] || {}) / presses) : "—"],
+        [top ? (state.pick ? layerLabel(top) : drawingLabel(top)) : "layer"]);
+    renderLayerMenu();
     put(bar.named, [named || ""]);
     bar.named.chip.title = named || "";   // a long name is cut short on the column
     put(bar.heatmap, [state.heatMode]);
@@ -1366,6 +1412,7 @@
       return;
     }
     if (ev.type !== "keyDown" || ev.repeat) return;
+    unpick();                          // typing again: the board follows the keyboard
     state.lastKeyAt = Date.now();
     // With key positions coming from the firmware, the board is lit from them; the character
     // only feeds the strip (hud.key forwards it).
@@ -1561,7 +1608,7 @@
       state.data = data;
       applyPrefs();                 // the config's hud.dark, until the viewer chose
       state.momentary = []; state.oneShot = null;
-      state.activatorOf = {}; state.modSource = {}; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null;
+      state.activatorOf = {}; state.modSource = {}; state.pick = null; state.picking = false; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null;
       // Keystrokes on the keymap going away are not followed by the next one's keys.
       state.down.clear(); state.strokes = []; state.lastStroke = null; state.lastOwnStroke = null;
       state.baseLayers = [data.base];
@@ -1630,6 +1677,7 @@
     // its key the same, and is never counted into a session).
     pressAt(pos, sent) {
       if (!state.data || state.secure) return;
+      unpick();                        // a key down: the board follows the keyboard again
       const idx = idxAt(pos);
       const now = Date.now();
       // A key going down is a keystroke of its own: a layer change held back for the previous
@@ -1807,6 +1855,7 @@
     // "off". The bar's last chip cycles it too.
     setHeatmap(mode) { setHeatmap(mode); },
     setPref(name, value) { setPref(name, value); },
+    pickLayer(name) { pickLayer(name); },
     // The counts, for tests and hosts: everything shown (`local`), the keyboard's own not yet
     // handed on (`unsent`), keystrokes still waiting to be counted, and the live WPM.
     stats: {
