@@ -136,6 +136,26 @@ function checkSyntheticFreshness(page, data) {
   return [];
 }
 
+/* A board drawn in capitals, the way `keymap parse` draws letters (the committed 3x5 sample): the
+ * page places typing sent in by itself, and a lowercase letter is found on its capital's key -- the
+ * legend is the keycap. h and H light the same key. */
+function checkCapitals() {
+  const data = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "example-3x5.json"), "utf8"));
+  const idx = (data.layers[data.base] || []).findIndex(k => k.tap === "H");
+  if (idx < 0) return ["the 3x5 fixture has no H on its base layer"];
+  const page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  const lit = () => page.hud.state.keyEls.flatMap((el, i) => (el.classList.contains("pressed") ? [i] : []));
+  const fails = [];
+  for (const ch of ["h", "H"]) {
+    page.hud.key({ type: "keyDown", name: ch, chars: ch, flags: { shift: ch === "H" }, repeat: false, combos: false });
+    if (lit().join() !== String(idx)) fails.push(`typed-in ${ch} should light the H key (${idx}); lit [${lit()}]`);
+    page.clock.advance(6000);
+  }
+  return fails;
+}
+
 async function main() {
   const opt = parseArgs(process.argv.slice(2));
   if (!fs.existsSync(opt.keymap)) {
@@ -154,6 +174,12 @@ async function main() {
   const freshnessFailures = checkSyntheticFreshness(page, data);
   if (freshnessFailures.length) {
     for (const failure of freshnessFailures) console.error(`FAIL synthetic-freshness: ${failure}`);
+    process.exit(1);
+  }
+
+  const capitalFailures = checkCapitals();
+  if (capitalFailures.length) {
+    for (const failure of capitalFailures) console.error(`FAIL capitals: ${failure}`);
     process.exit(1);
   }
 

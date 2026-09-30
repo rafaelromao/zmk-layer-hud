@@ -930,7 +930,11 @@
 
   function tokenFor(ev) {
     if (ev.name && NAMED[ev.name]) return NAMED[ev.name];
-    if (ev.chars && ev.chars.length === 1) return ev.chars;
+    if (ev.chars && ev.chars.length === 1) {
+      // On a board drawn in capitals, h is the H key (load).
+      const upper = ev.chars.toUpperCase();
+      return state.capitals && upper.length === 1 && upper !== ev.chars && isLetter(ev.chars) ? upper : ev.chars;
+    }
     return null;
   }
 
@@ -1231,6 +1235,11 @@
       state.momentary = []; state.oneShot = null;
       state.activatorOf = {}; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null;
       state.baseLayers = [data.base];
+      // A board that draws its letters as capitals, as `keymap parse` does: there the legend is the
+      // keycap, not the character, so a lowercase letter placed from what was typed is its
+      // capital's key (tokenFor) -- the rule host/play.py spells text by.
+      const letters = (data.layers[data.base] || []).map(k => k.tap).filter(t => typeof t === "string" && isLetter(t));
+      state.capitals = letters.length > 0 && letters.every(t => t !== t.toLowerCase());
       // A session is kept by ZMK position: each drawer key's, inverted from the message's map (a
       // message with none is a keymap in the firmware's own order, where they are the same).
       const map = data.positions || {};
