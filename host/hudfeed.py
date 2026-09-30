@@ -65,9 +65,11 @@ import signal_frame  # noqa: E402  (host/signal_frame.py)
 
 ZMK_VID, ZMK_PID = 0x1D50, 0x615E
 
-# The module's own GATT service; the characteristic notifies one frame at a time.
-BLE_SERVICE_UUID = "d1f0a7c2-5b47-4a1e-9c3d-6f2a8e10b7c1"
-BLE_SIGNAL_UUID = "d1f0a7c3-5b47-4a1e-9c3d-6f2a8e10b7c1"
+# The module's own GATT service; the characteristic notifies one frame at a time. They are the
+# firmware's, ZLS_BT_SERVICE_UUID and ZLS_BT_SIGNAL_UUID in firmware/src/signal_gatt.c, and
+# host/gatt_uuid_test.py holds the two sides equal.
+BLE_SERVICE_UUID = "d1f0a7c2-6b3e-4f8a-9c21-5e7b4a0d9f31"
+BLE_SIGNAL_UUID = "d1f0a7c3-6b3e-4f8a-9c21-5e7b4a0d9f31"
 BLE_RETRY_MAX_S = 60  # longest gap between scans while none of them find anything
 
 # HID modifier byte bits -> HUD flag names (left/right collapse).

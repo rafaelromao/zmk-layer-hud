@@ -29,7 +29,9 @@
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
 /* d1f0a7c2-6b3e-4f8a-9c21-5e7b4a0d9f31 service
- * d1f0a7c3-6b3e-4f8a-9c21-5e7b4a0d9f31 signal characteristic */
+ * d1f0a7c3-6b3e-4f8a-9c21-5e7b4a0d9f31 signal characteristic
+ * The host asks for these two: BLE_SERVICE_UUID and BLE_SIGNAL_UUID in host/hudfeed.py, which
+ * host/gatt_uuid_test.py holds equal to the macros below. */
 #define ZLS_BT_SERVICE_UUID BT_UUID_128_ENCODE(0xd1f0a7c2, 0x6b3e, 0x4f8a, 0x9c21, 0x5e7b4a0d9f31)
 #define ZLS_BT_SIGNAL_UUID BT_UUID_128_ENCODE(0xd1f0a7c3, 0x6b3e, 0x4f8a, 0x9c21, 0x5e7b4a0d9f31)
 
