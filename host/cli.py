@@ -12,7 +12,7 @@
 Nothing above the stdlib is imported at module level, and that is deliberate: `doctor` and
 `setup` have to run on a machine where the venv does not exist yet -- that is when they are most
 needed -- and Apple's /usr/bin/python3 is 3.9, where keymap-drawer will not even install. The
-verbs that do need the venv re-exec into it first; see `NEEDS_VENV`.
+verbs that do need the venv re-exec into it first; see `NEEDS_VENV` and `needs_venv`.
 """
 
 import argparse
@@ -351,7 +351,7 @@ def cmd_session(args):
     if act == "rename-layer" and not (name and args.other):
         raise Fail("`session rename-layer` needs the layer's old name and its new one")
     if args.other and act != "rename-layer":
-        raise Fail(f"`session {act}` takes {'one name' if act in ('new', 'save', 'load', 'delete') else 'no name'}")
+        raise Fail(f"`session {act}` takes {'one name' if act in ('new', 'save', 'load', 'delete', 'export') else 'no name'}")
     try:
         if act == "status":
             st, s = mod.status(d)
@@ -371,6 +371,8 @@ def cmd_session(args):
             for n, presses, combos in mod.rename_layer(d, name, args.other, every=args.all):
                 print(f"{n}: {presses:,} keys" + (f" and {combos:,} combos" if combos else "") +
                       f" moved from {name} to {args.other}")
+        elif act == "export":
+            return session_export(args, mod, d)
         elif act == "list":
             st, _ = mod.status(d)
             every = mod.sessions(d)
@@ -402,6 +404,50 @@ def cmd_session(args):
     except mod.SessionError as e:
         raise Fail(str(e))
     return 0
+
+
+def session_export(args, mod, d):
+    """`session export`: the session's heatmap, drawn by keymap-drawer over the configured keymap
+    (host/export.py). Runs in the venv (needs_venv)."""
+    sys.path.insert(0, os.path.join(ROOT, "host"))
+    import export as export_mod
+    import keymap as keymap_mod
+    if args.name:
+        s = mod.sessions(d).get(args.name)
+        if s is None:
+            raise Fail(f"there is no session called {args.name}; `zmk-layer-hud session list` shows them")
+    else:
+        _, s = mod.status(d)
+    try:
+        src = keymap_mod.KeymapSource(args.config)
+        src.fetch_glyphs = False     # the page's glyphs; keymap-drawer draws its own
+        msg = src.load()
+        doc = keymap_mod.load_yaml(src.paths[1])
+        drawer_cfg = keymap_mod.load_yaml(src.paths[2]) if src.cfg.get("drawer_config") else None
+    except keymap_mod.KeymapError as e:
+        raise Fail(str(e))
+    t = mod.summary(s)
+    footer = f"{s['name']} · {args.mode} · {t['presses']:,} keys" + (f" · {t['wpm']} wpm" if t["wpm"] else "")
+    layers = [x.strip() for x in args.layers.split(",") if x.strip()] if args.layers else None
+    try:
+        text = export_mod.svg(s, msg, doc, drawer_cfg, mode=args.mode, layers=layers, footer=footer)
+    except ValueError as e:
+        raise Fail(str(e))
+    except Exception as e:   # keymap-drawer's own checks: a layout it cannot build, a glyph it cannot fetch
+        raise Fail(f"keymap-drawer could not draw it: {type(e).__name__}: {e}")
+    out = args.output or f"{s['name']}-{args.mode}.svg"
+    if out == "-":
+        sys.stdout.write(text)
+        return 0
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(text)
+    print(f"wrote {out}: {s['name']}'s {args.mode} heatmap")
+    return 0
+
+
+def needs_venv(args):
+    """A verb that runs in the venv; `session export` does, where the rest of `session` must not."""
+    return args.cmd in NEEDS_VENV or (args.cmd == "session" and args.action == "export")
 
 
 def cmd_heatmap(args):
@@ -1004,13 +1050,19 @@ def build_parser():
 
     s = add("session", "the typing sessions: the active one, naming it, starting or loading another")
     s.add_argument("action", nargs="?", default="status",
-                   choices=("status", "list", "new", "save", "load", "reset", "delete", "rename-layer"),
+                   choices=("status", "list", "new", "save", "load", "reset", "delete", "rename-layer", "export"),
                    help="status (default), list, new [NAME], save NAME, load NAME, reset, delete NAME, "
-                        "rename-layer OLD NEW")
-    s.add_argument("name", nargs="?", help="the session, for new, save, load and delete; the layer, for rename-layer")
+                        "rename-layer OLD NEW, export [NAME]")
+    s.add_argument("name", nargs="?", help="the session, for new, save, load, delete and export (default: the active "
+                                           "one); the layer, for rename-layer")
     s.add_argument("other", nargs="?", help="the layer's new name, for rename-layer")
     s.add_argument("--all", action="store_true", help="rename-layer in every session, not only the active one")
     s.add_argument("--yes", action="store_true", help="do not ask before reset or delete")
+    s.add_argument("--mode", choices=("session", "physical", "speed"), default="session",
+                   help="export: the presses on each layer (default), every layer's together, or each key's time")
+    s.add_argument("--layers", help="export: the layers to draw, comma-separated (default: every one with heat)")
+    s.add_argument("-o", "--output", help="export: the SVG file to write (default: NAME-MODE.svg here; - for stdout)")
+    s.add_argument("--config", help="export: the config whose keymap to draw (default: the one the HUD reads)")
     s.set_defaults(func=cmd_session)
 
     s = add("heatmap", "what the keys glow with: the live heatmap, the session's, or none")
@@ -1118,7 +1170,7 @@ def main(argv=None):
     if not getattr(args, "cmd", None):
         parser.print_help()
         return 0
-    if args.cmd in NEEDS_VENV:
+    if needs_venv(args):
         reexec_into_venv()
     try:
         return args.func(args) or 0

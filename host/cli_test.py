@@ -67,6 +67,11 @@ class Parser(unittest.TestCase):
             self.assertEqual(mode, self.parser.parse_args(["heatmap", mode]).mode)
         args = self.parser.parse_args(["session", "rename-layer", "sym", "symbols", "--all"])
         self.assertEqual(("rename-layer", "sym", "symbols", True), (args.action, args.name, args.other, args.all))
+        # Drawing the heatmap needs keymap-drawer, and only that part of `session` goes to the venv.
+        args = self.parser.parse_args(["session", "export", "week1", "--mode", "physical", "-o", "w.svg"])
+        self.assertEqual(("export", "week1", "physical", "w.svg"), (args.action, args.name, args.mode, args.output))
+        self.assertTrue(cli.needs_venv(args))
+        self.assertFalse(cli.needs_venv(self.parser.parse_args(["session", "list"])))
 
     def test_needs_venv_names_real_verbs(self):
         # NEEDS_VENV is consulted by name before the parser runs, so a typo there would silently
@@ -179,6 +184,22 @@ class Shim(unittest.TestCase):
             moved = run("session", "rename-layer", "sym", "symbols")
             self.assertEqual(0, moved.returncode, moved.stderr)
             self.assertNotIn("not shown", run("session").stdout)
+
+    @unittest.skipUnless(os.path.exists(os.path.join(ROOT, ".venv", "bin", "python3")), "export runs in the venv")
+    def test_a_sessions_heatmap_is_drawn_to_a_file(self):
+        import session
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {**os.environ, "ZMKHUD_STATE": tmp}
+            _, s = session.status(os.path.join(tmp, "sessions"))
+            session.add_counts(os.path.join(tmp, "sessions"), s["id"], s["gen"],
+                               {"presses": {"DEF": {"0": 40, "1": 4}}, "combos": {}})
+            out = os.path.join(tmp, "heat.svg")
+            run = subprocess.run(["sh", SHIM, "session", "export", "-o", out, "--mode", "physical",
+                                  "--config", os.path.join(ROOT, "config", "example-3x5.yaml")],
+                                 capture_output=True, text=True, env=env)
+            self.assertEqual(0, run.returncode, run.stderr)
+            with open(out, encoding="utf-8") as f:
+                self.assertIn("rect.key.hs6", f.read())
 
     def test_tree_is_found_through_a_chain_of_symlinks(self):
         with tempfile.TemporaryDirectory() as tmp:

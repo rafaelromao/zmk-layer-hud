@@ -154,7 +154,7 @@ one of them.
 | `start`, `stop`, `restart` | start the HUD; stop it; stop and start again |
 | `status` | is it running, and which of the keyboard's two channels is live |
 | `log` | follow the panel and feed logs |
-| `session [list\|new\|save\|load\|reset\|delete\|rename-layer]` | the typing sessions: the active one, naming it, starting or loading another |
+| `session [list\|new\|save\|load\|reset\|delete\|rename-layer\|export]` | the typing sessions: the active one, naming it, starting or loading another, drawing its heatmap as an SVG |
 | `heatmap [live\|session\|physical\|speed\|off]` | what the keys glow with: what was just typed, every press this session on the layer on screen or on all of them, each key's time, or nothing |
 | `doctor` | check this machine and say what is missing |
 | `setup` | prepare this machine: packages, virtualenv, config, permissions |
@@ -239,6 +239,17 @@ down which layers its keymap had. Rename a layer, or take one out, and what was 
 can no longer be drawn: `zmk-layer-hud session` lists those layers, and
 `zmk-layer-hud session rename-layer OLD NEW` moves their counts over, in the active session or,
 with `--all`, in every one.
+
+A session's heatmap can be kept as a picture, drawn by keymap-drawer over the configured keymap
+with its own legends, glyphs and combos:
+
+```bash
+zmk-layer-hud session export                    # the active one: colemak-1-session.svg, every layer with heat
+zmk-layer-hud session export colemak-1 --mode physical -o hands.svg   # all layers added up, on the base
+zmk-layer-hud session export --mode speed --layers SYM,NUM            # each key's time, on those layers
+```
+
+The steps and colours are the HUD's own. `-o -` writes the SVG to stdout.
 
 A session is kept in `$ZMKHUD_STATE/sessions/<name>.json` (the directory 0700, each file 0600),
 and it holds counts: how often each key was pressed on each layer, each combo, how many characters
