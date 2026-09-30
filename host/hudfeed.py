@@ -424,12 +424,11 @@ class BleReader:
     """Reads the module's GATT service on its own thread, where bleak's event loop lives. Each
     notification is exactly one frame.
 
-    UNVERIFIED on hardware. Two things make BLE harder than the serial port. The characteristic
-    requires encryption, so the keyboard has to be bonded to this host already — pair it with the
-    OS first, this cannot do it. And a keyboard connected as a HID peripheral stops advertising, so
-    scanning may never find it: on macOS give `ble: {address: ...}` in the config (CoreBluetooth's
-    per-host peripheral UUID, which `python3 -m bleak` lists while the keyboard is disconnected),
-    on Linux the MAC address works."""
+    Two things make BLE harder than the serial port. The characteristic requires encryption, so
+    the keyboard has to be bonded to this host already — pair it with the OS first, this cannot do
+    it. And a keyboard connected as a HID peripheral stops advertising, so scanning never finds it
+    while it is in use. On macOS the connected keyboard is asked of CoreBluetooth instead
+    (_connected_macos); on Linux give `ble: {address: ...}`, its MAC address."""
 
     def __init__(self, emit, address=None, name=None, rescan=2.0, log=print, raw=False,
                  dead_key_ms=DEAD_KEY_MS):
@@ -462,12 +461,50 @@ class BleReader:
 
     async def _find(self):
         from bleak import BleakScanner
+        if sys.platform == "darwin":
+            device = await self._connected_macos()
+            if device is not None:
+                return device
         if self.address:
             return await BleakScanner.find_device_by_address(self.address, timeout=self.rescan)
         return await BleakScanner.find_device_by_filter(
             lambda d, ad: (BLE_SERVICE_UUID in (ad.service_uuids or [])
                            and (not self.name or self.name.lower() in (d.name or "").lower())),
             timeout=self.rescan)
+
+    async def _connected_macos(self):
+        """The keyboard macOS already has connected, or None. A bonded keyboard in use is connected
+        to the system as a HID peripheral and so no longer advertises: no scan finds it, however
+        long it runs, but CoreBluetooth hands it over by service. Wrapped the way bleak's own
+        scanner wraps what it finds (corebluetooth/scanner.py), so BleakClient takes it as is."""
+        from bleak.backends.device import BLEDevice
+        try:
+            from bleak.backends.corebluetooth.CentralManagerDelegate import CentralManagerDelegate
+            from CoreBluetooth import CBUUID
+        except ImportError:
+            return None
+        if getattr(self, "_manager", None) is None:
+            manager = CentralManagerDelegate()
+            await manager.wait_until_ready()
+            self._manager = manager
+        central = self._manager.central_manager
+
+        def wanted(p):
+            ident, name = p.identifier().UUIDString(), p.name() or ""
+            if self.address:
+                return ident.lower() == self.address.lower()
+            return not self.name or self.name.lower() in name.lower()
+
+        # Our service first. macOS answers from what it has discovered on the peripheral, which may
+        # not include a service of ours until something has asked, so HID (0x1812) is the fallback:
+        # every ZMK keyboard has it, and start_notify says soon enough whether ours is there too.
+        for uuid in (BLE_SERVICE_UUID, "1812"):
+            found = [p for p in central.retrieveConnectedPeripheralsWithServices_([CBUUID.UUIDWithString_(uuid)])
+                     if wanted(p)]
+            if found:
+                p = found[0]
+                return BLEDevice(p.identifier().UUIDString(), p.name(), (p, self._manager))
+        return None
 
     async def _loop(self):
         from bleak import BleakClient
@@ -488,9 +525,9 @@ class BleReader:
                 device = None
 
             if device is None:
-                note = failed or ("no BLE keyboard advertising the layer signal yet" + (
-                    "" if self.address else "; a connected keyboard does not advertise, "
-                                            "so it may need `ble: {address: ...}`"))
+                note = failed or ("no BLE keyboard with the layer signal connected or advertising yet" + (
+                    "" if self.address or sys.platform == "darwin" else
+                    "; a connected keyboard does not advertise, so it may need `ble: {address: ...}`"))
                 if note != said:
                     said = note
                     self.log(f"hudfeed: {note}")
@@ -498,11 +535,22 @@ class BleReader:
                 wait = min(wait * 2, BLE_RETRY_MAX_S)
                 continue
 
-            said, wait = None, self.rescan
-            await self._session(BleakClient, device)
+            failed = await self._session(BleakClient, device)
+            if failed is None:
+                said, wait = None, self.rescan  # it was read: look again straight away when it goes
+                continue
+            # Connected but never read (no service of ours on it, notify refused): the same
+            # keyboard is found again at once, so this backs off and says it once, like a scan.
+            if failed != said:
+                said = failed
+                self.log(f"hudfeed: {failed}")
+            await asyncio.sleep(wait)
+            wait = min(wait * 2, BLE_RETRY_MAX_S)
 
     async def _session(self, BleakClient, device):
+        """Reads one connection until it drops. -> None once it has been read, else why not."""
         name = device.name or str(device.address)
+        reading = False
         stream = Stream(self.emit, name, self.dead_key_ms, self.raw, self.log)
         self._streams.add(stream)
         gone = asyncio.Event()
@@ -514,6 +562,7 @@ class BleReader:
                     stream.feed(bytes(data), int(time.monotonic() * 1000))
 
                 await client.start_notify(BLE_SIGNAL_UUID, on_notify)
+                reading = True
                 self.log(f"hudfeed: reading {name} over BLE")
                 self.emit({"kind": "device", "name": name})
                 while not gone.is_set() and not self._stop.is_set():
@@ -523,10 +572,14 @@ class BleReader:
                     except asyncio.TimeoutError:
                         stream.idle(int(time.monotonic() * 1000))
         except Exception as e:
-            self.log(f"hudfeed: {name} over BLE ({type(e).__name__}: {e})")
+            if reading:
+                self.log(f"hudfeed: {name} over BLE ({type(e).__name__}: {e})")
+            else:
+                return f"{name} over BLE, not read ({type(e).__name__}: {e})"
         finally:
             self._streams.discard(stream)
             stream.close()
+        return None if reading else f"{name} over BLE, not read"
 
 
 KEYBOARD_REPORT_ID = 1

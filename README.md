@@ -429,6 +429,12 @@ beside anything that is wrong. What it cannot see:
   more than one CDC interface and this was another; the feed moves on to the next by itself. If it
   says so about every port, the firmware is not sending — build it with the snippet
   (`-S layer-hud-usb-uart`), which is what creates the interface and points `zmk,layer-hud-uart` at it.
+- **Nothing over Bluetooth**: pair the keyboard with the OS first; the signal needs a bonded host.
+  On macOS the feed takes a keyboard that is already connected straight from CoreBluetooth, so no
+  address is needed, but whatever runs the feed needs Bluetooth permission (System Settings →
+  Privacy & Security → Bluetooth). `… over BLE, not read` means it connected but found no signal
+  service: the firmware was built without `CONFIG_ZMK_LAYER_SIGNAL_GATT`, or macOS has cached the
+  keyboard's services from an older firmware — remove and re-pair it.
 - **No `layers` lines**: `zmk-layer-hud feed --raw` logs every frame it decodes, so silence there
   separates "the keyboard says nothing" from "the host makes nothing of it".
 - **Wrong keys light** on a curated keymap: `positions:` is missing or wrong; the feed logs
