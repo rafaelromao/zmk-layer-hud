@@ -207,6 +207,22 @@ class DefinitionsMissing(unittest.TestCase):
         self.assertIn("github.com/you/zmk-config", self.missing("hud: {width: 500}\n"))
 
 
+class Reference(unittest.TestCase):
+    """docs/cli.md is what the parsers say, every verb of it."""
+
+    def test_the_reference_is_current(self):
+        import clidocs
+        with open(clidocs.PATH, encoding="utf-8") as f:
+            self.assertEqual(clidocs.render(), f.read(), "docs/cli.md is behind: make cli-docs")
+
+    def test_every_verb_is_in_it(self):
+        import clidocs
+        text = clidocs.render()
+        for verb in verbs(cli.build_parser()):
+            self.assertIn(f"\n## {verb}\n", text)
+            self.assertIn(f"usage: zmk-layer-hud {verb}", text)
+
+
 class State(unittest.TestCase):
     def test_state_is_outside_the_tree(self):
         # `update` replaces the tree wholesale, so the logs cannot live inside it.

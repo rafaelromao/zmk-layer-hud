@@ -149,8 +149,8 @@ Linux the udev rule stays until you remove it:
 
 ## Commands
 
-Everything is a verb on `zmk-layer-hud`; `zmk-layer-hud <command> --help` lists the flags of any
-one of them.
+Everything is a verb on `zmk-layer-hud`; `zmk-layer-hud <command> --help` (or `help`) lists the
+flags of any one of them, and [docs/cli.md](docs/cli.md) has every verb's in one place.
 
 | Command | What it does |
 |---|---|
