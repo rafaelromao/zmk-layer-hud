@@ -15,9 +15,6 @@
   --insert: #9ece6a;
   --raw: #f7768e;
   --cmdline: #e0af68;
-  --key-bg: #f5f6fa;
-  --key-fg: #1f2430;
-  --key-border: #c9ccd6;
   --mono: "Hack Nerd Font", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   --wide: 980px;
@@ -43,10 +40,11 @@ b { color: #e6e8ef; }
   background: rgba(26, 27, 38, 0.92); border-bottom: 1px solid var(--border);
   backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
 }
-.mark { color: var(--text); font-weight: 800; text-decoration: none; letter-spacing: 0.02em; }
-.mark::before {
-  content: ""; display: inline-block; width: 14px; height: 14px; margin-right: 8px; vertical-align: -1px;
-  border-radius: 4px; background: var(--key-bg); box-shadow: inset 0 -3px 0 var(--layer), 0 0 0 2px var(--pressed);
+/* The mark is the name on a rule in a layer's colour, as the section banners and the social card
+   (og.html) draw it. */
+.mark {
+  color: #e6e8ef; font-weight: 800; text-decoration: none; letter-spacing: 0.02em;
+  padding-bottom: 2px; border-bottom: 3px solid var(--layer);
 }
 .top nav { display: flex; gap: 18px; flex-wrap: wrap; justify-content: flex-end; }
 .top nav a { color: var(--muted); text-decoration: none; font-size: 15px; }
@@ -97,19 +95,28 @@ pre code { background: none; padding: 0; font-size: inherit; white-space: pre; }
   max-width: 800px; padding: 16px; margin: 0 0 26px;
   background: var(--surface); border: 1px solid var(--border); border-radius: 18px;
 }
-.demo-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.boards { display: flex; gap: 8px; flex-wrap: wrap; }
-/* Buttons are keycaps: light when pressed, the way a pressed key lights on the HUD. */
-.boards button, .heat button, .play {
-  font: 700 14px/1 var(--mono); padding: 9px 13px; border-radius: 9px; cursor: pointer;
-  color: var(--text); background: var(--surface-2); border: 1px solid var(--border);
+.demo-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
 }
-.boards button:hover, .heat button:hover, .play:hover { border-color: rgba(255, 255, 255, 0.24); }
-.boards button[aria-pressed="true"], .heat button[aria-pressed="true"] {
-  color: var(--key-fg); background: var(--key-bg); border-color: var(--key-border);
-  box-shadow: 0 0 0 2px var(--pressed);
+.boards { display: flex; gap: 0 22px; flex-wrap: wrap; }
+/* The boards are tabs, and so is the heat: the chosen one bright, on a rule in a layer's colour, the
+   way the HUD draws the layer it is on (hud.css #layer). */
+.boards button, .heat button {
+  font: 700 14px/1 var(--mono); padding: 11px 0 8px; cursor: pointer;
+  color: var(--muted); background: none; border: 0; border-bottom: 3px solid transparent; border-radius: 0;
 }
-.play { min-width: 80px; }
+.boards button { margin-bottom: -1px; }   /* the rule on the bar's own */
+.boards button:hover, .heat button:hover { color: var(--text); }
+.boards button[aria-pressed="true"], .heat button[aria-pressed="true"] { color: #e6e8ef; border-bottom-color: var(--layer); }
+.heat button[aria-pressed="true"] { border-bottom-color: var(--pressed); }
+/* Play is a button like the code blocks' copy. */
+.play {
+  min-width: 72px; padding: 5px 12px; margin: 0 0 4px auto; cursor: pointer;   /* right, even alone on a row */
+  font: 700 13px/20px var(--mono); color: var(--muted);
+  background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px;
+}
+.play:hover { color: var(--text); }
 .blurb { margin: 12px 2px 12px; font-size: 15px; color: var(--muted); min-height: 1.6em; }
 /* The HUD's page is transparent and declares no colour scheme, so it is light. A frame whose own
    scheme differs from its document's gets an opaque canvas behind it -- a white box here -- and a
@@ -130,8 +137,9 @@ pre code { background: none; padding: 0; font-size: inherit; white-space: pre; }
 .controls { display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; margin: 12px 0 4px; }
 .toggle { display: inline-flex; align-items: center; gap: 8px; font-size: 15px; cursor: pointer; }
 .toggle input { width: 18px; height: 18px; accent-color: var(--pressed); }
-.heat { display: flex; align-items: center; gap: 6px; }
-.heat-label { font: 700 13px var(--mono); color: var(--muted); margin-right: 4px; }
+.heat { display: flex; align-items: center; gap: 16px; }
+.heat button { font-size: 13px; padding: 5px 0 3px; }
+.heat-label { font: 700 13px var(--mono); color: var(--muted); }
 .hint { font-size: 14px; color: var(--muted); margin: 10px 0 0; }
 .nojs .needs-js { display: none; }
 
@@ -185,13 +193,11 @@ th { font: 700 13px var(--mono); color: var(--muted); letter-spacing: 0.04em; te
 /* ---------- setup ---------- */
 .steps { list-style: none; padding: 0; counter-reset: step; }
 .steps > li { counter-increment: step; position: relative; padding-left: 48px; margin: 0 0 22px; }
-/* The step's number is a keycap. */
+/* The step's number is drawn like the section's banner: heavy, on the section's rule. */
 .steps > li::before {
-  content: counter(step); position: absolute; left: 0; top: -2px;
-  width: 32px; height: 32px; border-radius: 8px;
-  display: grid; place-items: center; font: 800 16px var(--mono);
-  color: var(--key-fg); background: var(--key-bg); border: 1px solid var(--key-border);
-  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.12);
+  content: counter(step); position: absolute; left: 0; top: 0;
+  min-width: 26px; padding-bottom: 2px; text-align: center;
+  font: 800 18px/26px var(--mono); color: #e6e8ef; border-bottom: 3px solid var(--rule);
 }
 .steps h3 { font-size: 17px; padding-top: 3px; }
 
@@ -215,6 +221,8 @@ footer p { margin: 0 0 8px; max-width: 760px; }
   .hero { padding-top: 28px; }
   .lead { font-size: 17px; }
   .demo { padding: 10px; border-radius: 14px; margin-left: -6px; margin-right: -6px; }
+  .boards { gap: 0 12px; }
+  .boards button { font-size: 12px; }   /* the three on one row at 375px */
   .flow { flex-direction: column; }
   .edges, .edges.one { flex: none; padding: 0 12px; }
   .edge { border-bottom: 0; border-left: 2px solid var(--muted); padding: 4px 0 4px 12px; }
