@@ -86,8 +86,9 @@ lives. Two rules it keeps, and both matter:
 - **Nothing above the stdlib is imported at module level.** `doctor` and `setup` have to run on a
   machine where the virtualenv does not exist yet — that is when they are most needed — and
   Apple's `/usr/bin/python3` is 3.9, where keymap-drawer will not even install.
-- **The verbs that need the venv re-exec into it first** (`NEEDS_VENV`). The rest must keep
-  working on a half-installed machine.
+- **The verbs that need the venv re-exec into it first** (`NEEDS_VENV`, and `needs_venv` for
+  `session export`, the one part of `session` that draws with keymap-drawer, in
+  `host/export.py`). The rest must keep working on a half-installed machine.
 
 Starting and stopping stays in `host/macos/start.sh` and `host/linux/hud.sh`; `cli.py` picks one
 and gives them the same verbs. `poke` and `feed` are split off before argparse sees them and
