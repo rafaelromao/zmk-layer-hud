@@ -78,6 +78,7 @@
     mods: {},                 // flag -> true while held
     device: "",               // the keyboard's HID product name
     activatorOf: {},          // drawn layer -> the key idx that brought it in (positions)
+    modSource: {},            // modifier flag -> the key idx that turned it on, null: none known (positions)
     drawnSince: {},           // drawn layer -> when it appeared (applyLayers)
     pendingLayers: null,      // a layer change held back for a flash (setLayers)
     pendingDue: null,         // ...and when it applies, fixed at the first drop
@@ -255,7 +256,7 @@
         else for (const a of activatorsOf(name)) activators.add(a);
       }
     }
-    const heldMods = Object.keys(state.mods).filter(f => state.mods[f]).map(f => MOD_GLYPH[f]).filter(Boolean);
+    const heldMods = Object.keys(state.mods).filter(f => state.mods[f] && MOD_GLYPH[f]).map(f => ({ flag: f, glyph: MOD_GLYPH[f] }));
     // Shift is a modifier, not a layer, so nothing else on the board would show it. Caps word and
     // caps line have their own drawn layer and arrive as a layer change; plain shift, held or
     // tapped as a one-shot, only ever reaches us as this flag. A single lowercase letter is the
@@ -281,9 +282,11 @@
       if (r.key.type === "ghost") e.classList.add("ghost");
       if (r.key.type.startsWith("held")) e.classList.add("held");
       if (activators.has(idx)) e.classList.add("activator");
-      // A held modifier lights the keys that carry it: home-row mods (hold legend) and the
-      // modifier keys themselves, including a sticky shift that was tapped (tap legend).
-      if (heldMods.length && heldMods.some(g => (r.key.hold && r.key.hold.includes(g)) || r.key.tap === g)) e.classList.add("mod");
+      // A held modifier rings the key that turned it on (modSource): the home-row mod held, or the
+      // sticky shift tapped. Without positions there is no telling which, so every key that
+      // carries it is ringed.
+      if (heldMods.some(({ flag, glyph }) => state.modSource[flag] !== undefined
+        ? state.modSource[flag] === idx : carries(r.key, glyph))) e.classList.add("mod");
       fit(e.querySelector(".tap"), shiftLegend(r.key.tap) || "", r.key.glyph);
       setLegend(e.querySelector(".hold"), r.key.hold, r.key.glyph_hold);
       setLegend(e.querySelector(".shifted"), r.key.shifted, r.key.glyph_shifted);
@@ -1326,10 +1329,40 @@
     return !gate || !gate.length || gate.some(l => layers.includes(l));
   }
 
+  // A key that carries a modifier: a home-row mod (hold legend) or the modifier key itself (tap).
+  const carries = (key, glyph) => !!key && ((key.hold && key.hold.includes(glyph)) || key.tap === glyph);
+
+  /* Which key turned a modifier on, when positions say which keys went down: one still held that
+   * carries it (a home-row mod, a sticky shift still down), else the latest such key pressed within
+   * activator_ms (a sticky shift tapped and let go). null: none known yet -- the position may still
+   * be on its way, and pressAt takes it then. */
+  function modSourceOf(glyph, now) {
+    const layers = stack();
+    const carrying = p => { const r = resolveBinding(p.idx, layers); return r && carries(r.key, glyph); };
+    const latest = [...recentPos].reverse();
+    const src = latest.find(p => state.held.has(p.idx) && carrying(p))
+      || latest.find(p => now - p.t < T('activator_ms') && carrying(p));
+    return src ? src.idx : null;
+  }
+
+  function setMods(flags) {
+    const now = Date.now();
+    const positions = state.posAt && now - state.posAt < T('positions_fresh_ms');
+    for (const f of Object.keys(MOD_GLYPH)) {
+      if (!flags[f]) delete state.modSource[f];
+      else if (!state.mods[f] || state.modSource[f] === undefined) {
+        if (positions) state.modSource[f] = modSourceOf(MOD_GLYPH[f], now);
+        else delete state.modSource[f];
+      }
+    }
+    state.mods = flags;
+    renderKeys();
+  }
+
   function handleKey(ev) {
     if (!state.data) return;
     if (ev.type === "flagsChanged") {
-      if (ev.flags && !Array.isArray(ev.flags)) { state.mods = ev.flags; renderKeys(); }
+      if (ev.flags && !Array.isArray(ev.flags)) setMods(ev.flags);
       return;
     }
     if (ev.type !== "keyDown" || ev.repeat) return;
@@ -1528,7 +1561,7 @@
       state.data = data;
       applyPrefs();                 // the config's hud.dark, until the viewer chose
       state.momentary = []; state.oneShot = null;
-      state.activatorOf = {}; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null;
+      state.activatorOf = {}; state.modSource = {}; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null;
       // Keystrokes on the keymap going away are not followed by the next one's keys.
       state.down.clear(); state.strokes = []; state.lastStroke = null; state.lastOwnStroke = null;
       state.baseLayers = [data.base];
@@ -1651,6 +1684,12 @@
       const keepMs = Math.max(T('activator_ms'), state.data.combo_idle || 0);   // the idle rule below looks back this far
       while (recentPos.length && now - recentPos[0].t > keepMs) recentPos.shift();
       recentPos.push({ idx, t: now, entry });
+      // A modifier reported before the key that turned it on: this is that key, if it carries it.
+      let modFound = false;
+      for (const f of Object.keys(state.modSource)) {
+        if (state.modSource[f] === null && r && carries(r.key, MOD_GLYPH[f])) { state.modSource[f] = idx; modFound = true; }
+      }
+      if (modFound) renderKeys();
       // The keyboard has already decided. A key still down that is what brought one of the live
       // layers up was treated by ZMK as a layer hold, not as part of a chord — had it been half
       // of a combo, the combo would have fired and the layer would not have changed. So the group

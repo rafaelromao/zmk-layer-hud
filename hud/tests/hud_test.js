@@ -178,6 +178,45 @@ function checkCapitals() {
   return fails;
 }
 
+/* A modifier rings the key that turned it on, not every key that carries it: the home-row Shift
+ * held, or a Shift whose report came before its position. With no positions from the firmware
+ * there is no telling which, and every key carrying it is ringed. */
+function checkModRings(data) {
+  const carries = k => !!k && ((k.hold && k.hold.includes("⇧")) || k.tap === "⇧");
+  const idxs = (data.layers[data.base] || []).flatMap((k, i) => (carries(k) ? [i] : []));
+  const posOf = idx => Object.entries(data.positions || {}).find(([, i]) => Number(i) === idx);
+  const [a, b] = idxs.filter(posOf);
+  if (a === undefined || b === undefined) return ["the fixture has fewer than two positioned keys carrying ⇧ on its base"];
+  const ringed = page => page.hud.state.keyEls.flatMap((el, i) => (el.classList.contains("mod") ? [i] : []));
+  const flags = (page, shift) => page.hud.key({ type: "flagsChanged", flags: shift ? { shift: true } : {} });
+  const fails = [];
+
+  let page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  page.hud.pressAt(Number(posOf(a)[0]));
+  flags(page, true);
+  if (ringed(page).join() !== String(a)) fails.push(`Shift held on ${a} should ring it alone; ringed [${ringed(page)}]`);
+  page.hud.releaseAt(Number(posOf(a)[0]));
+  flags(page, false);
+  if (ringed(page).length) fails.push(`Shift let go should ring nothing; ringed [${ringed(page)}]`);
+  flags(page, true);                                   // a sticky Shift: on once its key was tapped and let go
+  if (ringed(page).join() !== String(a)) fails.push(`Shift just after ${a} was tapped should ring it; ringed [${ringed(page)}]`);
+  flags(page, false);
+  page.clock.advance(Number(data.hud.activator_ms || 400) + 1);   // past a tap that could have made it
+  flags(page, true);                                   // the report first, its key's position after
+  if (ringed(page).length) fails.push(`Shift before its key should ring nothing yet; ringed [${ringed(page)}]`);
+  page.hud.pressAt(Number(posOf(b)[0]));
+  if (ringed(page).join() !== String(b)) fails.push(`and then ${b}, the key that came; ringed [${ringed(page)}]`);
+
+  page = loadPage();                                   // no positions at all: every carrier
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  flags(page, true);
+  if (ringed(page).join() !== idxs.join()) fails.push(`without positions every ⇧ key should ring [${idxs}]; ringed [${ringed(page)}]`);
+  return fails;
+}
+
 async function main() {
   const opt = parseArgs(process.argv.slice(2));
   if (!fs.existsSync(opt.keymap)) {
@@ -202,6 +241,12 @@ async function main() {
   const embedFailures = checkEmbed();
   if (embedFailures.length) {
     for (const failure of embedFailures) console.error(`FAIL embed: ${failure}`);
+    process.exit(1);
+  }
+
+  const modFailures = checkModRings(data);
+  if (modFailures.length) {
+    for (const failure of modFailures) console.error(`FAIL mod-rings: ${failure}`);
     process.exit(1);
   }
 
