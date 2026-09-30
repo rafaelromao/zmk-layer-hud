@@ -50,7 +50,7 @@
   const T = name => (state.data && state.data.hud && state.data.hud[name] != null) ? state.data.hud[name] : DEFAULTS[name];
   // The stats bar's chips, from the config's `stats:` section; again only the fallback.
   const STAT_DEFAULTS = { wpm: true, session: true, accuracy: true, keys: true, layer: true, time: false,
-    hands: false, sfb: false, slow: false, heatmap: true, theme: true };
+    hands: false, sfb: false, slow: false, heatmap: true, theme: true, opacity: true };
   const statOn = name => (state.data && state.data.stats && state.data.stats[name] != null) ? !!state.data.stats[name] : STAT_DEFAULTS[name];
   const recentPos = [];
 
@@ -319,6 +319,22 @@
 
   function baseSummary() { return state.live ? liveSummary() : codeSummary(); }
 
+  // The name of the drawing on screen, as the banner says it: a layer with no drawing of its own
+  // (the Diamond's MACOS, over its base) shows the one under it, and is what the viewer knows it
+  // by -- so the highest active layer that is this drawing, or sits undrawn right above it.
+  function drawingLabel(drawer) {
+    if (state.live && !state.oneShot && !state.momentary.length) {
+      let undrawn = null;
+      for (const z of state.live.ids.slice().sort((a, b) => b - a).map(zl).filter(Boolean)) {
+        if (z.drawer == null) { undrawn = undrawn || z; continue; }
+        if (z.drawer === drawer) return (undrawn || z).label;
+        undrawn = null;
+      }
+      if (undrawn && drawer === base()) return undrawn.label;   // the base is under everything, reported or not
+    }
+    return layerLabel(drawer);
+  }
+
   // What to print on the banner: an inferred held/one-shot layer on top of the base, else the base.
   function activeSummary() {
     const b = baseSummary();
@@ -385,6 +401,28 @@
 
   // Tell a native host how tall the page wants to be (the layout decides), and how wide the
   // config says. Hosts that listen (host/macos/panel.py) resize their window to it.
+  // The macOS panel moves when the page is dragged, and decides before the page sees the press: it
+  // is told where the controls that drag themselves are (host/macos/panel.py DragWebView), so
+  // dragging the slider moves the slider. Said again whenever the layout may have moved them.
+  function postNoDrag() {
+    let handler = null;
+    try { handler = window.webkit.messageHandlers.zmkhud; } catch (e) { /* not the macOS panel */ }
+    if (!handler) return;
+    // Everything that takes a click: a press there goes to the page, anywhere else it moves the
+    // panel. The slider's whole box, not just its track, so a press a little off the thumb works.
+    let rects = [];
+    try {
+      const controls = [$("side"), $("close")].concat(["heatmap", "theme", "opacity"].map(n => bar[n] && bar[n].chip));
+      rects = controls.filter(Boolean).map(e => e.getBoundingClientRect())
+        .filter(r => r.width > 0 && r.height > 0)
+        .map(r => [r.left, r.top, r.width, r.height].map(v => Math.round(v)));
+    } catch (e) { /* no layout (the tests' DOM) */ }
+    const said = JSON.stringify(rects);
+    if (said === state.noDragSaid) return;
+    state.noDragSaid = said;
+    handler.postMessage(JSON.stringify({ kind: "nodrag", v: 1, rects }));
+  }
+
   function postSize() {
     let width = (state.data && state.data.hud && state.data.hud.width) || null;
     if (width && bar.host && !bar.host.classList.contains("off") && sideShown()) width += STATS_COLUMN;
@@ -395,6 +433,7 @@
     for (const name of ["zmkhud", "zmkhudsize"]) {
       try { window.webkit.messageHandlers[name].postMessage(JSON.stringify({ kind: "size", width, height })); } catch (e) { /* not this host */ }
     }
+    postNoDrag();
   }
 
   // ---------- heat ----------
@@ -536,13 +575,24 @@
   // stats block is out. The feed remembers a choice (host/session.py PREFS) and hands it back with
   // the session; until one is made, the theme is the config's (hud.dark). A page with no feed to
   // tell (the landing page) keeps it in its own storage.
-  const PREFS = { theme: ["light", "dark"], side: ["shown", "hidden"] };
+  const PREFS = {
+    theme: v => v === "light" || v === "dark",
+    side: v => v === "shown" || v === "hidden",
+    opacity: v => Number.isInteger(v) && v >= 0 && v <= 100,   // the slider (host/session.py PREFS)
+  };
   const PREFS_KEY = "zmkhud.prefs";
   try { Object.assign(state.prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || "{}")); } catch (e) { /* no storage */ }
   const theme = () => state.prefs.theme || (T("dark") > 0 ? "dark" : "light");
   const sideShown = () => state.prefs.side !== "hidden";
+  // The panels' background: the slider's, else the config's hud.opacity. A GIF still's script may
+  // set its own (showDemo), which outranks both.
+  const opacity = () => (state.demoOpacity != null ? state.demoOpacity : state.prefs.opacity != null ? state.prefs.opacity : T("opacity"));
   function applyPrefs() {
     const body = document.body;
+    const alpha = String(opacity() / 100);
+    if (document.documentElement.style.getPropertyValue("--panel-alpha") !== alpha) {
+      document.documentElement.style.setProperty("--panel-alpha", alpha);
+    }
     if (body.classList.contains("dark") !== (theme() === "dark")) {
       body.classList.toggle("dark", theme() === "dark");
       paintHeat();                  // the glow's opacity goes with the theme (heatMax)
@@ -556,12 +606,17 @@
     }
   }
   function setPref(name, value, fromHost) {
-    if (!(PREFS[name] || []).includes(value) || state.prefs[name] === value) return;
+    if (!PREFS[name] || !PREFS[name](value)) return;
+    const same = state.prefs[name] === value;
     state.prefs[name] = value;
-    if (!fromHost) {
+    // A slider being dragged has shown each value already (bar.opacity's input); the one it is let
+    // go at is still the one to remember.
+    if (!fromHost && (!same || state.pendingPref === name)) {
+      state.pendingPref = null;
       try { localStorage.setItem(PREFS_KEY, JSON.stringify(state.prefs)); } catch (e) { /* no storage */ }
       postToHost({ kind: "pref", v: 1, name, value });
     }
+    if (same) return;
     applyPrefs();
     renderStats();
     postSize();                     // the block in or out changes the panel's width
@@ -930,9 +985,12 @@
     const host = $("stats");
     if (!host || bar.host) return;
     bar.host = host;
-    // labels: one per row; null is a label the stat writes itself (the layer's name).
+    // labels: one per row; null is a label the stat writes itself (the layer's name). A short
+    // value is a tile half the block wide, and a stat of two values two tiles side by side
+    // (hud.css #stats .half, .pair), so the block fits beside the panel without making it taller.
+    const HALF = ["wpm", "acc", "time", "sfb", "mode", "theme"], PAIR = ["session", "keys", "hands", "slow"];
     const chip = (name, labels) => {
-      const c = el("div", "stat " + name);
+      const c = el("div", "stat " + name + (HALF.includes(name) ? " half" : PAIR.includes(name) ? " pair" : ""));
       const vals = [], names = [];
       for (const label of labels) {
         const row = el("div", "row");
@@ -953,7 +1011,7 @@
     bar.hands = chip("hands", ["left hand", "right hand"]);
     bar.sfb = chip("sfb", ["same finger"]);
     bar.sfb.chip.title = "same-finger bigrams: two keys in a row struck by one finger";
-    bar.slow = chip("slow", ["slowest", "after the last"]);
+    bar.slow = chip("slow", ["slowest", "its time"]);
     bar.slow.chip.title = "the key that takes longest after the key before it, on average";
     // `stats: heatmap` shows both: the session the counts go to, and what the keys glow with.
     bar.named = chip("named", ["session"]);
@@ -963,6 +1021,20 @@
     bar.theme = chip("theme", ["keys"]);
     bar.theme.chip.title = "click: light or dark keys";
     bar.theme.chip.addEventListener("click", () => setPref("theme", theme() === "dark" ? "light" : "dark"));
+    // The panels' background, as a slider: every step shows at once, and the value it is let go at
+    // is the one the feed remembers.
+    bar.opacity = chip("opacity", ["background"]);
+    const slider = el("input", "slider");
+    slider.type = "range"; slider.min = "0"; slider.max = "100"; slider.step = "1";
+    slider.setAttribute("aria-label", "the panels' background opacity");
+    slider.addEventListener("input", () => {
+      state.prefs.opacity = Number(slider.value);
+      state.pendingPref = "opacity";
+      applyPrefs(); renderStats();
+    });
+    slider.addEventListener("change", () => setPref("opacity", Number(slider.value)));
+    bar.opacity.chip.appendChild(slider);
+    bar.opacity.slider = slider;
   }
   function put(chip, values, names) {
     values.forEach((v, i) => { if (chip.vals[i].textContent !== v) chip.vals[i].textContent = v; });
@@ -1035,18 +1107,21 @@
     const strokes = presses - members + combos;
     put(bar.keys, [fmtCount(presses), strokes > 0 ? pct(combos / strokes) : "—"]);
     const top = state.data ? stack()[0] : null;
-    put(bar.layer, [top && presses ? pct(sum(v.presses[top] || {}) / presses) : "—"], [top ? layerLabel(top) : "layer"]);
+    put(bar.layer, [top && presses ? pct(sum(v.presses[top] || {}) / presses) : "—"], [top ? drawingLabel(top) : "layer"]);
     put(bar.named, [named || ""]);
     bar.named.chip.title = named || "";   // a long name is cut short on the column
     put(bar.heatmap, [state.heatMode]);
     put(bar.theme, [theme()]);
+    put(bar.opacity, [opacity() + "%"]);
+    if (bar.opacity.slider.value !== String(opacity())) bar.opacity.slider.value = String(opacity());
+    bar.opacity.slider.style.setProperty("--fill", opacity() + "%");   // the track's filled part (hud.css)
     followBar();
   }
   // A column taller than the board makes the page taller, and one shown or hidden changes the
   // panel's width (postSize): the panel sizes itself from what the page says.
   function followBar() {
     const shape = bar.host.offsetHeight + (bar.host.classList.contains("off") ? "/off" : "") + (sideShown() ? "" : "/hidden");
-    if (shape !== bar.shape) { bar.shape = shape; postSize(); }
+    if (shape !== bar.shape) { bar.shape = shape; postSize(); } else postNoDrag();
   }
 
   // ---------- resolver ----------
@@ -1470,7 +1545,6 @@
       if (!Object.keys(map).length) data.layout.keys.forEach((k, idx) => { state.posOf[idx] = idx; });
       // Heat outlives a reload (it fades in seconds anyway), but not on keys this layout lacks.
       for (const idx of [...state.heat.keys()]) if (idx >= data.layout.keys.length) state.heat.delete(idx);
-      document.documentElement.style.setProperty("--panel-alpha", String(T("opacity") / 100));
       buildBoard();
       renderTitle();
       postSize();
@@ -1773,7 +1847,8 @@
     const step = steps[Math.max(0, Math.min(steps.length - 1, n))];
     if (!step) return;
     if (script.opacity !== undefined) {
-      document.documentElement.style.setProperty("--panel-alpha", String(script.opacity / 100));
+      state.demoOpacity = script.opacity;
+      applyPrefs();
     }
     const device = step.device || script.device;
     if (device) hud.setDevice(device);

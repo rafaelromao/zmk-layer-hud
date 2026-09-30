@@ -20,7 +20,8 @@ const FIXTURE = path.join(__dirname, "fixtures", "diamond.json");
 const SPACED_MS = 100;    // between presses that must stay separate keystrokes: past any combo term
 const CHORD_MS = 5;       // between the keys of a chord
 // A stat box's text as a viewer reads it: each row's label and value, rows apart.
-const rowsText = c => c.children.map(row => row.children.map(x => x.textContent).join(" ")).join(" / ");
+const rowsText = c => c.children.filter(row => row.className === "row")
+  .map(row => row.children.map(x => x.textContent).join(" ")).join(" / ");
 
 function main() {
   const argv = process.argv.slice(2);
@@ -609,7 +610,7 @@ function main() {
       c.clock.advance(settle);
       // P after R: 300 ms, eleven times, and once 100 ms after Q; R after P: 120 ms. Of 26
       // bigrams, Q-P and P-Q are one finger's.
-      check("the slowest key and its time", /^slowest \S+ \/ after the last /.test(rowsText(txt("slow"))) &&
+      check("the slowest key and its time", /^slowest \S+ \/ its time /.test(rowsText(txt("slow"))) &&
             rowsText(txt("slow")).endsWith(` ${Math.round((11 * 300 + 100) / 12)} ms`), rowsText(txt("slow")));
       check("same-finger bigrams as a share", rowsText(txt("sfb")) === `same finger ${(Math.round(2 / 26 * 1000) / 10).toFixed(1)}%`, rowsText(txt("sfb")));
       check("each hand's share", rowsText(txt("hands")) === `left hand ${Math.round(15 / 27 * 100)}% / right hand ${Math.round(12 / 27 * 100)}%`, rowsText(txt("hands")));
@@ -767,6 +768,26 @@ function main() {
     check("and the panel is narrower by the block", out - width() > 100 && width() === 600, `${out} -> ${width()}`);
     p.hud.setPref("side", "bogus");
     check("a value that is not one is ignored", p.hud.state.prefs.side === "hidden");
+
+    const alpha = page => page.document.documentElement.style.getPropertyValue("--panel-alpha");
+    check("the background starts at the config's hud.opacity", alpha(p) === String(data.hud && data.hud.opacity != null ? data.hud.opacity / 100 : 0.86) &&
+          box(p, "opacity").startsWith("background "), `${alpha(p)} ${box(p, "opacity")}`);
+    const before = posted.filter(m => m.kind === "pref").length;
+    p.hud.setPref("opacity", 40);
+    check("the slider sets it", alpha(p) === "0.4" && box(p, "opacity") === "background 40%", `${alpha(p)} ${box(p, "opacity")}`);
+    const prefs = posted.filter(m => m.kind === "pref");
+    check("and the host is told once", prefs.length === before + 1 && prefs[prefs.length - 1].value === 40);
+    p.hud.setPref("opacity", 140); p.hud.setPref("opacity", "50");
+    check("nothing past 0-100, and only numbers", alpha(p) === "0.4");
+
+    // A layer with no drawing of its own (the Diamond's 1, Alt OS) is what the viewer is on: the
+    // box names it, as the banner does, though its keys are its base's.
+    const undrawn = Object.values(data.zmk_layers || {}).find(z => z.id > 0 && z.drawer == null);
+    if (undrawn) {
+      p.hud.setLayers([undrawn.id]);
+      check("the layer box names the layer as the banner does", box(p, "layer").startsWith(undrawn.label + " "), box(p, "layer"));
+      p.hud.setLayers([]);
+    }
 
     const q = fresh({ dark: 1 });
     check("hud.dark: 1 makes the keys dark", dark(q));

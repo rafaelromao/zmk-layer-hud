@@ -103,6 +103,7 @@ STATS_DEFAULTS = {
     "slow": False,             # the key that takes longest to strike after the key before it
     "heatmap": True,           # the session's name and what the keys glow with; a click changes it
     "theme": True,             # the keys light or dark; a click changes it
+    "opacity": True,           # a slider for the panels' background (hud.opacity until moved)
 }
 # `fingers:` names, left pinky to right pinky; a thumb is lt or rt.
 FINGERS = ("lp", "lr", "lm", "li", "lt", "rt", "ri", "rm", "rr", "rp")

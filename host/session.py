@@ -42,7 +42,13 @@ HEATMAP_MODES = ("live", "session", "physical", "speed", "off")
 PREFS = {
     "theme": ("light", "dark"),       # the keys: light, keymap-drawer's; or dark, the heat in indigo
     "side": ("shown", "hidden"),      # the stats block beside the panel
+    "opacity": range(0, 101),         # the panels' background, 0 (clear) to 100 (solid): the slider
 }
+
+
+def pref_ok(name, value):
+    # bool is an int, and True would pass for opacity 1.
+    return name in PREFS and not isinstance(value, bool) and value in PREFS[name]
 NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 # Added up from what the page reports; peak_wpm is kept as a maximum instead. sfb and bigrams:
 # two keystrokes in a row on one finger, of two keystrokes in a row by any two (hud.js "strokes").
@@ -189,7 +195,7 @@ def _read_state(directory, log):
     if st.get("heatmap") not in HEATMAP_MODES:
         st["heatmap"] = "live"
     for name, values in PREFS.items():
-        if st.get(name) not in values:
+        if not pref_ok(name, st.get(name)):
             st.pop(name, None)
     return st
 
@@ -197,7 +203,7 @@ def _read_state(directory, log):
 def _write_state(directory, st):
     write_json(os.path.join(directory, ".state.json"),
                dict({"version": VERSION, "active": st.get("active"), "heatmap": st.get("heatmap", "live")},
-                    **{name: st[name] for name in PREFS if st.get(name) in PREFS[name]}))
+                    **{name: st[name] for name in PREFS if pref_ok(name, st.get(name))}))
 
 
 def sessions(directory, log=None):
@@ -382,8 +388,8 @@ def set_heatmap(directory=None, mode=None, log=None):
 
 
 def set_pref(directory=None, name=None, value=None, log=None):
-    if value not in PREFS.get(name, ()):
-        raise SessionError(f"{value!r} is not a {name}: {', '.join(PREFS.get(name, ()))}")
+    if not pref_ok(name, value):
+        raise SessionError(f"{value!r} is not a {name}")
     directory = directory or default_dir()
     with locked(directory):
         st, _ = active(directory, log)
@@ -719,7 +725,7 @@ class Store:
             self.announce()
 
     def set_pref(self, name, value):
-        if value not in PREFS.get(name, ()):
+        if not pref_ok(name, value):
             return
         with self.lock:
             if self.persist:

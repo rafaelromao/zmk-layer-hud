@@ -117,29 +117,84 @@ body.demo .key::before, body.demo #stats { display: none; }
    config's `stats:`; one it leaves out is .off, and the whole block goes with the panel's chevron
    (body.side-hidden). Its width and gap are added to the panel's (hud.js STATS_COLUMN, which has to
    agree with the numbers here), so the keys keep the size hud.width gives them. */
-#frame { display: flex; align-items: flex-start; }
+/* As tall as the panel beside it (stretch), with a heading on the banner's box, so its rule and its
+   first box line up with the banner's rule and the board. */
+#frame { display: flex; align-items: stretch; }
 #frame > #hud { flex: 1 1 auto; min-width: 0; }
 #stats {
-  flex: none; box-sizing: border-box; width: 188px; margin-left: 8px; padding: 8px; border-radius: 8px;
+  flex: none; box-sizing: border-box; width: 188px; margin-left: 8px; padding: 12px 10px 14px; border-radius: 8px;
   background: var(--panel); border: 1px solid var(--panel-border);
-  display: flex; flex-direction: column; gap: 4px; font-family: var(--font);
+  display: grid; grid-template-columns: 1fr 1fr; grid-auto-flow: row dense; align-content: start; gap: 4px;
+  font-family: var(--font);
+}
+#statsHead {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; min-height: 30px; padding: 2px 4px 5px; margin-bottom: 6px;
+  border-bottom: 3px solid var(--chip); color: #c0caf5;
+  font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; line-height: 28px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 #stats.off, #stats .stat.off, body.side-hidden #stats { display: none; }
+/* The boxes: a faint lift off the panel rather than a grey slab, labels in a soft blue-grey and the
+   values bright, in the panel's own palette (Tokyo Night's, like the banner's layer colours). */
 #stats .stat {
-  box-sizing: border-box; width: 100%; padding: 1px 8px; border-radius: 4px; background: var(--chip);
-  color: #8b91a3; font-size: 11px; line-height: 20px; font-variant-numeric: tabular-nums;
+  grid-column: 1 / -1; min-width: 0;
+  box-sizing: border-box; width: 100%; padding: 2px 8px; border-radius: 4px;
+  background: rgba(122, 162, 247, 0.06); border: 1px solid rgba(122, 162, 247, 0.10);
+  color: #9aa5ce; font-size: 11px; line-height: 20px; font-variant-numeric: tabular-nums;
+  transition: background 120ms ease, border-color 120ms ease;
 }
 #stats .row { display: flex; justify-content: space-between; gap: 8px; white-space: nowrap; }
+/* Tiles: a half-width box, or each value of a pair, reads label over value. */
+#stats .stat.half { grid-column: auto; }
+#stats .stat.pair { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; }
+#stats .stat.half .row, #stats .stat.pair .row { flex-direction: column; gap: 0; min-width: 0; }
+#stats .stat.half .row span, #stats .stat.pair .row span { font-size: 10px; line-height: 14px; }
+#stats .stat.half .row b, #stats .stat.pair .row b { text-align: left; font-size: 13px; line-height: 17px; }
+/* After the tiles' display, which would otherwise outrank it: a stat the config leaves out takes no room. */
+#stats .stat.off { display: none; }
 #stats .row span, #stats .row b { overflow: hidden; text-overflow: ellipsis; }
-#stats .row span { flex: 0 1 auto; min-width: 0; }
-#stats .row b { flex: 0 1 auto; min-width: 0; color: #e6e8ef; font-weight: 700; text-align: right; }
-#stats .stat.layer .row span { color: #e6e8ef; }
+#stats .row span { flex: none; }         /* a label is never cut: the value gives way */
+#stats .row b { flex: 0 1 auto; min-width: 0; color: #c0caf5; font-weight: 700; text-align: right; }
+#stats .stat.layer .row span { color: var(--chip-layer); font-weight: 700; flex: 0 1 auto; min-width: 0;
+  text-transform: uppercase; letter-spacing: 0.04em; }   /* as the banner writes it */
+/* The session's name is too long to share a row with its label in every font: under it, whole. */
+#stats .stat.named .row { flex-direction: column; gap: 0; }
+#stats .stat.named .row span { font-size: 10px; line-height: 14px; }
+#stats .stat.named .row b { text-align: left; font-size: 13px; line-height: 17px; }
+/* The background slider, under its label and value. */
+/* Drawn in the block's own colours rather than the system's: the track in the boxes' tint, filled
+   up to the value (--fill, from hud.js) in the clickable values' blue, and a thumb to match. */
+/* One line: the label, the slider, the value. */
+#stats .stat.opacity { display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 8px; }
+#stats .stat.opacity .row { display: contents; }
+#stats .stat.opacity .row b { order: 2; }
+#stats .stat.opacity .slider {
+  -webkit-appearance: none; appearance: none; order: 1; display: block; width: 100%; min-width: 0; height: 14px; margin: 0;
+  background: transparent; cursor: pointer;
+}
+#stats .stat.opacity .slider::-webkit-slider-runnable-track {
+  height: 4px; border-radius: 2px;
+  background: linear-gradient(to right, #7aa2f7 var(--fill, 86%), rgba(122, 162, 247, 0.18) var(--fill, 86%));
+}
+#stats .stat.opacity .slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 12px; height: 12px; margin-top: -4px; border-radius: 50%;
+  background: #c0caf5; border: 2px solid #7aa2f7; box-sizing: border-box;
+}
+#stats .stat.opacity .slider:hover::-webkit-slider-thumb { background: #e6e8ef; }
+#stats .stat.opacity .slider::-moz-range-track { height: 4px; border-radius: 2px; background: rgba(122, 162, 247, 0.18); }
+#stats .stat.opacity .slider::-moz-range-progress { height: 4px; border-radius: 2px; background: #7aa2f7; }
+#stats .stat.opacity .slider::-moz-range-thumb { width: 8px; height: 8px; border-radius: 50%; background: #c0caf5; border: 2px solid #7aa2f7; }
+/* The two that change something when clicked say so: their value in the link blue, and a hover. */
 #stats .stat.mode, #stats .stat.theme { cursor: pointer; }
-#stats .stat.mode:hover, #stats .stat.theme:hover { color: #e6e8ef; }
+#stats .stat.mode .row b, #stats .stat.theme .row b { color: #7aa2f7; }
+#stats .stat.mode:hover, #stats .stat.theme:hover { background: rgba(122, 162, 247, 0.16); border-color: rgba(122, 162, 247, 0.35); }
 /* Too narrow for a block beside the panel (the landing page on a phone): under it, two across. */
 @media (max-width: 560px) {
   #frame { flex-direction: column; align-items: stretch; }
   #stats { width: auto; margin: 8px 0 0; display: grid; grid-template-columns: 1fr 1fr; }
+  #statsHead, #stats .stat { grid-column: auto; }
+  #statsHead { grid-column: 1 / -1; }
 }
 #status { font-size: 12px; color: #aab0c0; min-height: 16px; display: flex; }
 #feed { color: #e0af68; }
@@ -237,8 +292,8 @@ body.dark .combo-pill .combo-label, body.dark .combo-pill .combo-sub { color: #a
 #close { margin-left: 10px; width: 22px; height: 22px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.12);
   background: rgba(255,255,255,0.06); color: #aab0c0; font: 13px/1 var(--font); cursor: pointer; padding: 0; }
 #close:hover { background: var(--chip-raw); color: #101420; }
-/* The chevron beside it shows and hides the stats block: pointing at the block to put it away,
-   back at the panel to bring it out. */
+/* The chevron beside it shows and hides the stats block: pointing back at the panel to fold the
+   block in, and out towards where it goes to bring it back. */
 #side { margin-left: auto; width: 22px; height: 22px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.12);
   background: rgba(255,255,255,0.06); color: #aab0c0; cursor: pointer; padding: 0;
   display: inline-flex; align-items: center; justify-content: center; }
@@ -246,7 +301,7 @@ body.dark .combo-pill .combo-label, body.dark .combo-pill .combo-sub { color: #a
 #side svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
   transition: transform 120ms ease; }
 body.side-hidden #side svg { transform: scaleX(-1); }
-#side + #close { margin-left: 6px; }
+#side + #close { margin-left: -8px; }   /* #layer spaces its items 12px apart: these two sit 4px apart, a pair */
 body.demo #side { display: none; }
 
 /* Framed by another page (index.html?embed, the landing page's demo): that page sizes the frame to
