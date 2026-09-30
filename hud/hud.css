@@ -192,3 +192,9 @@ body.demo .key::before, body.demo #stats { display: none; }
 #close { margin-left: 10px; width: 22px; height: 22px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12);
   background: rgba(255,255,255,0.06); color: #aab0c0; font: 13px/1 var(--font); cursor: pointer; padding: 0; }
 #close:hover { background: var(--chip-raw); color: #101420; }
+
+/* Framed by another page (index.html?embed, the landing page's demo): that page sizes the frame to
+   the content, so nothing scrolls, and there is no host for the ✕ to close. On the root, because
+   overflow is the root's and the WebKit builds the panels run have no :has(). */
+html.embed { overflow: hidden; }
+html.embed #close { display: none; }

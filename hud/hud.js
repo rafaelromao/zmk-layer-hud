@@ -32,7 +32,8 @@
  *             and everything else is inferred from the typed characters, guided by `extras`.
  *
  * In a browser (http://) it accepts real key events and `?keymap=keymap.json` loads a dumped
- * message, so the page can be developed without a host.
+ * message, so the page can be developed without a host. With `?embed` it is framed by another page
+ * (the landing page's demo), which owns the keyboard and drives it through window.hud.
  */
 (function () {
   "use strict";
@@ -1470,6 +1471,12 @@
   // A GIF still is drawn as it always was: no glow, whatever demoFrame presses. Said here, before
   // anything loads -- demoShown arrives only after the frame's keys have gone down.
   if (params.get("demo") !== null) { state.demo = true; document.body.classList.add("demo"); }
+  // Framed by another page (the landing page's demo): that page has the keyboard, and sends what
+  // is typed through hud.receive. So the dev keydown listener below stays off -- it swallows every
+  // key but F5 and ⌘ chords, Tab included, and Tab is the way out of the frame -- and the ✕, which
+  // has no host to close, goes (hud.css html.embed).
+  const embedded = params.get("embed") !== null;
+  if (embedded) document.documentElement.classList.add("embed");
   const wsUrl = params.get("ws");
   if (wsUrl) {
     const connect = () => {
@@ -1604,7 +1611,7 @@
       })
       .catch(e => console.error(e));
   }
-  if (location.protocol.startsWith("http")) window.addEventListener("keydown", e => {
+  if (location.protocol.startsWith("http") && !embedded) window.addEventListener("keydown", e => {
     const name = e.key.length === 1 ? null : e.key.toLowerCase().replace("arrow", "").replace("backspace", "delete").replace("enter", "return");
     hud.key({ type: "keyDown", chars: e.key.length === 1 ? e.key : "", name, flags: {} });
     if (e.key !== "F5" && !e.metaKey) e.preventDefault();
