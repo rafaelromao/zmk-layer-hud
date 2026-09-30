@@ -87,6 +87,22 @@ function main() {
     if (page.hud.state.held.size) fail.push(`${script}: ${page.hud.state.held.size} keys still held after the script`);
     page.clock.advance(12000);
     if (page.clock.pending()) fail.push(`${script}: ${page.clock.pending()} timers left once it is over`);
+
+    // A live GIF's frame (hud.js replayTo, docs/make-gif.sh --live): a fresh page, played up to a
+    // moment on its own clock, must show that moment as the page that lived through it did.
+    const capture = play([script, "--keymap", keymap, "--capture"])[0];
+    for (const s of strokes.filter((s, i) => i % 3 === 0)) {
+      checked++;
+      const frame = loadPage();
+      frame.hud.replayTo(data, capture, s.check_ms);
+      const got = frame.hud.state.keyEls.map((e, i) => (e.classList.contains("pressed") ? posOf.get(i) : null))
+        .filter(p => p !== null && p !== undefined).sort((a, b) => a - b);
+      const want = [...s.down].sort((a, b) => a - b);
+      if (got.join(",") !== want.join(",")) fail.push(`${script} frame at ${s.check_ms} ms: lit [${got}], down [${want}]`);
+      if (s.strike.some(p => frame.hud.state.keyEls[data.positions ? data.positions[String(p)] : p].style.getPropertyValue("--heat") === "")) {
+        fail.push(`${script} frame at ${s.check_ms} ms: a key just struck has no glow`);
+      }
+    }
   }
   for (const f of fail) console.log("FAIL " + f);
   console.log(`${PAIRS.length} scripts played, ${checked} keystrokes checked, ${fail.length} failures`);

@@ -11,6 +11,7 @@ hud/keymap.js
 
 # the demo script docs/make-gif.sh serves beside the pages (the sources live in docs/)
 hud/demo.json
+hud/timeline.json
 
 # editor/agent local config
 .claude/

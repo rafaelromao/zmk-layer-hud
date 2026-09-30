@@ -492,6 +492,8 @@ def main(argv=None):
     out.add_argument("--stills", action="store_true", help="print the script the GIF renders, a frame per keystroke")
     out.add_argument("--strokes", action="store_true", help="print every keystroke and when it goes down")
     out.add_argument("--check", action="store_true", help="say what the script plays and what it cannot type")
+    out.add_argument("--capture", action="store_true",
+                     help="print the timeline as one JSON object, for a GIF of moments (docs/make-gif.sh --live)")
     p.add_argument("--speed", type=float, default=1.0, help="play this many times as fast (default 1)")
     p.add_argument("--strict", action="store_true", help="fail on a character the keymap cannot type")
     args = p.parse_args(argv)
@@ -512,6 +514,12 @@ def main(argv=None):
     elif args.strokes:
         for s in c.strokes:
             print(json.dumps(s, ensure_ascii=False))
+    elif args.capture:
+        # What the page replays for a GIF frame (hud.js replayTo): the messages and when, and what
+        # the script says of the panel.
+        json.dump({"device": script.get("device"), "opacity": script.get("opacity"), "duration_ms": c.duration_ms,
+                   "timeline": c.timeline}, sys.stdout, ensure_ascii=False)
+        sys.stdout.write("\n")
     elif args.check:
         print(f"{args.script}: {len(c.strokes)} keystrokes, {len(c.timeline)} messages over "
               f"{c.duration_ms / 1000:.1f} s, {len(c.stills['steps'])} frames")

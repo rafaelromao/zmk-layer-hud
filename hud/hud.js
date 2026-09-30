@@ -1539,12 +1539,61 @@
     document.querySelectorAll(".combo-pill, .combo-links, #keys .chip").forEach(e => e.classList.add("show"));
     state.demoShown = true;                       // nothing may rebuild the board from here on
   }
+  /* Dev: &timeline=<url>&at=T draws the page as a script leaves it T ms in -- a key's glow half
+   * gone, a pill still up, the speed on the bar -- for a GIF made of moments rather than stills
+   * (docs/make-gif.sh --live). The timeline is host/play.py --capture's: the messages a keyboard
+   * would send, and when. They are replayed on a clock of the page's own, every timer the page sets
+   * firing in its turn, up to T; and there the clock stops, so nothing moves before the screenshot.
+   * Transitions go, as for a still: a headless browser's virtual time does not run them. */
+  function replayTo(data, capture, at) {
+    const epoch = Date.now();
+    let now = 0, seq = 0;
+    const timers = new Map();
+    window.setTimeout = (fn, ms) => { const id = ++seq; timers.set(id, { fn, at: now + (Number(ms) || 0), id }); return id; };
+    window.clearTimeout = id => { timers.delete(id); };
+    window.requestAnimationFrame = fn => { fn(); return 0; };
+    Date.now = () => epoch + now;
+    const advance = until => {
+      for (;;) {
+        let next = null;
+        for (const t of timers.values()) if (t.at <= until && (!next || t.at < next.at || (t.at === next.at && t.id < next.id))) next = t;
+        if (!next) break;
+        timers.delete(next.id);
+        now = Math.max(now, next.at);
+        next.fn();
+      }
+      now = until;
+    };
+    const frozen = document.createElement("style");
+    frozen.textContent = "*, *::before, *::after { transition: none !important; animation: none !important; }";
+    document.head.appendChild(frozen);
+    hud.load(data);
+    if (capture.opacity !== undefined && capture.opacity !== null) {
+      document.documentElement.style.setProperty("--panel-alpha", String(capture.opacity / 100));
+    }
+    if (capture.device) hud.setDevice(capture.device);
+    let t = 0;
+    for (const [wait, msg] of capture.timeline || []) {
+      if (t + wait > at) break;
+      t += wait;
+      advance(t);
+      hud.receive(msg);
+    }
+    advance(at);
+    state.demoShown = true;                       // nothing may rebuild the board from here on
+  }
+  hud.replayTo = replayTo;
+
   if (params.get("keymap")) {
-    const demo = params.get("demo");
-    const script = demo === null ? Promise.resolve(null)
-                                 : fetch(params.get("script") || "demo.json").then(r => r.json());
+    const demo = params.get("demo"), timeline = params.get("timeline");
+    const script = demo !== null ? fetch(params.get("script") || "demo.json").then(r => r.json())
+                 : timeline ? fetch(timeline).then(r => r.json()) : Promise.resolve(null);
     Promise.all([fetch(params.get("keymap")).then(r => r.json()), script])
-      .then(([data, script]) => { hud.load(data); if (script) demoFrame(script, Number(demo)); })
+      .then(([data, script]) => {
+        if (timeline && demo === null) { replayTo(data, script, Number(params.get("at")) || 0); return; }
+        hud.load(data);
+        if (script) demoFrame(script, Number(demo));
+      })
       .catch(e => console.error(e));
   }
   if (location.protocol.startsWith("http")) window.addEventListener("keydown", e => {

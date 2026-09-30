@@ -93,3 +93,9 @@ socket to play into; `zmk-layer-hud demo --play` is the way to watch a script th
 For a GIF, `host/play.py --stills` gives the frames `docs/make-gif.sh` renders. Frames are
 themselves, text is a frame per keystroke with the strip it has typed so far, and a pause is
 nothing. A script of frames alone renders exactly as it did before text could be typed in one.
+
+`docs/make-gif.sh --live` renders moments instead. `host/play.py --capture` gives the page the
+script as played, and `index.html?keymap=…&timeline=…&at=T` replays it on a clock of the page's
+own, every timer the page sets firing in its turn, and stops at T. Taken every 1/fps of a second,
+those frames show what a still cannot: a key's glow fading, a combo's pill coming and going, the
+speed on the bar.

@@ -125,12 +125,16 @@ sample:
 
 ```bash
 bash ~/.local/share/zmk-layer-hud/docs/make-gif.sh --out demo.gif
+bash ~/.local/share/zmk-layer-hud/docs/make-gif.sh --live --script docs/demo-type.json --out typing.gif
 ```
 
-The animation at the top of this page is `--config config/diamond.yaml --script
-docs/demo-vim.json`. `&demo=N` in the page's URL renders frame N alone (`&script=<url>`, or
-`demo.json` beside the page). The browser needs unix sockets, so this cannot run inside a sandbox
-that denies them.
+A frame is a still by default, one per step. With `--live` it is a moment: the script played on a
+clock of the page's own and stopped every 1/8 s (`--fps`), so the GIF shows the glow fading, the
+pills coming and going and the speed on the bar. The animation at the top of this page is `--config
+config/diamond.yaml --script docs/demo-vim.json`. In the page's URL, `&demo=N` renders still N
+alone (`&script=<url>`, or `demo.json` beside the page), and `&timeline=<url>&at=T` the moment T
+ms in (`host/play.py --capture`). The browser needs unix sockets, so this cannot run inside a
+sandbox that denies them.
 
 ### Updating and uninstalling
 
