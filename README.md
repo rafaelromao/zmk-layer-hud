@@ -227,6 +227,7 @@ zmk-layer-hud session new             # start another; the one before stays save
 zmk-layer-hud session list
 zmk-layer-hud session load colemak-1  # make it the active one again: typing adds to it
 zmk-layer-hud heatmap session         # the keys glow with how often each one was pressed
+zmk-layer-hud session history         # the active one, day by day; --all adds every session's days up
 ```
 
 `save` on a session that already has a name keeps it as it is and goes on in a copy under the
@@ -253,8 +254,9 @@ The steps and colours are the HUD's own. `-o -` writes the SVG to stdout.
 
 A session is kept in `$ZMKHUD_STATE/sessions/<name>.json` (the directory 0700, each file 0600),
 and it holds counts: how often each key was pressed on each layer, each combo, how many characters
-were typed and deleted, the time spent typing and the best speed. Never what was typed, in what
-order, or when. Nothing leaves the machine. Only the keyboard's own typing is counted: `poke` and
+were typed and deleted, the time spent typing and the best speed, each key's average time, and
+the same totals again for each day it was typed on. Never what was typed, in what order, or when
+within a day. Nothing leaves the machine. Only the keyboard's own typing is counted: `poke` and
 the demo light the board and time their typing, and a session never sees them. `feed.sessions: 0`
 in the config (or `feed --no-sessions`) keeps no files, and `uninstall --purge` removes them.
 

@@ -16,6 +16,7 @@ verbs that do need the venv re-exec into it first; see `NEEDS_VENV` and `needs_v
 """
 
 import argparse
+import datetime
 import os
 import platform
 import re
@@ -329,6 +330,24 @@ def duration(ms):
     return f"{s // 3600}h{(s % 3600) // 60:02d}m"
 
 
+def numbers_line(t):
+    """A day's numbers (session.history), on one line."""
+    parts = [f"{t['presses']:,} keys"]
+    if t["combo_share"] is not None:
+        parts.append(f"{round(t['combo_share'] * 100)}% combos")
+    parts.append(f"{t['chars']:,} typed")
+    if t["accuracy"] is not None:
+        parts.append(f"{round(t['accuracy'] * 100)}% accurate")
+    parts.append(duration(t["active_ms"]) + " of typing")
+    if t["wpm"] is not None:
+        parts.append(f"{t['wpm']} wpm")
+    if t["peak_wpm"]:
+        parts.append(f"top {t['peak_wpm']}")
+    if t["sfb"] is not None:
+        parts.append(f"{t['sfb'] * 100:.1f}% same-finger")
+    return " · ".join(parts)
+
+
 def session_line(s, mod):
     t = mod.summary(s)
     parts = [f"{t['presses']:,} keys", f"{t['combos']:,} combos", f"{t['chars']:,} typed",
@@ -351,7 +370,7 @@ def cmd_session(args):
     if act == "rename-layer" and not (name and args.other):
         raise Fail("`session rename-layer` needs the layer's old name and its new one")
     if args.other and act != "rename-layer":
-        raise Fail(f"`session {act}` takes {'one name' if act in ('new', 'save', 'load', 'delete', 'export') else 'no name'}")
+        raise Fail(f"`session {act}` takes {'one name' if act in ('new', 'save', 'load', 'delete', 'export', 'history') else 'no name'}")
     try:
         if act == "status":
             st, s = mod.status(d)
@@ -373,6 +392,25 @@ def cmd_session(args):
                       f" moved from {name} to {args.other}")
         elif act == "export":
             return session_export(args, mod, d)
+        elif act == "history":
+            every = mod.sessions(d)
+            if args.all:
+                title, s = "every session", mod.all_days(every.values())
+            elif name:
+                if name not in every:
+                    raise Fail(f"there is no session called {name}; `zmk-layer-hud session list` shows them")
+                title, s = name, every[name]
+            else:
+                _, s = mod.status(d)
+                title = s["name"]
+            days = mod.history(s)
+            if not days:
+                print(f"{title}: no day recorded yet (a session keeps its days from this version on)")
+                return 0
+            print(f"{title}, by day:")
+            for day, t in days:
+                weekday = datetime.date.fromisoformat(day).strftime("%a")
+                print(f"  {day} {weekday}  {numbers_line(t)}")
         elif act == "list":
             st, _ = mod.status(d)
             every = mod.sessions(d)
@@ -1050,13 +1088,15 @@ def build_parser():
 
     s = add("session", "the typing sessions: the active one, naming it, starting or loading another")
     s.add_argument("action", nargs="?", default="status",
-                   choices=("status", "list", "new", "save", "load", "reset", "delete", "rename-layer", "export"),
+                   choices=("status", "list", "new", "save", "load", "reset", "delete", "rename-layer", "export",
+                            "history"),
                    help="status (default), list, new [NAME], save NAME, load NAME, reset, delete NAME, "
-                        "rename-layer OLD NEW, export [NAME]")
-    s.add_argument("name", nargs="?", help="the session, for new, save, load, delete and export (default: the active "
-                                           "one); the layer, for rename-layer")
+                        "rename-layer OLD NEW, export [NAME], history [NAME]")
+    s.add_argument("name", nargs="?", help="the session, for new, save, load, delete, export and history (default: "
+                                           "the active one); the layer, for rename-layer")
     s.add_argument("other", nargs="?", help="the layer's new name, for rename-layer")
-    s.add_argument("--all", action="store_true", help="rename-layer in every session, not only the active one")
+    s.add_argument("--all", action="store_true", help="rename-layer in every session, not only the active one; "
+                                                      "history: every session's days added up")
     s.add_argument("--yes", action="store_true", help="do not ask before reset or delete")
     s.add_argument("--mode", choices=("session", "physical", "speed"), default="session",
                    help="export: the presses on each layer (default), every layer's together, or each key's time")

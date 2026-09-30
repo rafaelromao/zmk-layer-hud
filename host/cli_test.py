@@ -185,6 +185,24 @@ class Shim(unittest.TestCase):
             self.assertEqual(0, moved.returncode, moved.stderr)
             self.assertNotIn("not shown", run("session").stdout)
 
+    def test_a_sessions_days(self):
+        import datetime
+        import session
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {**os.environ, "ZMKHUD_STATE": tmp}
+            run = lambda *a: subprocess.run(["sh", SHIM] + list(a), capture_output=True, text=True, env=env)
+            self.assertIn("no day recorded yet", run("session", "history").stdout)
+            _, s = session.status(os.path.join(tmp, "sessions"))
+            session.add_counts(os.path.join(tmp, "sessions"), s["id"], s["gen"],
+                               {"presses": {"base": {"0": 1200}}, "combos": {}, "chars": 1000, "active_ms": 600000,
+                                "active_net": 950})
+            out = run("session", "history")
+            self.assertEqual(0, out.returncode, out.stderr)
+            self.assertIn(f"{datetime.date.today().isoformat()} ", out.stdout)
+            self.assertIn("1,200 keys", out.stdout)
+            self.assertIn("19 wpm", out.stdout)                   # 950 characters, 190 words, in 10 minutes
+            self.assertIn("every session, by day", run("session", "history", "--all").stdout)
+
     @unittest.skipUnless(os.path.exists(os.path.join(ROOT, ".venv", "bin", "python3")), "export runs in the venv")
     def test_a_sessions_heatmap_is_drawn_to_a_file(self):
         import session

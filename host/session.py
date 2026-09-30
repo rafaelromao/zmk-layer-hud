@@ -6,7 +6,8 @@ ledger), the host adds those counts to the active session, and `zmk-layer-hud se
 starts another, or loads one back -- after which typing adds to that one again, the way a tmux
 session is reattached. A session holds counts and nothing else: how often each key was pressed
 on each layer, each combo, how many characters were typed and deleted, the time spent typing and
-the best speed. Never what was typed, in what order, or when.
+the best speed, how long each key takes, and those totals again for each day it typed on. Never
+what was typed, in what order, or when within a day.
 
     $ZMKHUD_STATE/sessions/       (default ~/.local/state/zmk-layer-hud/sessions; 0700)
         <name>.json               one session (0600)
@@ -84,7 +85,7 @@ def empty(name, named):
     t = _now()
     return {"version": VERSION, "id": os.urandom(8).hex(), "gen": 0, "name": name, "named": bool(named),
             "created": t, "updated": t, "keyboards": [], "keymap": "", "layers": [],
-            **{kind: {} for kind in MAPS}, "totals": dict({k: 0 for k in TOTALS}, peak_wpm=0)}
+            **{kind: {} for kind in MAPS}, "totals": dict({k: 0 for k in TOTALS}, peak_wpm=0), "days": {}}
 
 
 def is_empty(s):
@@ -168,9 +169,9 @@ def read_session(path, log=None):
     s.setdefault("keyboards", [])
     s.setdefault("keymap", "")
     s.setdefault("layers", [])
-    for kind in MAPS:
+    for kind in MAPS + ("days",):
         if not isinstance(s.get(kind), dict):
-            s[kind] = {}             # a session from before the key times were kept
+            s[kind] = {}             # a session from before the key times, or the days, were kept
     for k in TOTALS + ("peak_wpm",):
         s["totals"].setdefault(k, 0)
     return s
@@ -260,6 +261,7 @@ def add_counts(directory, sid, gen, delta, keyboards=(), keymap="", log=None, la
             s["layers"] = list(layers)
         if delta.get("presses") or delta.get("combos") or any(delta.get(k) for k in TOTALS):
             s["updated"] = _now()        # when something was typed, not when the layers were written
+            add_day(s, delta)
         write_json(path_of(directory, s["name"]), s)
         return s
 
@@ -415,15 +417,64 @@ def rename_layer(directory=None, old=None, new=None, every=False, log=None):
         return moved
 
 
-def summary(s):
-    """The numbers `zmk-layer-hud session` prints for a session."""
-    t = s["totals"]
-    presses = sum(n for m in s["presses"].values() for n in m.values())
-    combos = sum(n for m in s["combos"].values() for n in m.values())
+def _numbers(presses, combos, members, t):
+    """The numbers the commands print, from keys, combos (and their keys) and the totals."""
     wpm = round(t["active_net"] / 5 / (t["active_ms"] / 60000)) if t.get("active_ms", 0) >= 10000 else None
     sfb = t["sfb"] / t["bigrams"] if t.get("bigrams", 0) >= SFB_MIN else None
-    return {"presses": presses, "combos": combos, "chars": t["chars"], "deleted": t["deleted"], "sfb": sfb,
-            "active_ms": t["active_ms"], "wpm": wpm, "peak_wpm": t.get("peak_wpm") or None}
+    strokes = presses - members + combos            # a combo is one keystroke made with several keys
+    return {"presses": presses, "combos": combos, "chars": t.get("chars", 0), "deleted": t.get("deleted", 0),
+            "sfb": sfb, "active_ms": t.get("active_ms", 0), "wpm": wpm, "peak_wpm": t.get("peak_wpm") or None,
+            "combo_share": combos / strokes if strokes > 0 else None,
+            "accuracy": max(0.0, 1 - t.get("deleted", 0) / t["chars"]) if t.get("chars") else None}
+
+
+def _combo_counts(s):
+    combos = sum(n for m in s["combos"].values() for n in m.values())
+    members = sum(n * len(k.split(",")) for m in s["combos"].values() for k, n in m.items())
+    return combos, members
+
+
+def summary(s):
+    """The numbers `zmk-layer-hud session` prints for a session."""
+    presses = sum(n for m in s["presses"].values() for n in m.values())
+    return _numbers(presses, *_combo_counts(s), s["totals"])
+
+
+# ---------- days ----------
+
+def _today():
+    return datetime.date.today().isoformat()     # the typist's own day, not UTC's
+
+
+def add_day(s, delta, day=None):
+    """What a batch added, into the session's day: its totals and nothing by key, so a day costs a
+    line in the file however much was typed on it."""
+    d = s.setdefault("days", {}).setdefault(day or _today(), {})
+    d["presses"] = d.get("presses", 0) + sum(n for m in (delta.get("presses") or {}).values() for n in m.values())
+    for m in (delta.get("combos") or {}).values():
+        for k, n in m.items():
+            d["combos"] = d.get("combos", 0) + n
+            d["combo_keys"] = d.get("combo_keys", 0) + n * len(k.split(","))
+    for k in TOTALS:
+        d[k] = d.get(k, 0) + (delta.get(k) or 0)
+    d["peak_wpm"] = max(d.get("peak_wpm", 0), delta.get("peak_wpm") or 0)
+
+
+def history(s):
+    """[(day, numbers)], oldest first: what the session typed each day it typed."""
+    return [(day, _numbers(d.get("presses", 0), d.get("combos", 0), d.get("combo_keys", 0), d))
+            for day, d in sorted((s.get("days") or {}).items())]
+
+
+def all_days(every):
+    """Every session's days added up, as one session's (for `session history --all`)."""
+    out = {"days": {}}
+    for s in every:
+        for day, d in (s.get("days") or {}).items():
+            into = out["days"].setdefault(day, {})
+            for k, n in d.items():
+                into[k] = max(into.get(k, 0), n) if k == "peak_wpm" else into.get(k, 0) + n
+    return out
 
 
 # ---------- the feed's side ----------

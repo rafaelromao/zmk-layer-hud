@@ -290,6 +290,38 @@ class StoreTest(Base):
         session.rename_layer(self.dir, "base", "alpha")
         self.assertEqual(({"alpha": {"3": 450}}, {"alpha": {"3": 3}}), (self.active()["ms"], self.active()["timed"]))
 
+    def test_each_day_keeps_its_own_totals(self):
+        _, s = session.status(self.dir)
+        real = session._today
+        try:
+            session._today = lambda: "2026-09-29"
+            session.add_counts(self.dir, s["id"], s["gen"], counts({"base": {"3": 5}}, {"base": {"1,2": 2}},
+                                                                   chars=40, deleted=2, active_ms=12000, active_net=38,
+                                                                   peak_wpm=70))
+            session._today = lambda: "2026-09-30"
+            session.add_counts(self.dir, s["id"], s["gen"], counts({"base": {"3": 1}}, chars=4, peak_wpm=50))
+            session.add_counts(self.dir, s["id"], s["gen"], counts(), layers=["base"])   # typed nothing
+        finally:
+            session._today = real
+        s = self.active()
+        self.assertEqual(["2026-09-29", "2026-09-30"], sorted(s["days"]))
+        (_, one), (_, two) = session.history(s)
+        self.assertEqual((5, 2, 40, 70), (one["presses"], one["combos"], one["chars"], one["peak_wpm"]))
+        self.assertEqual(round(38 / 5 / (12000 / 60000)), one["wpm"])
+        self.assertAlmostEqual(2 / (5 - 4 + 2), one["combo_share"])    # 5 keys, 4 of them in two chords
+        self.assertAlmostEqual(1 - 2 / 40, one["accuracy"])
+        self.assertEqual((1, 4, 50), (two["presses"], two["chars"], two["peak_wpm"]))
+        # Every session's days added up.
+        session.save(self.dir, "week1")
+        session.new(self.dir, "week2")
+        _, w2 = session.status(self.dir)
+        session.add_counts(self.dir, w2["id"], w2["gen"], counts({"base": {"3": 7}}, chars=9, peak_wpm=90))
+        both = dict(session.history(session.all_days(session.sessions(self.dir).values())))
+        today = session._today()
+        self.assertEqual(7 + (1 if today == "2026-09-30" else 0), both[today]["presses"])
+        self.assertEqual(90, both[today]["peak_wpm"])
+        self.assertTrue(session.is_empty(session.reset(self.dir)) and not self.active()["days"])
+
     def test_a_session_from_before_key_times_reads(self):
         _, s = session.status(self.dir)
         for kind in ("ms", "timed"):
