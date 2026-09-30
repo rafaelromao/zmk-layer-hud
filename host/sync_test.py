@@ -6,6 +6,8 @@ layer order and names, the mapping that is a human's to make, the coverage, the 
 drawing of the keymap is drawn on, the files and how they are written, and the delta a sync reports.
 """
 
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -377,6 +379,21 @@ combos:
 
 
 @unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
+class ResolveSource(unittest.TestCase):
+    def test_a_word_is_neither_a_directory_nor_a_repository(self):
+        with mock.patch.object(sync, "run") as run:
+            for spec in ("help", "../nowhere/keymap.yaml", "github.com"):
+                with self.assertRaisesRegex(sync.SyncError, "neither a directory nor a repository"):
+                    sync.resolve_source(spec)
+        run.assert_not_called()
+
+    def test_a_pasted_github_path_is_cloned_over_https(self):
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(sync, "CACHE", d), \
+                mock.patch.object(sync, "run") as run:
+            sync.resolve_source("github.com/you/zmk-config")
+        self.assertEqual("https://github.com/you/zmk-config", run.call_args[0][0][-2])
+
+
 class Import(unittest.TestCase):
     def setUp(self):
         self.d = tempfile.mkdtemp()
@@ -438,6 +455,88 @@ class Import(unittest.TestCase):
         self.assertEqual(40, again["zmk"]["combo_term_ms"])
         self.assertEqual("github.com/you/zmk-config", again["sources"]["repo"])
         self.assertEqual("z", again["drawing"]["layers"]["Base"][0]["tap"])
+
+    def test_the_configs_own_keymap_drawer_file_is_taken_as_the_drawing(self):
+        self.run_import(os.path.join(self.d, "board.yaml"))
+        with open(self.defs, encoding="utf-8") as f:
+            self.assertEqual({"drawing": "board.yaml"}, json.load(f)["sources"])
+
+    def test_another_keymap_drawer_file_is_not_cloned_but_explained(self):
+        other = write(self.d, "other.yaml", BOARD_YAML)
+        with mock.patch.object(sync, "run") as run:
+            with self.assertRaisesRegex(sync.SyncError, "name it as `keymap: "):
+                self.run_import(other)
+        run.assert_not_called()
+        self.assertFalse(os.path.exists(self.defs))
+
+    def as_if_a_repo_was_imported(self):
+        self.run_import()
+        with open(self.defs, encoding="utf-8") as f:
+            defs = json.load(f)
+        defs["zmk"] = {"layers": {"0": {"name": "BASE", "drawer": "Base", "label": "Base"}}, "combo_term_ms": 40}
+        defs["sources"].update(repo="github.com/you/zmk-config", keyboard="b")
+        with open(self.defs, "w", encoding="utf-8") as f:
+            json.dump(defs, f)
+        return os.stat(self.defs).st_mtime_ns
+
+    def pristine(self, **kw):
+        sync.do_import(None, None, self.config, quiet=True, fetch=False, pristine=True, **kw)
+        with open(self.defs, encoding="utf-8") as f:
+            return json.load(f)
+
+    def test_pristine_with_no_one_to_ask_lists_what_it_would_drop_and_writes_nothing(self):
+        before = self.as_if_a_repo_was_imported()
+        with self.assertRaisesRegex(sync.SyncError, r"github\.com/you/zmk-config(.|\n)*--keep-custom"):
+            self.pristine()
+        self.assertEqual(before, os.stat(self.defs).st_mtime_ns)
+
+    def test_pristine_drop_forgets_what_an_earlier_repo_import_said(self):
+        self.as_if_a_repo_was_imported()
+        again = self.pristine(keep=False)
+        self.assertEqual({"drawing": "board.yaml"}, again["sources"])
+        self.assertNotIn("zmk", again)
+
+    def test_pristine_keep_keeps_just_that_and_redraws_the_rest(self):
+        self.as_if_a_repo_was_imported()
+        write(self.d, "board.yaml", BOARD_YAML.replace("[a,", "[z,"))
+        again = self.pristine(keep=True)
+        self.assertEqual(40, again["zmk"]["combo_term_ms"])
+        self.assertEqual("github.com/you/zmk-config", again["sources"]["repo"])
+        self.assertEqual("z", again["drawing"]["layers"]["Base"][0]["tap"])
+
+    def test_pristine_asks_when_it_can(self):
+        self.as_if_a_repo_was_imported()
+        asked = []
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            again = self.pristine(ask=lambda q: asked.append(q) or q.startswith("keep 2"))
+        self.assertEqual(["keep 1? [Y/n] ", "keep 2? [Y/n] "], asked)   # one at a time
+        self.assertIn("2. the repo `sync` reads again: github.com/you/zmk-config", err.getvalue())
+        self.assertNotIn("zmk", again)                                   # 1 dropped
+        self.assertEqual("github.com/you/zmk-config", again["sources"]["repo"])   # 2 kept
+
+    def test_pristine_keeps_the_items_it_is_told(self):
+        self.as_if_a_repo_was_imported()
+        again = self.pristine(keep={1})
+        self.assertEqual(40, again["zmk"]["combo_term_ms"])
+        self.assertNotIn("repo", again["sources"])
+
+    def test_pristine_refuses_an_item_it_did_not_list(self):
+        before = self.as_if_a_repo_was_imported()
+        with self.assertRaisesRegex(sync.SyncError, "names 3, and the list has 2"):
+            self.pristine(keep={3})
+        self.assertEqual(before, os.stat(self.defs).st_mtime_ns)
+
+    def test_pristine_with_nothing_carried_asks_nothing(self):
+        self.run_import()
+        self.pristine(ask=lambda q: self.fail("asked"))
+
+    def test_pristine_clones_a_repo_again(self):
+        with tempfile.TemporaryDirectory() as cache, mock.patch.object(sync, "CACHE", cache), \
+                mock.patch.object(sync, "run") as run:
+            os.makedirs(os.path.join(cache, "zmk-config", ".git"))
+            sync.resolve_source("github.com/you/zmk-config", fresh=True)
+            self.assertEqual("clone", run.call_args[0][0][1])
+            self.assertFalse(os.path.exists(os.path.join(cache, "zmk-config", ".git")))
 
     def test_a_config_that_is_not_there_is_started_from_the_example(self):
         config = os.path.join(self.d, "new", "config.yaml")

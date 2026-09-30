@@ -134,6 +134,22 @@ class SyncArgv(unittest.TestCase):
         args.func(args)
         return self.seen[-1]
 
+    def test_help_after_a_verb_is_its_help_not_a_repository(self):
+        with contextlib.redirect_stdout(io.StringIO()) as out, self.assertRaises(SystemExit):
+            cli.main(["import", "help"])
+        self.assertIn("usage:", out.getvalue())
+        self.assertEqual([], self.seen)
+
+    def test_import_pristine(self):
+        self.assertEqual(["import", "--pristine"], self.run_cli(["import", "--pristine"]))
+
+    def test_import_keeps_what_it_is_told(self):
+        self.assertEqual(["import", "--pristine", "--keep-custom"], self.run_cli(["import", "--pristine", "--keep-custom"]))
+        self.assertEqual(["import", "--pristine", "--keep-custom=1,3"],
+                         self.run_cli(["import", "--pristine", "--keep-custom", "1,3"]))
+        with self.assertRaises(cli.Fail):
+            self.run_cli(["import", "--pristine", "--keep-custom", "github.com/you/keyboards"])
+
     def test_import_minimal(self):
         self.assertEqual(["import", "github.com/you/keyboards"],
                          self.run_cli(["import", "github.com/you/keyboards"]))

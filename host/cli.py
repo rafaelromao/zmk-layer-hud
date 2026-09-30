@@ -300,6 +300,16 @@ def cmd_sync(args, verb):
             argv.append(args.source)
         if args.keyboard:
             argv += ["--keyboard", args.keyboard]
+        for flag in ("pristine", "drop_custom"):
+            if getattr(args, flag):
+                argv.append("--" + flag.replace("_", "-"))
+        if args.keep_custom is True:
+            argv.append("--keep-custom")
+        elif args.keep_custom:
+            if not re.fullmatch(r"[\d,\s]+", args.keep_custom):
+                raise Fail(f"--keep-custom takes the numbers of the items to keep, like 1,3, not {args.keep_custom!r} "
+                           "(a repo goes before it: `import REPO --pristine --keep-custom`)")
+            argv.append(f"--keep-custom={args.keep_custom}")
     if args.config:
         argv += ["--config", args.config]
     if args.quiet:
@@ -1257,11 +1267,20 @@ def build_parser():
 
     s = add("import", "write the HUD's definitions: the drawing, and what a ZMK repo's keymap says of it")
     s.add_argument("source", metavar="REPO", nargs="?",
-                   help="a GitHub URL, or a path to a working copy (none: draw from `keymap:` alone)")
+                   help="a GitHub URL, a path to a working copy, or the keymap-drawer YAML the config names "
+                        "(none: draw from `keymap:` alone)")
     s.add_argument("--keyboard", help="which keyboard in that repo")
     s.add_argument("--config", help="config file (default: $ZMKHUD_CONFIG or ~/.config/...)")
     s.add_argument("--quiet", action="store_true", help="say nothing but errors")
     s.add_argument("--no-fetch", action="store_true", help="fetch no glyphs: use keymap-drawer's cache only")
+    s.add_argument("--pristine", action="store_true",
+                   help="from scratch: ignore what earlier imports left (the repo they recorded, drafted "
+                        "layer mappings, a cached clone) and read only what is given now")
+    s.add_argument("--keep-custom", nargs="?", const=True, default=None, metavar="N,M",
+                   help="with --pristine: keep what only an earlier import had and redo the rest -- all of "
+                        "it, or just the items numbered N,M in the list it prints")
+    s.add_argument("--drop-custom", action="store_true",
+                   help="with --pristine: drop that too, without asking")
     s.set_defaults(func=lambda a: cmd_sync(a, "import"))
 
     s = add("sync", "write the definitions again from the same sources, and say what changed")
@@ -1321,6 +1340,12 @@ def main(argv=None):
         except Fail as e:
             warn(f"zmk-layer-hud {argv[0]}: {e}")
             return 1
+    # `help` is the word people type, as a verb and after one: `zmk-layer-hud import help` would
+    # otherwise reach import as the repository to clone.
+    if argv == ["help"]:
+        argv = ["--help"]
+    elif len(argv) == 2 and argv[1] == "help":
+        argv = [argv[0], "--help"]
     parser = build_parser()
     args = parser.parse_args(argv)
     if not getattr(args, "cmd", None):

@@ -13,6 +13,9 @@ again from the same sources and says what changed. They hold two things:
     zmk-layer-hud import github.com/you/zmk-config       # or a path to a working copy
     zmk-layer-hud import ~/zmk-config --keyboard corne   # which keyboard, when it holds several
     zmk-layer-hud import                                 # no repo: draw from `keymap:` alone
+    zmk-layer-hud import --pristine                      # from scratch: forget what earlier imports left
+    zmk-layer-hud import --pristine --keep-custom        # ...but keep what only they had, and redo the rest
+    zmk-layer-hud import --pristine --keep-custom=2      # ...just the second thing it lists
     zmk-layer-hud sync                                   # read the recorded sources again
 
 This is the only part of zmk-layer-hud that reads the keymap-drawer file, the drawer config, the ZMK
@@ -53,18 +56,25 @@ class SyncError(Exception):
 
 # ---------- the repo ----------
 
-def resolve_source(spec):
+def resolve_source(spec, fresh=False):
     """A working copy to read. A path is used where it is; a URL is cloned into the cache and
-    fetched on every later sync, so a sync sees what was pushed."""
+    fetched on every later sync, so a sync sees what was pushed. fresh: clone it again."""
     local = os.path.expanduser(spec)
     if os.path.isdir(local):
         return os.path.abspath(local), "path"
-    url = spec if "://" in spec or spec.startswith("git@") else f"https://{spec}"
+    if "://" in spec or spec.startswith("git@"):
+        url = spec
+    elif re.fullmatch(r"[\w-]+(\.[\w-]+)+(/[\w.-]+){2,}/?", spec):
+        url = f"https://{spec}"         # github.com/owner/repo, the way people paste it
+    else:
+        raise SyncError(f"{spec} is neither a directory nor a repository (github.com/owner/repo, or a URL)")
     if not shutil.which("git"):
         raise SyncError("git is needed to read a repository by URL; pass a path to a working copy instead")
     name = re.sub(r"[^A-Za-z0-9_.-]", "_", url.rstrip("/").removesuffix(".git").split("/")[-1])
     dest = os.path.join(CACHE, name)
     os.makedirs(CACHE, exist_ok=True)
+    if fresh and os.path.isdir(dest):
+        shutil.rmtree(dest)             # ours: the cache holds nothing but these clones
     if os.path.isdir(os.path.join(dest, ".git")):
         run(["git", "-C", dest, "fetch", "--quiet", "--depth", "1", "origin", "HEAD"])
         run(["git", "-C", dest, "checkout", "--quiet", "--force", "FETCH_HEAD"])
@@ -673,8 +683,41 @@ def new_config(config_path):
 
 # ---------- the commands ----------
 
-def do_import(source, keyboard, config_path, quiet=False, fetch=True):
-    """Write the definitions (and, from a repo, the readable record) for one config."""
+def decide(carried, keep, ask, quiet):
+    """Which of what only an earlier import had --pristine keeps (do_import): a set of indexes into
+    carried. keep: True, all of it; False, none; a set of numbers as listed (from 1), those; None,
+    ask of each in turn, or refuse with the list when there is no one to ask."""
+    lines = [f"  {n}. {what}" for n, (what, _) in enumerate(carried, 1)]
+    head = "--pristine: an earlier import left this, and the sources given now would not make it again:"
+    if keep is None:
+        if ask is None:
+            raise SyncError("\n".join([head] + lines + [
+                "nothing was written: --keep-custom keeps all of these and makes the rest anew, "
+                "--keep-custom=1,3 just those, --drop-custom none"]))
+        print("\n".join([head] + lines), file=sys.stderr)
+        kept = {i for i in range(len(carried)) if ask(f"keep {i + 1}? [Y/n] ")}
+    elif keep is True or keep is False:
+        kept = set(range(len(carried))) if keep else set()
+    else:
+        wrong = sorted(n for n in keep if not 1 <= n <= len(carried))
+        if wrong:
+            raise SyncError("\n".join([head] + lines + [
+                f"nothing was written: --keep-custom names {', '.join(map(str, wrong))}, and the list has "
+                f"{len(carried)}"]))
+        kept = {n - 1 for n in keep}
+    say(quiet, f"--pristine: kept {len(kept)} of {len(carried)} thing(s) only an earlier import had"
+               + (f" ({', '.join(str(i + 1) for i in sorted(kept))})" if kept and len(kept) < len(carried) else ""))
+    return kept
+
+
+def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=False, keep=None, ask=None):
+    """Write the definitions (and, from a repo, the readable record) for one config.
+
+    pristine: from what is given now and nothing else -- not the definitions or the record an
+    earlier import left, not a cached clone. What those carried that the sources given now would
+    not make again (carried(), below) is said first; keep=True keeps just that and makes the rest
+    anew, keep=False drops it, and keep=None asks `ask` (a question -> yes/no), or refuses with the
+    list when there is no one to ask. config.yaml is never written either way."""
     config_path = os.path.abspath(os.path.expanduser(config_path))
     if not os.path.exists(config_path):
         new_config(config_path)
@@ -684,12 +727,24 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True):
         raise SyncError(f"{config_path}: expected settings, one per line (`name: value`)")
     log = (lambda msg: say(quiet, msg))
     defs_path, rec_path = definitions_path(config_path), imported_path(config_path)
-    previous = read_previous(defs_path)
-    before_rec = read_imported(rec_path)
+    old_defs, old_rec = read_previous(defs_path), read_imported(rec_path)
+    previous = None if pristine else old_defs
+    before_rec = None if pristine else old_rec
     sources, zmk, undecided, rec = {}, None, [], None
+    carried = []                          # (what, why it goes, how to keep it), for --pristine
+
+    if source and os.path.isfile(os.path.expanduser(source)):
+        # A keymap-drawer YAML, not a repo. The config is what says where the drawing lives -- sync
+        # reads it again from there -- so the file is taken only when that is what it already names.
+        given = os.path.realpath(os.path.expanduser(source))
+        named = cfg.get("keymap") and keymap_mod.expand(cfg["keymap"], os.path.dirname(config_path))
+        if not named or os.path.realpath(named) != given:
+            raise SyncError(f"to draw from {source}, name it as `keymap: {source}` in {config_path} "
+                            "and run `zmk-layer-hud import`")
+        source = None
 
     if source:
-        root, kind = resolve_source(source)
+        root, kind = resolve_source(source, fresh=pristine)
         keymap_path = find_keymap(root, keyboard)
         board = os.path.basename(keymap_path)[: -len(".keymap")]
         say(quiet, f"reading {os.path.relpath(keymap_path, root)}")
@@ -729,6 +784,18 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True):
                 if isinstance(entry, dict) and "drawer" in entry:
                     previous_map.setdefault(str(i), {}).update({"drawer": entry["drawer"], "label": entry.get("label")})
             layers, undecided = draft_layers(names, layers_drawn, previous_map)
+            if pristine:
+                # Mappings an earlier import settled for layers the config does not map: a fresh
+                # draft guesses them from names, or leaves them undecided.
+                old_map = (old_rec or {}).get("layers") or ((old_defs or {}).get("zmk") or {}).get("layers") or {}
+                for i, entry in sorted(layers.items(), key=lambda kv: int(kv[0])):
+                    was = old_map.get(i) or {}
+                    if i in previous_map or "drawer" not in was or was.get("name", entry["name"]) != entry["name"]:
+                        continue
+                    if (was.get("drawer"), was.get("label")) != (entry["drawer"], entry["label"]):
+                        carried.append((f"layer {i} {entry['name']}: drawer {was.get('drawer')}, label {was.get('label')!r} "
+                                        f"(a fresh draft: {entry['drawer']}, {entry['label']!r})",
+                                        ("layer", i, was)))
             parsed = parse_keymap(keymap_path)
             coverage = combo_coverage(parsed, layers, positions, layers_drawn, drawn_combos)
         else:
@@ -738,6 +805,13 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True):
             layers = {str(i): {"name": l["name"], "drawer": next(it) if l["drawn"] else None,
                                "label": l["name"].title()} for i, l in enumerate(zlayers)}
             coverage = []
+        kept = [carried[n] for n in sorted(decide(carried, keep, ask, quiet))] if carried else []
+        if kept:
+            for _, (_kind, i, was) in kept:
+                layers[i].update(drawer=was.get("drawer"), label=was.get("label") or layers[i]["label"])
+            undecided = [u for u in undecided if str(u[0]) not in {c[1][1] for c in kept}]
+            if cfg.get("keymap"):
+                coverage = combo_coverage(parsed, layers, positions, layers_drawn, drawn_combos)
         zmk = {"layers": layers, "combo_term_ms": combo_term(keymap_path),
                "combo_idle_ms": combo_idle(keymap_path, dts), "combos": coverage}
         rec = dict(zmk, source=sources["repo"], keyboard=board)
@@ -746,7 +820,21 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True):
         # A drawing alone: what an earlier repo import said of the keymap still holds, and where it
         # came from is kept, so a later sync reads that repo again.
         zmk = (previous or {}).get("zmk") or (before_rec and {k: v for k, v in before_rec.items() if v})
-        repo, kb = recorded(config_path)
+        repo, kb = (None, None) if pristine else recorded(config_path)
+        if pristine:
+            old_zmk = (old_defs or {}).get("zmk") or (old_rec and {k: v for k, v in old_rec.items() if v})
+            old_repo, old_kb = recorded(config_path)
+            if old_zmk:
+                carried.append((f"what the import of {old_repo or 'a ZMK repo'} said of the keymap: its layer ids, "
+                                "combo term and combo layers", "zmk"))
+            if old_repo:
+                carried.append((f"the repo `sync` reads again: {old_repo}" + (f", keyboard {old_kb}" if old_kb else ""),
+                                "repo"))
+            kept = {carried[n][1] for n in decide(carried, keep, ask, quiet)} if carried else set()
+            if "zmk" in kept:
+                zmk = old_zmk
+            if "repo" in kept:
+                repo, kb = old_repo, old_kb
         sources.update({k: v for k, v in (("repo", repo), ("keyboard", kb)) if v})
 
     definitions = {"version": keymap_mod.DEFINITIONS_VERSION, "sources": sources, "source": short}
@@ -777,8 +865,8 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True):
         say(quiet, f"{len(undecided)} layer(s) have no drawing yet: "
                    + ", ".join(f"{i} {n!r}" for i, n, _ in undecided[:6])
                    + (" …" if len(undecided) > 6 else ""))
-    lines = (delta(before_rec, rec) if rec is not None else []) + drawing_delta((previous or {}).get("drawing"), d)
-    if previous is None and before_rec is None:
+    lines = (delta(old_rec, rec) if rec is not None else []) + drawing_delta((old_defs or {}).get("drawing"), d)
+    if old_defs is None and old_rec is None:
         say(quiet, "first import; nothing to compare against")
     elif previous is None:
         say(quiet, "definitions written: from now on the HUD reads its keymap from them, and nothing else")
@@ -817,6 +905,13 @@ def say(quiet, msg):
         print(msg, file=sys.stderr)
 
 
+def ask_tty(question):
+    try:
+        return input(question).strip().lower() in ("", "y", "yes")
+    except EOFError:
+        return False
+
+
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
     if not argv or argv[0] in ("-h", "--help"):
@@ -828,8 +923,15 @@ def main(argv=None):
         a = argv.pop(0)
         if a in ("--keyboard", "--config"):
             opts[a.lstrip("-")] = argv.pop(0) if argv else ""
-        elif a in ("--quiet", "--no-fetch"):
+        elif a in ("--quiet", "--no-fetch", "--pristine", "--keep-custom", "--drop-custom"):
             opts[a.lstrip("-")] = True
+        elif a.startswith("--keep-custom="):
+            try:
+                opts["keep-custom"] = {int(n) for n in a.split("=", 1)[1].split(",") if n.strip()}
+            except ValueError:
+                print(f"zmk-layer-hud {cmd}: --keep-custom= takes the numbers of the items to keep, like 1,3",
+                      file=sys.stderr)
+                return 2
         else:
             rest.append(a)
     fetch = not opts.get("no-fetch")
@@ -838,7 +940,10 @@ def main(argv=None):
             # The config given, or the one the HUD would read -- created there when there is none,
             # never swapped for another that happens to exist.
             config_path = opts.get("config") or os.environ.get("ZMKHUD_CONFIG") or keymap_mod.DEFAULT_CONFIG
-            return do_import(rest[0] if rest else None, opts.get("keyboard"), config_path, opts.get("quiet", False), fetch)
+            keep = opts.get("keep-custom") or (False if opts.get("drop-custom") else None)
+            return do_import(rest[0] if rest else None, opts.get("keyboard"), config_path, opts.get("quiet", False), fetch,
+                             pristine=opts.get("pristine", False) or keep is not None, keep=keep,
+                             ask=ask_tty if sys.stdin.isatty() else None)
         if cmd == "sync":
             config_path = opts.get("config") or keymap_mod.find_config()
             repo, keyboard = recorded(config_path)

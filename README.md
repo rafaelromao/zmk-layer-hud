@@ -162,8 +162,8 @@ one of them.
 | `doctor` | check this machine and say what is missing |
 | `setup` | prepare this machine: packages, virtualenv, config, permissions |
 | `update`, `uninstall` | fetch a newer tree; remove the tree and the command |
-| `keymap` | check the configured keymap-drawer YAML converts |
-| `import <repo>`, `sync` | take layer ids, key positions and combo layers from a ZMK repo |
+| `keymap` | check the HUD's own files load: the config and the definitions import wrote |
+| `import [<repo>]`, `sync` | write the definitions the HUD draws from: the drawing from `keymap:`, and layer ids and combo layers from a ZMK repo; `sync` does it again from the same sources. `import --pristine` starts over, and says first what only an earlier import had (`--keep-custom` keeps just that) |
 | `config path\|show\|edit\|link` | where the config is, what is in it, and linking one kept in a repo |
 | `demo [--play SCRIPT]` | serve the pages against a sample keymap, with no keyboard; type a demo script on them |
 | `poke`, `feed` | drive the HUD without a keyboard; run the feed alone |
