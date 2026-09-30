@@ -51,6 +51,8 @@ function nodeDriver(page) {
     async press(pos) { held.add(pos); page.hud.pressAt(pos); },
     async release(pos) { held.delete(pos); page.hud.releaseAt(pos); },
     async advance(ms) { page.clock.advance(ms); },
+    // Everything the page has counted (hud.js ledger), for the sweep's deltas.
+    async tally() { return page.hud.stats.local(); },
 
     /* Back to a clean page: let go of everything and run time past the longest thing hud.js
      * schedules (held_timeout_ms 5000), which also drains recentPos, the macro `recent` list and

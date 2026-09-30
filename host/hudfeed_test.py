@@ -360,6 +360,18 @@ class SentIn(unittest.TestCase):
         msg = dict(self.KEY)
         sent_in(msg)
         self.assertNotIn("combos", msg)
+        self.assertNotIn("sent", msg)
+
+    def test_every_kind_says_it_was_sent_in(self):
+        # A press sent in lights its key like the keyboard's own; this is the one field that
+        # keeps it out of a session.
+        for msg in (self.KEY, {"kind": "layers", "ids": [13]}, {"kind": "press", "pos": 16},
+                    {"kind": "release", "pos": 16}, {"kind": "device", "name": "x"}):
+            self.assertIs(sent_in(dict(msg))["sent"], True, msg["kind"])
+
+    def test_a_client_cannot_say_it_is_the_keyboard(self):
+        for said in (False, None, "no"):
+            self.assertIs(sent_in({**self.KEY, "sent": said})["sent"], True)
 
 
 if __name__ == "__main__":

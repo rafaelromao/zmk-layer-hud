@@ -10,10 +10,16 @@
  *                                      with `combos` (true/false) it is typing sent in instead
  *                                      (poke, a WebSocket client), placed by technique rather than
  *                                      on the keyboard's layers, combos used only if it says so
- *   hud.pressAt(pos) / hud.releaseAt(pos)  a key going down / up by ZMK position (firmware
- *                                      `positions;`): the exact key lights while held, then fades;
- *                                      characters then only feed the strip
+ *   hud.pressAt(pos[, sent]) / hud.releaseAt(pos)  a key going down / up by ZMK position
+ *                                      (firmware `positions;`): the exact key lights while held,
+ *                                      then fades; characters then only feed the strip. `sent`:
+ *                                      a press sent in, lit the same and never counted in a session
  *   hud.press([idx...])                light keys directly (tests)
+ *   hud.setHeatmap(mode)               what the keys glow with: live, session or off
+ *   hud.stats                          the counts behind the bar and the session heatmap (tests)
+ *
+ * Every keystroke drawn is also counted (the ledger, once nothing can take it back), and typing
+ * is timed: the bar above the panel shows words per minute, accuracy and how the keys are used.
  *
  * Two modes:
  *   live      after the first setLayers: the stack is exactly what the keyboard reports; a key is
@@ -31,9 +37,11 @@
   const GAP = 6;             // px between keys at the drawn scale
   // Every timing worth tuning comes from the config's `hud:` section (host/keymap.py fills the
   // defaults in); these are only the fallbacks for a keymap message without it. What is left as a
-  // constant (HEAT_TICK_MS) is how often the page redraws, not anything a user would notice.
+  // constant (HEAT_TICK_MS, WPM_TICK_MS) is how often the page redraws, not anything a user would
+  // notice.
   const DEFAULTS = { opacity: 86, press_ms: 320, release_ms: 60, held_timeout_ms: 5000, momentary_ms: 700, combo_slack_ms: 20, activator_ms: 400,
-    positions_fresh_ms: 3000, combo_pill_ms: 1000, sequence_ms: 200, sequence_max: 6, one_shot_ms: 450, heatmap_ms: 3000 };
+    positions_fresh_ms: 3000, combo_pill_ms: 1000, sequence_ms: 200, sequence_max: 6, one_shot_ms: 450, heatmap_ms: 3000,
+    wpm_window_ms: 10000, wpm_idle_ms: 3000, stats_bar: 1 };
   const T = name => (state.data && state.data.hud && state.data.hud[name] != null) ? state.data.hud[name] : DEFAULTS[name];
   const recentPos = [];
 
@@ -71,7 +79,18 @@
     scale: 1,
     heat: new Map(),          // key idx -> {h, t}: the live heatmap (see bumpHeat)
     heatTimer: null,
-    demo: false,              // a GIF still (&demo=N): drawn as it always was, no heat
+    heatMode: "live",         // what the keys glow with: live | session | off
+    demo: false,              // a GIF still (&demo=N): drawn as it always was, no heat, no counts
+    ledger: [],               // keystrokes drawn and not counted yet (see "ledger")
+    ledgerTimer: null,
+    ledgerDue: 0,
+    comboEntry: null,         // the ledger's entry for the combo whose pill is up
+    posOf: [],                // drawer idx -> ZMK position
+    local: emptyTally(),      // everything counted since the page loaded, from any source
+    unsent: emptyTally(),     // the keyboard's own counts, not yet handed to a session
+    typing: newTyping(),      // live WPM, over everything shown
+    ownTyping: newTyping(),   // ...and over the keyboard's own typing, for the session's peak
+    wpmTimer: null,
   };
 
   const $ = id => document.getElementById(id);
@@ -307,7 +326,11 @@
     f.className = state.live ? "live" : "";
   }
 
-  function render() { if (!state.data) { renderFeed(); return; } renderBanner(); renderKeys(); renderFeed(); }
+  function render() {
+    if (!state.data) { renderFeed(); renderStats(); return; }
+    renderBanner(); renderKeys(); renderFeed();
+    paintSessionHeat(); renderStats();   // both follow the layer on screen
+  }
 
   // The corner text: the config's title, else the keyboard's own name, else the file's.
   function renderTitle() {
@@ -353,7 +376,7 @@
   }
 
   function bumpHeat(idx) {
-    if (state.demo || !(T("heatmap_ms") > 0) || !state.keyEls[idx]) return;
+    if (state.demo || state.heatMode !== "live" || !(T("heatmap_ms") > 0) || !state.keyEls[idx]) return;
     const now = Date.now();
     const e = state.heat.get(idx);
     const v = e ? heatAt(e, now) : 0;
@@ -390,16 +413,289 @@
   function paintHeat() {
     const now = Date.now();
     state.keyEls.forEach((el, idx) => paintKeyHeat(idx, now));
+    paintSessionHeat();
   }
 
-  /* A key lit from a report alone (no position said which key it was) warms only while the page
-   * has never been sent a position. With positions coming, a report that beats its own position
-   * lights a guess that pressAt then takes down -- sometimes the wrong key, and a glow outlives
-   * the flash by seconds. `idxs` are the keys that typed the character, never the activators lit
-   * beside them for show. */
-  function heatGuess(idxs) {
-    if (state.posAt) return;
-    for (const idx of idxs) bumpHeat(idx);
+  /* The session's heatmap: how often each key has been pressed, on the layer on screen. Six
+   * steps of ln(1+count)/ln(1+most), the most-pressed key of that layer being the top step: a
+   * linear scale would leave Space and E alone lit and every other key the same pale. Only a key
+   * whose binding is the top layer's own shows its count -- a transparent key draws the layer
+   * underneath, whose counts are nearly always the largest, and would light a layer up with heat
+   * that was never its own. The counts are the ledger's, so this is the live heatmap summed. */
+  const SESSION_LEVELS = 6;
+  function paintSessionHeat() {
+    if (!state.data || !state.keyEls.length) return;
+    const layers = stack(), top = layers[0];
+    const counts = (state.heatMode === "session" && view().presses[top]) || {};
+    let most = 0;
+    for (const pos in counts) most = Math.max(most, counts[pos]);
+    state.keyEls.forEach((el, idx) => {
+      let level = 0;
+      if (most) {
+        const r = resolveBinding(idx, layers), pos = zmkPos(idx);
+        const n = r && r.layer === top && pos !== null ? counts[pos] || 0 : 0;
+        if (n) level = Math.max(1, Math.ceil(Math.log1p(n) / Math.log1p(most) * SESSION_LEVELS));
+      }
+      for (let i = 1; i <= SESSION_LEVELS; i++) if (i !== level && el.classList.contains("hs" + i)) el.classList.remove("hs" + i);
+      if (level) el.classList.add("hs" + level, "heated");
+      else if (el.classList.contains("heated")) el.classList.remove("heated");
+    });
+  }
+
+  // live | session | off. Leaving live lets its glow go at once rather than fade under the other.
+  const HEAT_MODES = ["live", "session", "off"];
+  function setHeatmap(mode) {
+    if (!HEAT_MODES.includes(mode) || mode === state.heatMode) return;
+    state.heatMode = mode;
+    if (mode !== "live") state.heat.clear();
+    paintHeat();
+    renderStats();
+  }
+
+  // ---------- ledger ----------
+
+  /* What the board drew, counted once. A keystroke the page lights goes in here first and is
+   * counted only when nothing can take it back any more: a press once no combo can claim it, a
+   * combo once no longer one can supersede it, a key lit from a report alone once its position can
+   * no longer arrive and no macro absorb it. Counted any sooner, a report that beats its own
+   * position counts its keystroke twice, a guess the position corrects counts the wrong key, and a
+   * macro's steps count as the keys they spell.
+   *
+   * Counts go two ways: `local`, everything the page has been shown, a demo included, and
+   * `unsent`, the keyboard's own alone. Typing sent in (poke, a demo, a WebSocket client) and a
+   * rehearsal's synthetic keys light the board all the same, and never reach a session. */
+  function emptyTally() {
+    return { presses: {}, combos: {}, chars: 0, deleted: 0, active_ms: 0, active_net: 0, peak_wpm: 0 };
+  }
+  function bump(map, layer, key) {
+    const m = map[layer] || (map[layer] = {});
+    m[key] = (m[key] || 0) + 1;
+  }
+  // The drawer key's ZMK position, which is what a session is kept by; null for a key the
+  // keymap places nowhere the firmware could report.
+  function zmkPos(idx) {
+    return state.posOf[idx] !== undefined ? state.posOf[idx] : null;
+  }
+  const comboKey = idxs => idxs.map(zmkPos).sort((a, b) => a - b).join(",");
+  const comboTerm = () => (state.data.combo_term || 50) + T("combo_slack_ms");
+
+  // The keyboard's own typing, as opposed to typing sent in (which says whether combos count) or
+  // a rehearsal's (synthetic).
+  const fromKeyboard = ev => ev.sent !== true && typeof ev.combos !== "boolean" && !ev.synthetic;
+
+  function ledgerAdd(entry) {
+    if (state.demo) return entry;
+    state.ledger.push(entry);
+    armLedger();
+    return entry;
+  }
+
+  function armLedger() {
+    if (!state.ledger.length) return;
+    const due = Math.min(...state.ledger.map(e => e.due));
+    if (state.ledgerTimer !== null && state.ledgerDue <= due) return;
+    clearTimeout(state.ledgerTimer);
+    state.ledgerDue = due;
+    state.ledgerTimer = setTimeout(() => { state.ledgerTimer = null; ledgerCommit(Date.now()); armLedger(); },
+                                   Math.max(0, due - Date.now()));
+  }
+
+  // Count what is due (everything, with `all`: a keymap about to be replaced).
+  function ledgerCommit(now, all) {
+    const keep = [];
+    let counted = false;
+    for (const e of state.ledger) {
+      if (!all && e.due > now) { keep.push(e); continue; }
+      if (e.cancelled) continue;
+      countEntry(e);
+      counted = true;
+    }
+    state.ledger = keep;
+    if (counted) { paintSessionHeat(); renderStats(); }
+  }
+
+  function countEntry(e) {
+    const tallies = e.eligible ? [state.local, state.unsent] : [state.local];
+    // A key counts where its binding came from on the layers that were up when it went down: a
+    // transparent key on a held layer typed the layer underneath's legend, and counts there.
+    const on = (idx, layers) => { const r = resolveBinding(idx, layers); return r ? r.layer : layers[0]; };
+    if (e.kind === "press") {
+      for (const t of tallies) bump(t.presses, on(e.idx, e.stack), e.pos);
+    } else if (e.kind === "combo") {
+      for (const t of tallies) bump(t.combos, e.layer, e.key);
+    } else {   // a guess: the keys a report lit, with no position to say so
+      for (const idx of e.idxs) {
+        const pos = zmkPos(idx);
+        if (pos !== null) for (const t of tallies) bump(t.presses, on(idx, e.stack), pos);
+        bumpHeat(idx);   // certain now, so it may glow: a guess taken back never did
+      }
+      if (e.idxs.length > 1 && e.idxs.every(i => zmkPos(i) !== null)) for (const t of tallies) bump(t.combos, e.layer, comboKey(e.idxs));
+    }
+  }
+
+  // Keys a report lit, entered against the record remember() keeps for the macro and pressAt
+  // lookups: unlight() cancels the guess, and so does any position going down.
+  function guess(rec, idxs, layer, ev) {
+    if (!idxs.length) return;
+    const now = Date.now();
+    rec.guess = ledgerAdd({ kind: "guess", idxs: idxs.slice(), layer, t: now,
+                            stack: [layer].concat(stack().filter(l => l !== layer)),
+                            due: now + Math.max(comboTerm(), T("sequence_ms")), eligible: fromKeyboard(ev) });
+  }
+
+  /* ZMK sends a layer's frame after the key that decided its hold: a hold-tap turns into a hold
+   * when the next key goes down, and that key's position is sent first. Counted on the stack it
+   * went down on, the first key typed on every held layer would count on the one below. So when a
+   * layer comes up, a press still waiting that followed the key now holding it is moved onto the
+   * new stack. A layer going away moves nothing: the key before it was typed with it up. */
+  function recredit(gained, now) {
+    const term = comboTerm(), layers = stack();
+    for (const e of state.ledger) {
+      if (e.kind !== "press" || e.cancelled || now - e.t > term) continue;
+      if (gained.some(p => e.t > p.t && e.idx !== p.idx)) e.stack = layers;
+    }
+  }
+
+  // ---------- typing speed ----------
+
+  /* Words per minute the way QMK's wpm.c counts them: characters over five, over a sliding
+   * window (wpm_window_ms), less what was deleted. A pause longer than wpm_idle_ms starts the
+   * window over, so a burst is measured from its own start instead of ramping up out of the
+   * silence before it, and the window is never taken as shorter than WPM_FLOOR_MS -- two quick
+   * keys are not 300 wpm. A session's time is the typing in it: the gaps between keys, no pause
+   * longer than wpm_idle_ms, and not the moment before a burst's first key.
+   *
+   * Only text counts: printable characters, Space, Return and Tab; Backspace and Delete take one
+   * away, five with a modifier (a word). A chord with ⌘ or ⌃ is a command; ⌥ counts when it typed
+   * a character. The decoder never reports auto-repeat, so a Backspace held down counts once. */
+  const WPM_TICK_MS = 500;
+  const WPM_FLOOR_MS = 2000;
+  const PEAK_MIN_CHARS = 10;     // a peak is taken from a full window with at least this many
+  function newTyping() { return { win: [], burst: 0, last: 0 }; }
+
+  function textOf(ev) {
+    if (ev.type !== "keyDown" || ev.repeat) return null;
+    const f = (ev.flags && !Array.isArray(ev.flags)) ? ev.flags : {};
+    if (ev.name === "delete" || ev.name === "forwarddelete") return { chars: 0, deleted: f.alt || f.ctrl || f.cmd ? 5 : 1 };
+    if (f.cmd || f.ctrl) return null;
+    if (ev.name === "return" || ev.name === "tab" || ev.name === "space") return { chars: 1, deleted: 0 };
+    const c = ev.chars;
+    return c && c.length === 1 && c >= " " && c !== "\x7f" ? { chars: 1, deleted: 0 } : null;
+  }
+
+  function wpmOf(tr, now) {
+    const W = T("wpm_window_ms");
+    while (tr.win.length && tr.win[0].t <= now - W) tr.win.shift();
+    let chars = 0, net = 0;
+    for (const e of tr.win) { chars += e.chars; net += e.net; }
+    if (chars < 2) return 0;
+    const span = Math.min(W, Math.max(WPM_FLOOR_MS, now - tr.burst));
+    return Math.max(0, net) / 5 / (span / 60000);
+  }
+
+  function typed(tr, tally, k, now) {
+    const net = k.chars - k.deleted;
+    const gap = tr.last ? now - tr.last : -1;
+    if (gap >= 0 && gap <= T("wpm_idle_ms")) { tally.active_ms += gap; tally.active_net += net; }
+    else { tr.burst = now; tr.win = []; }
+    tr.last = now;
+    tr.win.push({ t: now, net, chars: k.chars });
+    tally.chars += k.chars; tally.deleted += k.deleted;
+    const wpm = wpmOf(tr, now);
+    if (now - tr.burst >= T("wpm_window_ms") && tr.win.reduce((a, e) => a + e.chars, 0) >= PEAK_MIN_CHARS) {
+      tally.peak_wpm = Math.max(tally.peak_wpm, Math.round(wpm));
+    }
+  }
+
+  function statsKey(ev) {
+    if (state.demo) return;
+    const k = textOf(ev);
+    if (!k) return;
+    const now = Date.now();
+    typed(state.typing, state.local, k, now);
+    if (fromKeyboard(ev)) typed(state.ownTyping, state.unsent, k, now);
+    armWpm();
+    renderStats();
+  }
+
+  // The number on the bar decays while nobody types; it ticks only while there is one to show.
+  function armWpm() {
+    if (state.wpmTimer === null) state.wpmTimer = setTimeout(wpmTick, WPM_TICK_MS);
+  }
+  function wpmTick() {
+    state.wpmTimer = null;
+    const now = Date.now();
+    wpmOf(state.typing, now); wpmOf(state.ownTyping, now);
+    renderStats();
+    if (state.typing.win.length || state.ownTyping.win.length) armWpm();
+  }
+
+  // ---------- the stats bar ----------
+
+  // The counts the bar and the session heatmap show: the page's own, until a host keeps a session.
+  function view() { return state.local; }
+
+  const sum = m => { let n = 0; for (const k in m) n += m[k]; return n; };
+  function fmtCount(n) {
+    if (n < 1000) return String(n);
+    if (n < 10000) return (n / 1000).toFixed(1) + "k";
+    if (n < 1e6) return Math.round(n / 1000) + "k";
+    return (n / 1e6).toFixed(1) + "M";
+  }
+  const pct = x => Math.round(x * 100) + "%";
+
+  // Chips of their own above the panel, like the strip's below it, so they read on a surface
+  // with nothing behind them. Each is written only when its text changes.
+  const bar = {};
+  function buildStats() {
+    const host = $("stats");
+    if (!host || bar.host) return;
+    bar.host = host;
+    const chip = (name, parts) => {
+      const c = el("span", "stat " + name);
+      const vals = [];
+      for (const p of parts) {
+        if (p === null) { const b = el("b"); vals.push(b); c.appendChild(b); } else c.appendChild(el("span", null, p));
+      }
+      host.appendChild(c);
+      return { chip: c, vals };
+    };
+    bar.wpm = chip("wpm", [null, " wpm"]);
+    bar.session = chip("session", ["avg ", null, " · top ", null]);
+    bar.acc = chip("acc", [null, " accurate"]);
+    bar.keys = chip("keys", [null, " keys · ", null, " combos"]);
+    bar.layer = chip("layer", [null, " ", null]);
+    bar.mode = chip("mode", ["heat ", null]);
+    bar.mode.chip.title = "click: live, session, off";
+    bar.mode.chip.addEventListener("click", () => setHeatmap(HEAT_MODES[(HEAT_MODES.indexOf(state.heatMode) + 1) % HEAT_MODES.length]));
+  }
+  function put(chip, values) {
+    values.forEach((v, i) => { if (chip.vals[i].textContent !== v) chip.vals[i].textContent = v; });
+  }
+
+  function renderStats() {
+    if (!bar.host) buildStats();
+    if (!bar.host) return;
+    const off = !(T("stats_bar") > 0);
+    if (bar.host.classList.contains("off") !== off) bar.host.classList.toggle("off", off);
+    if (off) return;
+    const now = Date.now(), v = view();
+    const live = Math.round(wpmOf(state.typing, now));
+    put(bar.wpm, [v.chars || state.typing.win.length ? String(live) : "—"]);
+    put(bar.session, [v.active_ms >= 10000 ? String(Math.round(v.active_net / 5 / (v.active_ms / 60000))) : "—",
+                      v.peak_wpm ? String(v.peak_wpm) : "—"]);
+    put(bar.acc, [v.chars ? pct(Math.max(0, 1 - v.deleted / v.chars)) : "—"]);
+    // A combo is one keystroke made with several keys: its share is of keystrokes, not of keys.
+    let presses = 0, combos = 0, members = 0;
+    for (const layer in v.presses) presses += sum(v.presses[layer]);
+    for (const layer in v.combos) for (const key in v.combos[layer]) {
+      combos += v.combos[layer][key]; members += v.combos[layer][key] * key.split(",").length;
+    }
+    const strokes = presses - members + combos;
+    put(bar.keys, [fmtCount(presses), strokes > 0 ? pct(combos / strokes) : "—"]);
+    const top = state.data ? stack()[0] : null;
+    put(bar.layer, [top ? layerLabel(top) : "—", top && presses ? pct(sum(v.presses[top] || {}) / presses) : "—"]);
+    put(bar.mode, [state.heatMode]);
   }
 
   // ---------- resolver ----------
@@ -555,11 +851,13 @@
   function remember(token, lit, pill, layer) {
     const now = Date.now();
     while (recent.length && now - recent[0].t > T('sequence_ms')) recent.shift();
-    recent.push({ token, t: now, lit: lit || [], pill: pill || null, layer: layer || null });
+    const rec = { token, t: now, lit: lit || [], pill: pill || null, layer: layer || null, guess: null };
+    recent.push(rec);
     if (recent.length > T('sequence_max')) recent.shift();
+    return rec;
   }
   // `inferring`: placing a key the keyboard's own stack does not speak for (handleKey).
-  function matchSequence(token, layers, cmdActive, noCombos, inferring) {
+  function matchSequence(token, layers, cmdActive, noCombos, inferring, ev) {
     const now = Date.now();
     const fresh = recent.filter(r => now - r.t <= T('sequence_ms'));
     for (let n = Math.min(fresh.length, T('sequence_max') - 1); n >= 1; n--) {
@@ -580,12 +878,11 @@
       // "()" inside "();"): unlight them, pill included, and light the longer match.
       for (const p of parts) unlight(p);
       flash(r.hit, r.hit.length > 1 ? "combo" : null);
-      heatGuess(r.hit);
       let pill = null;
       if (r.hit.length > 1) { const c = comboFor(r.layer, seq); if (c) pill = showCombo(r.hit, c.key); }
       setInferred(false);
       // Keep the tokens: a still longer legend may follow (";" after "()", "⏎" after "do {").
-      remember(token, r.hit, pill, r.layer);
+      guess(remember(token, r.hit, pill, r.layer), r.hit, r.layer, ev);
       afterKey();
       return true;
     }
@@ -597,6 +894,7 @@
       if (e) { e.classList.remove("pressed", "combo", "inferred", "combo-key"); clearTimeout(state.timers.get(idx)); }
     }
     if (entry.pill) entry.pill.remove();
+    if (entry.guess) entry.guess.cancelled = true;   // taken back before it was counted
     entry.lit = []; entry.pill = null;
   }
 
@@ -641,7 +939,7 @@
 
     // Macros type several keys back to back (-> is "-" then ">"): when the last few tokens
     // together spell a legend on the live stack, that key or combo is what was pressed.
-    if (matchSequence(token, layers, cmdActive, noCombos, !state.live || sent)) return;
+    if (matchSequence(token, layers, cmdActive, noCombos, !state.live || sent, ev)) return;
 
     // Live: the keyboard told us the stack; the key must be on it (combos included). A chord
     // (⌘c, ⌃⇧a) first tries the legend spelled with its modifier glyphs.
@@ -652,12 +950,11 @@
       if (r) {
         const extra = r.viaShift ? activatorsOf(r.layer) : [];
         flash(r.hit.concat(extra), r.hit.length > 1 ? "combo" : null);
-        heatGuess(r.hit);
         // The pill is remembered with the keys, so whatever supersedes this guess -- a macro's
         // longer legend, or the positions arriving after it -- takes the pill down too.
         let pill = null;
         if (r.hit.length > 1) { const c = comboFor(r.layer, token); if (c) pill = showCombo(r.hit, c.key); }
-        remember(token, r.hit.concat(extra), pill, r.layer);
+        guess(remember(token, r.hit.concat(extra), pill, r.layer), r.hit, r.layer, ev);
         setInferred(false);
         touchLayer(r.layer);
         afterKey();
@@ -687,8 +984,7 @@
         const shiftLayer = (ex.sticky || []).find(l => /shift/i.test(l));
         const extra = activatorsOf(ex.alpha2).concat(/^\p{Lu}$/u.test(token) && shiftLayer ? activatorsOf(shiftLayer) : []);
         flash([direct].concat(extra), inferredCls);
-        heatGuess([direct]);
-        remember(token, [direct], null, ex.alpha2);
+        guess(remember(token, [direct], null, ex.alpha2), [direct], ex.alpha2, ev);
         afterKey();
         return;
       }
@@ -703,10 +999,9 @@
       if (r) {
         const extra = r.viaShift ? activatorsOf(r.layer) : [];
         flash(r.hit.concat(extra), [r.hit.length > 1 ? "combo" : "", inferredCls].join(" ").trim() || null);
-        heatGuess(r.hit);
         let pill = null;
         if (r.hit.length > 1) { const c = comboFor(r.layer, token); if (c) pill = showCombo(r.hit, c.key); }
-        remember(token, r.hit.concat(extra), pill, r.layer);
+        guess(remember(token, r.hit.concat(extra), pill, r.layer), r.hit, r.layer, ev);
         touchLayer(r.layer);
         afterKey();
         return true;
@@ -720,10 +1015,9 @@
           if (sticky.has(layer)) state.oneShot = layer; else armMomentary(layer);
           render();
           flash(hit.concat(activatorsOf(layer)), [hit.length > 1 ? "combo" : "", inferredCls].join(" ").trim() || null);
-          heatGuess(hit);
           let pill = null;
           if (hit.length > 1) { const c = comboFor(layer, token); if (c) pill = showCombo(hit, c.key); }
-          remember(token, hit.concat(activatorsOf(layer)), pill, layer);
+          guess(remember(token, hit.concat(activatorsOf(layer)), pill, layer), hit, layer, ev);
           afterKey();
           return true;
         }
@@ -772,10 +1066,18 @@
       if (press) state.activatorOf[name] = press.idx;
     }
     const drawnNow = new Set(ids.map(id => (zl(id) || {}).drawer).filter(Boolean));
+    // The presses of the keys now holding a layer that just came up (recredit).
+    const gained = [];
+    for (const name of drawnNow) {
+      if (wasDrawn.has(name) || state.activatorOf[name] == null) continue;
+      const p = [...recentPos].reverse().find(q => q.idx === state.activatorOf[name]);
+      if (p) gained.push(p);
+    }
     for (const name of Object.keys(state.activatorOf)) if (!drawnNow.has(name)) delete state.activatorOf[name];
     for (const name of Object.keys(state.drawnSince)) if (!drawnNow.has(name)) delete state.drawnSince[name];
     state.live = { ids, at: now };
     state.momentary = []; state.oneShot = null; state.inferred = false;
+    if (gained.length) recredit(gained, now);
     render();
   }
 
@@ -798,10 +1100,19 @@
     load(data) {
       if (typeof data === "string") data = JSON.parse(data);
       if (!data || !data.layout || !data.layers) return;
+      // What is still waiting to be counted was drawn with the keymap going away: count it with
+      // that one, whose layers and keys it names.
+      if (state.data) ledgerCommit(Date.now(), true);
       state.data = data;
       state.momentary = []; state.oneShot = null;
-      state.activatorOf = {}; state.drawnSince = {}; state.held.clear(); state.comboShown = null;
+      state.activatorOf = {}; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null;
       state.baseLayers = [data.base];
+      // A session is kept by ZMK position: each drawer key's, inverted from the message's map (a
+      // message with none is a keymap in the firmware's own order, where they are the same).
+      const map = data.positions || {};
+      state.posOf = [];
+      for (const [pos, idx] of Object.entries(map)) state.posOf[idx] = Number(pos);
+      if (!Object.keys(map).length) data.layout.keys.forEach((k, idx) => { state.posOf[idx] = idx; });
       // Heat outlives a reload (it fades in seconds anyway), but not on keys this layout lacks.
       for (const idx of [...state.heat.keys()]) if (idx >= data.layout.keys.length) state.heat.delete(idx);
       document.documentElement.style.setProperty("--panel-alpha", String(T("opacity") / 100));
@@ -854,8 +1165,9 @@
     // Firmware `positions;`: the physical key at ZMK position `pos` was pressed. The one exact
     // source for what to light, whatever the key produced (chords, combos, macros, modifiers,
     // layer keys). Two or more positions within a combo term that form a combo on the live
-    // stack draw that combo's pill.
-    pressAt(pos) {
+    // stack draw that combo's pill. `sent`: this press was sent in, not the keyboard's (it lights
+    // its key the same, and is never counted into a session).
+    pressAt(pos, sent) {
       if (!state.data) return;
       const idx = idxAt(pos);
       const now = Date.now();
@@ -869,9 +1181,13 @@
       // and all, or the board shows the guess and the truth side by side (two pills for one
       // chord). A guess older than the combo term was an earlier keystroke's, and fades by itself.
       for (const r of recent) if (now - r.t <= term) unlight(r);
+      // Nor is a guess still waiting to be counted: with positions coming, this keystroke counts
+      // by its position, and so does the one the guess was for.
+      for (const e of state.ledger) if (e.kind === "guess") e.cancelled = true;
       state.posAt = now; state.lastKeyAt = now;
       if (!state.keyEls[idx]) return;
       state.held.add(idx);
+      const entry = { kind: "press", idx, pos: Number(pos), t: now, due: now + term, stack: stack(), eligible: !sent };
       // The layer set and the key that brought it up are two reports, in no promised order. When
       // the key comes second, setLayers had nothing to attribute the layer to: if the drawer says
       // this key reaches a live layer and nothing is recorded as holding it, this is what did --
@@ -882,9 +1198,14 @@
         for (const name of liveStack()) {
           if (name === base() || state.activatorOf[name] != null) continue;
           if (now - (state.drawnSince[name] || 0) > term) continue;
-          if (activatorsOf(name).includes(idx)) state.activatorOf[name] = idx;
+          if (activatorsOf(name).includes(idx)) {
+            state.activatorOf[name] = idx;
+            // It went down on the layers below the one it brought up, and counts there.
+            entry.stack = entry.stack.filter(l => l !== name);
+          }
         }
       }
+      ledgerAdd(entry);
       flash([idx]);
       bumpHeat(idx);   // a position is never taken back, so it warms its key at once
       // Stay lit until the release arrives (a safety timeout covers a lost report).
@@ -911,7 +1232,7 @@
         if (now - prev.t > term || (prev.t < now && holdsALayer(prev.idx))) break;
         start--;
       }
-      if (start === recentPos.length - 1) state.comboShown = null; // a new group begins
+      if (start === recentPos.length - 1) { state.comboShown = null; state.comboEntry = null; } // a new group begins
       // Only presses within the keymap's combo term form a combo: ZMK's combo module releases the
       // captured positions together when a combo completes, so they arrive within the term. A key
       // pressed later while a layer is held is that layer's key, never a combo with the holder.
@@ -920,14 +1241,18 @@
         // The topmost active layer that defines a combo on these keys wins: the base layer is
         // always in the stack and often has a different combo on the same keys.
         const samePositions = c => c.positions.length === pressedSet.length && c.positions.every(p => pressedSet.includes(p));
-        let combo = null;
+        let combo = null, comboLayer = null;
         for (const layer of stack()) {
           combo = state.data.combos.find(c => c.layers.includes(layer) && samePositions(c));
-          if (combo) break;
+          if (combo) { comboLayer = layer; break; }
         }
         if (combo) {
-          // A third key within the term makes a bigger combo: take the smaller one's pill down.
+          // A third key within the term makes a bigger combo: take the smaller one's pill down,
+          // and its count with it -- one chord, one combo.
           if (state.comboShown) state.comboShown.remove();
+          if (state.comboEntry) state.comboEntry.cancelled = true;
+          state.comboEntry = ledgerAdd({ kind: "combo", layer: comboLayer, key: comboKey(combo.positions), t: now,
+                                         due: now + term, eligible: !sent });
           // Not flash(): these keys are down, and it is their release that unlights them. flash's
           // press_ms timer would replace the held timer each key got from its own press and take
           // the chord out from under the user's fingers after a third of a second — along with
@@ -954,10 +1279,22 @@
     setDevice(name) { if ((name || "") !== state.device) { state.device = name || ""; renderTitle(); } },
     key(ev) {
       if (typeof ev === "string") ev = JSON.parse(ev);
+      statsKey(ev);   // before handleKey, which has nothing to do for it while positions are fresh
       handleKey(ev);
       if (window.keys) window.keys.key(ev);  // the typed-keys strip on the same page
     },
     press(indices) { flash(indices); },
+    // What the keys glow with: "live" (what was just typed), "session" (every press counted) or
+    // "off". The bar's last chip cycles it too.
+    setHeatmap(mode) { setHeatmap(mode); },
+    // The counts, for tests and hosts: everything shown (`local`), the keyboard's own not yet
+    // handed on (`unsent`), keystrokes still waiting to be counted, and the live WPM.
+    stats: {
+      local: () => JSON.parse(JSON.stringify(state.local)),
+      unsent: () => JSON.parse(JSON.stringify(state.unsent)),
+      pending: () => state.ledger.length,
+      wpm: () => Math.round(wpmOf(state.typing, Date.now())),
+    },
     state,
   };
   window.hud = hud;
@@ -993,7 +1330,7 @@
         else if (m.kind === "key") hud.key(m);
         else if (m.kind === "layers") hud.setLayers(m.ids);
         else if (m.kind === "device") hud.setDevice(m.name);
-        else if (m.kind === "press") hud.pressAt(m.pos);
+        else if (m.kind === "press") hud.pressAt(m.pos, m.sent === true || m.synthetic === true);
         else if (m.kind === "release") hud.releaseAt(m.pos);
         if (m.device) hud.setDevice(m.device);  // the keyboard that is typing names the panel
       };

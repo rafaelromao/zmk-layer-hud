@@ -201,7 +201,7 @@ function makeStyle() {
 
 // The ids index.html defines. Everything hud.js looks up with $() has to be here, or it silently
 // renders into nothing and every assertion passes for the wrong reason.
-const PAGE_IDS = ["hud", "layer", "layerName", "layerSub", "close", "board", "status", "feed", "title", "keys"];
+const PAGE_IDS = ["stats", "hud", "layer", "layerName", "layerSub", "close", "board", "status", "feed", "title", "keys"];
 
 function makeDocument() {
   const doc = {};

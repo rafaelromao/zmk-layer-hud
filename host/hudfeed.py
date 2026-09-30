@@ -1004,13 +1004,17 @@ COMBOS_DEFAULT = False
 
 
 def sent_in(msg):
-    """An injected message as the pages get it: a `key` always says whether combos count.
+    """An injected message as the pages get it: `sent`, and a `key` says whether combos count.
 
-    That field is also how a page tells typing sent in from the keyboard's own reports, which
-    never carry it: those are placed on the layers the keyboard says are up, exactly, while typing
-    sent in did not come from those layers and is placed by technique (hud/hud.js handleKey)."""
+    `sent` is on every kind, whatever the client said: only the keyboard's own typing is counted
+    into a session, and a press sent in lights its key like any other -- nothing but this says
+    it was not the keyboard's. `combos` is also how a page tells typing sent in from the
+    keyboard's own reports, which never carry it: those are placed on the layers the keyboard
+    says are up, exactly, while typing sent in did not come from those layers and is placed by
+    technique (hud/hud.js handleKey)."""
+    msg = {**msg, "sent": True}
     if msg.get("kind") == "key" and not isinstance(msg.get("combos"), bool):
-        msg = {**msg, "combos": COMBOS_DEFAULT}
+        msg["combos"] = COMBOS_DEFAULT
     return msg
 
 

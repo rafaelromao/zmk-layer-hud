@@ -75,6 +75,9 @@ HUD_DEFAULTS = {
     "sequence_max": 6,         # longest such sequence, in keys
     "positions_fresh_ms": 3000,  # after a position report, characters stop lighting keys for this long
     "heatmap_ms": 3000,        # a key pressed once glows and fades over this (0: no heatmap); pressed often, it stays warm longer
+    "wpm_window_ms": 10000,    # live WPM counts what was typed within this
+    "wpm_idle_ms": 3000,       # a pause longer than this starts a new burst, and is not counted as typing time
+    "stats_bar": 1,            # the stats bar above the panel (0 hides it)
 }
 # `feed:` section: the reader's timings.
 FEED_DEFAULTS = {

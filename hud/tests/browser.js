@@ -56,6 +56,7 @@
       async press(pos) { held.add(pos); hud.pressAt(pos); },
       async release(pos) { held.delete(pos); hud.releaseAt(pos); },
       async advance(ms) { clock.advance(ms); },
+      async tally() { return hud.stats.local(); },
       async reset(ids, isBase) {
         for (const pos of [...held]) { held.delete(pos); hud.releaseAt(pos); }
         clock.advance(6000);

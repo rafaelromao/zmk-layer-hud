@@ -49,6 +49,11 @@ asyncio.run(main())'
 After an injected message the feed re-asserts the keyboard's own layer state, so the picture
 returns to the truth by itself within one heartbeat rather than staying wherever you left it.
 
+Every message sent in reaches the pages with `"sent": true`, whatever the client said. A press sent
+in lights its key exactly as the keyboard's would, and this field is what keeps it out of the
+counts: the page draws it, times it and lets it glow, but a session records only the keyboard's own
+typing.
+
 `{"kind":"close"}` from any client exits the feed and takes the HUD down with it — that is what the
 page's ✕ sends. `--no-inject` refuses the five message kinds above; it does not disable `close`.
 

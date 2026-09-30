@@ -118,6 +118,29 @@
     shifted: legendText(data, key.shifted, key.glyph_shifted),
   });
 
+  // ---------- what the page counts ----------
+
+  /* The page counts every keystroke it draws (hud.js, the ledger): a press on the layer its
+   * binding came from, a chord as the combo whose pill stayed up. Stated here as counts the drawer
+   * file implies, and read back as the difference between two readings of driver.tally(). */
+  function counted(before, after) {
+    const out = { presses: {}, combos: {} };
+    for (const kind of ["presses", "combos"]) {
+      for (const [layer, m] of Object.entries(after[kind] || {})) {
+        for (const [k, n] of Object.entries(m)) {
+          const d = n - (((before[kind] || {})[layer] || {})[k] || 0);
+          if (d) (out[kind][layer] = out[kind][layer] || {})[k] = d;
+        }
+      }
+    }
+    return out;
+  }
+  const once = (m, layer, k) => { (m[layer] = m[layer] || {})[k] = ((m[layer] || {})[k] || 0) + 1; };
+  // Key order does not matter to a count: compared canonically.
+  const canon = v => (v && typeof v === "object" && !Array.isArray(v))
+    ? "{" + Object.keys(v).sort().map(k => JSON.stringify(k) + ":" + canon(v[k])).join(",") + "}"
+    : JSON.stringify(v);
+
   // ---------- the sweep ----------
 
   const T = (data, name) => (data.hud && data.hud[name] != null ? data.hud[name] : 400);
@@ -133,6 +156,20 @@
     const zmkPos = positionOf(data);
     const nKeys = data.layout.keys.length;
     const settle = Math.max(T(data, "combo_pill_ms"), T(data, "activator_ms"), T(data, "press_ms")) + 400;
+    const term = (data.combo_term || 50) + T(data, "combo_slack_ms");
+    const counts = !!driver.tally;
+    const on = (idx, stack) => { const r = expectedBinding(data, idx, stack); return r ? r.layer : stack[0]; };
+    /* Where the keys of one burst count, in press order, the layer having just come up: a key the
+     * drawer says brings that layer up, pressed as it appears, is the key that brought it up --
+     * the board draws it as the layer's activator -- and it went down on the layers below it. One
+     * key does that; the rest were typed on the layer. */
+    const burst = (idxs, layer, stack, claimed) => {
+      const own = new Set((data.activators || []).filter(a => a.layer === layer).map(a => a.idx));
+      return idxs.map(idx => {
+        if (!claimed && layer !== data.base && own.has(idx)) { claimed = true; return on(idx, stack.filter(l => l !== layer)); }
+        return on(idx, stack);
+      });
+    };
 
     const add = (check, where, expected, actual, extra) => {
       fail.push(Object.assign({ check, where, expected, actual }, extra || {}));
@@ -181,12 +218,15 @@
       }
     }
 
-    // 2. Highlight: a press lights exactly its own key, a release lets it go.
+    // 2. Highlight: a press lights exactly its own key, a release lets it go -- and it counts once,
+    //    on the layer its binding came from (the one underneath, through a transparent key).
     for (const layer of live) {
+      const stack = stackFor(data, layer);
       for (let idx = 0; idx < nKeys; idx++) {
         checked++;
         await driver.reset(idsOf.get(layer)[0], layer === data.base);
         const pos = zmkPos(idx);
+        const before = counts ? await driver.tally() : null;
         await driver.press(pos);
         const lit = await driver.lit();
         if (list(lit) !== String(idx)) add("press", `${layer} pos ${pos} (key ${idx})`, String(idx), list(lit));
@@ -194,6 +234,14 @@
         await driver.advance(T(data, "release_ms") + 50);
         const after = await driver.lit();
         if (after.length) add("release", `${layer} pos ${pos} (key ${idx})`, "", list(after));
+        if (counts) {
+          checked++;
+          await driver.advance(term);
+          const want = { presses: {}, combos: {} };
+          once(want.presses, burst([idx], layer, stack, false)[0], pos);   // reset has just brought the layer up
+          const got = counted(before, await driver.tally());
+          if (canon(got) !== canon(want)) add("count-press", `${layer} pos ${pos} (key ${idx})`, canon(want), canon(got));
+        }
       }
     }
 
@@ -202,11 +250,16 @@
     for (const pos of unmappedPositions(data)) {
       checked++;
       await driver.reset(idsOf.get(data.base) ? idsOf.get(data.base)[0] : 0, true);
+      const before = counts ? await driver.tally() : null;
       await driver.press(pos);
       const lit = await driver.lit();
       if (lit.length) add("unmapped-position", `unmapped ZMK position ${pos}`, "", list(lit));
       await driver.release(pos);
       await driver.advance(settle);
+      if (counts) {
+        const got = counted(before, await driver.tally());
+        if (canon(got) !== canon({ presses: {}, combos: {} })) add("count-unmapped", `unmapped ZMK position ${pos}`, "nothing", canon(got));
+      }
     }
 
     // 4. Combos, in the order a keyboard actually reports them. Every position set is tried on
@@ -221,7 +274,6 @@
       const a = (data.activators || []).filter(x => x.layer === layer);
       return a.length ? a[0].idx : null;
     };
-    const term = (data.combo_term || 50) + T(data, "combo_slack_ms");
     const orderings = layer => {
       const act = layer === data.base ? null : activatorOf(layer);
       const list = [{ name: "clean", act: null, gap: 0 }];
@@ -246,6 +298,7 @@
           if (order.act !== null && positions.includes(order.act)) continue;  // the thumb is in the combo
           checked++;
           await driver.reset(null, false);
+          const before = counts ? await driver.tally() : null;
           const held = [];
           // The thumb's position and the layer it turned on are two separate HID reports.
           const layers = layer === data.base ? [] : [ids];
@@ -280,6 +333,22 @@
           for (const idx of positions) await driver.release(zmkPos(idx));
           for (const idx of held) await driver.release(zmkPos(idx));
           await driver.advance(settle);
+          if (counts) {
+            // Every key once, where its binding came from -- the thumb on the base it was pressed
+            // on, before its layer came up -- and the chord as the one combo whose pill stayed up.
+            checked++;
+            const tally = { presses: {}, combos: {} };
+            for (const idx of held) once(tally.presses, on(idx, [data.base]), zmkPos(idx));
+            // With a thumb holding the layer, it is the one that brought it up; in the clean order
+            // the layer appears as the chord goes down, and a chord key of its own can be.
+            burst(positions, layer, stack, held.length > 0).forEach((l, i) => once(tally.presses, l, zmkPos(positions[i])));
+            if (want) {
+              once(tally.combos, stack.find(n => want.layers.includes(n)),
+                   want.positions.map(zmkPos).sort((a, b) => a - b).join(","));
+            }
+            const got = counted(before, await driver.tally());
+            if (canon(got) !== canon(tally)) add("count-combo", where, canon(tally), canon(got));
+          }
         }
       }
     }

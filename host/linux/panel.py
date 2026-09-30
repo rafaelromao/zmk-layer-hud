@@ -35,7 +35,9 @@ PAGES = ROOT / "hud"
 # ZMKHUD_STATE; the default is repeated so running this directly still works.
 RUN = Path(os.environ.get("ZMKHUD_STATE") or
            Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "zmk-layer-hud")
-HUD_W, HUD_H = 598, 392
+# The page's stats bar sits above the panel at a fixed height (hud/hud.css #stats: 26px + 6px).
+STATS_H = 32
+HUD_W, HUD_H = 598, 392 + STATS_H
 KEYS_W, KEYS_H = 598, 96
 KEYS_GAP = 8
 INSET = 8

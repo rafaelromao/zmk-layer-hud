@@ -180,6 +180,50 @@ function expected(km, c, ch, activators, also) {
   };
 }
 
+// ---------- what the page counted ----------
+
+/* The keyboard's layers as the page stacks them (top first, the base last), and where a key's
+ * binding comes from on them -- stated here, not asked of hud.js, like everything this file expects. */
+function stackOf(km, ids) {
+  const names = [];
+  for (const id of [...(ids || [])].sort((a, b) => b - a)) {
+    const z = (km.zmk_layers || {})[String(id)];
+    if (z && z.drawer && !names.includes(z.drawer)) names.push(z.drawer);
+  }
+  if (!names.includes(km.base)) names.push(km.base);
+  return names;
+}
+function bindingLayer(km, idx, stack) {
+  for (const name of stack) { const k = km.layers[name] && km.layers[name][idx]; if (k && k.type !== "trans") return name; }
+  return stack[0];
+}
+const presses = t => Object.values(t.presses).reduce((n, m) => n + Object.values(m).reduce((a, b) => a + b, 0), 0);
+const combos = t => Object.values(t.combos).reduce((n, m) => n + Object.values(m).reduce((a, b) => a + b, 0), 0);
+
+/* After a way down a channel: with positions, every key struck counted once, on the layer its
+ * binding came from, and a chord as its combo on the way's layer; typing sent in, nothing that
+ * reaches a session. What reports alone light is checked against what they lit, above. */
+function countProblems(km, c, ch, p) {
+  const out = [];
+  const t = p.hud.stats.local();
+  if (ch.positions) {
+    const stack = stackOf(km, c.live);
+    const want = {};
+    for (const [i, idx] of [...c.keys, ...c.held].entries()) {
+      const layer = bindingLayer(km, idx, stack), pos = [...c.zmk, ...c.held_zmk][i];
+      want[layer + "@" + pos] = (want[layer + "@" + pos] || 0) + 1;
+    }
+    const got = {};
+    for (const [layer, m] of Object.entries(t.presses)) for (const [pos, n] of Object.entries(m)) got[layer + "@" + pos] = n;
+    const fmt = o => Object.keys(o).sort().map(k => `${k}×${o[k]}`).join(" ");
+    if (fmt(got) !== fmt(want)) out.push(`counted ${fmt(got) || "nothing"}, struck ${fmt(want)}`);
+    const chord = [...c.zmk].sort((a, b) => a - b).join(",");
+    const n = ((t.combos[c.layer] || {})[chord]) || 0;
+    if (c.combo ? (n !== 1 || combos(t) !== 1) : combos(t) !== 0) out.push(`combos counted ${JSON.stringify(t.combos)}, ${c.combo ? "want " + chord + " on " + c.layer : "want none"}`);
+  }
+  return out;
+}
+
 // ---------- the runs ----------
 
 function fresh(km, ch, c) {
@@ -208,13 +252,18 @@ function main() {
   const fail = [];
   let checks = 0;
   const t0 = Date.now();
+  // A keystroke is counted once nothing can take it back: past the combo term, and the macro window.
+  const settle = Math.max((km.combo_term || 50) + ((km.hud && km.hud.combo_slack_ms) || 20),
+                          (km.hud && km.hud.sequence_ms) || 200) + 10;
 
   // Every way, alone, down every channel.
   for (const c of cases) {
     for (const ch of CHANNELS) {
-      checks++;
+      checks += 2;
       const p = fresh(km, ch, c);
       const problems = expected(km, c, ch, allActivators)(ch.run(p, c));
+      p.clock.advance(settle);
+      problems.push(...countProblems(km, c, ch, p));
       if (problems.length) fail.push({ what: `${JSON.stringify(c.legend)} on ${c.state} by ${list(c.keys)}${c.held.length ? " ⇧" + list(c.held) : ""}`, ch: ch.name, problems });
     }
   }
@@ -225,11 +274,15 @@ function main() {
   for (const c of cases) if (!firstOf.has(c.legend)) firstOf.set(c.legend, c);
   for (const c of firstOf.values()) {
     for (const ch of SENT) {
-      checks++;
+      checks += 2;
       const p = loadPage();
       p.hud.load(km);
       if (ch.layers) { p.hud.setLayers(ch.live); p.clock.advance(LAYER_LEAD_MS); }
       const problems = expected(km, c, ch, allActivators)(ch.run(p, c));
+      // Lit and shown like the keyboard's own, and never counted into a session.
+      p.clock.advance(settle);
+      const own = p.hud.stats.unsent();
+      if (presses(own) || combos(own) || own.chars) problems.push(`typing sent in reached the session: ${JSON.stringify(own)}`);
       if (problems.length) fail.push({ what: `${JSON.stringify(c.legend)} sent in`, ch: ch.name, problems });
     }
   }
@@ -264,9 +317,16 @@ function main() {
         if (next) p.clock.advance(w.gap_ms);
       }
       const text = observe(p).strip.join("");
-      checks++;
+      checks += 2;
       const spelled = w.steps.map(s => s.legend).join("");
       if (ch.reports && text !== spelled && !broke) broke = { at: w.steps.length, problems: [`strip ${show(text)}, typed ${show(spelled)}`] };
+      // Key after key, every one struck is counted once: none lost between neighbours, none twice.
+      if (ch.positions && !broke) {
+        p.clock.advance(settle);
+        const struck = w.steps.reduce((n, s) => n + s.zmk.length + s.held_zmk.length, 0);
+        const got = presses(p.hud.stats.local());
+        if (got !== struck) broke = { at: w.steps.length, problems: [`counted ${got} keys, struck ${struck}`] };
+      }
       if (broke) {
         const how = w.steps.map(s => `${s.legend}:${s.state}${list(s.keys)}`).join(" ");
         fail.push({ what: `word ${JSON.stringify(w.word)} (${how}) at key ${broke.at + 1}`, ch: ch.name, problems: broke.problems });

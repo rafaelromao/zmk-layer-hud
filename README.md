@@ -262,6 +262,19 @@ a one-shot layer on screen through its key's flash, and shows typed characters i
 A key also glows once it is pressed, and cools over `hud.heatmap_ms` (3 s; `0` turns it off): a
 live heatmap of what was just typed, where a key struck again and again stays warm longest.
 
+Above the panel, a bar says how the typing goes:
+- words per minute, live, over the last `hud.wpm_window_ms` (10 s);
+- the session's average over its typing time, not counting pauses longer than `hud.wpm_idle_ms`
+  (3 s), and its peak;
+- accuracy, the share of typed characters that were not deleted;
+- keystrokes, and the share of them made as combos;
+- the share of typing done on the layer on screen.
+
+Its last chip switches the heatmap between `live`, `session` (how often each key has been pressed,
+on the layer on screen) and `off`. Every keystroke the board draws is counted once, when nothing
+can take it back: a combo counts as one keystroke, and a report that beats its own position is
+not counted twice. `hud.stats_bar: 0` hides the bar.
+
 ### Where the messages come from
 
 Three things can produce the stream the page draws, and the page treats them alike: the keyboard,
