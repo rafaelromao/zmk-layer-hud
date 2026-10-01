@@ -80,7 +80,6 @@
     activatorOf: {},          // drawn layer -> the key idx that brought it in (positions)
     modSource: {},            // modifier flag -> the key idx that turned it on, null: none known (positions)
     pick: null,               // a layer the viewer picked to look at (the stats' layer tile), until a keystroke
-    picking: false,           // the tile's list of layers is open
     drawnSince: {},           // drawn layer -> when it appeared (applyLayers)
     pendingLayers: null,      // a layer change held back for a flash (setLayers)
     pendingDue: null,         // ...and when it applies, fixed at the first drop
@@ -398,11 +397,10 @@
   function pickLayer(name) {
     if (name != null && !(state.data && state.data.layers[name])) return;
     state.pick = name == null ? null : name;
-    state.picking = false;
     render();
     postSize();
   }
-  function unpick() { if (state.pick || state.picking) pickLayer(null); }
+  function unpick() { if (state.pick) pickLayer(null); }
 
   function render() {
     if (!state.data) { renderFeed(); renderStats(); return; }
@@ -431,7 +429,8 @@
     // panel. The slider's whole box, not just its track, so a press a little off the thumb works.
     let rects = [];
     try {
-      const controls = [$("side"), $("hide"), $("close")].concat(["heatmap", "theme", "opacity"].map(n => bar[n] && bar[n].chip));
+      const controls = [$("side"), $("hide"), $("close"), bar.layer && bar.layer.pick]
+        .concat(["heatmap", "theme", "opacity"].map(n => bar[n] && bar[n].chip));
       rects = controls.filter(Boolean).map(e => e.getBoundingClientRect())
         .filter(r => r.width > 0 && r.height > 0)
         .map(r => [r.left, r.top, r.width, r.height].map(v => Math.round(v)));
@@ -1028,11 +1027,14 @@
     bar.accuracy = chip("acc", ["accurate"]);
     bar.keys = chip("keys", ["keys", "combos"]);
     bar.layer = chip("layer", [null]);
-    // A click lists every drawn layer; one picked is drawn until the next keystroke (pickLayer).
-    bar.layer.chip.title = "click: look at another layer";
-    bar.layer.chip.addEventListener("click", () => { state.picking = !state.picking; renderStats(); postSize(); });
-    bar.menu = el("div", "layer-menu off");
-    bar.layer.chip.appendChild(bar.menu);
+    // A combobox of every drawn layer: one picked is drawn until the next keystroke (pickLayer).
+    // Its list opens over the page, so picking never makes the panel taller.
+    const pick = el("select", "layer-pick");
+    pick.setAttribute("aria-label", "look at another layer");
+    pick.title = "look at another layer until the next keystroke";
+    pick.addEventListener("change", () => pickLayer(pick.value || null));
+    bar.layer.chip.appendChild(pick);
+    bar.layer.pick = pick;
     bar.time = chip("time", ["typing"]);
     bar.hands = chip("hands", ["left hand", "right hand"]);
     bar.sfb = chip("sfb", ["same finger"]);
@@ -1062,27 +1064,22 @@
     bar.opacity.chip.appendChild(slider);
     bar.opacity.slider = slider;
   }
-  // The layer tile's list: "auto", following the keyboard, then every drawn layer, the one on
-  // screen pressed. Built again only when the keymap changes.
-  function renderLayerMenu() {
-    const menu = bar.menu;
-    if (!menu || !state.data) return;
-    if (menu.classList.contains("off") === state.picking) menu.classList.toggle("off", !state.picking);
-    if (bar.menuFor !== state.data) {
-      bar.menuFor = state.data;
-      menu.textContent = "";
-      bar.menuButtons = [null].concat(state.data.layer_order || []).map(name => {
-        const b = el("button", null, name ? layerLabel(name) : "auto");
-        b.type = "button";
-        b.addEventListener("click", e => { e.stopPropagation(); pickLayer(name); });
-        menu.appendChild(b);
-        return { name, b };
-      });
+  // The layer tile's combobox: "auto", following the keyboard, then every drawn layer, the one
+  // picked selected. Its options are built again only when the keymap changes.
+  function renderLayerPick() {
+    const pick = bar.layer && bar.layer.pick;
+    if (!pick || !state.data) return;
+    if (bar.pickFor !== state.data) {
+      bar.pickFor = state.data;
+      pick.textContent = "";
+      for (const name of [null].concat(state.data.layer_order || [])) {
+        const o = el("option", null, name ? layerLabel(name) : "auto");
+        o.value = name || "";
+        pick.appendChild(o);
+      }
     }
-    for (const { name, b } of bar.menuButtons) {
-      const on = String(name === state.pick);
-      if (b.getAttribute("aria-pressed") !== on) b.setAttribute("aria-pressed", on);
-    }
+    const want = state.pick || "";
+    if (pick.value !== want) pick.value = want;
   }
 
   function put(chip, values, names) {
@@ -1158,7 +1155,7 @@
     const top = state.data ? stack()[0] : null;
     put(bar.layer, [top && presses ? pct(sum(v.presses[top] || {}) / presses) : "—"],
         [top ? (state.pick ? layerLabel(top) : drawingLabel(top)) : "layer"]);
-    renderLayerMenu();
+    renderLayerPick();
     put(bar.named, [named || ""]);
     bar.named.chip.title = named || "";   // a long name is cut short on the column
     put(bar.heatmap, [state.heatMode]);
@@ -1610,7 +1607,7 @@
       state.data = data;
       applyPrefs();                 // the config's hud.dark, until the viewer chose
       state.momentary = []; state.oneShot = null;
-      state.activatorOf = {}; state.modSource = {}; state.pick = null; state.picking = false; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null;
+      state.activatorOf = {}; state.modSource = {}; state.pick = null; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null;
       // Keystrokes on the keymap going away are not followed by the next one's keys.
       state.down.clear(); state.strokes = []; state.lastStroke = null; state.lastOwnStroke = null;
       state.baseLayers = [data.base];

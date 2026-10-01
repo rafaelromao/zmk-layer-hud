@@ -240,6 +240,17 @@ function checkLayerPick(data) {
   if (page.hud.state.pick !== null) fails.push("a key typed should hand the board back too");
   page.hud.pickLayer("no such layer");
   if (page.hud.state.pick !== null) fails.push("a layer the keymap does not have is not picked");
+  // The tile's combobox: auto, then every drawn layer; choosing one picks it, and it shows the pick.
+  const select = page.document.querySelector(".layer-pick");
+  if (!select) return fails.concat(["the layer tile has no combobox"]);
+  const values = select.childNodes.map(o => o.value);
+  if (JSON.stringify(values) !== JSON.stringify([""].concat(data.layer_order || [])))
+    fails.push(`the combobox lists ${JSON.stringify(values)}`);
+  select.value = other;
+  for (const fn of select.listeners.get("change")) fn({ type: "change" });
+  if (page.hud.state.pick !== other) fails.push("choosing a layer in the combobox should pick it");
+  page.hud.pickLayer(null);
+  if (select.value !== "") fails.push(`after auto the combobox should say auto, not ${select.value}`);
   return fails;
 }
 
