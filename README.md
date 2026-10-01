@@ -161,6 +161,19 @@ work:
   and works like the macOS one, live WPM included. If it does not appear, run
   `omarchy-restart-shell`: the shell caches the plugins it has loaded.
 
+Two global shortcuts do the same from the keyboard, on both systems: **Ctrl+Alt+L** shows or
+hides the HUD, and **Ctrl+Alt+Gui+L** (Cmd on macOS, Super on Omarchy) starts or stops it. The
+icon's right-click menu shows each one beside its item. To use other keys, or none, set them in
+the config: `shortcuts: { toggle: ctrl+alt+l, power: ctrl+alt+gui+l }`, with `null` turning one
+off.
+- **On macOS** the menubar icon holds them, so they need no permission, but they go away when the
+  icon does (`menubar disable`, Remove Icon). A config change takes effect at once.
+- **On Omarchy** they are Hyprland binds. Every `start` writes `~/.config/hypr/zmk-layer-hud.conf`
+  from the config, and the first one adds a `source =` line for it at the end of
+  `hyprland.conf`. The binds stay after the HUD stops, so the power shortcut starts it again. The
+  file unbinds those keys first, so anything else bound to them stops working. A config change
+  takes effect on the next start, and `uninstall` removes both the file and the line.
+
 `zmk-layer-hud autostart enable` starts the HUD hidden at every login, and `autostart disable`
 stops doing so; it leaves a running HUD alone.
 - **On macOS** it is a login item that runs a small app of its own, "ZMK Layer HUD", in
@@ -179,7 +192,7 @@ flags of any one of them, and [docs/cli.md](docs/cli.md) has every verb's in one
 
 | Command | What it does |
 |---|---|
-| `start`, `stop`, `restart` | start the HUD; stop it; stop and start again |
+| `start`, `stop`, `restart`, `power` | start the HUD; stop it; stop and start again; start it if it is not running, stop it if it is |
 | `show`, `hide`, `toggle` | bring the HUD on screen; take it off, still running and counting; whichever it is not |
 | `status` | is it running, and which of the keyboard's two channels is live |
 | `log` | follow the panel and feed logs |
