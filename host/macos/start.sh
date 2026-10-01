@@ -30,6 +30,14 @@ stop() {
   for _ in $(seq 50); do pgrep -f "$HERE/panel.py" >/dev/null || return 0; sleep 0.1; done
 }
 
+# The menubar icon is a process of its own (menubar.py), so it stays when the HUD quits: started
+# here when it is not running yet, unless `zmk-layer-hud menubar disable` said not to.
+menubar() {
+  [ -e "$HOME/.config/zmk-layer-hud/menubar-off" ] && return 0
+  pgrep -f "$HERE/menubar.py" >/dev/null && return 0
+  nohup "$PYTHON" -u "$HERE/menubar.py" >"$RUN/menubar.log" 2>&1 &
+}
+
 case "${1:-start}" in
   start|run)
     "$PYTHON" -c 'import serial, hid, websockets, objc, WebKit' 2>/dev/null || {
@@ -38,6 +46,7 @@ case "${1:-start}" in
     # when nothing has been imported yet (it names `zmk-layer-hud import`).
     "$PYTHON" "$ROOT/host/keymap.py" ${ZMKHUD_CONFIG:+--config "$ZMKHUD_CONFIG"}
     stop
+    menubar
     # A login item has to stay attached: launchd ends whatever a job leaves behind when it exits.
     [ "${1:-start}" = run ] && exec "$PYTHON" -u "$HERE/panel.py" >"$RUN/panel.log" 2>&1
     nohup "$PYTHON" -u "$HERE/panel.py" >"$RUN/panel.log" 2>&1 &

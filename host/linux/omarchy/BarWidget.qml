@@ -5,8 +5,8 @@ import Quickshell.Hyprland
 import qs.Commons
 import qs.Ui
 
-// zmk-layer-hud in Omarchy's bar: the keyboard glyph, full while the HUD is shown, dimmed while
-// it is hidden (still counting), crossed out when it is not running. A click shows or hides it,
+// zmk-layer-hud in Omarchy's bar: the keyboard glyph and the live WPM, full while the HUD is shown,
+// dimmed while it is hidden (still counting); the glyph crossed out when it is not running. A click shows or hides it,
 // or starts it; a right-click offers the same and Quit.
 //
 // The HUD says whether it is shown in <state>/panel.json (host/panelstate.py), written whole by a
@@ -32,17 +32,19 @@ BarWidget {
 
   property string hud: "stopped"      // shown | hidden | stopped
   property int pid: 0
+  property int wpm: 0
 
   function read(text) {
     try {
       const st = JSON.parse(text)
       root.pid = st.pid
+      root.wpm = typeof st.wpm === "number" ? st.wpm : 0
       root.hud = st.shown ? "shown" : "hidden"
     } catch (e) {
       root.stopped()
     }
   }
-  function stopped() { root.hud = "stopped"; root.pid = 0 }
+  function stopped() { root.hud = "stopped"; root.pid = 0; root.wpm = 0 }
 
   function run(verb) {
     const env = ["env", "ZMKHUD_STATE=" + root.stateDir, root.command]
@@ -97,7 +99,10 @@ BarWidget {
     bar: root.bar
     pressable: true
     dimmed: root.hud !== "shown"
-    text: String.fromCodePoint(root.hud === "stopped" ? 0xF0310 : 0xF030C)   // nf-md-keyboard(-off)
+    // nf-md-keyboard(-off). A Nerd Font glyph is drawn wider than the room it takes, over its right
+    // side: the space after it gives that back, so the glyph sits in the middle of the button.
+    text: String.fromCodePoint(root.hud === "stopped" ? 0xF0310 : 0xF030C) + " "
+      + (root.hud === "stopped" ? "" : String(root.wpm))
     tooltipText: root.hud === "shown" ? "ZMK layer HUD: click to hide it (it keeps counting)"
       : root.hud === "hidden" ? "ZMK layer HUD, hidden and counting: click to show it"
       : "ZMK layer HUD is not running: click to start it"
@@ -122,7 +127,8 @@ BarWidget {
 
     Rectangle {
       anchors.fill: parent
-      color: root.bar ? root.bar.background : "#1a1b26"
+      // The bar's own colour, opaque: a transparent bar would leave the menu see-through.
+      color: root.bar ? Qt.rgba(root.bar.background.r, root.bar.background.g, root.bar.background.b, 1) : "#1a1b26"
       border.color: Qt.rgba(1, 1, 1, 0.12)
       border.width: 1
 

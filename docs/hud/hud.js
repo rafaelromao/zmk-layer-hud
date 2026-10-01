@@ -876,6 +876,18 @@
     state.viewCache = null;
     armWpm();
     renderStats();
+    postWpm(now);
+  }
+
+  // The live WPM, to the panel, which puts it beside its menubar icon (host/panelstate.py): said
+  // when the number changes, shown or hidden. The keyboard's own typing, as the session counts it.
+  function postWpm(now) {
+    const wpm = Math.round(wpmOf(state.ownTyping, now));
+    if (wpm === state.wpmSaid) return;
+    const h = panelHandler();
+    if (!h) return;
+    state.wpmSaid = wpm;
+    h.postMessage(JSON.stringify({ kind: "wpm", wpm }));
   }
 
   // The number on the bar decays while nobody types; it ticks only while there is one to show.
@@ -887,6 +899,7 @@
     const now = Date.now();
     wpmOf(state.typing, now); wpmOf(state.ownTyping, now);
     renderStats();
+    postWpm(now);
     if (state.typing.win.length || state.ownTyping.win.length) armWpm();
   }
 

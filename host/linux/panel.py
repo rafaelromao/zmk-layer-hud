@@ -234,6 +234,7 @@ def main():
 
     size = [HUD_W, HUD_H]
     shown = [not HIDDEN]
+    wpm = [0]           # the page's live WPM, for the bar icon (host/linux/omarchy)
 
     def take_input(window):
         # None is the whole surface again, a layer surface's own.
@@ -253,7 +254,7 @@ def main():
                 window.queue_draw()
             if rail is not None:
                 rail.show_all() if want else rail.hide()
-        panelstate.write(RUN, want)
+        panelstate.write(RUN, want, wpm=wpm[0])
 
     no_drag = []
 
@@ -265,6 +266,10 @@ def main():
             return
         if kind == "hide":
             set_shown(False)
+        elif kind == "wpm":
+            if isinstance(msg.get("wpm"), int) and msg["wpm"] != wpm[0]:
+                wpm[0] = msg["wpm"]
+                panelstate.write(RUN, shown[0], wpm=wpm[0])
         elif kind == "nodrag":
             rects = msg.get("rects")
             if isinstance(rects, list):

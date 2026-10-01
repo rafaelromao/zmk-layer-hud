@@ -447,10 +447,15 @@ class OmarchyPlugin(unittest.TestCase):
         self.assertFalse(os.path.exists(self.shell))
         self.assertIn(f"omarchy plugin enable {cli.OMARCHY_ID}", said)
 
-    def test_on_macos_the_icon_is_the_huds_own(self):
-        with mock.patch.object(cli.platform, "system", return_value="Darwin"):
+    def test_on_macos_disable_keeps_the_icon_away(self):
+        off = os.path.join(self.tmp.name, "menubar-off")
+        with mock.patch.object(cli.platform, "system", return_value="Darwin"), \
+                mock.patch.object(cli, "MENUBAR_OFF", off), mock.patch.object(cli, "pgrep", return_value=True):
+            self.assertEqual(0, self.run_cli("menubar", "disable")[0])
+            self.assertTrue(os.path.exists(off))         # start.sh looks for it
+            self.assertIn("off", self.run_cli("menubar")[1])
             self.assertEqual(0, self.run_cli("menubar", "enable")[0])
-            self.assertEqual(1, self.run_cli("menubar", "disable")[0])
+            self.assertFalse(os.path.exists(off))
 
 
 def desktop_exec(text):

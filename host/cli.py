@@ -1182,14 +1182,42 @@ def remove_plugin(pid=OMARCHY_ID):
     return had
 
 
+MENUBAR_OFF = os.path.join(CONFIG_DIR, "menubar-off")
+MENUBAR = os.path.join(ROOT, "host", "macos", "menubar.py")
+
+
+def macos_menubar(action):
+    """macOS's icon is host/macos/menubar.py, a process of its own that the host script starts with
+    the HUD and that stays when the HUD quits. `disable` stops it and keeps it from coming back."""
+    running = pgrep(re.escape(MENUBAR))
+    if action == "status":
+        print("the menubar icon is " + ("off (zmk-layer-hud menubar enable)" if os.path.exists(MENUBAR_OFF) else
+                                        "on" + ("" if running else ", and comes up with the next `zmk-layer-hud start`")))
+        return 0
+    if action == "disable":
+        os.makedirs(CONFIG_DIR, exist_ok=True)
+        with open(MENUBAR_OFF, "w", encoding="utf-8") as f:
+            f.write("zmk-layer-hud menubar enable brings the icon back\n")
+        subprocess.call(["pkill", "-f", re.escape(MENUBAR)], stderr=subprocess.DEVNULL)
+        print("the menubar icon is off, and stays off; a hidden HUD comes back with `zmk-layer-hud show`")
+        return 0
+    if os.path.exists(MENUBAR_OFF):
+        os.remove(MENUBAR_OFF)
+    if not running:
+        if not venv_ok():
+            raise Fail("no venv yet -- run `zmk-layer-hud setup` first")
+        os.makedirs(STATE, exist_ok=True)
+        with open(os.path.join(STATE, "menubar.log"), "w") as log:
+            subprocess.Popen([VENV_PYTHON, "-u", MENUBAR], stdout=log, stderr=log, stdin=subprocess.DEVNULL,
+                             env=dict(os.environ, ZMKHUD_STATE=STATE), start_new_session=True)
+    print("the menubar icon is on; it stays when the HUD quits, and a click starts it again")
+    return 0
+
+
 def cmd_menubar(args):
     import json
     if platform.system() == "Darwin":
-        note = "on macOS the icon is part of the HUD: it is in the menubar whenever the HUD runs"
-        if args.action == "disable":
-            raise Fail(note + ", and it is how a hidden HUD comes back")
-        print(note)
-        return 0
+        return macos_menubar(args.action)
     installed = os.path.isfile(os.path.join(plugin_dir(), "manifest.json"))
     if args.action == "status":
         try:
@@ -1261,6 +1289,9 @@ def launch_agent_plist():
         "RunAtLoad": True,
         "LimitLoadToSessionType": "Aqua",       # a login with a screen, not an ssh session
         "ProcessType": "Interactive",
+        # The menubar icon it starts (host/macos/menubar.py) stays when the HUD quits; launchd would
+        # otherwise end it with the job.
+        "AbandonProcessGroup": True,
         "AssociatedBundleIdentifiers": [APP_ID],   # System Settings shows it as the app's
         "StandardOutPath": os.path.join(STATE, "autostart.log"),
         "StandardErrorPath": os.path.join(STATE, "autostart.log"),
@@ -1631,6 +1662,7 @@ def cmd_uninstall(args):
         return 1
     run_host("stop")
     if platform.system() == "Darwin":
+        subprocess.call(["pkill", "-f", re.escape(MENUBAR)], stderr=subprocess.DEVNULL)
         if os.path.isfile(LAUNCH_AGENT):
             subprocess.call(["launchctl", "bootout", f"gui/{os.getuid()}/{APP_ID}"],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -1761,9 +1793,9 @@ def build_parser():
                    help="status (default), enable, disable; disable leaves a running HUD running")
     s.set_defaults(func=cmd_autostart)
 
-    s = add("menubar", "the icon that shows or hides the HUD: built in on macOS, a plugin for Omarchy's bar")
+    s = add("menubar", "the icon that shows, hides or starts the HUD, with its live WPM: macOS's menubar, Omarchy's bar")
     s.add_argument("action", nargs="?", default="status", choices=("status", "enable", "disable"),
-                   help="status (default); enable or disable Omarchy's bar plugin")
+                   help="status (default), enable, disable")
     s.set_defaults(func=cmd_menubar)
 
     s = add("setup", "set this machine up (packages, venv, config, permissions)")

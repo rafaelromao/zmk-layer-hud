@@ -151,12 +151,14 @@ work:
 - `zmk-layer-hud hide` takes it off screen and `show` brings it back. `toggle` does whichever
   applies, which suits a keybinding.
 - The HUD's own minus button, beside the ✕, hides it too. The ✕ still quits.
-- On macOS a keyboard icon sits in the menubar while the HUD runs, dimmed while it is hidden. A
-  click shows or hides the HUD; a right-click also offers Quit.
+- On macOS a keyboard icon sits in the menubar, with the live WPM beside it while the HUD runs,
+  shown or hidden. It is dimmed while the HUD is hidden, and it stays after the HUD quits. A click
+  shows or hides the HUD, or starts it; a right-click also offers Quit HUD and Remove Icon. `start`
+  brings the icon back, and `zmk-layer-hud menubar disable` keeps it away.
 - On Omarchy 4, `zmk-layer-hud menubar enable` puts the same icon in the bar. It installs the
   plugin `rafaelromao.zmk-layer-hud` and lists it first in `bar.layout.right` of
-  `~/.config/omarchy/shell.json`, keeping the old file as `shell.json.bak-zmk-layer-hud`. A click on
-  the icon also starts a HUD that is not running. If the icon doesn't appear, run
+  `~/.config/omarchy/shell.json`, keeping the old file as `shell.json.bak-zmk-layer-hud`. It shows
+  the live WPM too, and a click on the icon also starts a HUD that is not running. If the icon doesn't appear, run
   `omarchy-restart-shell`.
 
 `zmk-layer-hud autostart enable` starts the HUD hidden at every login, and `autostart disable`
@@ -185,7 +187,7 @@ flags of any one of them, and [docs/cli.md](docs/cli.md) has every verb's in one
 | `heatmap [live\|session\|physical\|speed\|off]` | what the keys glow with: what was just typed, every press this session on the layer on screen or on all of them, each key's time, or nothing |
 | `doctor` | check this machine and say what is missing |
 | `autostart [enable\|disable]` | start the HUD hidden at login, counting from the first keystroke, or stop doing so |
-| `menubar [enable\|disable]` | the icon that shows or hides the HUD: in the macOS menubar whenever it runs; on Omarchy, a plugin for its bar that this puts there or takes out |
+| `menubar [enable\|disable]` | the icon that shows, hides or starts the HUD, with its live WPM: in the macOS menubar, and on Omarchy a plugin for its bar |
 | `setup` | prepare this machine: packages, virtualenv, config, permissions |
 | `update`, `uninstall` | fetch a newer tree; remove the tree and the command |
 | `keymap` | check the HUD's own files load: the config and the definitions import wrote |

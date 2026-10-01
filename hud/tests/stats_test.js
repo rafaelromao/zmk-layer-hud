@@ -695,6 +695,24 @@ function main() {
       p.document.getElementById("hide").click();
       check(`and asks ${name} to hide`, posted.some(m => m.kind === "hide"), JSON.stringify(posted.map(m => m.kind)));
     }
+    {
+      // The live WPM goes to the panel too, for its menubar icon: said when it changes.
+      const p = loadPage();
+      const posted = [];
+      p.window.webkit = { messageHandlers: { zmkhud: { postMessage: s => posted.push(JSON.parse(s)) } } };
+      p.hud.load(data);
+      p.hud.setLayers([]);
+      for (let i = 0; i < 30; i++) {
+        p.hud.key({ type: "keyDown", name: "a", chars: "a", code: 4, flags: {} });
+        p.clock.advance(120);
+      }
+      const said = posted.filter(m => m.kind === "wpm").map(m => m.wpm);
+      check("the panel is told the live WPM as it changes", said.length > 1 && Math.max(...said) > 0, JSON.stringify(said));
+      check("and only when it changes", said.every((w, i) => i === 0 || w !== said[i - 1]), JSON.stringify(said));
+      p.clock.advance(60000);
+      const last = posted.filter(m => m.kind === "wpm").pop();
+      check("and that it is back to 0 once the typing stops", last && last.wpm === 0, JSON.stringify(last));
+    }
     const p = loadPage();
     p.hud.load(data);
     p.hud.setLayers([]);

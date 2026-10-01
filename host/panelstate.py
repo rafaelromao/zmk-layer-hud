@@ -1,9 +1,9 @@
 """Whether the running panel is on screen, and how the command line asks it to change.
 
 A running panel -- host/macos/panel.py or host/linux/panel.py -- keeps $STATE/panel.json saying
-which process it is and whether it is shown. `zmk-layer-hud status` reads it, and so does the
-Omarchy bar widget (host/linux/omarchy). `show` and `hide` write what they want to
-$STATE/panel.want and send the panel SIGNAL. The panel does it, then writes panel.json again,
+which process it is, whether it is shown, and the live WPM the page last showed. `zmk-layer-hud
+status` reads it, and so do the menubar icons (host/macos/menubar.py, host/linux/omarchy). `show`
+and `hide` write what they want to $STATE/panel.want and send the panel SIGNAL. The panel does it, then writes panel.json again,
 which is how they know it has.
 
 One signal and a file, rather than SIGUSR1 for one and SIGUSR2 for the other: on Linux WebKit
@@ -57,17 +57,20 @@ def alive(pid):
     return True
 
 
-def write(d, shown, pid=None):
-    """The panel's word: which process it is, and whether it is on screen."""
-    _write(os.path.join(d, STATE_FILE), {"pid": pid or os.getpid(), "shown": bool(shown)})
+def write(d, shown, pid=None, wpm=0):
+    """The panel's word: which process it is, whether it is on screen, and how fast it is being
+    typed on."""
+    _write(os.path.join(d, STATE_FILE), {"pid": pid or os.getpid(), "shown": bool(shown), "wpm": int(wpm or 0)})
 
 
 def read(d):
-    """What a live panel last said, as {"pid", "shown"}; None when there is no such file, it is not
-    one of these, or its process is gone."""
+    """What a live panel last said, as {"pid", "shown", "wpm"}; None when there is no such file,
+    it is not one of these, or its process is gone."""
     st = _load(os.path.join(d, STATE_FILE))
     if not st or type(st.get("pid")) is not int or not isinstance(st.get("shown"), bool):
         return None
+    if type(st.get("wpm")) is not int:
+        st["wpm"] = 0
     return st if alive(st["pid"]) else None
 
 
