@@ -145,11 +145,22 @@ lives. Two rules it keeps, and both matter:
 
 Showing and hiding goes to the running panel directly: `show` and `hide` write what they want to
 `$STATE/panel.want` and send the panel SIGUSR2, and the panel does it and says so in
-`$STATE/panel.json` (`{"pid", "shown"}`), which `status` and the Omarchy bar widget read too
-(`host/panelstate.py`). One signal and a file rather than one signal each, because on Linux WebKit
+`$STATE/panel.json` (`{"pid", "shown", "wpm"}`), which `status` and both menubar icons read too
+(`host/panelstate.py`). The live WPM gets there from the page, which posts `{"kind":"wpm"}` to its
+panel whenever the number changes. One signal and a file rather than one signal each, because on Linux WebKit
 suspends its own threads with SIGUSR1, and the GTK panel is a WebKit process. Hidden is drawn as
 nothing rather than closed: the window stays, transparent and taking no clicks, so WebKit never
 takes the page for a hidden one and slows the timers it counts with.
+
+The icons only read `panel.json` and run the command line, so they work the same whether the HUD
+is running or not:
+- **macOS:** `host/macos/menubar.py` is a process of its own, and stays when the HUD quits.
+  `start.sh` starts it with the HUD. It holds a lock, so a second copy exits at once, because
+  macOS's `pgrep` does not see its own ancestors.
+- **Omarchy:** `host/linux/omarchy` is a bar-widget plugin for Omarchy 4's shell. `menubar enable`
+  copies it into `~/.config/omarchy/plugins/rafaelromao.zmk-layer-hud`, with the paths written into
+  its QML. Then it lists that id in `bar.layout.right` of `~/.config/omarchy/shell.json`, which is
+  what enables a third-party widget.
 
 The macOS login item (`autostart enable`) runs `host/macos/launcher.c`, compiled into
 `ZMK Layer HUD.app` with its own Info.plist and an ad-hoc signature. macOS's privacy checks ask the

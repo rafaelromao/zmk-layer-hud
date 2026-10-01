@@ -87,7 +87,8 @@ page's ✕ sends. `--no-inject` refuses the five message kinds above; it does no
 
 The page's hide button sends nothing here: it posts `{"kind":"hide"}` to its own panel (the macOS
 bridge, or the Linux panel's `zmkhudsize` handler), and the panel goes off screen while the page
-goes on counting. `zmk-layer-hud show` brings it back.
+goes on counting. `zmk-layer-hud show` brings it back. The page posts the live WPM the same way,
+`{"kind":"wpm","wpm":N}` each time it changes, for the panel to pass to the menubar icon.
 
 The page counts what it draws and reports the keyboard's own counts to the session every two
 seconds; it also says when its heatmap chip is switched:

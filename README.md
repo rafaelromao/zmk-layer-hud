@@ -151,15 +151,15 @@ work:
 - `zmk-layer-hud hide` takes it off screen and `show` brings it back. `toggle` does whichever
   applies, which suits a keybinding.
 - The HUD's own minus button, beside the ✕, hides it too. The ✕ still quits.
-- On macOS a keyboard icon sits in the menubar, with the live WPM beside it while the HUD runs,
-  shown or hidden. It is dimmed while the HUD is hidden, and it stays after the HUD quits. A click
+- On macOS a keyboard icon sits in the menubar, with the live WPM to its left while the HUD runs,
+  shown or hidden. It is struck through while the HUD is not running. It is dimmed while the HUD is hidden, and it stays after the HUD quits. A click
   shows or hides the HUD, or starts it; a right-click also offers Quit HUD and Remove Icon. `start`
   brings the icon back, and `zmk-layer-hud menubar disable` keeps it away.
 - On Omarchy 4, `zmk-layer-hud menubar enable` puts the same icon in the bar. It installs the
   plugin `rafaelromao.zmk-layer-hud` and lists it first in `bar.layout.right` of
-  `~/.config/omarchy/shell.json`, keeping the old file as `shell.json.bak-zmk-layer-hud`. It shows
-  the live WPM too, and a click on the icon also starts a HUD that is not running. If the icon doesn't appear, run
-  `omarchy-restart-shell`.
+  `~/.config/omarchy/shell.json`, keeping the old file as `shell.json.bak-zmk-layer-hud`. It looks
+  and works like the macOS one, live WPM included. If it does not appear, run
+  `omarchy-restart-shell`: the shell caches the plugins it has loaded.
 
 `zmk-layer-hud autostart enable` starts the HUD hidden at every login, and `autostart disable`
 stops doing so; it leaves a running HUD alone.
