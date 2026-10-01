@@ -1,40 +1,36 @@
-// zmk-layer-hud in Omarchy's bar: the keyboard glyph, full while the HUD is shown, dimmed while
-// it is hidden (still counting), crossed out when it is not running. A click shows or hides it,
-// or starts it. Installed by `zmk-layer-hud menubar enable`, which writes the command and the
-// state directory into this plugin's defaults.
-//
-// The HUD says whether it is shown in <stateDir>/panel.json (host/panelstate.py), written whole
-// by a rename -- which can drop a file watch, so a timer reads it again as well.
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import qs.Commons
+import qs.Ui
 
-Item {
+// zmk-layer-hud in Omarchy's bar: the keyboard glyph, full while the HUD is shown, dimmed while
+// it is hidden (still counting), crossed out when it is not running. A click shows or hides it,
+// or starts it.
+//
+// The HUD says whether it is shown in <state>/panel.json (host/panelstate.py), written whole by a
+// rename -- which can drop a file watch, so a timer reads it again as well.
+BarWidget {
   id: root
+  moduleName: "rafaelromao.zmk-layer-hud"
 
-  property var bar: null
-  property string moduleName: ""
-  property var settings: null
-
-  function setting(key, fallback) {
-    const value = root.settings ? root.settings[key] : undefined
-    return value === undefined || value === null || value === "" ? fallback : String(value)
-  }
-
+  // `zmk-layer-hud menubar enable` writes these in: the shell does not start commands through a
+  // login shell, so neither PATH nor XDG_STATE_HOME can be counted on. Anything that is not an
+  // absolute path means a hand-copied plugin, which falls back to the defaults.
+  readonly property string installedCommand: "__ZMK_LAYER_HUD_COMMAND__"
+  readonly property string installedState: "__ZMK_LAYER_HUD_STATE__"
+  readonly property string installedStartWith: "__ZMK_LAYER_HUD_START_WITH__"
   readonly property string home: Quickshell.env("HOME") || ""
-  readonly property string command: setting("command", home + "/.local/bin/zmk-layer-hud")
-  readonly property string stateDir: setting("stateDir",
-    (Quickshell.env("XDG_STATE_HOME") || home + "/.local/state") + "/zmk-layer-hud")
-  readonly property var startWith: setting("startWith", "").split(" ").filter(w => w.length)
+  readonly property string command: installedCommand.charAt(0) === "/"
+    ? installedCommand : home + "/.local/bin/zmk-layer-hud"
+  readonly property string stateDir: installedState.charAt(0) === "/"
+    ? installedState : (Quickshell.env("XDG_STATE_HOME") || home + "/.local/state") + "/zmk-layer-hud"
+  // What a start runs through (uwsm-app --), so a HUD the bar started outlives a shell restart.
+  readonly property var startWith: installedStartWith.indexOf("__") === 0
+    ? [] : installedStartWith.split(" ").filter(w => w.length)
 
   property string hud: "stopped"      // shown | hidden | stopped
   property int pid: 0
-
-  readonly property bool vertical: root.bar ? root.bar.vertical === true : false
-  readonly property int barSize: root.bar ? Number(root.bar.barSize) : 26
-
-  implicitWidth: root.vertical ? root.barSize : glyph.implicitWidth + 15
-  implicitHeight: root.vertical ? glyph.implicitHeight + 12 : root.barSize
 
   function read(text) {
     try {
@@ -47,11 +43,8 @@ Item {
   }
   function stopped() { root.hud = "stopped"; root.pid = 0 }
 
-  function tip() {
-    if (root.hud === "shown") return "ZMK layer HUD: click to hide it (it keeps counting)"
-    if (root.hud === "hidden") return "ZMK layer HUD, hidden and counting: click to show it"
-    return "ZMK layer HUD is not running: click to start it"
-  }
+  implicitWidth: button.implicitWidth
+  implicitHeight: button.implicitHeight
 
   FileView {
     id: panelFile       // not `state`: that is every Item's own property
@@ -79,27 +72,25 @@ Item {
     }
   }
 
-  Text {
-    id: glyph
-    anchors.centerIn: parent
-    color: root.bar ? root.bar.foreground : "white"
-    font.family: root.bar ? root.bar.fontFamily : "monospace"
-    font.pixelSize: 14
-    opacity: root.hud === "shown" ? 1 : 0.45
-    text: String.fromCodePoint(root.hud === "stopped" ? 0xF0310 : 0xF030C)   // nf-md-keyboard(-off)
-  }
-
-  MouseArea {
+  // A direct child, not a Loader's: bars style their widgets by walking the tree once when the
+  // widget is placed.
+  WidgetButton {
+    id: button
     anchors.fill: parent
-    hoverEnabled: true
-    onClicked: {
+    bar: root.bar
+    pressable: true
+    dimmed: root.hud !== "shown"
+    text: String.fromCodePoint(root.hud === "stopped" ? 0xF0310 : 0xF030C)   // nf-md-keyboard(-off)
+    tooltipText: root.hud === "shown" ? "ZMK layer HUD: click to hide it (it keeps counting)"
+      : root.hud === "hidden" ? "ZMK layer HUD, hidden and counting: click to show it"
+      : "ZMK layer HUD is not running: click to start it"
+    onPressed: (mouseButton) => {
+      if (mouseButton !== Qt.LeftButton) return
       const env = ["env", "ZMKHUD_STATE=" + root.stateDir, root.command]
       if (root.hud === "stopped")
         Quickshell.execDetached(root.startWith.concat(env, ["start"]))
       else
         Quickshell.execDetached(env.concat(["toggle"]))
     }
-    onEntered: if (root.bar) root.bar.showTooltip(root, root.tip())
-    onExited: if (root.bar) root.bar.hideTooltip(root)
   }
 }

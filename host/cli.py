@@ -44,7 +44,7 @@ BIN_DIR = os.path.expanduser(os.environ.get("ZMKHUD_BIN_DIR") or "~/.local/bin")
 BIN_LINK = os.path.join(BIN_DIR, "zmk-layer-hud")
 
 REPO = "rafaelromao/zmk-layer-hud"
-# The Omarchy bar plugin's id; the macOS login item's bundle id and label too.
+# The macOS login item's bundle id and label.
 APP_ID = "io.github.rafaelromao.zmk-layer-hud"
 OMARCHY_PLUGINS = os.path.expanduser("~/.config/omarchy/plugins")
 # Starting at login: a LaunchAgent and the small app it runs on macOS, an XDG autostart entry on Linux.
@@ -1001,43 +1001,189 @@ def cmd_setup(args):
 
 # ---------- the menubar icon ----------
 
-def plugin_dir():
-    return os.path.join(OMARCHY_PLUGINS, APP_ID)
+# The Omarchy bar plugin. Omarchy wants a third-party id as <author>.<name>, with the plugin's
+# directory named after it; the first version used APP_ID, and is taken out again on the way in.
+OMARCHY_ID = "rafaelromao.zmk-layer-hud"
+OLD_OMARCHY_IDS = (APP_ID,)
+SHELL_JSON = os.path.expanduser("~/.config/omarchy/shell.json")
+
+
+def plugin_dir(pid=OMARCHY_ID):
+    return os.path.join(OMARCHY_PLUGINS, pid)
 
 
 def omarchy(*argv):
-    """One of Omarchy's own commands, and whether it worked."""
+    """One of Omarchy's own commands, and whether it worked. With OMARCHY_PATH, which omarchy-shell
+    needs and a terminal outside the desktop's session may not have."""
+    env = dict(os.environ)
+    env.setdefault("OMARCHY_PATH", os.path.expanduser("~/.local/share/omarchy"))
     try:
-        return subprocess.call(list(argv)) == 0
-    except OSError:
+        return subprocess.call(list(argv), env=env, timeout=15) == 0
+    except (OSError, subprocess.SubprocessError):
         return False
 
 
+def rescan_plugins():
+    """The shell finds a new plugin folder only on a rescan. Through omarchy-shell, else through
+    Quickshell's own IPC to the instance Omarchy runs, which is all omarchy-shell does."""
+    if shutil.which("omarchy-shell") and omarchy("omarchy-shell", "shell", "rescanPlugins"):
+        return True
+    shell = os.path.join(os.environ.get("OMARCHY_PATH") or os.path.expanduser("~/.local/share/omarchy"), "shell")
+    return bool(shutil.which("qs")) and omarchy("qs", "ipc", "-n", "-p", shell, "call", "--", "shell", "rescanPlugins")
+
+
 def install_plugin():
-    """host/linux/omarchy, copied where Omarchy looks for plugins, told where the command and the
-    state are: its defaults are absolute here, because the shell's environment need not have
-    ~/.local/bin on PATH or this shell's XDG_STATE_HOME."""
-    import json
+    """host/linux/omarchy copied where Omarchy looks for plugins, as regular files (its validator
+    refuses links), with the command and the state directory written into the widget: the shell
+    does not start commands through a login shell, so neither PATH nor XDG_STATE_HOME can be
+    counted on."""
     dest = plugin_dir()
     staged = dest + ".new"
     shutil.rmtree(staged, ignore_errors=True)
     shutil.copytree(os.path.join(ROOT, "host", "linux", "omarchy"), staged)
-    manifest = os.path.join(staged, "manifest.json")
-    with open(manifest, encoding="utf-8") as f:
-        m = json.load(f)
-    m["barWidget"]["defaults"].update(
-        command=os.path.join(ROOT, "bin", "zmk-layer-hud"), stateDir=STATE,
-        # A HUD the bar starts would otherwise live in the shell's own cgroup, and go when it restarts.
-        startWith="uwsm-app --" if shutil.which("uwsm-app") else "")
-    with open(manifest, "w", encoding="utf-8") as f:
-        json.dump(m, f, indent=2)
-        f.write("\n")
+    widget = os.path.join(staged, "BarWidget.qml")
+    with open(widget, encoding="utf-8") as f:
+        qml = f.read()
+    for mark, value in (("__ZMK_LAYER_HUD_COMMAND__", os.path.join(ROOT, "bin", "zmk-layer-hud")),
+                        ("__ZMK_LAYER_HUD_STATE__", STATE),
+                        # A HUD the bar starts would live in the shell's cgroup, and go when it restarts.
+                        ("__ZMK_LAYER_HUD_START_WITH__", "uwsm-app --" if shutil.which("uwsm-app") else "")):
+        qml = qml.replace(mark, value.replace("\\", "\\\\").replace('"', '\\"'))
+    with open(widget, "w", encoding="utf-8") as f:
+        f.write(qml)
     shutil.rmtree(dest, ignore_errors=True)
     os.rename(staged, dest)
     return dest
 
 
+def bar_has(cfg, pid):
+    """Whether a shell.json puts the widget in the bar (or lists it among its plugins)."""
+    is_it = lambda e: e == pid or (isinstance(e, dict) and e.get("id") == pid)
+    layout = ((cfg.get("bar") or {}).get("layout") or {}) if isinstance(cfg, dict) else {}
+    return any(is_it(e) for section in layout.values() if isinstance(section, list) for e in section) or \
+        any(is_it(e) for e in (cfg.get("plugins") or []) if isinstance(cfg, dict))
+
+
+def right_array_start(text):
+    """The offset just past the '[' that opens bar.layout.right, by walking the JSON's tokens with
+    the key that leads to each nested value; None when there is none."""
+    import json
+    stack = []
+
+    def value_done():
+        if stack and stack[-1]["obj"]:
+            stack[-1]["want_key"] = True
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == '"':
+            j = i + 1
+            while j < n and text[j] != '"':
+                j += 2 if text[j] == "\\" else 1
+            word = json.loads(text[i:j + 1])
+            i = j + 1
+            if stack and stack[-1]["obj"] and stack[-1]["want_key"]:
+                stack[-1]["key"], stack[-1]["want_key"] = word, False
+            else:
+                value_done()
+            continue
+        if c == "[":
+            if len(stack) == 3 and [f["key"] for f in stack] == ["bar", "layout", "right"]:
+                return i + 1
+            stack.append({"obj": False, "want_key": False, "key": None})
+        elif c == "{":
+            stack.append({"obj": True, "want_key": True, "key": None})
+        elif c in "]}":
+            if not stack:
+                return None
+            stack.pop()
+            value_done()
+        elif c not in ",:" and not c.isspace():
+            while i < n and text[i] not in ",]} \t\r\n":
+                i += 1
+            value_done()
+            continue
+        i += 1
+    return None
+
+
+def add_to_bar(path, pid):
+    """List {"id": pid} first in bar.layout.right of shell.json -- being in the layout is what
+    enables a third-party widget -- and say whether it had to. Edited as text, in the indentation
+    the file already has, so the rest of a file people edit by hand stays as it was; the original
+    is kept beside it."""
+    import json
+    with open(path, encoding="utf-8") as f:
+        raw = f.read()
+    cfg = json.loads(raw)
+    if bar_has(cfg, pid):
+        return False
+    out = None
+    at = right_array_start(raw)
+    if at is not None:
+        rest = raw[at:]
+        nxt = rest.lstrip()
+        ws = rest[:len(rest) - len(nxt)]
+        if "\n" in ws and nxt and nxt[0] != "]":
+            ind = ws[ws.rfind("\n") + 1:]
+            line = raw[raw.rfind("\n", 0, at) + 1:at]
+            lead = line[:len(line) - len(line.lstrip(" \t"))]
+            unit = ind[len(lead):] if ind.startswith(lead) and len(ind) > len(lead) else "  "
+            out = raw[:at] + ws + "{\n" + ind + unit + f'"id": {json.dumps(pid)}\n' + ind + "}," + rest
+    if out is None or not bar_has(json.loads(out), pid):
+        # An empty or one-line right section: written again whole, the widget first in it.
+        cfg.setdefault("bar", {}).setdefault("layout", {}).setdefault("right", []).insert(0, {"id": pid})
+        out = json.dumps(cfg, indent=2, ensure_ascii=False) + "\n"
+    with open(path + ".bak-zmk-layer-hud", "w", encoding="utf-8") as f:
+        f.write(raw)
+    with open(path, "w", encoding="utf-8") as f:      # in place: a shell.json that is a link stays one
+        f.write(out)
+    return True
+
+
+def take_out_of_bar(path, pid):
+    """Undo add_to_bar, and whatever `omarchy plugin enable` put in for it: say whether it had to."""
+    import json
+    try:
+        with open(path, encoding="utf-8") as f:
+            raw = f.read()
+        cfg = json.loads(raw)
+    except (OSError, ValueError):
+        return False
+    if not bar_has(cfg, pid):
+        return False
+    entry = r'\{\s*"id"\s*:\s*' + re.escape(json.dumps(pid)) + r'\s*\}'
+    out = re.sub(entry + r"\s*,\s*", "", raw, count=1)
+    if out == raw:
+        out = re.sub(r",\s*" + entry, "", raw, count=1)
+    try:
+        still = bar_has(json.loads(out), pid)
+    except ValueError:
+        still = True
+    if still:
+        keep = lambda e: not (e == pid or (isinstance(e, dict) and e.get("id") == pid))
+        for name, section in ((cfg.get("bar") or {}).get("layout") or {}).items():
+            if isinstance(section, list):
+                cfg["bar"]["layout"][name] = [e for e in section if keep(e)]
+        if isinstance(cfg.get("plugins"), list):
+            cfg["plugins"] = [e for e in cfg["plugins"] if keep(e)]
+        out = json.dumps(cfg, indent=2, ensure_ascii=False) + "\n"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(out)
+    return True
+
+
+def remove_plugin(pid=OMARCHY_ID):
+    """Out of the bar and off the disk; whether there was anything to take."""
+    had = take_out_of_bar(SHELL_JSON, pid)
+    if os.path.isdir(plugin_dir(pid)):
+        shutil.rmtree(plugin_dir(pid), ignore_errors=True)
+        had = True
+    return had
+
+
 def cmd_menubar(args):
+    import json
     if platform.system() == "Darwin":
         note = "on macOS the icon is part of the HUD: it is in the menubar whenever the HUD runs"
         if args.action == "disable":
@@ -1046,29 +1192,44 @@ def cmd_menubar(args):
         return 0
     installed = os.path.isfile(os.path.join(plugin_dir(), "manifest.json"))
     if args.action == "status":
-        print(f"the Omarchy bar plugin is {'in ' + plugin_dir() if installed else 'not installed (zmk-layer-hud menubar enable)'}")
+        try:
+            with open(SHELL_JSON, encoding="utf-8") as f:
+                placed = bar_has(json.load(f), OMARCHY_ID)
+        except (OSError, ValueError):
+            placed = False
+        print("the Omarchy bar plugin is " + ("not installed (zmk-layer-hud menubar enable)" if not installed else
+                                               f"in {plugin_dir()}" + ("" if placed else f", but not in the bar of {SHELL_JSON}")))
         return 0
-    if not (shutil.which("omarchy") and shutil.which("omarchy-shell")):
-        raise Fail("the icon is a plugin for Omarchy's bar, and there is no `omarchy` here; "
+    if args.action == "disable":
+        removed = remove_plugin()
+        rescan_plugins()
+        print("the HUD's icon is out of Omarchy's bar" if removed else "the Omarchy bar plugin was not installed")
+        return 0
+    if not (os.path.isfile(SHELL_JSON) or shutil.which("omarchy-shell")):
+        raise Fail("the icon is a plugin for Omarchy's own bar (Omarchy 4), and there is none here; "
                    "any other bar can run `zmk-layer-hud toggle` on a click")
-    if args.action == "enable":
-        dest = install_plugin()
-        print(f"    {dest}")
-        # enable does not always put a bar widget in the bar's layout (omacom/omarchy#10264), and
-        # `bar put` does only where it is absent: both, in that order.
-        if omarchy("omarchy-shell", "shell", "rescanPlugins") and omarchy("omarchy", "plugin", "enable", APP_ID) \
-                and omarchy("omarchy", "bar", "put", APP_ID, "--section", "right"):
-            print("the HUD's icon is in Omarchy's bar (`omarchy bar move` puts it elsewhere)")
-        else:
-            print("installed, but Omarchy's shell did not take it yet; run these where it runs:")
-            print("    omarchy-shell shell rescanPlugins")
-            print(f"    omarchy plugin enable {APP_ID}")
-            print(f"    omarchy bar put {APP_ID} --section right")
+    for old in OLD_OMARCHY_IDS:
+        if remove_plugin(old):
+            print(f"    took out the plugin's old id, {old}")
+    dest = install_plugin()
+    print(f"    {dest}")
+    if shutil.which("omarchy"):
+        print("    omarchy plugin validate: " + ("accepts it" if omarchy("omarchy", "plugin", "validate", dest)
+                                                 else "refuses it (it says why above)"))
+    rescanned = rescan_plugins()
+    if not os.path.isfile(SHELL_JSON):
+        # Without a shell.json of its own the shell runs Omarchy's default, which it does not merge a
+        # partial file into: writing one with only this widget would take every other one away.
+        print(f"no {SHELL_JSON} yet; put the icon in the bar with:")
+        print(f"    omarchy plugin enable {OMARCHY_ID}")
         return 0
-    omarchy("omarchy", "plugin", "disable", APP_ID)
-    shutil.rmtree(plugin_dir(), ignore_errors=True)
-    omarchy("omarchy-shell", "shell", "rescanPlugins")
-    print("the HUD's icon is out of Omarchy's bar" if installed else "the Omarchy bar plugin was not installed")
+    added = add_to_bar(SHELL_JSON, OMARCHY_ID)
+    print(("the HUD's icon is first in bar.layout.right of " if added else "the bar already has it, in ") + SHELL_JSON +
+          (f" (the old one is {SHELL_JSON}.bak-zmk-layer-hud)" if added else ""))
+    if not rescanned:
+        print("the shell could not be asked to look for it; `omarchy-restart-shell` makes it")
+    else:
+        print("if the bar does not show it, `omarchy-restart-shell`: the shell caches the QML it has loaded")
     return 0
 
 
@@ -1482,11 +1643,10 @@ def cmd_uninstall(args):
     elif os.path.isfile(AUTOSTART_DESKTOP):
         os.remove(AUTOSTART_DESKTOP)
         print(f"    removed {AUTOSTART_DESKTOP}")
-    if platform.system() == "Linux" and os.path.isdir(plugin_dir()):
-        if shutil.which("omarchy"):
-            omarchy("omarchy", "plugin", "disable", APP_ID)
-        shutil.rmtree(plugin_dir(), ignore_errors=True)
-        print(f"    removed {plugin_dir()}")
+    if platform.system() == "Linux":
+        for pid in (OMARCHY_ID,) + OLD_OMARCHY_IDS:
+            if remove_plugin(pid):
+                print(f"    took the {pid} bar plugin out of Omarchy")
     if os.path.islink(BIN_LINK) and os.path.realpath(BIN_LINK).startswith(os.path.realpath(ROOT)):
         os.unlink(BIN_LINK)
         print(f"    removed {BIN_LINK}")

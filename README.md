@@ -153,8 +153,11 @@ work:
 - The HUD's own minus button, beside the ✕, hides it too. The ✕ still quits.
 - On macOS a keyboard icon sits in the menubar while the HUD runs, dimmed while it is hidden. A
   click shows or hides the HUD; a right-click also offers Quit.
-- On Omarchy, `zmk-layer-hud menubar enable` puts the same icon in the bar. A click there also
-  starts a HUD that is not running.
+- On Omarchy 4, `zmk-layer-hud menubar enable` puts the same icon in the bar. It installs the
+  plugin `rafaelromao.zmk-layer-hud` and lists it first in `bar.layout.right` of
+  `~/.config/omarchy/shell.json`, keeping the old file as `shell.json.bak-zmk-layer-hud`. A click on
+  the icon also starts a HUD that is not running. If the icon doesn't appear, run
+  `omarchy-restart-shell`.
 
 `zmk-layer-hud autostart enable` starts the HUD hidden at every login, and `autostart disable`
 stops doing so; it leaves a running HUD alone.

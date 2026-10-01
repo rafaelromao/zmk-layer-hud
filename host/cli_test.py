@@ -331,61 +331,121 @@ class DefinitionsMissing(unittest.TestCase):
         self.assertIn("github.com/you/zmk-config", self.missing("hud: {width: 500}\n"))
 
 
+SHELL_JSON = """{
+  "version": 1,
+  "bar": {
+    "position": "top",
+    "layout": {
+      "left": [
+        {
+          "id": "omarchy.menu"
+        }
+      ],
+      "right": [
+        {
+          "id": "omarchy.tray"
+        },
+        {
+          "id": "omarchy.network"
+        }
+      ]
+    }
+  },
+  "plugins": []
+}
+"""
+
+
 class OmarchyPlugin(unittest.TestCase):
-    """The bar widget Omarchy loads, and `menubar` putting it where Omarchy looks."""
+    """The bar widget Omarchy loads, and `menubar` putting it where Omarchy looks and in the bar."""
 
     SRC = os.path.join(ROOT, "host", "linux", "omarchy")
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
-        for p in (mock.patch.object(cli, "OMARCHY_PLUGINS", self.tmp.name),
+        self.shell = os.path.join(self.tmp.name, "shell.json")
+        self.plugins = os.path.join(self.tmp.name, "plugins")
+        for p in (mock.patch.object(cli, "OMARCHY_PLUGINS", self.plugins),
+                  mock.patch.object(cli, "SHELL_JSON", self.shell),
                   mock.patch.object(cli.platform, "system", return_value="Linux")):
             p.start()
             self.addCleanup(p.stop)
 
+    def bar(self):
+        with open(self.shell, encoding="utf-8") as f:
+            return json.load(f)
+
+    def run_cli(self, *argv, which=lambda n: "/usr/bin/" + n):
+        with mock.patch.object(cli.shutil, "which", side_effect=which), \
+                mock.patch.object(cli.subprocess, "call", return_value=0) as call, \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            code = cli.main(list(argv))
+        return code, out.getvalue() + err.getvalue(), [c[0][0] for c in call.call_args_list]
+
     def test_the_manifest_is_one_omarchy_can_load(self):
         with open(os.path.join(self.SRC, "manifest.json"), encoding="utf-8") as f:
             m = json.load(f)
-        self.assertEqual(cli.APP_ID, m["id"])
+        # Omarchy takes a third-party id as <author>.<name>.
+        self.assertEqual(cli.OMARCHY_ID, m["id"])
+        self.assertEqual(2, len(m["id"].split(".")))
         self.assertEqual(["bar-widget"], m["kinds"])
-        self.assertTrue(os.path.isfile(os.path.join(self.SRC, m["entryPoints"]["barWidget"])))
-        w = m["barWidget"]
-        self.assertEqual(set(w["defaults"]), {f["key"] for f in w["schema"]})
         with open(os.path.join(self.SRC, m["entryPoints"]["barWidget"]), encoding="utf-8") as f:
             qml = f.read()
-        for key in w["defaults"]:
-            self.assertIn(f'setting("{key}"', qml)
-
-    def run_cli(self, *argv):
-        with contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
-            code = cli.main(list(argv))
-        return code, out.getvalue() + err.getvalue()
+        self.assertIn("BarWidget {", qml)
+        self.assertIn(f'moduleName: "{cli.OMARCHY_ID}"', qml)
+        self.assertNotIn("id: state", qml)                # every Item has a `state` of its own
 
     def test_without_omarchy_nothing_is_copied(self):
-        with mock.patch.object(cli.shutil, "which", return_value=None):
-            code, said = self.run_cli("menubar", "enable")
+        code, said, _ = self.run_cli("menubar", "enable", which=lambda n: None)
         self.assertEqual(1, code)
         self.assertIn("toggle", said)
-        self.assertEqual([], os.listdir(self.tmp.name))
+        self.assertFalse(os.path.exists(self.plugins))
 
-    def test_enable_copies_tells_it_where_things_are_then_rescans_and_enables(self):
-        with mock.patch.object(cli.shutil, "which", side_effect=lambda n: "/usr/bin/" + n), \
-                mock.patch.object(cli.subprocess, "call", return_value=0) as call:
-            self.assertEqual(0, self.run_cli("menubar", "enable")[0])
-        self.assertEqual([["omarchy-shell", "shell", "rescanPlugins"], ["omarchy", "plugin", "enable", cli.APP_ID],
-                          ["omarchy", "bar", "put", cli.APP_ID, "--section", "right"]],
-                         [c[0][0] for c in call.call_args_list])
-        with open(os.path.join(self.tmp.name, cli.APP_ID, "manifest.json"), encoding="utf-8") as f:
-            d = json.load(f)["barWidget"]["defaults"]
-        self.assertEqual((os.path.join(ROOT, "bin", "zmk-layer-hud"), cli.STATE, "uwsm-app --"),
-                         (d["command"], d["stateDir"], d["startWith"]))
-        with mock.patch.object(cli.shutil, "which", side_effect=lambda n: "/usr/bin/" + n), \
-                mock.patch.object(cli.subprocess, "call", return_value=0) as call:
-            self.assertEqual(0, self.run_cli("menubar", "disable")[0])
-        self.assertEqual([["omarchy", "plugin", "disable", cli.APP_ID], ["omarchy-shell", "shell", "rescanPlugins"]],
-                         [c[0][0] for c in call.call_args_list])
-        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, cli.APP_ID)))
+    def test_enable_writes_it_in_and_puts_it_first_in_the_bar(self):
+        with open(self.shell, "w", encoding="utf-8") as f:
+            f.write(SHELL_JSON)
+        code, said, calls = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        with open(os.path.join(self.plugins, cli.OMARCHY_ID, "BarWidget.qml"), encoding="utf-8") as f:
+            qml = f.read()
+        self.assertNotIn("__ZMK_LAYER_HUD_", qml)
+        self.assertIn(f'"{os.path.join(ROOT, "bin", "zmk-layer-hud")}"', qml)
+        self.assertIn(f'"{cli.STATE}"', qml)
+        self.assertEqual({"id": cli.OMARCHY_ID}, self.bar()["bar"]["layout"]["right"][0])
+        with open(self.shell, encoding="utf-8") as f:
+            text = f.read()
+        self.assertIn('      "right": [\n        {\n          "id": "rafaelromao.zmk-layer-hud"\n        },\n', text)
+        self.assertTrue(os.path.isfile(self.shell + ".bak-zmk-layer-hud"))
+        self.assertIn(["omarchy-shell", "shell", "rescanPlugins"], calls)
+        # Again: nothing added twice.
+        self.run_cli("menubar", "enable")
+        self.assertEqual(1, sum(e.get("id") == cli.OMARCHY_ID for e in self.bar()["bar"]["layout"]["right"]))
+        code, said, _ = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code)
+        with open(self.shell, encoding="utf-8") as f:
+            self.assertEqual(SHELL_JSON, f.read())
+        self.assertFalse(os.path.exists(os.path.join(self.plugins, cli.OMARCHY_ID)))
+
+    def test_the_old_id_is_taken_out(self):
+        cfg = json.loads(SHELL_JSON)
+        cfg["bar"]["layout"]["right"].append({"id": cli.APP_ID})
+        cfg["plugins"].append({"id": cli.APP_ID})
+        with open(self.shell, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+        os.makedirs(os.path.join(self.plugins, cli.APP_ID))
+        self.assertEqual(0, self.run_cli("menubar", "enable")[0])
+        self.assertFalse(cli.bar_has(self.bar(), cli.APP_ID))
+        self.assertTrue(cli.bar_has(self.bar(), cli.OMARCHY_ID))
+        self.assertFalse(os.path.exists(os.path.join(self.plugins, cli.APP_ID)))
+
+    def test_without_a_shell_json_it_writes_none(self):
+        # The shell does not merge a partial file into its default: one with only this would
+        # take every other widget away.
+        code, said, _ = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code)
+        self.assertFalse(os.path.exists(self.shell))
+        self.assertIn(f"omarchy plugin enable {cli.OMARCHY_ID}", said)
 
     def test_on_macos_the_icon_is_the_huds_own(self):
         with mock.patch.object(cli.platform, "system", return_value="Darwin"):
