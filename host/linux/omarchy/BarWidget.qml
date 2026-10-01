@@ -5,7 +5,7 @@ import Quickshell.Hyprland
 import qs.Commons
 import qs.Ui
 
-// zmk-layer-hud in Omarchy's bar: the keyboard glyph and the live WPM, full while the HUD is shown,
+// zmk-layer-hud in Omarchy's bar: the live WPM and the keyboard glyph, full while the HUD is shown,
 // dimmed while it is hidden (still counting); the glyph crossed out when it is not running. A click shows or hides it,
 // or starts it; a right-click offers the same and Quit.
 //
@@ -62,7 +62,9 @@ BarWidget {
   }
   function closeForPopoutSwitch() { menu.visible = false }
 
-  implicitWidth: button.implicitWidth
+  readonly property string glyph: String.fromCodePoint(root.hud === "stopped" ? 0xF0310 : 0xF030C)   // nf-md-keyboard(-off)
+
+  implicitWidth: content.width + 16
   implicitHeight: button.implicitHeight
 
   FileView {
@@ -92,17 +94,17 @@ BarWidget {
   }
 
   // A direct child, not a Loader's: bars style their widgets by walking the tree once when the
-  // widget is placed.
+  // widget is placed. It is the button -- hover, press, tooltip -- and the row over it is what it
+  // shows, drawn here so the glyph can be centred by its ink: a Nerd Font glyph is drawn wider than
+  // the room its text takes, so text centred by that room looks off to one side.
   WidgetButton {
     id: button
     anchors.fill: parent
     bar: root.bar
     pressable: true
+    labelVisible: false
+    text: root.glyph            // not drawn (the row below is); there so the button never takes itself for empty
     dimmed: root.hud !== "shown"
-    // nf-md-keyboard(-off). A Nerd Font glyph is drawn wider than the room it takes, over its right
-    // side: the space after it gives that back, so the glyph sits in the middle of the button.
-    text: String.fromCodePoint(root.hud === "stopped" ? 0xF0310 : 0xF030C) + " "
-      + (root.hud === "stopped" ? "" : String(root.wpm))
     tooltipText: root.hud === "shown" ? "ZMK layer HUD: click to hide it (it keeps counting)"
       : root.hud === "hidden" ? "ZMK layer HUD, hidden and counting: click to show it"
       : "ZMK layer HUD is not running: click to start it"
@@ -111,6 +113,44 @@ BarWidget {
         if (menu.visible) root.closeMenu(); else root.openMenu()
       } else if (mouseButton === Qt.LeftButton) {
         root.run(root.hud === "stopped" ? "start" : "toggle")
+      }
+    }
+  }
+
+  TextMetrics {
+    id: ink
+    font: glyphText.font
+    text: root.glyph
+  }
+
+  // The live WPM, then the glyph: the number on the left, while the HUD runs, shown or hidden.
+  Row {
+    id: content
+    anchors.centerIn: parent
+    spacing: 5
+    opacity: root.hud === "shown" ? 1 : 0.5
+
+    Text {
+      anchors.verticalCenter: parent.verticalCenter
+      visible: root.hud !== "stopped"
+      text: String(root.wpm)
+      color: root.bar ? root.bar.foreground : "white"
+      font.family: root.bar ? root.bar.fontFamily : "monospace"
+      font.pixelSize: 12
+    }
+
+    // As wide as the glyph's ink, with the glyph shifted so that ink is what fills it.
+    Item {
+      anchors.verticalCenter: parent.verticalCenter
+      width: Math.ceil(ink.tightBoundingRect.width)
+      height: glyphText.implicitHeight
+      Text {
+        id: glyphText
+        x: -ink.tightBoundingRect.x
+        text: root.glyph
+        color: root.bar ? root.bar.foreground : "white"
+        font.family: root.bar ? root.bar.fontFamily : "monospace"
+        font.pixelSize: 14
       }
     }
   }

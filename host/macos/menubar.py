@@ -2,7 +2,7 @@
 """zmk-layer-hud's menubar icon on macOS: a process of its own, so it stays when the HUD quits,
 the way Omarchy's bar icon does (host/linux/omarchy).
 
-The keyboard symbol has the live WPM beside it while the HUD runs, shown or hidden, and is dimmed
+The keyboard symbol has the live WPM to its left while the HUD runs, shown or hidden, and is dimmed
 while the HUD is hidden or not running. A click shows or hides the HUD, or starts it; a right-click
 offers the same, Quit HUD, and Remove Icon. What it shows comes from $STATE/panel.json, which the
 running panel keeps (host/panelstate.py), and what it does goes through the command line, like
@@ -22,7 +22,7 @@ try:
     from AppKit import (NSApp, NSApplication, NSApplicationActivationPolicyAccessory, NSBezierPath, NSColor,
                         NSCompositingOperationClear, NSCompositingOperationSourceOver, NSEventModifierFlagControl,
                         NSEventMaskLeftMouseUp, NSEventMaskRightMouseUp, NSEventTypeRightMouseUp, NSGraphicsContext,
-                        NSImage, NSImageLeft, NSMenu, NSMenuItem, NSStatusBar, NSVariableStatusItemLength)
+                        NSImage, NSImageRight, NSMenu, NSMenuItem, NSStatusBar, NSVariableStatusItemLength)
     from Foundation import NSObject, NSTimer
     from PyObjCTools import AppHelper
 except ImportError:
@@ -75,7 +75,7 @@ class Icon(NSObject):
             image.setTemplate_(True)         # drawn in the menubar's own colour, light or dark
             self.image, self.stopped_image = image, crossed(image)
             button.setImage_(image)
-            button.setImagePosition_(NSImageLeft)
+            button.setImagePosition_(NSImageRight)     # the live WPM to its left
         else:
             button.setTitle_("⌨")
         button.setTarget_(self)
@@ -95,12 +95,12 @@ class Icon(NSObject):
         self.st = st
         button = self.item.button()
         button.setAppearsDisabled_(not (st and st["shown"]))
-        text = f" {st['wpm']}" if st else ""
+        text = f"{st['wpm']} " if st else ""
         if self.image is not None:
             button.setImage_(self.image if st else self.stopped_image)
             button.setTitle_(text)
         else:
-            button.setTitle_("⌨" + text)
+            button.setTitle_(text + "⌨")
         button.setToolTip_("zmk-layer-hud: " + ("click to hide it (it keeps counting)" if st and st["shown"] else
                                                 "hidden and counting: click to show it" if st else
                                                 "not running: click to start it"))
