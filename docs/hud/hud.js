@@ -1404,6 +1404,19 @@
     renderKeys();
   }
 
+  /* A usage the feed has no name for -- usage9b, a key bound to something past F24 -- is a name no
+   * one reads. The strip says instead what the board says of the key that sent it: the last key
+   * down, from the firmware's positions, while that press is this keystroke's. */
+  const STRIP_PRESS_MS = 1000;
+  function stripEvent(ev) {
+    if (!state.data || ev.type !== "keyDown" || !/^usage[0-9a-f]+$/.test(ev.name || "")) return ev;
+    const p = state.lastPress;
+    if (!p || Date.now() - p.t > STRIP_PRESS_MS) return ev;
+    const r = resolveBinding(p.idx, p.stack);
+    const legend = r && (r.key.tap || r.key.glyph);
+    return legend ? Object.assign({}, ev, { label: legend }) : ev;
+  }
+
   function handleKey(ev) {
     if (!state.data) return;
     if (ev.type === "flagsChanged") {
@@ -1607,7 +1620,7 @@
       state.data = data;
       applyPrefs();                 // the config's hud.dark, until the viewer chose
       state.momentary = []; state.oneShot = null;
-      state.activatorOf = {}; state.modSource = {}; state.pick = null; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null;
+      state.activatorOf = {}; state.modSource = {}; state.pick = null; state.lastPress = null; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null;
       // Keystrokes on the keymap going away are not followed by the next one's keys.
       state.down.clear(); state.strokes = []; state.lastStroke = null; state.lastOwnStroke = null;
       state.baseLayers = [data.base];
@@ -1696,6 +1709,7 @@
       if (!state.keyEls[idx]) return;
       state.held.add(idx);
       const entry = { kind: "press", idx, pos: Number(pos), t: now, due: now + term, stack: stack(), eligible: !sent };
+      state.lastPress = entry;          // for a keystroke the feed cannot name (stripEvent)
       // The layer set and the key that brought it up are two reports, in no promised order. When
       // the key comes second, setLayers had nothing to attribute the layer to: if the drawer says
       // this key reaches a live layer and nothing is recorded as holding it, this is what did --
@@ -1831,7 +1845,7 @@
       if (state.secure) return;   // nothing typed shows while it is a secret (setSecure)
       statsKey(ev);   // before handleKey, which has nothing to do for it while positions are fresh
       handleKey(ev);
-      if (window.keys) window.keys.key(ev);  // the typed-keys strip on the same page
+      if (window.keys) window.keys.key(stripEvent(ev));  // the typed-keys strip on the same page
     },
     press(indices) { flash(indices); },
     // Any feed message, as a host sends it: the one dispatcher, for the WebSocket, the macOS panel

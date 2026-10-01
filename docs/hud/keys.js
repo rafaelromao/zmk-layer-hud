@@ -1,6 +1,6 @@
 /* zmk-layer-hud — typed-keys strip. Attaches to #keys and exposes window.keys.key(event).
  * Used below the board in index.html and standalone in keys.html. Events are the feed's key
- * messages: {type, name, chars, flags}. Consecutive plain characters merge into one chip; named
+ * messages: {type, name, chars, flags}, and `label` where the page knows a better name. Consecutive plain characters merge into one chip; named
  * keys and chords get their own chip. Nothing is shown for key releases or modifier changes. */
 (function () {
   "use strict";
@@ -41,7 +41,8 @@
       // produced no character of its own (⌥⌫).
       const typedChar = ev.chars && ev.chars.length === 1 && ev.chars >= " ";
       const chord = flags.cmd || flags.ctrl || (flags.alt && !typedChar);
-      const named = ev.name && NAMED[ev.name];
+      // `label`: the board's legend for a key the feed could not name (hud.js stripEvent).
+      const named = ev.label || (ev.name && NAMED[ev.name]);
       const now = Date.now();
       if (!chord && !named && ev.chars && ev.chars.length === 1 && ev.chars >= " ") {
         if (current && now - lastAt < 1200 && current.textContent.length < 22) {

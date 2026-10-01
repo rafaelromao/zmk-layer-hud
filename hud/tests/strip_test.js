@@ -73,6 +73,34 @@ function main() {
     }
   }
 
+  // A usage the feed has no name for (usage9b): the chip reads the legend of the key the keyboard
+  // says it pressed (hud.js stripEvent), and with no such press, the usage as before.
+  {
+    const data = JSON.parse(fs.readFileSync(opt.keymap, "utf8"));
+    const base = data.layers[data.base] || [];
+    const pos = Object.keys(data.positions || {}).find(p => {
+      const k = base[data.positions[p]];
+      return k && k.type !== "trans" && k.tap;
+    });
+    if (pos !== undefined) {
+      const legend = base[data.positions[pos]].tap;
+      const unnamed = { type: "keyDown", name: "usage9b", chars: "", code: 0x9b, flags: {} };
+      page.hud.setLayers([]);
+      page.clock.advance(IDLE_CLEAR);
+      checked++;
+      page.hud.pressAt(Number(pos));
+      page.hud.key(unnamed);
+      page.hud.releaseAt(Number(pos));
+      let chips = strip.children.map(c => c.textContent);
+      if (chips.join("|") !== legend) fail.push({ legend: "usage9b", expected: legend, actual: JSON.stringify(chips) });
+      page.clock.advance(IDLE_CLEAR + 1000);
+      checked++;
+      page.hud.key(unnamed);
+      chips = strip.children.map(c => c.textContent);
+      if (chips.join("|") !== "USAGE9B") fail.push({ legend: "usage9b, no press", expected: "USAGE9B", actual: JSON.stringify(chips) });
+    }
+  }
+
   let shown = 0;
   for (const f of fail) {
     if (!opt.verbose && shown >= opt.max) { console.log(`  ... and ${fail.length - shown} more`); break; }
