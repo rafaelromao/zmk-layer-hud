@@ -47,7 +47,7 @@ class Parser(unittest.TestCase):
     def test_the_documented_verbs_are_all_there(self):
         expected = {"start", "stop", "restart", "status", "log", "doctor", "setup", "update",
                     "uninstall", "import", "sync", "keymap", "config", "demo", "poke", "feed",
-                    "version", "session", "heatmap", "show", "hide", "toggle", "menubar"}
+                    "version", "session", "heatmap", "show", "hide", "toggle", "menubar", "autostart"}
         self.assertEqual(expected, set(self.verbs))
 
     def test_the_session_verbs_need_no_venv(self):
@@ -56,7 +56,7 @@ class Parser(unittest.TestCase):
 
     def test_showing_and_hiding_need_no_venv(self):
         # A signal and two small files: a bar widget runs them, and so does a keybinding.
-        self.assertFalse({"show", "hide", "toggle", "menubar"} & cli.NEEDS_VENV)
+        self.assertFalse({"show", "hide", "toggle", "menubar", "autostart"} & cli.NEEDS_VENV)
 
     def test_demo_plays_a_script_on_a_socket_of_its_own(self):
         args = self.parser.parse_args(["demo", "--play", "docs/demo-type.json", "--loop", "--no-browser"])
@@ -390,6 +390,115 @@ class OmarchyPlugin(unittest.TestCase):
         with mock.patch.object(cli.platform, "system", return_value="Darwin"):
             self.assertEqual(0, self.run_cli("menubar", "enable")[0])
             self.assertEqual(1, self.run_cli("menubar", "disable")[0])
+
+
+def desktop_exec(text):
+    """The argv a desktop entry's Exec says, undone the way the spec does it: the string value's
+    escapes, then the quoting, then the doubled %."""
+    import configparser
+    import shlex
+    entry = configparser.ConfigParser(interpolation=None)
+    entry.optionxform = str
+    entry.read_string(text)
+    value = entry["Desktop Entry"]["Exec"].replace("\\\\", "\\")
+    return [a.replace("%%", "%") for a in shlex.split(value)]
+
+
+class Autostart(unittest.TestCase):
+    """The login item: what it runs, and enable/disable putting it there and taking it out."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        t = self.tmp.name
+        for p in (mock.patch.object(cli, "LAUNCH_AGENT", os.path.join(t, "LaunchAgents", "agent.plist")),
+                  mock.patch.object(cli, "LOGIN_APP", os.path.join(t, "Support", "ZMK Layer HUD.app")),
+                  mock.patch.object(cli, "AUTOSTART_DESKTOP", os.path.join(t, "autostart", "zmk-layer-hud.desktop")),
+                  mock.patch.object(cli, "STATE", os.path.join(t, "state dir")),
+                  mock.patch.object(cli, "definitions_missing", lambda: None),
+                  mock.patch.object(cli, "build_launcher", lambda: True)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def run_cli(self, *argv, system="Darwin"):
+        with mock.patch.object(cli.platform, "system", return_value=system), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            code = cli.main(list(argv))
+        return code, out.getvalue() + err.getvalue()
+
+    def test_the_launch_agent_starts_it_hidden_through_the_app(self):
+        import plistlib
+        a = plistlib.loads(cli.launch_agent_plist())
+        self.assertEqual(cli.APP_ID, a["Label"])
+        self.assertEqual([cli.launcher_path(), os.path.join(ROOT, "bin", "zmk-layer-hud"), "start", "--hidden",
+                          "--foreground"], a["ProgramArguments"])
+        self.assertEqual(cli.STATE, a["EnvironmentVariables"]["ZMKHUD_STATE"])
+        self.assertEqual((True, "Aqua"), (a["RunAtLoad"], a["LimitLoadToSessionType"]))
+        self.assertNotIn("KeepAlive", a)          # a HUD that is stopped stays stopped
+
+    def test_the_desktop_entry_says_the_same_quoted(self):
+        with mock.patch.dict(os.environ, {"ZMKHUD_CONFIG": '/k/my "50%" board.yaml'}):
+            argv = desktop_exec(cli.autostart_desktop())
+        self.assertEqual(["env", "ZMKHUD_STATE=" + cli.STATE, 'ZMKHUD_CONFIG=/k/my "50%" board.yaml'] + cli.login_command(),
+                         argv)
+
+    def test_enable_and_disable_on_macos(self):
+        code, said = self.run_cli("autostart", "enable")
+        self.assertEqual(0, code, said)
+        self.assertTrue(os.path.isfile(cli.LAUNCH_AGENT))
+        self.assertTrue(os.path.isdir(cli.STATE))
+        self.assertIn("launchctl bootstrap", said)
+        self.assertIn("starts it hidden", self.run_cli("autostart")[1])
+        os.makedirs(cli.LOGIN_APP)
+        self.assertEqual(0, self.run_cli("autostart", "disable")[0])
+        self.assertFalse(os.path.exists(cli.LAUNCH_AGENT))
+        self.assertTrue(os.path.isdir(cli.LOGIN_APP))           # kept, and its grants with it
+        self.assertIn("off", self.run_cli("autostart")[1])
+
+    def test_enable_and_disable_on_linux(self):
+        self.assertEqual(0, self.run_cli("autostart", "enable", system="Linux")[0])
+        with open(cli.AUTOSTART_DESKTOP, encoding="utf-8") as f:
+            self.assertEqual(cli.login_command(), desktop_exec(f.read())[-4:])
+        self.assertEqual(0, self.run_cli("autostart", "disable", system="Linux")[0])
+        self.assertFalse(os.path.exists(cli.AUTOSTART_DESKTOP))
+
+
+def compiler():
+    import shutil
+    if not shutil.which("cc"):
+        return False
+    # On macOS /usr/bin/cc is there without the Command Line Tools too, and only offers them.
+    return sys.platform != "darwin" or subprocess.call(["xcode-select", "-p"], stdout=subprocess.DEVNULL,
+                                                       stderr=subprocess.DEVNULL) == 0
+
+
+@unittest.skipUnless(compiler(), "no C compiler")
+class Launcher(unittest.TestCase):
+    """host/macos/launcher.c: the child is run, waited for, passed TERM, and its status is its own."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = tempfile.TemporaryDirectory()
+        cls.exe = os.path.join(cls.tmp.name, "launcher")
+        subprocess.check_call(["cc", "-O2", "-Wall", "-Werror", "-o", cls.exe,
+                               os.path.join(ROOT, "host", "macos", "launcher.c")])
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.tmp.cleanup()
+
+    def test_the_childs_status_is_its_own(self):
+        self.assertEqual(3, subprocess.call([self.exe, "/bin/sh", "-c", "exit 3"]))
+        self.assertEqual(128 + 9, subprocess.call([self.exe, "/bin/sh", "-c", "kill -9 $$"]))
+        self.assertEqual(64, subprocess.call([self.exe], stderr=subprocess.DEVNULL))
+
+    def test_term_is_passed_to_the_child(self):
+        proc = subprocess.Popen([self.exe, "/bin/sh", "-c", "trap 'exit 7' TERM; echo ready; while :; do sleep 0.05; done"],
+                                stdout=subprocess.PIPE, text=True)
+        self.addCleanup(proc.stdout.close)
+        self.assertEqual("ready", proc.stdout.readline().strip())
+        proc.terminate()
+        self.assertEqual(7, proc.wait(timeout=10))
 
 
 class Reference(unittest.TestCase):

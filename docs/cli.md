@@ -13,6 +13,7 @@ Every verb of `zmk-layer-hud`, as its own `--help` prints it. Written by `make c
 - [`heatmap`](#heatmap) — what the keys glow with: the live heatmap, the session's, or none
 - [`log`](#log) — follow the panel and feed logs
 - [`doctor`](#doctor) — check this machine and say what is missing
+- [`autostart`](#autostart) — start the HUD hidden at login, counting from the first keystroke, or stop doing so
 - [`menubar`](#menubar) — the icon that shows or hides the HUD: built in on macOS, a plugin for Omarchy's bar
 - [`setup`](#setup) — set this machine up (packages, venv, config, permissions)
 - [`update`](#update) — fetch a newer tree over this one
@@ -182,6 +183,21 @@ check this machine and say what is missing
 
 options:
   -h, --help  show this help message and exit
+```
+
+## autostart
+
+```text
+usage: zmk-layer-hud autostart [-h] [{status,enable,disable}]
+
+start the HUD hidden at login, counting from the first keystroke, or stop doing so
+
+positional arguments:
+  {status,enable,disable}
+                        status (default), enable, disable; disable leaves a running HUD running
+
+options:
+  -h, --help            show this help message and exit
 ```
 
 ## menubar

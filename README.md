@@ -144,6 +144,29 @@ instead. `zmk-layer-hud uninstall` removes the tree and the command and leaves y
 Linux the udev rule stays until you remove it:
 `sudo rm /etc/udev/rules.d/60-zmk-layer-hud.rules`.
 
+### Hidden, and at login
+
+The HUD can run off screen and go on counting, so a session and its heatmap keep growing while you
+work:
+- `zmk-layer-hud hide` takes it off screen and `show` brings it back. `toggle` does whichever
+  applies, which suits a keybinding.
+- The HUD's own minus button, beside the ✕, hides it too. The ✕ still quits.
+- On macOS a keyboard icon sits in the menubar while the HUD runs, dimmed while it is hidden. A
+  click shows or hides the HUD; a right-click also offers Quit.
+- On Omarchy, `zmk-layer-hud menubar enable` puts the same icon in the bar. A click there also
+  starts a HUD that is not running.
+
+`zmk-layer-hud autostart enable` starts the HUD hidden at every login, and `autostart disable`
+stops doing so; it leaves a running HUD alone.
+- **On macOS** it is a login item that runs a small app of its own, "ZMK Layer HUD", in
+  `~/Library/Application Support/zmk-layer-hud`. The first time, macOS asks to let that app use
+  Input Monitoring and Bluetooth; grant both. The app exists because macOS asks the app a program
+  was started from, which is your terminal when you type `start` and would be Python at login.
+  A `restart` typed in a terminal hands the running HUD back to the terminal's grants.
+- **On Linux** it is `~/.config/autostart/zmk-layer-hud.desktop`, which Omarchy starts through
+  uwsm. The HUD's output is in `zmk-layer-hud log`; `journalctl --user` has only a start that
+  failed.
+
 ## Commands
 
 Everything is a verb on `zmk-layer-hud`; `zmk-layer-hud <command> --help` (or `help`) lists the
@@ -158,6 +181,7 @@ flags of any one of them, and [docs/cli.md](docs/cli.md) has every verb's in one
 | `session [list\|new\|save\|load\|reset\|delete\|rename-layer\|export\|history\|compare]` | the typing sessions: the active one, naming it, starting or loading another, drawing its heatmap as an SVG, its days, two side by side |
 | `heatmap [live\|session\|physical\|speed\|off]` | what the keys glow with: what was just typed, every press this session on the layer on screen or on all of them, each key's time, or nothing |
 | `doctor` | check this machine and say what is missing |
+| `autostart [enable\|disable]` | start the HUD hidden at login, counting from the first keystroke, or stop doing so |
 | `menubar [enable\|disable]` | the icon that shows or hides the HUD: in the macOS menubar whenever it runs; on Omarchy, a plugin for its bar that this puts there or takes out |
 | `setup` | prepare this machine: packages, virtualenv, config, permissions |
 | `update`, `uninstall` | fetch a newer tree; remove the tree and the command |

@@ -6,7 +6,7 @@
   the HUD          start, stop, restart, show, hide, toggle, status, log
   the typing       session, heatmap
   the keymap       keymap, import, sync, config
-  this machine     setup, doctor, menubar, update, uninstall, version
+  this machine     setup, doctor, menubar, autostart, update, uninstall, version
   without a board  demo, poke, feed
 
 Nothing above the stdlib is imported at module level, and that is deliberate: `doctor` and
@@ -47,6 +47,11 @@ REPO = "rafaelromao/zmk-layer-hud"
 # The Omarchy bar plugin's id; the macOS login item's bundle id and label too.
 APP_ID = "io.github.rafaelromao.zmk-layer-hud"
 OMARCHY_PLUGINS = os.path.expanduser("~/.config/omarchy/plugins")
+# Starting at login: a LaunchAgent and the small app it runs on macOS, an XDG autostart entry on Linux.
+LAUNCH_AGENT = os.path.expanduser(f"~/Library/LaunchAgents/{APP_ID}.plist")
+LOGIN_APP = os.path.expanduser("~/Library/Application Support/zmk-layer-hud/ZMK Layer HUD.app")
+AUTOSTART_DESKTOP = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config"),
+                                 "autostart", "zmk-layer-hud.desktop")
 PYTHON_MIN = (3, 10)
 
 # The one definition of what the venv holds. hidapi is macOS only: Linux reads /dev/hidrawN
@@ -348,6 +353,8 @@ def cmd_status(args):
     st, s = mod.peek()
     print("session: " + (f"{s['name']} · {session_line(s, mod)} · heatmap {st['heatmap']}" if s
                          else "none yet (the HUD starts one)"))
+    if platform.system() in ("Darwin", "Linux"):
+        print("login: " + login_line())
     if platform.system() == "Linux":
         hypr_surfaces()
     return 0
@@ -1061,6 +1068,157 @@ def cmd_menubar(args):
     return 0
 
 
+# ---------- starting at login ----------
+
+def login_command():
+    return [os.path.join(ROOT, "bin", "zmk-layer-hud"), "start", "--hidden", "--foreground"]
+
+
+def login_env():
+    """What the login item is started with that this shell knows and launchd or systemd may not:
+    where the state is (so `show` finds the HUD it started) and which config, if not the default."""
+    env = {"ZMKHUD_STATE": STATE}
+    if os.environ.get("ZMKHUD_CONFIG"):
+        env["ZMKHUD_CONFIG"] = os.path.abspath(os.path.expanduser(os.environ["ZMKHUD_CONFIG"]))
+    return env
+
+
+def launcher_path():
+    return os.path.join(LOGIN_APP, "Contents", "MacOS", "zmk-layer-hud")
+
+
+def launch_agent_plist():
+    import plistlib
+    return plistlib.dumps({
+        "Label": APP_ID,
+        "ProgramArguments": [launcher_path()] + login_command(),
+        "EnvironmentVariables": login_env(),
+        "RunAtLoad": True,
+        "LimitLoadToSessionType": "Aqua",       # a login with a screen, not an ssh session
+        "ProcessType": "Interactive",
+        "AssociatedBundleIdentifiers": [APP_ID],   # System Settings shows it as the app's
+        "StandardOutPath": os.path.join(STATE, "autostart.log"),
+        "StandardErrorPath": os.path.join(STATE, "autostart.log"),
+    })
+
+
+def desktop_arg(arg):
+    """One argument of a desktop entry's Exec, quoted the way the spec says: % doubled, quoted when
+    it has a reserved character, and every backslash escaped once more as a string value's."""
+    arg = arg.replace("%", "%%")
+    if re.search(r"[\s\"'\\><~|&;$*?#()`]", arg):
+        arg = '"' + re.sub(r'(["`$\\])', r"\\\1", arg) + '"'
+    return arg.replace("\\", "\\\\")
+
+
+def autostart_desktop():
+    argv = ["env"] + [f"{k}={v}" for k, v in login_env().items()] + login_command()
+    return ("[Desktop Entry]\n"
+            "Type=Application\n"
+            "Name=ZMK layer HUD\n"
+            "Comment=Starts the HUD hidden at login, so it counts from the first keystroke\n"
+            f"Exec={' '.join(desktop_arg(a) for a in argv)}\n"
+            "Terminal=false\n")
+
+
+def build_launcher():
+    """ZMK Layer HUD.app, with host/macos/launcher.c as its executable (why: that file says).
+    Built again only when that source has changed: a new binary is a new identity to macOS, which
+    forgets the Input Monitoring and Bluetooth grants the old one had."""
+    import hashlib
+    import plistlib
+    src = os.path.join(ROOT, "host", "macos", "launcher.c")
+    with open(src, "rb") as f:
+        digest = hashlib.sha256(f.read()).hexdigest()
+    info = os.path.join(LOGIN_APP, "Contents", "Info.plist")
+    try:
+        with open(info, "rb") as f:
+            if plistlib.load(f).get("ZMKHUDLauncherSource") == digest and os.access(launcher_path(), os.X_OK):
+                return False
+    except (OSError, ValueError, plistlib.InvalidFileException):
+        pass
+    # /usr/bin/cc is there without the Command Line Tools too, and only offers to install them.
+    if subprocess.call(["xcode-select", "-p"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) != 0:
+        raise Fail("the login item's launcher is compiled here, and there are no Command Line Tools: "
+                   "xcode-select --install, then this again")
+    os.makedirs(os.path.dirname(launcher_path()), exist_ok=True)
+    if subprocess.call(["cc", "-O2", "-Wall", "-o", launcher_path(), src]) != 0:
+        raise Fail(f"could not compile {src}")
+    with open(info, "wb") as f:
+        plistlib.dump({
+            "CFBundleIdentifier": APP_ID,
+            "CFBundleName": "ZMK Layer HUD",
+            "CFBundleDisplayName": "ZMK Layer HUD",
+            "CFBundleExecutable": "zmk-layer-hud",
+            "CFBundlePackageType": "APPL",
+            "CFBundleVersion": "1",
+            "CFBundleShortVersionString": "1.0",
+            "LSUIElement": True,
+            "NSBluetoothAlwaysUsageDescription": "The HUD reads which layer your Bluetooth keyboard is on.",
+            "ZMKHUDLauncherSource": digest,
+        }, f)
+    if subprocess.call(["codesign", "--force", "-s", "-", "--identifier", APP_ID, LOGIN_APP],
+                       stdout=subprocess.DEVNULL) != 0:
+        raise Fail(f"could not sign {LOGIN_APP}")
+    return True
+
+
+def login_entry():
+    return LAUNCH_AGENT if platform.system() == "Darwin" else AUTOSTART_DESKTOP
+
+
+def login_line():
+    """Whether the HUD starts at login, and from which tree."""
+    path = login_entry()
+    if not os.path.isfile(path):
+        return "off (zmk-layer-hud autostart enable starts it hidden at login)"
+    with open(path, encoding="utf-8", errors="replace") as f:
+        here = os.path.join(ROOT, "bin", "zmk-layer-hud") in f.read()
+    return "starts it hidden" + ("" if here else f" -- from another tree; `zmk-layer-hud autostart enable` points it here") \
+        + f" ({path})"
+
+
+def cmd_autostart(args):
+    system = platform.system()
+    if system not in ("Darwin", "Linux"):
+        raise Fail(f"no HUD host for {system}; macOS and Linux (Hyprland) only")
+    if args.action == "status":
+        print("login: " + login_line())
+        return 0
+    path = login_entry()
+    if args.action == "disable":
+        existed = os.path.isfile(path)
+        if existed:
+            os.remove(path)
+        print("the HUD will not start at login" + ("" if existed else " (it was not set to)") +
+              "; one running now goes on running")
+        if system == "Darwin" and os.path.isdir(LOGIN_APP):
+            print(f"    {LOGIN_APP} stays, and with it what macOS lets it do; `uninstall` removes it")
+        return 0
+    missing = definitions_missing()
+    if missing:
+        warn("note: it cannot start yet -- " + missing)
+    os.makedirs(STATE, exist_ok=True)       # launchd will not make the log's directory
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    if system == "Darwin":
+        if build_launcher():
+            print(f"    built {LOGIN_APP}")
+        with open(path, "wb") as f:
+            f.write(launch_agent_plist())
+        print(f"    {path}")
+        print("the HUD starts hidden at your next login. The first time, macOS asks for Input Monitoring and")
+        print("Bluetooth for \"ZMK Layer HUD\" (System Settings > Privacy & Security). To start it that way now:")
+        print(f"    launchctl bootstrap gui/{os.getuid()} {path}")
+        print(f"and to start it again once those are granted:  launchctl kickstart -k gui/{os.getuid()}/{APP_ID}")
+    else:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(autostart_desktop())
+        print(f"    {path}")
+        print("the HUD starts hidden at your next login (its output is in `zmk-layer-hud log`; "
+              "journalctl --user says only if it failed to start)")
+    return 0
+
+
 # ---------- doctor ----------
 
 OK, WARN, BAD = "ok  ", "warn", "fail"
@@ -1307,6 +1465,19 @@ def cmd_uninstall(args):
         print("nothing was removed")
         return 1
     run_host("stop")
+    if platform.system() == "Darwin":
+        if os.path.isfile(LAUNCH_AGENT):
+            subprocess.call(["launchctl", "bootout", f"gui/{os.getuid()}/{APP_ID}"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            os.remove(LAUNCH_AGENT)
+            print(f"    removed {LAUNCH_AGENT}")
+        if os.path.isdir(LOGIN_APP):
+            shutil.rmtree(os.path.dirname(LOGIN_APP), ignore_errors=True)
+            print(f"    removed {LOGIN_APP}; what macOS let it do goes with:")
+            print(f"        tccutil reset ListenEvent {APP_ID}; tccutil reset BluetoothAlways {APP_ID}")
+    elif os.path.isfile(AUTOSTART_DESKTOP):
+        os.remove(AUTOSTART_DESKTOP)
+        print(f"    removed {AUTOSTART_DESKTOP}")
     if platform.system() == "Linux" and os.path.isdir(plugin_dir()):
         if shutil.which("omarchy"):
             omarchy("omarchy", "plugin", "disable", APP_ID)
@@ -1420,6 +1591,11 @@ def build_parser():
     s.set_defaults(func=cmd_log)
 
     add("doctor", "check this machine and say what is missing").set_defaults(func=cmd_doctor)
+
+    s = add("autostart", "start the HUD hidden at login, counting from the first keystroke, or stop doing so")
+    s.add_argument("action", nargs="?", default="status", choices=("status", "enable", "disable"),
+                   help="status (default), enable, disable; disable leaves a running HUD running")
+    s.set_defaults(func=cmd_autostart)
 
     s = add("menubar", "the icon that shows or hides the HUD: built in on macOS, a plugin for Omarchy's bar")
     s.add_argument("action", nargs="?", default="status", choices=("status", "enable", "disable"),

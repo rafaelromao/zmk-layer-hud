@@ -151,6 +151,14 @@ suspends its own threads with SIGUSR1, and the GTK panel is a WebKit process. Hi
 nothing rather than closed: the window stays, transparent and taking no clicks, so WebKit never
 takes the page for a hidden one and slows the timers it counts with.
 
+The macOS login item (`autostart enable`) runs `host/macos/launcher.c`, compiled into
+`ZMK Layer HUD.app` with its own Info.plist and an ad-hoc signature. macOS's privacy checks ask the
+*responsible* app, which a child inherits from its parent. Started by launchd as plain Python,
+that would be Homebrew's Python.app, which carries no Bluetooth purpose string, so the feed would
+lose a Bluetooth keyboard. The launcher spawns the command as its child and stays its parent; an
+exec would turn it back into Python. It is rebuilt only when its source changes, because a new
+binary is a new identity, and macOS would forget the grants it had.
+
 Starting and stopping stays in `host/macos/start.sh` and `host/linux/hud.sh`; `cli.py` picks one
 and gives them the same verbs. `poke` and `feed` are split off before argparse sees them and
 handed their whole line, because their flags belong to `host/hudpoke.py` and `host/hudfeed.py` and
