@@ -492,6 +492,51 @@ def numbers_line(t):
     return " · ".join(parts)
 
 
+def layers_line(t):
+    """Each layer's share of the keys, the most used first, on one line (`session history`)."""
+    def share(v):
+        p = v["share"] * 100
+        return "<1%" if p < 1 else f"{round(p)}%"
+    return " · ".join(f"{layer} {share(v)}" for layer, v in t["layers"].items())
+
+
+def session_report(s, mod):
+    """`session status`: every number the HUD's stats bar shows, from the session's counts, and
+    every layer's share of the keys -- the layer tile's, for all of them at once."""
+    t = mod.summary(s)
+    first = [f"{t['presses']:,} keys"]
+    first.append(f"{t['combos']:,} combos" +
+                 (f" ({round(t['combo_share'] * 100)}% of keystrokes)" if t["combo_share"] is not None else ""))
+    first += [f"{t['chars']:,} typed", f"{t['deleted']:,} deleted"]
+    if t["accuracy"] is not None:
+        first.append(f"{round(t['accuracy'] * 100)}% accurate")
+    second = [duration(t["active_ms"]) + " of typing"]
+    if t["wpm"] is not None:
+        second.append(f"{t['wpm']} wpm")
+    if t["peak_wpm"]:
+        second.append(f"top {t['peak_wpm']}")
+    if t["sfb"] is not None:
+        second.append(f"{t['sfb'] * 100:.1f}% same-finger")
+    lines = [" · ".join(first), " · ".join(second)]
+    third = []
+    if t["hands"]:
+        third.append(f"hands {round(t['hands']['left'] * 100)}% left, {round(t['hands']['right'] * 100)}% right")
+    if t["slowest"]:
+        w = t["slowest"]
+        third.append(f"slowest key {w['key'] or 'at position ' + w['pos']} on {w['layer']}, {w['ms']} ms")
+    if third:
+        lines.append(" · ".join(third))
+    if t["layers"]:
+        lines.append("layers, of the keys:")
+        name_w = max(len(layer) for layer in t["layers"])
+        keys_w = max(len(f"{v['keys']:,}") for v in t["layers"].values())
+        # A layer barely used still was: it reads <0.1%, not 0.0%.
+        share = lambda x: f"{x * 100:5.1f}%" if x * 100 >= 0.05 else "<0.1%"     # noqa: E731
+        lines += [f"  {layer:<{name_w}}  {v['keys']:>{keys_w},} keys  {share(v['share']):>6}"
+                  for layer, v in t["layers"].items()]
+    return lines
+
+
 def compare_rows(a, b, mod):
     """`session compare`: (what, A, B, the change from A to B) for two sessions side by side."""
     ta, tb = mod.summary(a), mod.summary(b)
@@ -519,12 +564,15 @@ def compare_rows(a, b, mod):
          f"{tb['peak_wpm'] - ta['peak_wpm']:+d}" if ta["peak_wpm"] and tb["peak_wpm"] else ""),
         ("same finger", pct(ta["sfb"], 1), pct(tb["sfb"], 1), share(ta["sfb"], tb["sfb"], 1)),
     ]
+    if ta["hands"] or tb["hands"]:
+        left = [t["hands"]["left"] if t["hands"] else None for t in (ta, tb)]
+        rows.append(("left hand", pct(left[0]), pct(left[1]), share(left[0], left[1])))
+    if ta["slowest"] or tb["slowest"]:
+        slow = ["—" if not t["slowest"] else f"{t['slowest']['key'] or t['slowest']['pos']} {t['slowest']['ms']} ms"
+                for t in (ta, tb)]
+        rows.append(("slowest key", slow[0], slow[1], ""))
     # Where the typing went: each layer's share of the keys, the layers B uses most first.
-    shares = []
-    for s in (a, b):
-        per = {layer: sum(m.values()) for layer, m in s["presses"].items()}
-        total = sum(per.values())
-        shares.append({layer: n / total for layer, n in per.items()} if total else {})
+    shares = [{layer: v["share"] for layer, v in t["layers"].items()} for t in (ta, tb)]
     layers = sorted(set(shares[0]) | set(shares[1]), key=lambda l: (-shares[1].get(l, 0), -shares[0].get(l, 0), l))
     if layers:
         rows.append(("layers, of the keys", "", "", ""))
@@ -561,7 +609,8 @@ def cmd_session(args):
         if act == "status":
             st, s = mod.status(d)
             print(f"{s['name']}{'' if s.get('named') else ' (not named yet: session save NAME)'}")
-            print("  " + session_line(s, mod))
+            for line in session_report(s, mod):
+                print("  " + line)
             print(f"  heatmap {st['heatmap']} · {mod.path_of(d, s['name'])}")
             lost = mod.orphans(s)
             if lost:
@@ -610,6 +659,8 @@ def cmd_session(args):
             for day, t in days:
                 weekday = datetime.date.fromisoformat(day).strftime("%a")
                 print(f"  {day} {weekday}  {numbers_line(t)}")
+                if t["layers"]:
+                    print(f"  {' ' * len(day)}      layers: {layers_line(t)}")
         elif act == "list":
             st, _ = mod.status(d)
             every = mod.sessions(d)

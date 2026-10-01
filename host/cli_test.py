@@ -103,6 +103,27 @@ class Parser(unittest.TestCase):
         names = [r[0].strip() for r in cli.compare_rows(a, b, session)]
         self.assertLess(names.index("alpha"), names.index("sym"))           # B's most used layer first
 
+    def test_a_sessions_every_stat_is_printed(self):
+        import session
+        s = session.empty("week1", True)
+        s["presses"] = {"alpha": {"0": 9000}, "sym": {"1": 999}, "nav": {"2": 1}}
+        s["fingers"] = {"0": "lp", "1": "ri"}                  # 2 has no finger: in no hand's share
+        s["timed"], s["ms"], s["legends"] = {"alpha": {"0": 5}}, {"alpha": {"0": 1500}}, {"alpha": {"0": "e"}}
+        s["totals"].update(chars=900, deleted=90, active_ms=600000, active_net=810, peak_wpm=70)
+        lines = cli.session_report(s, session)
+        text = "\n".join(lines)
+        self.assertIn("90% accurate", text)
+        self.assertIn("hands 90% left, 10% right", text)
+        self.assertIn("slowest key e on alpha, 300 ms", text)
+        table = [line.split() for line in lines[lines.index("layers, of the keys:") + 1:]]
+        self.assertEqual([["alpha", "9,000", "keys", "90.0%"], ["sym", "999", "keys", "10.0%"],
+                          ["nav", "1", "keys", "<0.1%"]], table)     # the most used first; a key is not 0.0%
+        b = json.loads(json.dumps(s))
+        b["fingers"] = {}
+        rows = {r[0].strip(): r[1:] for r in cli.compare_rows(s, b, session)}
+        self.assertEqual(("90%", "—", ""), rows["left hand"])
+        self.assertEqual(("e 300 ms", "e 300 ms", ""), rows["slowest key"])
+
     def test_a_verb_that_needs_the_venv_says_so_without_a_traceback(self):
         # At login no one is watching, and a traceback would be all the log had to say.
         with mock.patch.object(cli, "VENV_PYTHON", os.path.join(ROOT, "no-such-venv", "python3")), \
@@ -648,7 +669,10 @@ class Shim(unittest.TestCase):
             s.update(layers=["base", "symbols"], presses={"base": {"1": 4}, "sym": {"2": 3}})
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(s, f)
-            self.assertIn("sym: 3 keys", run("session").stdout)
+            status = run("session").stdout
+            self.assertIn("sym: 3 keys", status)
+            self.assertIn("layers, of the keys:", status)
+            self.assertIn("base  4 keys   57.1%", status)
             self.assertEqual(1, run("session", "save", "week1", "extra").returncode)
             moved = run("session", "rename-layer", "sym", "symbols")
             self.assertEqual(0, moved.returncode, moved.stderr)
@@ -679,6 +703,7 @@ class Shim(unittest.TestCase):
             self.assertIn(f"{datetime.date.today().isoformat()} ", out.stdout)
             self.assertIn("1,200 keys", out.stdout)
             self.assertIn("19 wpm", out.stdout)                   # 950 characters, 190 words, in 10 minutes
+            self.assertIn("layers: base 100%", out.stdout)
             self.assertIn("every session, by day", run("session", "history", "--all").stdout)
 
     @unittest.skipUnless(os.path.exists(os.path.join(ROOT, ".venv", "bin", "python3")), "export runs in the venv")

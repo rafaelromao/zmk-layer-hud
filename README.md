@@ -268,19 +268,23 @@ What the keyboard types is counted into a session, and there is always one, the 
 new session is named after when it began, and typing adds to it until another takes its place:
 
 ```bash
-zmk-layer-hud session                 # the active one: keys, combos, typing time, speed
+zmk-layer-hud session                 # the active one: every number the stats bar shows, and each layer's share
 zmk-layer-hud session save colemak-1  # name it
 zmk-layer-hud session new             # start another; the one before stays saved
 zmk-layer-hud session list
 zmk-layer-hud session load colemak-1  # make it the active one again: typing adds to it
 zmk-layer-hud heatmap session         # the keys glow with how often each one was pressed
-zmk-layer-hud session history         # the active one, day by day; --all adds every session's days up
+zmk-layer-hud session history         # the active one, day by day, with each day's layers; --all adds every session's days up
 zmk-layer-hud session compare colemak-1   # side by side with the active one (or name a second)
 ```
 
-`compare` sets the numbers of two sessions against each other: keys, the share made as combos,
-accuracy, typing time, speed, same-finger bigrams, and each layer's share of the keys. That is
-the way to see what a change to the keymap did.
+`session` prints every number the HUD's stats bar shows, worked out from the session's counts:
+keys and the share made as combos, what was typed and deleted, accuracy, typing time, average and
+top speed, same-finger bigrams, the hands' shares, and the slowest key. Below those is every
+layer's share of the keys, the most used first, where the bar shows the share of the layer on screen
+only. `history` gives each day its own line of layers' shares. `compare` sets the same numbers of
+two sessions against each other, each layer's share included. That is the way to see what a
+change to the keymap did.
 
 `save` on a session that already has a name keeps it as it is and goes on in a copy under the
 new one. `reset` zeroes the active session and `delete` removes one that is not active; both ask
@@ -308,8 +312,10 @@ writes the SVG to stdout.
 A session is kept in `$ZMKHUD_STATE/sessions/<name>.json` (the directory 0700, each file 0600),
 and it holds counts: how often each key was pressed on each layer, each combo, how many characters
 were typed and deleted, the time spent typing and the best speed, each key's average time, and
-the same totals again for each day it was typed on. Never what was typed, in what order, or when
-within a day. Nothing leaves the machine. Only the keyboard's own typing is counted: `poke` and
+the same totals again, with the keys on each layer, for each day it was typed on. It also notes
+what the keymap says of each key it counted (its finger and its legend), and keeps `stats`:
+every number `zmk-layer-hud session` prints, layers' shares included, written again with the
+file, for anything that reads it. Never what was typed, in what order, or when within a day. Nothing leaves the machine. Only the keyboard's own typing is counted: `poke` and
 the demo light the board and time their typing, and a session never sees them. `feed.sessions: 0`
 in the config (or `feed --no-sessions`) keeps no files, and `uninstall --purge` removes them.
 

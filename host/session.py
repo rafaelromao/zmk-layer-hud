@@ -6,8 +6,11 @@ ledger), the host adds those counts to the active session, and `zmk-layer-hud se
 starts another, or loads one back -- after which typing adds to that one again, the way a tmux
 session is reattached. A session holds counts and nothing else: how often each key was pressed
 on each layer, each combo, how many characters were typed and deleted, the time spent typing and
-the best speed, how long each key takes, and those totals again for each day it typed on. Never
-what was typed, in what order, or when within a day.
+the best speed, how long each key takes, and those totals again -- with the keys on each layer --
+for each day it typed on. Never what was typed, in what order, or when within a day. Beside the
+counts it keeps what its keymap says of the keys it counted (each one's finger and legend), and
+`stats`: every number the HUD's stats bar shows, worked out from the counts on every write, for
+anything that reads the file rather than the commands.
 
     $ZMKHUD_STATE/sessions/       (default ~/.local/state/zmk-layer-hud/sessions; 0700)
         <name>.json               one session (0600)
@@ -60,6 +63,7 @@ MAPS = ("presses", "combos", "ms", "timed")
 MAX_COUNT = 100000
 MAX_ENTRIES = 4096
 SFB_MIN = 20           # a share of same-finger bigrams is said once there are this many bigrams
+SLOW_MIN = 5           # a key's average time is said once it was timed this often (hud.js too)
 LATE_S = 10.0          # a batch for a session replaced this recently still lands in it
 PAGES_KEPT = 4         # acknowledgements kept, one per page that has reported
 
@@ -96,7 +100,7 @@ def _now():
 def empty(name, named):
     t = _now()
     return {"version": VERSION, "id": os.urandom(8).hex(), "gen": 0, "name": name, "named": bool(named),
-            "created": t, "updated": t, "keyboards": [], "keymap": "", "layers": [],
+            "created": t, "updated": t, "keyboards": [], "keymap": "", "layers": [], "fingers": {}, "legends": {},
             **{kind: {} for kind in MAPS}, "totals": dict({k: 0 for k in TOTALS}, peak_wpm=0), "days": {}}
 
 
@@ -147,6 +151,21 @@ def write_json(path, obj):
         raise
 
 
+def write_session(directory, s):
+    """A session written to its file, its `stats` worked out again from its counts first."""
+    s["stats"] = _rounded(summary(s))
+    write_json(path_of(directory, s["name"]), s)
+
+
+def _rounded(v):
+    """Shares to four places: a file people read, not a ledger."""
+    if isinstance(v, float):
+        return round(v, 4)
+    if isinstance(v, dict):
+        return {k: _rounded(x) for k, x in v.items()}
+    return v
+
+
 def _quarantine(path, why, log):
     aside = f"{path}.corrupt-{int(time.time())}"
     with contextlib.suppress(OSError):
@@ -181,9 +200,9 @@ def read_session(path, log=None):
     s.setdefault("keyboards", [])
     s.setdefault("keymap", "")
     s.setdefault("layers", [])
-    for kind in MAPS + ("days",):
+    for kind in MAPS + ("days", "fingers", "legends"):
         if not isinstance(s.get(kind), dict):
-            s[kind] = {}             # a session from before the key times, or the days, were kept
+            s[kind] = {}             # a session from before the key times, the days, or the keys' names were kept
     for k in TOTALS + ("peak_wpm",):
         s["totals"].setdefault(k, 0)
     return s
@@ -230,7 +249,7 @@ def active(directory, log=None):
             s = every[max(every, key=lambda n: every[n].get("updated", ""))]
         else:
             s = empty(_generated_name(directory), False)
-            write_json(path_of(directory, s["name"]), s)
+            write_session(directory, s)
         st["active"] = s["name"]
         _write_state(directory, st)
     return st, s
@@ -259,11 +278,13 @@ def add(s, delta):
     s["totals"]["peak_wpm"] = max(s["totals"].get("peak_wpm", 0), delta.get("peak_wpm") or 0)
 
 
-def add_counts(directory, sid, gen, delta, keyboards=(), keymap="", log=None, layers=None):
+def add_counts(directory, sid, gen, delta, keyboards=(), keymap="", log=None, layers=None, fingers=None,
+               legends=None):
     """Add `delta` to the session whose id is `sid`, if it is still at `gen`, and write it. A
     session reset since (a higher gen) or deleted takes nothing: those keys were typed into what
-    the user threw away. `layers` are the keymap's, the one the counts were typed with. Returns the
-    session as written, or None."""
+    the user threw away. `layers` are the keymap's, the one the counts were typed with, and so are
+    `fingers` ({position: finger}) and `legends` ({layer: {position: legend}}), of which the
+    session keeps those of the keys it has counted. Returns the session as written, or None."""
     with locked(directory):
         every = sessions(directory, log)
         s = next((x for x in every.values() if x["id"] == sid), None)
@@ -275,11 +296,26 @@ def add_counts(directory, sid, gen, delta, keyboards=(), keymap="", log=None, la
             s["keymap"] = keymap
         if layers:
             s["layers"] = list(layers)
+        if fingers:
+            s["fingers"] = dict(fingers)
+        if legends:
+            name_keys(s, legends)
         if delta.get("presses") or delta.get("combos") or any(delta.get(k) for k in TOTALS):
             s["updated"] = _now()        # when something was typed, not when the layers were written
             add_day(s, delta)
-        write_json(path_of(directory, s["name"]), s)
+        write_session(directory, s)
         return s
+
+
+def name_keys(s, legends):
+    """The legend of every key the session has counted, from the keymap's: the file then says
+    what its positions are, and the slowest key can be named without the keymap at hand."""
+    for kind in ("presses", "timed"):
+        for layer, m in s[kind].items():
+            have = legends.get(layer) or {}
+            for pos in m:
+                if have.get(pos):
+                    s["legends"].setdefault(layer, {})[pos] = have[pos]
 
 
 # ---------- what the commands do ----------
@@ -302,7 +338,7 @@ def new(directory=None, name=None, log=None):
             with contextlib.suppress(OSError):
                 os.unlink(path_of(directory, current["name"]))
         s = empty(name if name is not None else _generated_name(directory), name is not None)
-        write_json(path_of(directory, s["name"]), s)
+        write_session(directory, s)
         st["active"] = s["name"]
         _write_state(directory, st)
         return s
@@ -318,7 +354,7 @@ def save(directory=None, name=None, log=None):
         st, s = active(directory, log)
         if name == s["name"]:
             s["named"] = True
-            write_json(path_of(directory, name), s)
+            write_session(directory, s)
             return s
         if os.path.exists(path_of(directory, name)):
             raise SessionError(f"there is a session called {name} already")
@@ -326,10 +362,10 @@ def save(directory=None, name=None, log=None):
         if s.get("named"):
             s = json.loads(json.dumps(s))
             s.update(id=os.urandom(8).hex(), gen=0, name=name, updated=_now())
-            write_json(path_of(directory, name), s)
+            write_session(directory, s)
         else:
             s.update(name=name, named=True, updated=_now())
-            write_json(path_of(directory, name), s)
+            write_session(directory, s)
             os.unlink(path_of(directory, old))
         st["active"] = name
         _write_state(directory, st)
@@ -361,7 +397,7 @@ def reset(directory=None, log=None):
         _, s = active(directory, log)
         fresh = empty(s["name"], s.get("named"))
         fresh.update(id=s["id"], gen=s["gen"] + 1, created=s["created"])
-        write_json(path_of(directory, s["name"]), fresh)
+        write_session(directory, fresh)
         return fresh
 
 
@@ -434,8 +470,15 @@ def rename_layer(directory=None, old=None, new=None, every=False, log=None):
                     into[k] = into.get(k, 0) + c
                     if kind in ("presses", "combos"):
                         n[kind == "combos"] += c
+            names = s["legends"].pop(old, None) or {}
+            for k, legend in names.items():
+                s["legends"].setdefault(new, {}).setdefault(k, legend)
+            for d in s["days"].values():
+                per = d.get("layers")
+                if isinstance(per, dict) and old in per:
+                    per[new] = per.get(new, 0) + per.pop(old)
             if any(n):
-                write_json(path_of(directory, s["name"]), s)
+                write_session(directory, s)
                 moved.append((s["name"], n[0], n[1]))
         if not moved:
             where = "any session" if every else current["name"]
@@ -443,15 +486,22 @@ def rename_layer(directory=None, old=None, new=None, every=False, log=None):
         return moved
 
 
-def _numbers(presses, combos, members, t):
-    """The numbers the commands print, from keys, combos (and their keys) and the totals."""
+def _numbers(presses, combos, members, t, layers=None):
+    """The numbers the commands print, from keys, combos (and their keys), the totals and the keys
+    on each layer: what the HUD's stats bar shows, worked out as it works them out."""
     wpm = round(t["active_net"] / 5 / (t["active_ms"] / 60000)) if t.get("active_ms", 0) >= 10000 else None
     sfb = t["sfb"] / t["bigrams"] if t.get("bigrams", 0) >= SFB_MIN else None
     strokes = presses - members + combos            # a combo is one keystroke made with several keys
+    # Each layer's share of the keys, the most used first: the bar's for the layer on screen.
+    per = {layer: n for layer, n in (layers or {}).items() if n}
+    total = sum(per.values())
+    shares = {layer: {"keys": n, "share": n / total}
+              for layer, n in sorted(per.items(), key=lambda kv: (-kv[1], kv[0]))}
     return {"presses": presses, "combos": combos, "chars": t.get("chars", 0), "deleted": t.get("deleted", 0),
             "sfb": sfb, "active_ms": t.get("active_ms", 0), "wpm": wpm, "peak_wpm": t.get("peak_wpm") or None,
             "combo_share": combos / strokes if strokes > 0 else None,
-            "accuracy": max(0.0, 1 - t.get("deleted", 0) / t["chars"]) if t.get("chars") else None}
+            "accuracy": max(0.0, 1 - t.get("deleted", 0) / t["chars"]) if t.get("chars") else None,
+            "layers": shares}
 
 
 def _combo_counts(s):
@@ -461,9 +511,44 @@ def _combo_counts(s):
 
 
 def summary(s):
-    """The numbers `zmk-layer-hud session` prints for a session."""
+    """The numbers `zmk-layer-hud session` prints for a session, and its file keeps as `stats`."""
     presses = sum(n for m in s["presses"].values() for n in m.values())
-    return _numbers(presses, *_combo_counts(s), s["totals"])
+    out = _numbers(presses, *_combo_counts(s), s["totals"],
+                   {layer: sum(m.values()) for layer, m in s["presses"].items()})
+    out["hands"] = _hands(s)
+    out["slowest"] = _slowest(s)
+    return out
+
+
+def _hands(s):
+    """Each hand's share of the keys, by the finger the keymap says strikes each one (a thumb is
+    its hand's); None without the fingers, as the bar shows none."""
+    fingers = s.get("fingers") or {}
+    hand = {"l": 0, "r": 0}
+    for m in s["presses"].values():
+        for pos, n in m.items():
+            f = fingers.get(pos)
+            if isinstance(f, str) and f[:1] in hand:
+                hand[f[0]] += n
+    both = hand["l"] + hand["r"]
+    return {"left": hand["l"] / both, "right": hand["r"] / both} if both else None
+
+
+def _slowest(s):
+    """The key that takes longest after the key before it, on average, of those timed SLOW_MIN
+    times or more: {layer, pos, key (its legend, when known), ms}, or None."""
+    best = None
+    for layer, m in s["timed"].items():
+        for pos, n in m.items():
+            if n < SLOW_MIN:
+                continue
+            mean = (s["ms"].get(layer) or {}).get(pos, 0) / n
+            if best is None or mean > best[0]:
+                best = (mean, layer, pos)
+    if best is None:
+        return None
+    mean, layer, pos = best
+    return {"layer": layer, "pos": pos, "key": (s.get("legends", {}).get(layer) or {}).get(pos), "ms": round(mean)}
 
 
 # ---------- days ----------
@@ -477,6 +562,11 @@ def add_day(s, delta, day=None):
     line in the file however much was typed on it."""
     d = s.setdefault("days", {}).setdefault(day or _today(), {})
     d["presses"] = d.get("presses", 0) + sum(n for m in (delta.get("presses") or {}).values() for n in m.values())
+    for layer, m in (delta.get("presses") or {}).items():
+        n = sum(m.values())
+        if n:
+            per = d.setdefault("layers", {})
+            per[layer] = per.get(layer, 0) + n
     for m in (delta.get("combos") or {}).values():
         for k, n in m.items():
             d["combos"] = d.get("combos", 0) + n
@@ -487,8 +577,9 @@ def add_day(s, delta, day=None):
 
 
 def history(s):
-    """[(day, numbers)], oldest first: what the session typed each day it typed."""
-    return [(day, _numbers(d.get("presses", 0), d.get("combos", 0), d.get("combo_keys", 0), d))
+    """[(day, numbers)], oldest first: what the session typed each day it typed. A day from before
+    the days kept their layers has no layers' shares."""
+    return [(day, _numbers(d.get("presses", 0), d.get("combos", 0), d.get("combo_keys", 0), d, d.get("layers")))
             for day, d in sorted((s.get("days") or {}).items())]
 
 
@@ -499,7 +590,12 @@ def all_days(every):
         for day, d in (s.get("days") or {}).items():
             into = out["days"].setdefault(day, {})
             for k, n in d.items():
-                into[k] = max(into.get(k, 0), n) if k == "peak_wpm" else into.get(k, 0) + n
+                if k == "layers":
+                    per = into.setdefault("layers", {})
+                    for layer, c in n.items():
+                        per[layer] = per.get(layer, 0) + c
+                else:
+                    into[k] = max(into.get(k, 0), n) if k == "peak_wpm" else into.get(k, 0) + n
     return out
 
 
@@ -572,6 +668,8 @@ class Store:
         self.keymap = ""
         self.layers = []       # the keymap's, written into the session so that `session` can tell
                                # counts on a layer the keymap no longer has (orphans)
+        self.fingers = {}      # ...and what it says of each key: its finger and, on each layer, its
+        self.legends = {}      # legend, for the session's hands and its slowest key (summary)
         self.stamp = None
         self._stop = threading.Event()
         self._thread = None
@@ -643,6 +741,9 @@ class Store:
         with self.lock:
             self.keymap = os.path.basename((msg or {}).get("source") or "") or self.keymap
             self.layers = list((msg or {}).get("layers") or {}) or self.layers
+            fingers, legends = keys_of(msg)
+            self.fingers = fingers or self.fingers
+            self.legends = legends or self.legends
 
     def flush(self):
         """Add what the page reported to the files it belongs in. What cannot be written now (a
@@ -656,8 +757,10 @@ class Store:
                         add(self.session, _pending_as_delta(p))
                 return
             mine = (self.session["id"], self.session["gen"])
-            if self.layers and self.session.get("layers") != self.layers and mine not in pending:
-                pending[mine] = _new_pending()   # the layers alone
+            stale = (self.layers and self.session.get("layers") != self.layers) or \
+                (self.fingers and self.session.get("fingers") != self.fingers)
+            if stale and mine not in pending:
+                pending[mine] = _new_pending()   # the keymap's word on its keys alone
             if not pending:
                 return
             # Something else wrote since we last looked (a command): after our own write, poll must
@@ -667,7 +770,7 @@ class Store:
             for (sid, gen), p in pending.items():
                 try:
                     written = add_counts(self.dir, sid, gen, _pending_as_delta(p), sorted(self.devices), self.keymap,
-                                         self.log, layers=self.layers)
+                                         self.log, layers=self.layers, fingers=self.fingers, legends=self.legends)
                 except OSError as e:
                     error = e
                     _merge_delta(self.pending.setdefault((sid, gen), _new_pending()),
@@ -750,6 +853,31 @@ class Store:
 
     def announce(self):
         self.emit(self.message())
+
+
+def keys_of(msg):
+    """From a keymap message (host/keymap.py build_message): ({position: finger}, {layer: {position:
+    legend}}), by the ZMK positions the counts are kept by. A key's legend is what the bar names it
+    by: its tap, else its glyph's name; a transparent key has none of its own."""
+    msg = msg if isinstance(msg, dict) else {}
+    positions = msg.get("positions") if isinstance(msg.get("positions"), dict) else {}
+    at = {str(pos): i for pos, i in positions.items() if isinstance(i, int) and not isinstance(i, bool) and i >= 0}
+    fingers = msg.get("fingers") if isinstance(msg.get("fingers"), list) else []
+    by_pos = {pos: fingers[i] for pos, i in at.items() if i < len(fingers) and isinstance(fingers[i], str)}
+    legends = {}
+    for layer, keys in (msg.get("layers") if isinstance(msg.get("layers"), dict) else {}).items():
+        if not isinstance(keys, list):
+            continue
+        names = {}
+        for pos, i in at.items():
+            k = keys[i] if i < len(keys) else None
+            if isinstance(k, dict) and k.get("type") != "trans":
+                legend = k.get("tap") or k.get("glyph")
+                if isinstance(legend, str) and legend:
+                    names[pos] = legend
+        if names:
+            legends[layer] = names
+    return by_pos, legends
 
 
 # What the store holds per session until it is written: the counts, and the totals apart.

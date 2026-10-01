@@ -229,6 +229,75 @@ class Commands(Base):
                 session.set_pref(self.dir, "opacity", bad)
 
 
+class Stats(Base):
+    """What the HUD's stats bar shows, kept by the session: in `summary`, and in its file's `stats`."""
+
+    MESSAGE = {"source": "/home/me/zmk/board.yaml", "positions": {"0": 0, "1": 1, "2": 2, "3": 3},
+               "fingers": ["lp", "li", "ri", None],
+               "layers": {"base": [{"tap": "a"}, {"tap": "b"}, {"tap": "", "glyph": "mdi:cut"}, {"type": "trans"}],
+                          "sym": [{"tap": "!"}, {"type": "trans"}, {"tap": "?"}, {"tap": "#"}]}}
+
+    def test_each_position_is_named_by_its_finger_and_its_legend_on_each_layer(self):
+        fingers, legends = session.keys_of(self.MESSAGE)
+        self.assertEqual({"0": "lp", "1": "li", "2": "ri"}, fingers)
+        self.assertEqual({"base": {"0": "a", "1": "b", "2": "mdi:cut"}, "sym": {"0": "!", "2": "?", "3": "#"}}, legends)
+        self.assertEqual(({}, {}), session.keys_of(None))
+        self.assertEqual(({}, {}), session.keys_of({"layers": {"base": {}}}))     # a message with no keys
+
+    def test_every_stat_the_bar_shows_is_kept_and_written_down(self):
+        _, s = session.status(self.dir)
+        fingers, legends = session.keys_of(self.MESSAGE)
+        delta = counts({"base": {"0": 60, "1": 20}, "sym": {"2": 20}}, {"base": {"0,1": 10}}, chars=200, deleted=10,
+                       active_ms=60000, active_net=190, peak_wpm=60, sfb=3, bigrams=60,
+                       ms={"base": {"1": 1000, "0": 300}, "sym": {"2": 400}}, timed={"base": {"1": 5, "0": 6}, "sym": {"2": 4}})
+        session.add_counts(self.dir, s["id"], s["gen"], delta, fingers=fingers, legends=legends)
+        s = self.active()
+        t = session.summary(s)
+        self.assertEqual(["base", "sym"], list(t["layers"]))              # the most used first
+        self.assertEqual({"keys": 80, "share": 0.8}, t["layers"]["base"])
+        self.assertAlmostEqual(0.2, t["layers"]["sym"]["share"])
+        self.assertEqual({"left": 0.8, "right": 0.2}, t["hands"])          # 0 and 1 are the left hand's
+        # Base's 1 takes 200 ms on average; sym's 2 takes longer, but four times is too few to say.
+        self.assertEqual({"layer": "base", "pos": "1", "key": "b", "ms": 200}, t["slowest"])
+        self.assertEqual((38, 60, 0.95, 0.05), (t["wpm"], t["peak_wpm"], t["accuracy"], t["sfb"]))
+        self.assertAlmostEqual(10 / 90, t["combo_share"])                  # 100 keys, 20 of them in 10 chords
+        with open(session.path_of(self.dir, s["name"]), encoding="utf-8") as f:
+            on_disk = json.load(f)
+        self.assertEqual(session._rounded(t), on_disk["stats"])
+        self.assertEqual(0.1111, on_disk["stats"]["combo_share"])           # to four places
+        self.assertEqual(fingers, on_disk["fingers"])
+        self.assertEqual({"base": {"0": "a", "1": "b"}, "sym": {"2": "?"}}, on_disk["legends"])   # the keys it counted
+        # A session without the keymap's word on its keys has neither hands nor a name for its slowest.
+        s["fingers"], s["legends"] = {}, {}
+        self.assertEqual((None, None), (session.summary(s)["hands"], session.summary(s)["slowest"]["key"]))
+        self.assertEqual({}, session.summary(session.empty("x", False))["layers"])
+
+    def test_each_day_keeps_its_layers_and_a_renamed_layer_takes_them_along(self):
+        _, s = session.status(self.dir)
+        real = session._today
+        try:
+            session._today = lambda: "2026-09-29"
+            session.add_counts(self.dir, s["id"], s["gen"], counts({"base": {"0": 9}, "sym": {"1": 1}}),
+                               legends={"sym": {"1": "!"}})
+            session._today = lambda: "2026-09-30"
+            session.add_counts(self.dir, s["id"], s["gen"], counts({"sym": {"1": 3}}))
+        finally:
+            session._today = real
+        (_, one), (_, two) = session.history(self.active())
+        self.assertEqual({"base": {"keys": 9, "share": 0.9}, "sym": {"keys": 1, "share": 0.1}}, one["layers"])
+        self.assertEqual({"sym": {"keys": 3, "share": 1.0}}, two["layers"])
+        session.rename_layer(self.dir, "sym", "symbols")
+        s = self.active()
+        self.assertEqual({"base": 9, "symbols": 1}, s["days"]["2026-09-29"]["layers"])
+        self.assertEqual({"symbols": {"1": "!"}}, s["legends"])
+        self.assertEqual(["base", "symbols"], list(s["stats"]["layers"]))
+        both = session.all_days([s, s])
+        self.assertEqual({"base": 18, "symbols": 2}, both["days"]["2026-09-29"]["layers"])
+        # A day from before the days kept their layers has no shares to give.
+        del s["days"]["2026-09-29"]["layers"]
+        self.assertEqual({}, dict(session.history(s))["2026-09-29"]["layers"])
+
+
 class StoreTest(Base):
     def store(self, directory=None):
         self.sent = []
@@ -369,6 +438,19 @@ class StoreTest(Base):
         st.flush()
         s = self.active()
         self.assertEqual((["base", "symbols"], updated), (s["layers"], s["updated"]))
+
+    def test_the_keymaps_fingers_and_legends_go_into_the_session(self):
+        st = self.store()
+        st.set_keymap(Stats.MESSAGE)
+        st.apply(batch(1, presses={"base": {"2": 2}}))
+        st.flush()
+        s = self.active()
+        self.assertEqual(({"0": "lp", "1": "li", "2": "ri"}, {"base": {"2": "mdi:cut"}}), (s["fingers"], s["legends"]))
+        self.assertEqual({"right": 1.0, "left": 0.0}, s["stats"]["hands"])
+        # Another keymap's fingers are written even before anything is typed.
+        st.set_keymap(dict(Stats.MESSAGE, fingers=["rp", "li", "ri", None]))
+        st.flush()
+        self.assertEqual("rp", self.active()["fingers"]["0"])
 
     def test_the_demo_keeps_its_session_in_memory(self):
         st = self.store(directory=False)
