@@ -418,12 +418,12 @@
 
   // Tell a native host how tall the page wants to be (the layout decides), and how wide the
   // config says. Hosts that listen (host/macos/panel.py) resize their window to it.
-  // The macOS panel moves when the page is dragged, and decides before the page sees the press: it
-  // is told where the controls that drag themselves are (host/macos/panel.py DragWebView), so
+  // Both panels move when the page is dragged, and decide before the page sees the press: each is
+  // told where the controls are (host/macos/panel.py DragWebView, host/linux/panel.py drag), so
   // dragging the slider moves the slider. Said again whenever the layout may have moved them.
   function postNoDrag() {
-    let handler = null;
-    try { handler = window.webkit.messageHandlers.zmkhud; } catch (e) { /* not the macOS panel */ }
+    // Both panels move the window themselves: the macOS bridge, or the Linux panel's handler.
+    const handler = panelHandler();
     if (!handler) return;
     // Everything that takes a click: a press there goes to the page, anywhere else it moves the
     // panel. The slider's whole box, not just its track, so a press a little off the thumb works.

@@ -675,7 +675,11 @@ function main() {
     check("the Linux panel is told how tall the page is", size && Number.isInteger(size.height), JSON.stringify(posted));
     tap(p, A.pos);
     p.clock.advance(settle + 3000);
-    check("and is never sent the counts", posted.every(m => m.kind === "size"), JSON.stringify(posted.map(m => m.kind)));
+    check("and is never sent the counts", posted.every(m => m.kind === "size" || m.kind === "nodrag"),
+          JSON.stringify(posted.map(m => m.kind)));
+    // It moves its surface itself, so it is told where the controls are, as the macOS panel is.
+    check("and is told where the controls are, to drag from anywhere else", posted.some(m => m.kind === "nodrag"),
+          JSON.stringify(posted.map(m => m.kind)));
   }
 
   // ---------- the hide button ----------

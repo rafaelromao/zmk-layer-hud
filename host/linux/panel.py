@@ -15,6 +15,7 @@ import os
 from pathlib import Path
 import secrets
 import signal
+import socket
 import subprocess
 import sys
 
@@ -66,6 +67,55 @@ HIDE_SHEET = WebKit2.UserStyleSheet.new("* { visibility: hidden !important; }",
                                         WebKit2.UserStyleLevel.USER, None, None)
 
 
+# Where the HUD was dragged to (drag, in main), kept with the macOS panel's frame.
+POSITION = Path.home() / ".config/zmk-layer-hud/state.json"
+
+
+def load_position():
+    try:
+        p = json.loads(POSITION.read_text()).get("linux") or {}
+        return int(p["top"]), int(p["right"])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return None
+
+
+def save_position(top, right):
+    try:
+        try:
+            state = json.loads(POSITION.read_text())
+        except (OSError, ValueError):
+            state = {}
+        state = state if isinstance(state, dict) else {}
+        state["linux"] = {"top": top, "right": right}
+        POSITION.parent.mkdir(parents=True, exist_ok=True)
+        POSITION.write_text(json.dumps(state))
+    except OSError as e:
+        print(f"panel: could not save {POSITION}: {e}", file=sys.stderr, flush=True)
+
+
+def cursor():
+    """Where the pointer is on the whole layout, from Hyprland's own socket. A layer surface
+    knows only where the pointer is on itself, and that moves as the surface does."""
+    sig, runtime = os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"), os.environ.get("XDG_RUNTIME_DIR")
+    if not (sig and runtime):
+        return None
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(0.2)
+            s.connect(f"{runtime}/hypr/{sig}/.socket.sock")
+            s.sendall(b"j/cursorpos")
+            data = b""
+            while True:
+                chunk = s.recv(4096)
+                if not chunk:
+                    break
+                data += chunk
+        at = json.loads(data)
+        return int(at["x"]), int(at["y"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+
+
 def surface(monitor, page, namespace, width, height, query="", on_size=None):
     """A layer surface with the page on it, and the page's UserContentManager, which is where the
     hide sheet goes."""
@@ -95,8 +145,9 @@ def surface(monitor, page, namespace, width, height, query="", on_size=None):
     if HIDDEN:
         manager.add_style_sheet(HIDE_SHEET)     # before the page loads: not one frame shows
     if on_size is not None:
-        # The page says how big its layout is (hud.js postSize), and its hide button says hide, on
-        # this one handler. Not on a handler called zmkhud:
+        # The page says how big its layout is (hud.js postSize), where its controls are, so a drag
+        # starts anywhere else (postNoDrag), and that its hide button was pressed, all on this one
+        # handler. Not on a handler called zmkhud:
         # that is the macOS panel's bridge, and a page that finds one reports its session's counts
         # through it instead of the socket, where the feed keeps them.
         manager.register_script_message_handler("zmkhudsize")
@@ -136,6 +187,12 @@ def main():
     right_edge = max((w["at"][0] + w["size"][0] - info["x"] for w in tiled),
                      default=monitor.get_geometry().width - info["reserved"][2])
     right = monitor.get_geometry().width - right_edge + INSET
+    geo = monitor.get_geometry()
+    # Where it was dragged to last, while that is still on this monitor.
+    saved = load_position()
+    if saved and 0 <= saved[0] <= geo.height - 50 and 0 <= saved[1] <= geo.width - 100:
+        top, right = saved
+    pos = [top, right]
 
     hud, hud_css = surface(monitor, "index.html", "zmkhud-layer", HUD_W, HUD_H, query=f"&tally={TALLY_TOKEN}",
                   on_size=lambda body: page_said(body))
@@ -198,15 +255,71 @@ def main():
                 rail.show_all() if want else rail.hide()
         panelstate.write(RUN, want)
 
+    no_drag = []
+
     def page_said(body):
         try:
-            hide = json.loads(body).get("kind") == "hide"
+            msg = json.loads(body)
+            kind = msg.get("kind")
         except (ValueError, AttributeError):
             return
-        if hide:
+        if kind == "hide":
             set_shown(False)
+        elif kind == "nodrag":
+            rects = msg.get("rects")
+            if isinstance(rects, list):
+                no_drag[:] = [r for r in rects if isinstance(r, list) and len(r) == 4
+                              and all(isinstance(v, (int, float)) for v in r)]
         else:
             follow_page(body)
+
+    # Dragging. A layer surface is not the compositor's to move, so the panel moves it: a press
+    # anywhere but on the page's controls (it says where they are, kind "nodrag") starts a drag,
+    # and the margins follow the pointer until it is let go. The press never reaches the page.
+    drag = {}
+
+    def move_to(top, right):
+        top = max(0, min(top, geo.height - size[1]))
+        right = max(0, min(right, geo.width - size[0]))
+        pos[:] = [top, right]
+        GtkLayerShell.set_margin(hud, GtkLayerShell.Edge.TOP, top)
+        GtkLayerShell.set_margin(hud, GtkLayerShell.Edge.RIGHT, right)
+        GtkLayerShell.set_margin(keys, GtkLayerShell.Edge.TOP, top + size[1] + KEYS_GAP)
+        GtkLayerShell.set_margin(keys, GtkLayerShell.Edge.RIGHT, right)
+
+    def pressed(_view, event):
+        if event.button != 1 or event.type != Gdk.EventType.BUTTON_PRESS:
+            return False
+        if any(x <= event.x <= x + w and y <= event.y <= y + h for x, y, w, h in no_drag):
+            return False                # a control: the page has it
+        at = cursor()
+        if at is None:
+            return False
+        drag.update(at=at, pos=list(pos))
+        return True
+
+    def moved(_view, event):
+        if not drag:
+            return False
+        at = cursor()
+        if at is not None:
+            move_to(drag["pos"][0] + at[1] - drag["at"][1], drag["pos"][1] - (at[0] - drag["at"][0]))
+        return True
+
+    def released(_view, event):
+        if not drag:
+            return False
+        drag.clear()
+        if rail is not None:
+            rail.set_size_request(size[0] + pos[1] + INSET, 1)
+            GtkLayerShell.set_exclusive_zone(rail, size[0] + pos[1] + INSET)
+        save_position(*pos)
+        return True
+
+    view = hud.get_child()
+    view.connect("button-press-event", pressed)
+    view.connect("motion-notify-event", moved)
+    view.connect("button-release-event", released)
 
     def follow_page(body):
         """The HUD's surface as big as the page's layout -- its width is the config's hud.width,
@@ -223,10 +336,10 @@ def main():
         hud.resize(w, h)     # a layer surface is the window's size, smaller as well as larger
         keys.get_child().set_size_request(w, KEYS_H)
         keys.resize(w, KEYS_H)
-        GtkLayerShell.set_margin(keys, GtkLayerShell.Edge.TOP, top + h + KEYS_GAP)
+        GtkLayerShell.set_margin(keys, GtkLayerShell.Edge.TOP, pos[0] + h + KEYS_GAP)
         if rail is not None:
-            rail.set_size_request(w + right + INSET, 1)
-            GtkLayerShell.set_exclusive_zone(rail, w + right + INSET)
+            rail.set_size_request(w + pos[1] + INSET, 1)
+            GtkLayerShell.set_exclusive_zone(rail, w + pos[1] + INSET)
         if not shown[0]:
             take_input(hud)
             take_input(keys)
