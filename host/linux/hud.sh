@@ -65,6 +65,9 @@ FEED_PYTHON="${ZMKHUD_PYTHON:-$ROOT/.venv/bin/python3}"; [ -x "$FEED_PYTHON" ] |
 "$FEED_PYTHON" -c "import serial, websockets"
 export ZMKHUD_PYTHON="$FEED_PYTHON"
 "$FEED_PYTHON" "$ROOT/host/keymap.py"   # validates the config + its definitions before the panel opens
+# The global shortcuts are Hyprland binds (host/shortcuts.py), written again from the config on
+# every start; they stay when the HUD stops, so the power shortcut can start it again.
+"$FEED_PYTHON" "$ROOT/host/shortcuts.py"
 stop
 sleep 0.5
 # A login item has to stay attached: its service ends whatever it leaves behind when it exits.

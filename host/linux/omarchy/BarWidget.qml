@@ -7,7 +7,10 @@ import qs.Ui
 
 // zmk-layer-hud in Omarchy's bar: the live WPM and the keyboard glyph, full while the HUD is shown,
 // dimmed while it is hidden (still counting); the glyph crossed out when it is not running. A click shows or hides it,
-// or starts it; a right-click offers the same and Quit.
+// or starts it; a right-click offers the same and Quit, each beside its global shortcut.
+//
+// The shortcuts are Hyprland binds that `zmk-layer-hud start` writes (host/shortcuts.py); their
+// labels are in <state>/shortcuts.json, written with them.
 //
 // The HUD says whether it is shown in <state>/panel.json (host/panelstate.py), written whole by a
 // rename -- which can drop a file watch, so a timer reads it again as well.
@@ -31,6 +34,7 @@ BarWidget {
     ? [] : installedStartWith.split(" ").filter(w => w.length)
 
   property string hud: "stopped"      // shown | hidden | stopped
+  property var keys: ({})             // {"toggle": "Ctrl+Alt+L", "power": "Ctrl+Alt+Super+L"}
   property int pid: 0
   property int wpm: 0
 
@@ -74,6 +78,15 @@ BarWidget {
     onFileChanged: reload()
     onLoaded: root.read(text())
     onLoadFailed: root.stopped()
+  }
+
+  FileView {
+    id: keysFile
+    path: root.stateDir + "/shortcuts.json"
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: { try { root.keys = JSON.parse(text()) } catch (e) { root.keys = ({}) } }
+    onLoadFailed: root.keys = ({})
   }
 
   // A HUD that died without a word leaves its panel.json behind: its pid says whether it lives.
@@ -163,7 +176,7 @@ BarWidget {
     anchor.item: root
     anchor.edges: root.bar && root.bar.position === "bottom" ? Edges.Top : Edges.Bottom
     anchor.gravity: root.bar && root.bar.position === "bottom" ? Edges.Top : Edges.Bottom
-    implicitWidth: 150
+    implicitWidth: 260
     implicitHeight: items.implicitHeight + 8
 
     Rectangle {
@@ -179,9 +192,10 @@ BarWidget {
         anchors.margins: 4
 
         Repeater {
-          model: root.hud === "stopped" ? [["Start HUD", "start"]]
-            : [[root.hud === "shown" ? "Hide HUD" : "Show HUD", root.hud === "shown" ? "hide" : "show"],
-               ["Quit HUD", "stop"]]
+          // The third of each is the shortcut that does the same.
+          model: root.hud === "stopped" ? [["Start HUD", "start", "power"]]
+            : [[root.hud === "shown" ? "Hide HUD" : "Show HUD", root.hud === "shown" ? "hide" : "show", "toggle"],
+               ["Quit HUD", "stop", "power"]]
           delegate: Rectangle {
             required property var modelData
             width: items.width
@@ -191,6 +205,16 @@ BarWidget {
               anchors.verticalCenter: parent.verticalCenter
               x: 8
               text: modelData[0]
+              color: root.bar ? root.bar.foreground : "white"
+              font.family: root.bar ? root.bar.fontFamily : "monospace"
+              font.pixelSize: 12
+            }
+            Text {
+              anchors.verticalCenter: parent.verticalCenter
+              anchors.right: parent.right
+              anchors.rightMargin: 8
+              text: root.keys[modelData[2]] || ""
+              opacity: 0.5
               color: root.bar ? root.bar.foreground : "white"
               font.family: root.bar ? root.bar.fontFamily : "monospace"
               font.pixelSize: 12
