@@ -8,9 +8,15 @@ offers the same, Quit HUD, and Remove Icon. What it shows comes from $STATE/pane
 running panel keeps (host/panelstate.py), and what it does goes through the command line, like
 any other caller.
 
+It also holds the global shortcuts (host/shortcuts.py): Ctrl+Alt+L shows or hides the HUD, and
+Ctrl+Alt+Cmd+L starts or stops it, unless the config's `shortcuts:` says other keys. They are
+Carbon hotkeys, which need no Accessibility or Input Monitoring grant, and they go with the icon.
+The right-click menu shows them beside their items.
+
 host/macos/start.sh starts it with the HUD, unless `zmk-layer-hud menubar disable` said not to.
 """
 
+import ctypes
 import fcntl
 import os
 import subprocess
@@ -20,7 +26,8 @@ from pathlib import Path
 try:
     import objc
     from AppKit import (NSApp, NSApplication, NSApplicationActivationPolicyAccessory, NSBezierPath, NSColor,
-                        NSCompositingOperationClear, NSCompositingOperationSourceOver, NSEventModifierFlagControl,
+                        NSCompositingOperationClear, NSCompositingOperationSourceOver, NSEventModifierFlagCommand,
+                        NSEventModifierFlagControl, NSEventModifierFlagOption, NSEventModifierFlagShift,
                         NSEventMaskLeftMouseUp, NSEventMaskRightMouseUp, NSEventTypeRightMouseUp, NSGraphicsContext,
                         NSImage, NSImageRight, NSMenu, NSMenuItem, NSStatusBar, NSVariableStatusItemLength)
     from Foundation import NSObject, NSTimer
@@ -30,10 +37,91 @@ except ImportError:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import panelstate  # noqa: E402  (host/panelstate.py)
+import shortcuts  # noqa: E402  (host/shortcuts.py)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 COMMAND = str(ROOT / "bin" / "zmk-layer-hud")
 RUN = panelstate.default_dir()
+
+
+# ---------- Carbon's hotkeys, through ctypes (PyObjC does not wrap them) ----------
+
+def fourcc(code):
+    return int.from_bytes(code.encode("ascii"), "big")
+
+
+class EventTypeSpec(ctypes.Structure):
+    _fields_ = [("eventClass", ctypes.c_uint32), ("eventKind", ctypes.c_uint32)]
+
+
+class EventHotKeyID(ctypes.Structure):
+    _fields_ = [("signature", ctypes.c_uint32), ("id", ctypes.c_uint32)]
+
+
+HANDLER = ctypes.CFUNCTYPE(ctypes.c_int32, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+SIGNATURE = fourcc("ZMKH")
+# The ANSI virtual keycodes (HIToolbox Events.h): where the key is, whatever the input source.
+KEYCODES = dict(zip("asdfhgzxcv", range(0x00, 0x0A)), b=0x0B, q=0x0C, w=0x0D, e=0x0E, r=0x0F, y=0x10, t=0x11,
+                o=0x1F, u=0x20, i=0x22, p=0x23, l=0x25, j=0x26, k=0x28, n=0x2D, m=0x2E,
+                **{"1": 0x12, "2": 0x13, "3": 0x14, "4": 0x15, "6": 0x16, "5": 0x17, "9": 0x19, "7": 0x1A,
+                   "8": 0x1C, "0": 0x1D})
+CARBON_MODS = {"gui": 0x100, "shift": 0x200, "alt": 0x800, "ctrl": 0x1000}
+MENU_MODS = {"gui": NSEventModifierFlagCommand, "shift": NSEventModifierFlagShift,
+             "alt": NSEventModifierFlagOption, "ctrl": NSEventModifierFlagControl}
+
+
+class Hotkeys:
+    """The shortcuts as Carbon hotkeys on the application's event target: pressed, they call
+    pressed(name). set() takes the ones there away and binds the ones given."""
+
+    def __init__(self, pressed):
+        self.carbon = c = ctypes.CDLL("/System/Library/Frameworks/Carbon.framework/Carbon")
+        c.GetApplicationEventTarget.restype = ctypes.c_void_p
+        c.InstallEventHandler.argtypes = [ctypes.c_void_p, HANDLER, ctypes.c_ulong, ctypes.POINTER(EventTypeSpec),
+                                          ctypes.c_void_p, ctypes.POINTER(ctypes.c_void_p)]
+        c.RegisterEventHotKey.argtypes = [ctypes.c_uint32, ctypes.c_uint32, EventHotKeyID, ctypes.c_void_p,
+                                          ctypes.c_uint32, ctypes.POINTER(ctypes.c_void_p)]
+        c.UnregisterEventHotKey.argtypes = [ctypes.c_void_p]
+        c.GetEventParameter.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32, ctypes.c_void_p,
+                                        ctypes.c_size_t, ctypes.c_void_p, ctypes.c_void_p]
+        self.target = c.GetApplicationEventTarget()
+        self.names, self.refs, self.pressed = [], [], pressed
+
+        def handle(call, event, data):
+            hk = EventHotKeyID()
+            if c.GetEventParameter(event, fourcc("----"), fourcc("hkid"), None, ctypes.sizeof(hk), None,
+                                   ctypes.byref(hk)) == 0 and hk.signature == SIGNATURE and hk.id < len(self.names):
+                self.pressed(self.names[hk.id])
+            return 0
+        self.handler = HANDLER(handle)      # kept: Carbon holds only the pointer
+        spec = EventTypeSpec(fourcc("keyb"), 5)     # kEventClassKeyboard, kEventHotKeyPressed
+        ref = ctypes.c_void_p()
+        err = c.InstallEventHandler(self.target, self.handler, 1, ctypes.byref(spec), None, ctypes.byref(ref))
+        if err:
+            print(f"menubar: no hotkeys: InstallEventHandler said {err}", file=sys.stderr)
+            self.target = None
+
+    def set(self, sets):
+        for ref in self.refs:
+            self.carbon.UnregisterEventHotKey(ref)
+        self.names, self.refs = [], []
+        if self.target is None:
+            return
+        for name, sc in sets.items():
+            if not sc:
+                continue
+            mods, key = sc
+            ref = ctypes.c_void_p()
+            err = self.carbon.RegisterEventHotKey(KEYCODES[key], sum(CARBON_MODS[m] for m in mods),
+                                                  EventHotKeyID(SIGNATURE, len(self.names)), self.target, 0,
+                                                  ctypes.byref(ref))
+            if err:
+                # -9878 (eventHotKeyExistsErr): another app has these keys.
+                print(f"menubar: {shortcuts.label(sc, 'Darwin')} is not bound ({name}): "
+                      f"RegisterEventHotKey said {err}", file=sys.stderr)
+                continue
+            self.names.append(name)
+            self.refs.append(ref)
 
 
 def crossed(base):
@@ -82,13 +170,46 @@ class Icon(NSObject):
         button.setAction_("clicked:")
         button.sendActionOn_(NSEventMaskLeftMouseUp | NSEventMaskRightMouseUp)
         self.menu = NSMenu.alloc().initWithTitle_("zmk-layer-hud")
+        self.config_seen, self.shortcuts = False, {}
+        self.hotkeys = Hotkeys(self.hotkey)
+        self.reshortcut()
         self.refresh_(None)
         # panel.json is replaced whole by a rename, and a HUD that died leaves it behind: looked at
         # twice a second, with its pid, rather than watched.
         NSTimer.scheduledTimerWithTimeInterval_target_selector_userInfo_repeats_(0.5, self, "refresh:", None, True)
         return self
 
+    @objc.python_method
+    def reshortcut(self):
+        """The config's shortcuts bound, when the config is new or has changed since it was read."""
+        try:
+            path = shortcuts.keymap_config()
+            st = os.stat(path) if path else None
+            seen = (path, st.st_mtime_ns, st.st_size) if st else None
+        except OSError:
+            seen = None
+        if seen == self.config_seen:
+            return
+        self.config_seen = seen
+        try:
+            sets = shortcuts.read(seen[0] if seen else None)
+        except Exception as e:      # a config being written, or one that says something wrong
+            print(f"menubar: shortcuts: {e}", file=sys.stderr)
+            return
+        if sets != self.shortcuts:
+            self.shortcuts = sets
+            self.hotkeys.set(sets)
+
+    @objc.python_method
+    def hotkey(self, name):
+        if name == "power":
+            self.run("power")
+        elif self.st is not None:       # nothing to show or hide
+            self.run("toggle")
+
     def refresh_(self, timer):
+        if timer is not None:
+            self.reshortcut()
         st = panelstate.read(RUN)
         if st == self.st and timer is not None:
             return
@@ -122,10 +243,15 @@ class Icon(NSObject):
     @objc.python_method
     def pop_menu(self):
         self.menu.removeAllItems()
-        items = [("Start HUD", "start")] if self.st is None else \
-            [("Hide HUD" if self.st["shown"] else "Show HUD", "hide" if self.st["shown"] else "show"), ("Quit HUD", "stop")]
-        for title, verb in items:
-            item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, "verb:", "")
+        # The third of each is the shortcut that does the same, drawn beside it by the menu.
+        items = [("Start HUD", "start", "power")] if self.st is None else \
+            [("Hide HUD" if self.st["shown"] else "Show HUD", "hide" if self.st["shown"] else "show", "toggle"),
+             ("Quit HUD", "stop", "power")]
+        for title, verb, shortcut in items:
+            sc = self.shortcuts.get(shortcut)
+            item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, "verb:", sc[1] if sc else "")
+            if sc:
+                item.setKeyEquivalentModifierMask_(sum(MENU_MODS[m] for m in sc[0]))
             item.setTarget_(self)
             item.setRepresentedObject_(verb)
             self.menu.addItem_(item)
