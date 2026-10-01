@@ -281,6 +281,8 @@ def main():
     def move_to(top, right):
         top = max(0, min(top, geo.height - size[1]))
         right = max(0, min(right, geo.width - size[0]))
+        if [top, right] == pos:
+            return
         pos[:] = [top, right]
         GtkLayerShell.set_margin(hud, GtkLayerShell.Edge.TOP, top)
         GtkLayerShell.set_margin(hud, GtkLayerShell.Edge.RIGHT, right)
@@ -298,17 +300,31 @@ def main():
         drag.update(at=at, pos=list(pos))
         return True
 
+    # A mouse reports motion hundreds of times a second, and each move asks Hyprland where the
+    # pointer is and commits the surface: done per event, they queue up and the HUD trails the
+    # pointer. So motion only marks the drag, and one move a frame catches up with the pointer.
+    def follow():
+        at = cursor()
+        if drag and at is not None:
+            move_to(drag["pos"][0] + at[1] - drag["at"][1], drag["pos"][1] - (at[0] - drag["at"][0]))
+        if drag:
+            return GLib.SOURCE_CONTINUE
+        return GLib.SOURCE_REMOVE
+
     def moved(_view, event):
         if not drag:
             return False
-        at = cursor()
-        if at is not None:
-            move_to(drag["pos"][0] + at[1] - drag["at"][1], drag["pos"][1] - (at[0] - drag["at"][0]))
+        if not drag.get("ticking"):
+            drag["ticking"] = GLib.timeout_add(16, follow)
         return True
 
     def released(_view, event):
         if not drag:
             return False
+        tick = drag.get("ticking")
+        if tick:
+            GLib.source_remove(tick)
+        follow()                    # to where it was let go
         drag.clear()
         if rail is not None:
             rail.set_size_request(size[0] + pos[1] + INSET, 1)
