@@ -143,8 +143,17 @@ class El {
     return child;
   }
   remove() { if (this.parentNode) this.parentNode.removeChild(this); }
-  addEventListener() {}
-  removeEventListener() {}
+  addEventListener(type, fn) {
+    if (!this.listeners) this.listeners = new Map();
+    if (!this.listeners.has(type)) this.listeners.set(type, []);
+    this.listeners.get(type).push(fn);
+  }
+  removeEventListener(type, fn) {
+    const fns = (this.listeners && this.listeners.get(type)) || [];
+    if (fns.indexOf(fn) >= 0) fns.splice(fns.indexOf(fn), 1);
+  }
+  // What a press on a button does: its click listeners, in the order added.
+  click() { for (const fn of ((this.listeners && this.listeners.get("click")) || []).slice()) fn({ type: "click", target: this }); }
 
   matches(sel) {
     const m = SIMPLE.exec(sel.trim());
@@ -203,7 +212,7 @@ function makeStyle() {
 
 // The ids index.html defines. Everything hud.js looks up with $() has to be here, or it silently
 // renders into nothing and every assertion passes for the wrong reason.
-const PAGE_IDS = ["frame", "hud", "layer", "layerName", "layerSub", "side", "close", "board", "stats", "statsHead", "status", "feed", "title", "keys"];
+const PAGE_IDS = ["frame", "hud", "layer", "layerName", "layerSub", "side", "hide", "close", "board", "stats", "statsHead", "status", "feed", "title", "keys"];
 
 function makeDocument() {
   const doc = {};

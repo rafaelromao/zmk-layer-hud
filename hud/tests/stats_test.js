@@ -678,6 +678,26 @@ function main() {
     check("and is never sent the counts", posted.every(m => m.kind === "size"), JSON.stringify(posted.map(m => m.kind)));
   }
 
+  // ---------- the hide button ----------
+  {
+    // Offered where a panel can hide the HUD -- either panel's handler -- and it asks that panel.
+    for (const name of ["zmkhud", "zmkhudsize"]) {
+      const p = loadPage();
+      const posted = [];
+      p.window.webkit = { messageHandlers: { [name]: { postMessage: s => posted.push(JSON.parse(s)) } } };
+      p.hud.load(data);
+      p.hud.setLayers([]);
+      check(`with ${name}, the hide button is offered`, p.document.documentElement.classList.contains("hideable"));
+      p.document.getElementById("hide").click();
+      check(`and asks ${name} to hide`, posted.some(m => m.kind === "hide"), JSON.stringify(posted.map(m => m.kind)));
+    }
+    const p = loadPage();
+    p.hud.load(data);
+    p.hud.setLayers([]);
+    check("a page with no panel offers none", !p.document.documentElement.classList.contains("hideable"));
+    p.document.getElementById("hide").click();     // and a press there does nothing, and throws nothing
+  }
+
   // ---------- a session the host keeps ----------
   {
     const TALLY_MS = 2000;

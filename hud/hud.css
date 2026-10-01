@@ -308,11 +308,20 @@ body.dark .combo-pill .combo-label, body.dark .combo-pill .combo-sub { color: #a
 #side svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round;
   transition: transform 120ms ease; }
 body.side-hidden #side svg { transform: scaleX(-1); }
-#side + #close { margin-left: -8px; }   /* #layer spaces its items 12px apart: these two sit 4px apart, a pair */
+/* Hide, beside the ✕: the HUD off screen, still counting. Only where a panel can hide it (hud.js
+   marks html.hideable), so a browser on the socket is offered no button that does nothing. */
+#hide { width: 22px; height: 22px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06); color: #aab0c0; cursor: pointer; padding: 0;
+  display: none; align-items: center; justify-content: center; }
+html.hideable #hide { display: inline-flex; }
+#hide:hover { background: rgba(255,255,255,0.14); color: #e6e8ef; }
+#hide svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+/* #layer spaces its items 12px apart: these sit 4px apart, a group */
+#side + #close, #side + #hide, #hide + #close { margin-left: -8px; }
 body.demo #side { display: none; }
 
 /* Framed by another page (index.html?embed, the landing page's demo): that page sizes the frame to
    the content, so nothing scrolls, and there is no host for the ✕ to close. On the root, because
    overflow is the root's and the WebKit builds the panels run have no :has(). */
 html.embed { overflow: hidden; }
-html.embed #close { display: none; }
+html.embed #close, html.embed #hide { display: none; }

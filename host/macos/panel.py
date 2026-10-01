@@ -161,7 +161,7 @@ class DragWebView(WKWebView):
 
 
 class Bridge(NSObject):
-    """Page → host messages (the ✕ posts "close"; the page's counts and the heatmap it switched
+    """Page → host messages (the ✕ posts "close", its hide button {"kind": "hide"}; the page's counts and the heatmap it switched
     to go to the session) and window events. Only this panel's own page can post here, so it needs
     no token the way a WebSocket client does."""
 
@@ -178,6 +178,8 @@ class Bridge(NSObject):
         kind = msg.get("kind") if isinstance(msg, dict) else None
         if kind == "size":
             Host.instance.resize(msg.get("width"), msg.get("height"))
+        elif kind == "hide":        # the page's hide button
+            Host.instance.set_shown(False)
         elif kind == "nodrag":
             rects = msg.get("rects")
             if isinstance(rects, list):

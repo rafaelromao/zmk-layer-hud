@@ -95,7 +95,8 @@ def surface(monitor, page, namespace, width, height, query="", on_size=None):
     if HIDDEN:
         manager.add_style_sheet(HIDE_SHEET)     # before the page loads: not one frame shows
     if on_size is not None:
-        # The page says how big its layout is (hud.js postSize). Not on a handler called zmkhud:
+        # The page says how big its layout is (hud.js postSize), and its hide button says hide, on
+        # this one handler. Not on a handler called zmkhud:
         # that is the macOS panel's bridge, and a page that finds one reports its session's counts
         # through it instead of the socket, where the feed keeps them.
         manager.register_script_message_handler("zmkhudsize")
@@ -137,7 +138,7 @@ def main():
     right = monitor.get_geometry().width - right_edge + INSET
 
     hud, hud_css = surface(monitor, "index.html", "zmkhud-layer", HUD_W, HUD_H, query=f"&tally={TALLY_TOKEN}",
-                  on_size=lambda body: follow_page(body))
+                  on_size=lambda body: page_said(body))
     GtkLayerShell.set_anchor(hud, GtkLayerShell.Edge.TOP, True)
     GtkLayerShell.set_anchor(hud, GtkLayerShell.Edge.RIGHT, True)
     # Explicit coordinates include the top bar; ignore other panels' exclusive zones.
@@ -196,6 +197,16 @@ def main():
             if rail is not None:
                 rail.show_all() if want else rail.hide()
         panelstate.write(RUN, want)
+
+    def page_said(body):
+        try:
+            hide = json.loads(body).get("kind") == "hide"
+        except (ValueError, AttributeError):
+            return
+        if hide:
+            set_shown(False)
+        else:
+            follow_page(body)
 
     def follow_page(body):
         """The HUD's surface as big as the page's layout -- its width is the config's hud.width,

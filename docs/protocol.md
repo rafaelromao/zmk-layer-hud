@@ -85,6 +85,10 @@ typing.
 `{"kind":"close"}` from any client exits the feed and takes the HUD down with it — that is what the
 page's ✕ sends. `--no-inject` refuses the five message kinds above; it does not disable `close`.
 
+The page's hide button sends nothing here: it posts `{"kind":"hide"}` to its own panel (the macOS
+bridge, or the Linux panel's `zmkhudsize` handler), and the panel goes off screen while the page
+goes on counting. `zmk-layer-hud show` brings it back.
+
 The page counts what it draws and reports the keyboard's own counts to the session every two
 seconds; it also says when its heatmap chip is switched:
 

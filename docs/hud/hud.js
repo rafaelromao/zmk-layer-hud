@@ -431,7 +431,7 @@
     // panel. The slider's whole box, not just its track, so a press a little off the thumb works.
     let rects = [];
     try {
-      const controls = [$("side"), $("close")].concat(["heatmap", "theme", "opacity"].map(n => bar[n] && bar[n].chip));
+      const controls = [$("side"), $("hide"), $("close")].concat(["heatmap", "theme", "opacity"].map(n => bar[n] && bar[n].chip));
       rects = controls.filter(Boolean).map(e => e.getBoundingClientRect())
         .filter(r => r.width > 0 && r.height > 0)
         .map(r => [r.left, r.top, r.width, r.height].map(v => Math.round(v)));
@@ -452,6 +452,8 @@
     for (const name of ["zmkhud", "zmkhudsize"]) {
       try { window.webkit.messageHandlers[name].postMessage(JSON.stringify({ kind: "size", width, height })); } catch (e) { /* not this host */ }
     }
+    // A panel that can hide the HUD is one that has one of these: offer the button there only.
+    document.documentElement.classList.toggle("hideable", !!panelHandler());
     postNoDrag();
   }
 
@@ -1873,6 +1875,21 @@
   const sideBtn = $("side");
   if (sideBtn) sideBtn.addEventListener("click", () => setPref("side", sideShown() ? "hidden" : "shown"));
   applyPrefs();
+
+  // The panel's own handler: the macOS bridge, or the Linux panel's, which carries size and hide.
+  function panelHandler() {
+    for (const name of ["zmkhud", "zmkhudsize"]) {
+      try { const h = window.webkit.messageHandlers[name]; if (h) return h; } catch (e) { /* not WebKit */ }
+    }
+    return null;
+  }
+
+  // Hide: the panel takes itself off screen, and this page goes on counting as before.
+  const hideBtn = $("hide");
+  if (hideBtn) hideBtn.addEventListener("click", () => {
+    const h = panelHandler();
+    if (h) h.postMessage(JSON.stringify({ kind: "hide" }));
+  });
 
   // ✕: tell the host to close. Hammerspoon listens on a user-content controller; a
   // WebSocket host receives {"kind":"close"}.
