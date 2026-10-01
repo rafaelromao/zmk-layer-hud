@@ -6,7 +6,7 @@
   the HUD          start, stop, restart, show, hide, toggle, status, log
   the typing       session, heatmap
   the keymap       keymap, import, sync, config
-  this machine     setup, doctor, update, uninstall, version
+  this machine     setup, doctor, menubar, update, uninstall, version
   without a board  demo, poke, feed
 
 Nothing above the stdlib is imported at module level, and that is deliberate: `doctor` and
@@ -44,6 +44,9 @@ BIN_DIR = os.path.expanduser(os.environ.get("ZMKHUD_BIN_DIR") or "~/.local/bin")
 BIN_LINK = os.path.join(BIN_DIR, "zmk-layer-hud")
 
 REPO = "rafaelromao/zmk-layer-hud"
+# The Omarchy bar plugin's id; the macOS login item's bundle id and label too.
+APP_ID = "io.github.rafaelromao.zmk-layer-hud"
+OMARCHY_PLUGINS = os.path.expanduser("~/.config/omarchy/plugins")
 PYTHON_MIN = (3, 10)
 
 # The one definition of what the venv holds. hidapi is macOS only: Linux reads /dev/hidrawN
@@ -989,6 +992,75 @@ def cmd_setup(args):
     return 0
 
 
+# ---------- the menubar icon ----------
+
+def plugin_dir():
+    return os.path.join(OMARCHY_PLUGINS, APP_ID)
+
+
+def omarchy(*argv):
+    """One of Omarchy's own commands, and whether it worked."""
+    try:
+        return subprocess.call(list(argv)) == 0
+    except OSError:
+        return False
+
+
+def install_plugin():
+    """host/linux/omarchy, copied where Omarchy looks for plugins, told where the command and the
+    state are: its defaults are absolute here, because the shell's environment need not have
+    ~/.local/bin on PATH or this shell's XDG_STATE_HOME."""
+    import json
+    dest = plugin_dir()
+    staged = dest + ".new"
+    shutil.rmtree(staged, ignore_errors=True)
+    shutil.copytree(os.path.join(ROOT, "host", "linux", "omarchy"), staged)
+    manifest = os.path.join(staged, "manifest.json")
+    with open(manifest, encoding="utf-8") as f:
+        m = json.load(f)
+    m["barWidget"]["defaults"].update(
+        command=os.path.join(ROOT, "bin", "zmk-layer-hud"), stateDir=STATE,
+        # A HUD the bar starts would otherwise live in the shell's own cgroup, and go when it restarts.
+        startWith="uwsm-app --" if shutil.which("uwsm-app") else "")
+    with open(manifest, "w", encoding="utf-8") as f:
+        json.dump(m, f, indent=2)
+        f.write("\n")
+    shutil.rmtree(dest, ignore_errors=True)
+    os.rename(staged, dest)
+    return dest
+
+
+def cmd_menubar(args):
+    if platform.system() == "Darwin":
+        note = "on macOS the icon is part of the HUD: it is in the menubar whenever the HUD runs"
+        if args.action == "disable":
+            raise Fail(note + ", and it is how a hidden HUD comes back")
+        print(note)
+        return 0
+    installed = os.path.isfile(os.path.join(plugin_dir(), "manifest.json"))
+    if args.action == "status":
+        print(f"the Omarchy bar plugin is {'in ' + plugin_dir() if installed else 'not installed (zmk-layer-hud menubar enable)'}")
+        return 0
+    if not (shutil.which("omarchy") and shutil.which("omarchy-shell")):
+        raise Fail("the icon is a plugin for Omarchy's bar, and there is no `omarchy` here; "
+                   "any other bar can run `zmk-layer-hud toggle` on a click")
+    if args.action == "enable":
+        dest = install_plugin()
+        print(f"    {dest}")
+        if omarchy("omarchy-shell", "shell", "rescanPlugins") and omarchy("omarchy", "plugin", "enable", APP_ID):
+            print("the HUD's icon is in Omarchy's bar (`omarchy bar move` puts it elsewhere)")
+        else:
+            print("installed, but Omarchy's shell did not take it yet; run these where it runs:")
+            print("    omarchy-shell shell rescanPlugins")
+            print(f"    omarchy plugin enable {APP_ID}")
+        return 0
+    omarchy("omarchy", "plugin", "disable", APP_ID)
+    shutil.rmtree(plugin_dir(), ignore_errors=True)
+    omarchy("omarchy-shell", "shell", "rescanPlugins")
+    print("the HUD's icon is out of Omarchy's bar" if installed else "the Omarchy bar plugin was not installed")
+    return 0
+
+
 # ---------- doctor ----------
 
 OK, WARN, BAD = "ok  ", "warn", "fail"
@@ -1217,6 +1289,9 @@ def cmd_update(args):
         # A dependency may have been added since; pip is quiet and quick when nothing changed.
         subprocess.call([VENV_PYTHON, "-m", "pip", "install", "--quiet", "--upgrade"] + VENV_PKGS)
         print("    venv refreshed")
+    if os.path.isdir(plugin_dir()):
+        # The new tree's own command: this process is still the old code.
+        subprocess.call([os.path.join(ROOT, "bin", "zmk-layer-hud"), "menubar", "enable"])
     print("ready: zmk-layer-hud doctor")
     return 0
 
@@ -1232,6 +1307,11 @@ def cmd_uninstall(args):
         print("nothing was removed")
         return 1
     run_host("stop")
+    if platform.system() == "Linux" and os.path.isdir(plugin_dir()):
+        if shutil.which("omarchy"):
+            omarchy("omarchy", "plugin", "disable", APP_ID)
+        shutil.rmtree(plugin_dir(), ignore_errors=True)
+        print(f"    removed {plugin_dir()}")
     if os.path.islink(BIN_LINK) and os.path.realpath(BIN_LINK).startswith(os.path.realpath(ROOT)):
         os.unlink(BIN_LINK)
         print(f"    removed {BIN_LINK}")
@@ -1340,6 +1420,11 @@ def build_parser():
     s.set_defaults(func=cmd_log)
 
     add("doctor", "check this machine and say what is missing").set_defaults(func=cmd_doctor)
+
+    s = add("menubar", "the icon that shows or hides the HUD: built in on macOS, a plugin for Omarchy's bar")
+    s.add_argument("action", nargs="?", default="status", choices=("status", "enable", "disable"),
+                   help="status (default); enable or disable Omarchy's bar plugin")
+    s.set_defaults(func=cmd_menubar)
 
     s = add("setup", "set this machine up (packages, venv, config, permissions)")
     s.add_argument("--no-sudo", action="store_true",

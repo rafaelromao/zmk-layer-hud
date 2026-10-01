@@ -13,6 +13,7 @@ Every verb of `zmk-layer-hud`, as its own `--help` prints it. Written by `make c
 - [`heatmap`](#heatmap) — what the keys glow with: the live heatmap, the session's, or none
 - [`log`](#log) — follow the panel and feed logs
 - [`doctor`](#doctor) — check this machine and say what is missing
+- [`menubar`](#menubar) — the icon that shows or hides the HUD: built in on macOS, a plugin for Omarchy's bar
 - [`setup`](#setup) — set this machine up (packages, venv, config, permissions)
 - [`update`](#update) — fetch a newer tree over this one
 - [`uninstall`](#uninstall) — remove the tree and the command
@@ -181,6 +182,21 @@ check this machine and say what is missing
 
 options:
   -h, --help  show this help message and exit
+```
+
+## menubar
+
+```text
+usage: zmk-layer-hud menubar [-h] [{status,enable,disable}]
+
+the icon that shows or hides the HUD: built in on macOS, a plugin for Omarchy's bar
+
+positional arguments:
+  {status,enable,disable}
+                        status (default); enable or disable Omarchy's bar plugin
+
+options:
+  -h, --help            show this help message and exit
 ```
 
 ## setup

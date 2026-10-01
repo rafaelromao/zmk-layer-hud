@@ -158,6 +158,7 @@ flags of any one of them, and [docs/cli.md](docs/cli.md) has every verb's in one
 | `session [list\|new\|save\|load\|reset\|delete\|rename-layer\|export\|history\|compare]` | the typing sessions: the active one, naming it, starting or loading another, drawing its heatmap as an SVG, its days, two side by side |
 | `heatmap [live\|session\|physical\|speed\|off]` | what the keys glow with: what was just typed, every press this session on the layer on screen or on all of them, each key's time, or nothing |
 | `doctor` | check this machine and say what is missing |
+| `menubar [enable\|disable]` | the icon that shows or hides the HUD: in the macOS menubar whenever it runs; on Omarchy, a plugin for its bar that this puts there or takes out |
 | `setup` | prepare this machine: packages, virtualenv, config, permissions |
 | `update`, `uninstall` | fetch a newer tree; remove the tree and the command |
 | `keymap` | check the HUD's own files load: the config and the definitions import wrote |

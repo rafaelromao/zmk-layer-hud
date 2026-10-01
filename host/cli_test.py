@@ -47,7 +47,7 @@ class Parser(unittest.TestCase):
     def test_the_documented_verbs_are_all_there(self):
         expected = {"start", "stop", "restart", "status", "log", "doctor", "setup", "update",
                     "uninstall", "import", "sync", "keymap", "config", "demo", "poke", "feed",
-                    "version", "session", "heatmap", "show", "hide", "toggle"}
+                    "version", "session", "heatmap", "show", "hide", "toggle", "menubar"}
         self.assertEqual(expected, set(self.verbs))
 
     def test_the_session_verbs_need_no_venv(self):
@@ -56,7 +56,7 @@ class Parser(unittest.TestCase):
 
     def test_showing_and_hiding_need_no_venv(self):
         # A signal and two small files: a bar widget runs them, and so does a keybinding.
-        self.assertFalse({"show", "hide", "toggle"} & cli.NEEDS_VENV)
+        self.assertFalse({"show", "hide", "toggle", "menubar"} & cli.NEEDS_VENV)
 
     def test_demo_plays_a_script_on_a_socket_of_its_own(self):
         args = self.parser.parse_args(["demo", "--play", "docs/demo-type.json", "--loop", "--no-browser"])
@@ -329,6 +329,67 @@ class DefinitionsMissing(unittest.TestCase):
 
     def test_a_config_naming_nothing_is_told_where_from(self):
         self.assertIn("github.com/you/zmk-config", self.missing("hud: {width: 500}\n"))
+
+
+class OmarchyPlugin(unittest.TestCase):
+    """The bar widget Omarchy loads, and `menubar` putting it where Omarchy looks."""
+
+    SRC = os.path.join(ROOT, "host", "linux", "omarchy")
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        for p in (mock.patch.object(cli, "OMARCHY_PLUGINS", self.tmp.name),
+                  mock.patch.object(cli.platform, "system", return_value="Linux")):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_the_manifest_is_one_omarchy_can_load(self):
+        with open(os.path.join(self.SRC, "manifest.json"), encoding="utf-8") as f:
+            m = json.load(f)
+        self.assertEqual(cli.APP_ID, m["id"])
+        self.assertEqual(["bar-widget"], m["kinds"])
+        self.assertTrue(os.path.isfile(os.path.join(self.SRC, m["entryPoints"]["barWidget"])))
+        w = m["barWidget"]
+        self.assertEqual(set(w["defaults"]), {f["key"] for f in w["schema"]})
+        with open(os.path.join(self.SRC, m["entryPoints"]["barWidget"]), encoding="utf-8") as f:
+            qml = f.read()
+        for key in w["defaults"]:
+            self.assertIn(f'setting("{key}"', qml)
+
+    def run_cli(self, *argv):
+        with contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            code = cli.main(list(argv))
+        return code, out.getvalue() + err.getvalue()
+
+    def test_without_omarchy_nothing_is_copied(self):
+        with mock.patch.object(cli.shutil, "which", return_value=None):
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn("toggle", said)
+        self.assertEqual([], os.listdir(self.tmp.name))
+
+    def test_enable_copies_tells_it_where_things_are_then_rescans_and_enables(self):
+        with mock.patch.object(cli.shutil, "which", side_effect=lambda n: "/usr/bin/" + n), \
+                mock.patch.object(cli.subprocess, "call", return_value=0) as call:
+            self.assertEqual(0, self.run_cli("menubar", "enable")[0])
+        self.assertEqual([["omarchy-shell", "shell", "rescanPlugins"], ["omarchy", "plugin", "enable", cli.APP_ID]],
+                         [c[0][0] for c in call.call_args_list])
+        with open(os.path.join(self.tmp.name, cli.APP_ID, "manifest.json"), encoding="utf-8") as f:
+            d = json.load(f)["barWidget"]["defaults"]
+        self.assertEqual((os.path.join(ROOT, "bin", "zmk-layer-hud"), cli.STATE, "uwsm-app --"),
+                         (d["command"], d["stateDir"], d["startWith"]))
+        with mock.patch.object(cli.shutil, "which", side_effect=lambda n: "/usr/bin/" + n), \
+                mock.patch.object(cli.subprocess, "call", return_value=0) as call:
+            self.assertEqual(0, self.run_cli("menubar", "disable")[0])
+        self.assertEqual([["omarchy", "plugin", "disable", cli.APP_ID], ["omarchy-shell", "shell", "rescanPlugins"]],
+                         [c[0][0] for c in call.call_args_list])
+        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, cli.APP_ID)))
+
+    def test_on_macos_the_icon_is_the_huds_own(self):
+        with mock.patch.object(cli.platform, "system", return_value="Darwin"):
+            self.assertEqual(0, self.run_cli("menubar", "enable")[0])
+            self.assertEqual(1, self.run_cli("menubar", "disable")[0])
 
 
 class Reference(unittest.TestCase):

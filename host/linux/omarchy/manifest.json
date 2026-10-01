@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.rafaelromao.zmk-layer-hud",
+  "name": "zmk-layer-hud",
+  "version": "1.0.0",
+  "author": "Rafael Romão",
+  "license": "MIT",
+  "description": "Shows or hides the ZMK layer HUD; it keeps counting while hidden",
+  "kinds": ["bar-widget"],
+  "entryPoints": { "barWidget": "BarWidget.qml" },
+  "barWidget": {
+    "displayName": "ZMK layer HUD",
+    "description": "A click shows or hides the HUD, or starts it when it is not running",
+    "category": "System",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "command": "",
+      "stateDir": "",
+      "startWith": ""
+    },
+    "schema": [
+      { "key": "command", "type": "string", "label": "Command",
+        "description": "The zmk-layer-hud command (empty: ~/.local/bin/zmk-layer-hud). `zmk-layer-hud menubar enable` fills it in.",
+        "defaultValue": "" },
+      { "key": "stateDir", "type": "string", "label": "State directory",
+        "description": "Where the running HUD says whether it is shown (empty: $XDG_STATE_HOME/zmk-layer-hud).",
+        "defaultValue": "" },
+      { "key": "startWith", "type": "string", "label": "Start with",
+        "description": "What a start runs through, so the HUD outlives a shell restart (uwsm-app --).",
+        "defaultValue": "" }
+    ]
+  }
+}
