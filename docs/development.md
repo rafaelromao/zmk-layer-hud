@@ -143,6 +143,14 @@ lives. Two rules it keeps, and both matter:
   `session export`, the one part of `session` that draws with keymap-drawer, in
   `host/export.py`). The rest must keep working on a half-installed machine.
 
+Showing and hiding goes to the running panel directly: `show` and `hide` write what they want to
+`$STATE/panel.want` and send the panel SIGUSR2, and the panel does it and says so in
+`$STATE/panel.json` (`{"pid", "shown"}`), which `status` and the Omarchy bar widget read too
+(`host/panelstate.py`). One signal and a file rather than one signal each, because on Linux WebKit
+suspends its own threads with SIGUSR1, and the GTK panel is a WebKit process. Hidden is drawn as
+nothing rather than closed: the window stays, transparent and taking no clicks, so WebKit never
+takes the page for a hidden one and slows the timers it counts with.
+
 Starting and stopping stays in `host/macos/start.sh` and `host/linux/hud.sh`; `cli.py` picks one
 and gives them the same verbs. `poke` and `feed` are split off before argparse sees them and
 handed their whole line, because their flags belong to `host/hudpoke.py` and `host/hudfeed.py` and

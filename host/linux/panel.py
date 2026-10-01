@@ -29,6 +29,13 @@ gi.require_version("Gdk", "3.0")
 gi.require_version("WebKit2", "4.1")
 gi.require_version("GtkLayerShell", "0.1")
 from gi.repository import Gdk, GLib, Gtk, GtkLayerShell, WebKit2
+# A hidden HUD takes no clicks through an empty input region, which is a cairo one: PyGObject hands
+# it over only with pycairo (python-cairo).
+gi.require_foreign("cairo")
+import cairo  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import panelstate  # noqa: E402  (host/panelstate.py)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 PAGES = ROOT / "hud"
@@ -49,9 +56,19 @@ RESERVE = os.environ.get("ZMKHUD_RESERVE") == "1"
 # The session takes counts only from the page this panel shows: the feed and that page are given
 # this, and a browser pointed at the socket is not.
 TALLY_TOKEN = secrets.token_hex(16)
+# `zmk-layer-hud start --hidden`: off screen from the first frame.
+HIDDEN = os.environ.get("ZMKHUD_HIDDEN") == "1"
+# Hidden is drawn as nothing, not unmapped. An unmapped view's page is a hidden page to WebKit,
+# which slows its timers, and the page's timers are what count (hud.js): so the surfaces stay,
+# painting nothing and taking no input, and the page runs as it does on screen.
+HIDE_SHEET = WebKit2.UserStyleSheet.new("* { visibility: hidden !important; }",
+                                        WebKit2.UserContentInjectedFrames.ALL_FRAMES,
+                                        WebKit2.UserStyleLevel.USER, None, None)
 
 
 def surface(monitor, page, namespace, width, height, query="", on_size=None):
+    """A layer surface with the page on it, and the page's UserContentManager, which is where the
+    hide sheet goes."""
     window = Gtk.Window()
     window.set_app_paintable(True)
     window.set_visual(window.get_screen().get_rgba_visual())
@@ -75,6 +92,8 @@ def surface(monitor, page, namespace, width, height, query="", on_size=None):
     manager.add_style_sheet(WebKit2.UserStyleSheet.new(
         sheet, WebKit2.UserContentInjectedFrames.ALL_FRAMES,
         WebKit2.UserStyleLevel.USER, None, None))
+    if HIDDEN:
+        manager.add_style_sheet(HIDE_SHEET)     # before the page loads: not one frame shows
     if on_size is not None:
         # The page says how big its layout is (hud.js postSize). Not on a handler called zmkhud:
         # that is the macOS panel's bridge, and a page that finds one reports its session's counts
@@ -89,7 +108,7 @@ def surface(monitor, page, namespace, width, height, query="", on_size=None):
                   f"?ws=ws://127.0.0.1:{os.environ.get('ZMKHUD_PORT', '8766')}" + query)
     window.add(view)
     WINDOWS.append(window)
-    return window
+    return window, manager
 
 
 def main():
@@ -117,7 +136,7 @@ def main():
                      default=monitor.get_geometry().width - info["reserved"][2])
     right = monitor.get_geometry().width - right_edge + INSET
 
-    hud = surface(monitor, "index.html", "zmkhud-layer", HUD_W, HUD_H, query=f"&tally={TALLY_TOKEN}",
+    hud, hud_css = surface(monitor, "index.html", "zmkhud-layer", HUD_W, HUD_H, query=f"&tally={TALLY_TOKEN}",
                   on_size=lambda body: follow_page(body))
     GtkLayerShell.set_anchor(hud, GtkLayerShell.Edge.TOP, True)
     GtkLayerShell.set_anchor(hud, GtkLayerShell.Edge.RIGHT, True)
@@ -148,7 +167,7 @@ def main():
 
     # Typed-keys strip sits below the HUD; it reserves no space of its own either way, so the
     # bottom of the screen is never taken from the windows under it.
-    keys = surface(monitor, "keys.html", "zmkhud-keys", KEYS_W, KEYS_H)
+    keys, keys_css = surface(monitor, "keys.html", "zmkhud-keys", KEYS_W, KEYS_H)
     GtkLayerShell.set_anchor(keys, GtkLayerShell.Edge.TOP, True)
     GtkLayerShell.set_anchor(keys, GtkLayerShell.Edge.RIGHT, True)
     GtkLayerShell.set_exclusive_zone(keys, -1)
@@ -156,6 +175,27 @@ def main():
     GtkLayerShell.set_margin(keys, GtkLayerShell.Edge.RIGHT, right)
 
     size = [HUD_W, HUD_H]
+    shown = [not HIDDEN]
+
+    def take_input(window):
+        # None is the whole surface again, a layer surface's own.
+        window.input_shape_combine_region(None if shown[0] else cairo.Region())
+
+    def set_shown(want):
+        """On screen or off it; the pages go on as before either way. The rail goes with the HUD,
+        so a hidden one takes no room from the windows either."""
+        if want != shown[0]:
+            shown[0] = want
+            for window, css in ((hud, hud_css), (keys, keys_css)):
+                if want:
+                    css.remove_style_sheet(HIDE_SHEET)
+                else:
+                    css.add_style_sheet(HIDE_SHEET)
+                take_input(window)
+                window.queue_draw()
+            if rail is not None:
+                rail.show_all() if want else rail.hide()
+        panelstate.write(RUN, want)
 
     def follow_page(body):
         """The HUD's surface as big as the page's layout -- its width is the config's hud.width,
@@ -176,8 +216,13 @@ def main():
         if rail is not None:
             rail.set_size_request(w + right + INSET, 1)
             GtkLayerShell.set_exclusive_zone(rail, w + right + INSET)
+        if not shown[0]:
+            take_input(hud)
+            take_input(keys)
 
-    if rail is not None:
+    take_input(hud)       # kept until each is realized
+    take_input(keys)
+    if rail is not None and shown[0]:
         rail.show_all()
     keys.show_all()
     hud.show_all()
@@ -192,6 +237,16 @@ def main():
 
     for sig in (signal.SIGINT, signal.SIGTERM):
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, quit_host)
+
+    def asked(*_):
+        # `zmk-layer-hud show` / `hide`: what they want is in panel.want.
+        want = panelstate.wanted(RUN)
+        if want is not None:
+            set_shown(want)
+        return GLib.SOURCE_CONTINUE
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, panelstate.SIGNAL, asked)
+    # Only now, with the handler in: the CLI signals whatever pid this file names.
+    panelstate.write(RUN, shown[0])
     RUN.mkdir(exist_ok=True)
     with (RUN / "hudfeed.log").open("w") as output:
         feed_python = os.environ.get("ZMKHUD_PYTHON", sys.executable)
@@ -207,6 +262,7 @@ def main():
     try:
         Gtk.main()
     finally:
+        panelstate.remove(RUN)
         for window in WINDOWS:
             window.destroy()
         # Include journalctl, including after the page's close request exits hudfeed.

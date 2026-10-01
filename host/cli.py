@@ -3,7 +3,7 @@
 
 `bin/zmk-layer-hud` finds an interpreter and hands off here. The verbs split in two:
 
-  the HUD          start, stop, restart, status, log
+  the HUD          start, stop, restart, show, hide, toggle, status, log
   the typing       session, heatmap
   the keymap       keymap, import, sync, config
   this machine     setup, doctor, update, uninstall, version
@@ -23,6 +23,11 @@ import re
 import shutil
 import subprocess
 import sys
+import time
+
+# Ours, and stdlib-only like this file: what the running panel says of itself, and how it is asked
+# to show or hide.
+import panelstate
 
 # The shim exports this; computed here too so `python3 host/cli.py` works from a clone.
 ROOT = os.environ.get("ZMKHUD_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -79,9 +84,10 @@ def in_clone():
     return os.path.isdir(os.path.join(ROOT, ".git"))
 
 
-def env_for_host(reserve=False):
+def env_for_host(reserve=False, hidden=False):
     env = dict(os.environ)
     env["ZMKHUD_RESERVE"] = "1" if reserve else "0"
+    env["ZMKHUD_HIDDEN"] = "1" if hidden else "0"
     env["ZMKHUD_STATE"] = STATE
     env["ZMKHUD_ROOT"] = ROOT
     # The host scripts prefer $ZMKHUD_PYTHON over their own search, so pointing them at the venv
@@ -91,9 +97,19 @@ def env_for_host(reserve=False):
     return env
 
 
-def run_host(verb, reserve=False):
+def run_host(verb, reserve=False, hidden=False, foreground=False):
     os.makedirs(STATE, exist_ok=True)
-    return subprocess.call(["bash", host_script(), verb], env=env_for_host(reserve))
+    env = env_for_host(reserve, hidden)
+    if foreground:
+        # The host script's `run` execs the panel, so this process becomes the HUD: a login item's
+        # child is then the HUD itself, alive as long as it is, and launchd or systemd end with it.
+        sys.stdout.flush()
+        sys.stderr.flush()
+        try:
+            os.execvpe("bash", ["bash", host_script(), "run"], env)
+        except OSError as e:
+            raise Fail(f"cannot run {host_script()}: {e.strerror or e}")
+    return subprocess.call(["bash", host_script(), verb], env=env)
 
 
 def venv_ok():
@@ -160,7 +176,7 @@ def cmd_start(args):
     missing = definitions_missing()
     if missing:
         raise Fail(missing)
-    return run_host("start", args.reserve)
+    return run_host("start", args.reserve, args.hidden, args.foreground)
 
 
 def cmd_stop(args):
@@ -172,12 +188,75 @@ def cmd_restart(args):
     if missing:
         raise Fail(missing)
     run_host("stop")
-    return run_host("start", args.reserve)
+    return run_host("start", args.reserve, args.hidden)
 
 
 def pgrep(pattern):
     return subprocess.call(["pgrep", "-f", pattern],
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
+
+
+# Either host's panel, run from this tree.
+PANEL = re.escape(os.path.join(ROOT, "host")) + r"/.*/panel\.py"
+
+
+def panel_pids():
+    try:
+        out = subprocess.run(["pgrep", "-f", PANEL], capture_output=True, text=True).stdout
+    except OSError:
+        return []
+    return [int(p) for p in out.split() if p.isdigit()]
+
+
+# ---------- show / hide ----------
+
+def running_panel():
+    """The live panel's own word on itself, {"pid", "shown"}, or a Fail that says why there is no
+    panel to ask. Its pid has to be one of this tree's panels as well as alive: a pid outlives its
+    process, and is handed out again."""
+    st = panelstate.read(STATE)
+    pids = panel_pids()
+    if st and st["pid"] in pids:
+        return st
+    panelstate.discard(STATE)       # its panel is gone: left there, it says something untrue
+    if pids:
+        # A panel too old to know the signal would take it the default way, which is to end.
+        raise Fail("the HUD that is running is older than show and hide, or still starting: "
+                   "`zmk-layer-hud restart` once, and this works from then on")
+    raise Fail("the HUD is not running: `zmk-layer-hud start`, or `start --hidden` to have it count off screen")
+
+
+def ask_panel(shown, st=None):
+    """What it is asked goes in panel.want, the signal says to read it, and the panel's own
+    panel.json says when it has done it."""
+    st = st or running_panel()
+    panelstate.ask(STATE, shown)
+    try:
+        os.kill(st["pid"], panelstate.SIGNAL)
+    except ProcessLookupError:
+        raise Fail("the HUD went away just now: `zmk-layer-hud start`")
+    deadline = time.monotonic() + 1.0
+    while True:
+        now = panelstate.read(STATE)
+        if now and now["shown"] == shown:
+            print("HUD shown" if shown else "HUD hidden -- it is counting; `zmk-layer-hud show` brings it back")
+            return 0
+        if time.monotonic() > deadline:
+            raise Fail("the HUD did not answer; `zmk-layer-hud log` says what it is doing")
+        time.sleep(0.05)
+
+
+def cmd_show(args):
+    return ask_panel(True)
+
+
+def cmd_hide(args):
+    return ask_panel(False)
+
+
+def cmd_toggle(args):
+    st = running_panel()
+    return ask_panel(not st["shown"], st)
 
 
 def feed_log_text():
@@ -231,7 +310,12 @@ def hypr_surfaces():
 
 def cmd_status(args):
     host_dir = re.escape(os.path.join(ROOT, "host"))
-    print("panel: " + ("running" if pgrep(host_dir + r"/.*/panel\.py") else "stopped"))
+    pids = panel_pids()
+    st = panelstate.read(STATE)
+    said = st if st and st["pid"] in pids else None
+    print("panel: " + ("stopped" if not pids else
+                       "running, shown" if said and said["shown"] else
+                       "running, hidden (zmk-layer-hud show)" if said else "running"))
     print("feed:  " + ("running" if pgrep(host_dir + r"/hudfeed\.py")
                        else "stopped (the macOS panel runs it in-process)"))
     # What it last managed to open says more than whether it is alive: the layer signal and the
@@ -824,7 +908,8 @@ def setup_darwin(args):
 
 def setup_linux(args):
     print("==> system packages (Arch/Omarchy; other distros: the same three by their own names)")
-    pkgs = ["python-gobject", "webkit2gtk-4.1", "gtk-layer-shell"]
+    # python-cairo: a hidden HUD takes no clicks through an empty cairo input region.
+    pkgs = ["python-gobject", "python-cairo", "webkit2gtk-4.1", "gtk-layer-shell"]
     if shutil.which("pacman"):
         privileged(["pacman", "-S", "--needed"] + pkgs, args)
     else:
@@ -966,12 +1051,12 @@ def check_platform(results):
     gi = subprocess.call(
         ["python3", "-c", "import gi; gi.require_version('Gtk', '3.0'); "
                           "gi.require_version('WebKit2', '4.1'); "
-                          "gi.require_version('GtkLayerShell', '0.1')"],
+                          "gi.require_version('GtkLayerShell', '0.1'); gi.require_foreign('cairo')"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     if gi == 0:
         results.append(report(OK, "gtk", "the system python has the panel's bindings"))
     else:
-        results.append(report(BAD, "gtk", "python-gobject / webkit2gtk-4.1 / gtk-layer-shell "
+        results.append(report(BAD, "gtk", "python-gobject / python-cairo / webkit2gtk-4.1 / gtk-layer-shell "
                                           "missing from the system python", "zmk-layer-hud setup"))
 
 
@@ -1089,8 +1174,8 @@ def cmd_update(args):
     if in_clone():
         print(f"{ROOT} is a git clone -- update it with `git -C {ROOT} pull`")
         return 0
-    if pgrep(re.escape(os.path.join(ROOT, "host")) + r"/.*/panel\.py"):
-        raise Fail("the HUD is running; `zmk-layer-hud stop` first")
+    if panel_pids():
+        raise Fail("the HUD is running, perhaps hidden; `zmk-layer-hud stop` first")
     import tempfile
     # Staging sits beside the tree so the swap is two renames within one directory. Everything
     # below is ordered so that a failure at any point leaves the working tree where it was: this
@@ -1202,13 +1287,23 @@ def build_parser():
     s.add_argument("--reserve", action="store_true",
                    help="(Linux) give the HUD an exclusive zone so windows tile beside it "
                         "rather than under it; for recording")
+    s.add_argument("--hidden", action="store_true",
+                   help="start it off screen, counting; `zmk-layer-hud show` or its icon brings it up")
+    s.add_argument("--foreground", action="store_true",
+                   help="stay until the HUD stops, as the HUD itself (its output still goes to the log); "
+                        "what a login item runs")
     s.set_defaults(func=cmd_start)
 
     add("stop", "stop the HUD").set_defaults(func=cmd_stop)
 
     s = add("restart", "stop the HUD, then start it")
     s.add_argument("--reserve", action="store_true", help="as for `start`")
+    s.add_argument("--hidden", action="store_true", help="as for `start`")
     s.set_defaults(func=cmd_restart)
+
+    add("show", "bring the HUD back on screen").set_defaults(func=cmd_show)
+    add("hide", "take the HUD off screen; it goes on running and counting").set_defaults(func=cmd_hide)
+    add("toggle", "show the HUD if it is hidden, hide it if it is shown").set_defaults(func=cmd_toggle)
 
     add("status", "is it running, and what is it reading").set_defaults(func=cmd_status)
 

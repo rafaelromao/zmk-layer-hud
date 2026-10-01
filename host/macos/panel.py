@@ -29,7 +29,8 @@ try:
                         NSPanel, NSTextField, NSScreen, NSStatusWindowLevel, NSWindowCollectionBehaviorCanJoinAllSpaces,
                         NSWindowCollectionBehaviorFullScreenAuxiliary, NSWindowCollectionBehaviorStationary,
                         NSWindowStyleMaskBorderless, NSWindowStyleMaskNonactivatingPanel)
-    from Foundation import NSNotificationCenter, NSObject, NSURL
+    from Foundation import (NSActivityUserInitiatedAllowingIdleSystemSleep, NSNotificationCenter, NSObject,
+                            NSProcessInfo, NSURL)
     from WebKit import WKUserContentController, WKWebView, WKWebViewConfiguration
     from PyObjCTools import AppHelper, MachSignals
 except ImportError:
@@ -38,12 +39,26 @@ except ImportError:
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import hudfeed  # noqa: E402
 import session as session_mod  # noqa: E402  (host/session.py)
+import panelstate  # noqa: E402  (host/panelstate.py)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 PAGES = ROOT / "hud"
 STATE = Path(os.path.expanduser("~/.config/zmk-layer-hud/state.json"))
 WIDTH, HEIGHT = 598, 480   # board + banner + the typed-keys strip below
 MARGIN = 24
+RUN = panelstate.default_dir()      # where panel.json says whether the HUD is shown
+HIDDEN = os.environ.get("ZMKHUD_HIDDEN") == "1"   # `zmk-layer-hud start --hidden`
+
+# Hidden is drawn as nothing, not ordered out. A window off screen makes its page a hidden page to
+# WebKit, which slows its timers (and App Nap the process), and the page's timers are what count
+# (hud.js): so the panel stays, transparent, with nothing painted on it, and the page runs as it
+# does on screen. A window that paints nothing passes its clicks through, as AppKit does by default
+# for transparent areas -- which ignoresMouseEvents would undo once set back to NO.
+HIDE_JS = ("(function(){if(document.getElementById('zmkhud-hidden'))return;"
+           "var s=document.createElement('style');s.id='zmkhud-hidden';"
+           "s.textContent='*{visibility:hidden !important}';"
+           "(document.head||document.documentElement).appendChild(s);})()")
+SHOW_JS = "(function(){var s=document.getElementById('zmkhud-hidden');if(s)s.remove();})()"
 
 
 def log(*a):
@@ -252,6 +267,7 @@ class Host:
     def __init__(self):
         Host.instance = self
         self.stopped = False
+        self.shown = not HIDDEN
         self.ready = False
         self.loaded = False             # the first page has loaded (page_ready): a later one is a reload
         self.queue = []
@@ -283,12 +299,22 @@ class Host:
         web = DragWebView.alloc().initWithFrame_configuration_(((0, 0), (WIDTH, HEIGHT)), config)
         web.setValue_forKey_(False, "drawsBackground")  # transparent page background
         web.setNavigationDelegate_(self.bridge)
+        # WebKit also takes a page for hidden when its window is covered, and the HUD counts
+        # whatever is over it. SPI, hence the guard: without it a covered HUD only counts slower.
+        if web.respondsToSelector_("_setWindowOcclusionDetectionEnabled:"):
+            web._setWindowOcclusionDetectionEnabled_(False)
+        # And App Nap would slow the whole process, the feed's threads with it, once macOS decides
+        # nobody is looking.
+        self.activity = NSProcessInfo.processInfo().beginActivityWithOptions_reason_(
+            NSActivityUserInitiatedAllowingIdleSystemSleep, "the HUD counts what is typed")
         web.loadFileURL_allowingReadAccessToURL_(NSURL.fileURLWithPath_(str(PAGES / "index.html")),
                                                  NSURL.fileURLWithPath_(str(PAGES)))
         panel.setContentView_(web)
         # Every press in the panel is looked at first: on a control it goes to the page as it is,
         # anywhere else it moves the window and the page never sees it (nothing there takes a click).
         self.monitor = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(NSEventMaskLeftMouseDown, self.mouse_down)
+        if not self.shown:
+            panel.setAlphaValue_(0.0)
         panel.orderFrontRegardless()
         self.panel, self.web = panel, web
         log(f"HUD on {focused_screen().localizedName()} at {int(frame.origin.x)},{int(frame.origin.y)}")
@@ -311,6 +337,28 @@ class Host:
         width = (self.feed.cfg.get("hud") or {}).get("width")
         if width:
             self.resize(int(width), None)
+        # main() put the signal's handler in first: the CLI signals whatever pid this file names.
+        panelstate.write(RUN, self.shown)
+
+    def set_shown(self, shown):
+        """On screen or off it; the page goes on as before either way."""
+        if shown != self.shown:
+            self.shown = shown
+            self.panel.setAlphaValue_(1.0 if shown else 0.0)
+            if self.ready:          # otherwise page_ready puts the style in, with the page
+                self.web.evaluateJavaScript_completionHandler_(SHOW_JS if shown else HIDE_JS, None)
+            if DEBUG and not shown:
+                AppHelper.callLater(3.0, self.say_visibility)
+        if shown:
+            self.panel.orderFrontRegardless()
+        panelstate.write(RUN, shown)
+
+    def say_visibility(self):
+        """ZMKHUD_DEBUG: what WebKit makes of the hidden HUD. `visible` is the point of hiding it
+        this way; `hidden` would mean its timers are being slowed."""
+        def said(value, error):
+            log(f"hidden: the page is {value}; the window's occlusion state {int(self.panel.occlusionState())}")
+        self.web.evaluateJavaScript_completionHandler_("document.visibilityState", said)
 
     def resize(self, width, height):
         """The page knows how tall the layout is; keep the top-left corner where the user put it."""
@@ -340,6 +388,8 @@ class Host:
     def page_ready(self):
         self.ready = True
         replay = [self.standing[k] for k in self.STANDING if k in self.standing] if self.loaded else []
+        if not self.shown:
+            replay.insert(0, HIDE_JS)
         self.loaded = True
         for js in replay + self.queue:
             self.web.evaluateJavaScript_completionHandler_(js, None)
@@ -382,6 +432,7 @@ class Host:
         if self.stopped:
             return
         self.stopped = True
+        panelstate.remove(RUN)
         self.feed.stop()
         self.socket.stop()
         self.panel.orderOut_(None)
@@ -395,6 +446,13 @@ def main():
     # mode only, so they wait while a menu or an alert is open.
     for sig in (signal.SIGINT, signal.SIGTERM):
         MachSignals.signal(sig, lambda _sig: AppHelper.stopEventLoop())
+
+    def asked(_sig):
+        # `zmk-layer-hud show` / `hide`: what they want is in panel.want.
+        want = panelstate.wanted(RUN)
+        if want is not None and Host.instance:
+            Host.instance.set_shown(want)
+    MachSignals.signal(panelstate.SIGNAL, asked)
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)  # no Dock icon, no menu bar
     Host()

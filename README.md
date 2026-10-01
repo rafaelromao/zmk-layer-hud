@@ -152,6 +152,7 @@ flags of any one of them, and [docs/cli.md](docs/cli.md) has every verb's in one
 | Command | What it does |
 |---|---|
 | `start`, `stop`, `restart` | start the HUD; stop it; stop and start again |
+| `show`, `hide`, `toggle` | bring the HUD on screen; take it off, still running and counting; whichever it is not |
 | `status` | is it running, and which of the keyboard's two channels is live |
 | `log` | follow the panel and feed logs |
 | `session [list\|new\|save\|load\|reset\|delete\|rename-layer\|export\|history\|compare]` | the typing sessions: the active one, naming it, starting or loading another, drawing its heatmap as an SVG, its days, two side by side |
@@ -166,7 +167,8 @@ flags of any one of them, and [docs/cli.md](docs/cli.md) has every verb's in one
 | `poke`, `feed` | drive the HUD without a keyboard; run the feed alone |
 | `version` | what this is and where it lives |
 
-`start --reserve` (Linux) tiles windows beside the HUD rather than under it. `setup` prints every
+`start --reserve` (Linux) tiles windows beside the HUD rather than under it. `start --hidden` starts it off
+screen, counting from the first key. `setup` prints every
 privileged step and asks before running it, and `setup --no-sudo` prints them without running any.
 
 Two flags on `feed` read alike and are not: `--no-keys` sends layers only, while `--no-hid-keys`

@@ -10,6 +10,8 @@ import os
 import subprocess
 import sys
 import tempfile
+import textwrap
+import time
 import unittest
 from unittest import mock
 
@@ -45,12 +47,16 @@ class Parser(unittest.TestCase):
     def test_the_documented_verbs_are_all_there(self):
         expected = {"start", "stop", "restart", "status", "log", "doctor", "setup", "update",
                     "uninstall", "import", "sync", "keymap", "config", "demo", "poke", "feed",
-                    "version", "session", "heatmap"}
+                    "version", "session", "heatmap", "show", "hide", "toggle"}
         self.assertEqual(expected, set(self.verbs))
 
     def test_the_session_verbs_need_no_venv(self):
         # They only touch files, and must work on a machine where the venv is not built yet.
         self.assertFalse({"session", "heatmap"} & cli.NEEDS_VENV)
+
+    def test_showing_and_hiding_need_no_venv(self):
+        # A signal and two small files: a bar widget runs them, and so does a keybinding.
+        self.assertFalse({"show", "hide", "toggle"} & cli.NEEDS_VENV)
 
     def test_demo_plays_a_script_on_a_socket_of_its_own(self):
         args = self.parser.parse_args(["demo", "--play", "docs/demo-type.json", "--loop", "--no-browser"])
@@ -118,6 +124,117 @@ class Parser(unittest.TestCase):
         args = self.parser.parse_args(["start", "--reserve"])
         self.assertTrue(args.reserve)
         self.assertFalse(self.parser.parse_args(["start"]).reserve)
+
+    def test_start_hidden_and_in_the_foreground(self):
+        args = self.parser.parse_args(["start", "--hidden", "--foreground"])
+        self.assertEqual((True, True), (args.hidden, args.foreground))
+        self.assertTrue(self.parser.parse_args(["restart", "--hidden"]).hidden)
+        with self.assertRaises(SystemExit), contextlib.redirect_stderr(io.StringIO()):
+            self.parser.parse_args(["restart", "--foreground"])     # `run` stops the old one itself
+
+
+class HostScript(unittest.TestCase):
+    """What start hands the platform's script: the verb, and whether to start hidden."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        patches = [mock.patch.object(cli, "STATE", self.tmp.name),
+                   mock.patch.object(cli, "definitions_missing", lambda: None)]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_start_hidden_tells_the_script(self):
+        with mock.patch.object(cli.subprocess, "call", return_value=0) as call:
+            cli.main(["start", "--hidden"])
+        argv, env = call.call_args[0][0], call.call_args[1]["env"]
+        self.assertEqual(["bash", cli.host_script(), "start"], argv)
+        self.assertEqual(("1", "0"), (env["ZMKHUD_HIDDEN"], env["ZMKHUD_RESERVE"]))
+        with mock.patch.object(cli.subprocess, "call", return_value=0) as call:
+            cli.main(["start"])
+        self.assertEqual("0", call.call_args[1]["env"]["ZMKHUD_HIDDEN"])
+
+    def test_the_foreground_becomes_the_panel(self):
+        with mock.patch.object(cli.os, "execvpe", side_effect=OSError(2, "gone")) as execvpe, \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(1, cli.main(["start", "--hidden", "--foreground"]))
+        name, argv, env = execvpe.call_args[0]
+        self.assertEqual(("bash", ["bash", cli.host_script(), "run"]), (name, argv))
+        self.assertEqual(("1", self.tmp.name), (env["ZMKHUD_HIDDEN"], env["ZMKHUD_STATE"]))
+        self.assertIn("cannot run", err.getvalue())
+
+    def test_restart_starts_hidden_but_stops_plainly(self):
+        with mock.patch.object(cli.subprocess, "call", return_value=0) as call:
+            cli.main(["restart", "--hidden"])
+        (stop, start) = call.call_args_list
+        self.assertEqual("stop", stop[0][0][-1])
+        self.assertEqual(("start", "1"), (start[0][0][-1], start[1]["env"]["ZMKHUD_HIDDEN"]))
+
+
+# A stand-in for a panel: says it is shown, and does what panel.want says each time SIGUSR2 comes.
+FAKE_PANEL = textwrap.dedent('''
+    import signal, sys, time
+    sys.path.insert(0, sys.argv[1])
+    import panelstate
+    d = sys.argv[2]
+    signal.signal(panelstate.SIGNAL, lambda *_: panelstate.write(d, panelstate.wanted(d)))
+    panelstate.write(d, True)
+    time.sleep(30)
+''')
+
+
+class ShowHide(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        p = mock.patch.object(cli, "STATE", self.tmp.name)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def start_panel(self):
+        proc = subprocess.Popen([sys.executable, "-c", FAKE_PANEL, os.path.join(ROOT, "host"), self.tmp.name])
+        self.addCleanup(proc.wait)
+        self.addCleanup(proc.kill)
+        deadline = time.monotonic() + 10
+        while not os.path.exists(os.path.join(self.tmp.name, "panel.json")):
+            self.assertLess(time.monotonic(), deadline, "the stand-in never said it was there")
+            time.sleep(0.02)
+        return proc
+
+    def run_cli(self, *argv, pids=()):
+        with mock.patch.object(cli, "panel_pids", lambda: list(pids)), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            code = cli.main(list(argv))
+        return code, out.getvalue() + err.getvalue()
+
+    def test_hide_show_and_toggle_are_done_and_said(self):
+        proc = self.start_panel()
+        code, said = self.run_cli("hide", pids=[proc.pid])
+        self.assertEqual((0, False), (code, cli.panelstate.read(self.tmp.name)["shown"]), said)
+        self.assertIn("HUD hidden", said)
+        self.assertEqual(0, self.run_cli("toggle", pids=[proc.pid])[0])
+        self.assertTrue(cli.panelstate.read(self.tmp.name)["shown"])
+        code, said = self.run_cli("show", pids=[proc.pid])
+        self.assertEqual(0, code)
+        self.assertIn("HUD shown", said)
+
+    def test_nothing_running_is_said_and_a_stale_word_goes(self):
+        gone = subprocess.Popen([sys.executable, "-c", "pass"])
+        gone.wait()
+        cli.panelstate.write(self.tmp.name, True, pid=gone.pid)
+        code, said = self.run_cli("show")
+        self.assertEqual(1, code)
+        self.assertIn("not running", said)
+        self.assertFalse(os.path.exists(os.path.join(self.tmp.name, "panel.json")))
+
+    def test_a_panel_that_never_said_where_it_is_is_not_signalled(self):
+        # Older than show and hide: SIGUSR2's default would end it.
+        with mock.patch.object(cli.os, "kill") as kill:
+            code, said = self.run_cli("hide", pids=[12345])
+        self.assertEqual(1, code)
+        self.assertIn("restart", said)
+        kill.assert_not_called()
 
 
 class SyncArgv(unittest.TestCase):

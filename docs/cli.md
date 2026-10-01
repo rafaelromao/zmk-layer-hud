@@ -5,6 +5,9 @@ Every verb of `zmk-layer-hud`, as its own `--help` prints it. Written by `make c
 - [`start`](#start) — start the HUD
 - [`stop`](#stop) — stop the HUD
 - [`restart`](#restart) — stop the HUD, then start it
+- [`show`](#show) — bring the HUD back on screen
+- [`hide`](#hide) — take the HUD off screen; it goes on running and counting
+- [`toggle`](#toggle) — show the HUD if it is hidden, hide it if it is shown
 - [`status`](#status) — is it running, and what is it reading
 - [`session`](#session) — the typing sessions: the active one, naming it, starting or loading another
 - [`heatmap`](#heatmap) — what the keys glow with: the live heatmap, the session's, or none
@@ -25,14 +28,17 @@ Every verb of `zmk-layer-hud`, as its own `--help` prints it. Written by `make c
 ## start
 
 ```text
-usage: zmk-layer-hud start [-h] [--reserve]
+usage: zmk-layer-hud start [-h] [--reserve] [--hidden] [--foreground]
 
 start the HUD
 
 options:
-  -h, --help  show this help message and exit
-  --reserve   (Linux) give the HUD an exclusive zone so windows tile beside it rather than under
-              it; for recording
+  -h, --help    show this help message and exit
+  --reserve     (Linux) give the HUD an exclusive zone so windows tile beside it rather than under
+                it; for recording
+  --hidden      start it off screen, counting; `zmk-layer-hud show` or its icon brings it up
+  --foreground  stay until the HUD stops, as the HUD itself (its output still goes to the log);
+                what a login item runs
 ```
 
 ## stop
@@ -49,13 +55,47 @@ options:
 ## restart
 
 ```text
-usage: zmk-layer-hud restart [-h] [--reserve]
+usage: zmk-layer-hud restart [-h] [--reserve] [--hidden]
 
 stop the HUD, then start it
 
 options:
   -h, --help  show this help message and exit
   --reserve   as for `start`
+  --hidden    as for `start`
+```
+
+## show
+
+```text
+usage: zmk-layer-hud show [-h]
+
+bring the HUD back on screen
+
+options:
+  -h, --help  show this help message and exit
+```
+
+## hide
+
+```text
+usage: zmk-layer-hud hide [-h]
+
+take the HUD off screen; it goes on running and counting
+
+options:
+  -h, --help  show this help message and exit
+```
+
+## toggle
+
+```text
+usage: zmk-layer-hud toggle [-h]
+
+show the HUD if it is hidden, hide it if it is shown
+
+options:
+  -h, --help  show this help message and exit
 ```
 
 ## status
