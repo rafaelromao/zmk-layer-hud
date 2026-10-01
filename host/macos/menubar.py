@@ -11,6 +11,7 @@ any other caller.
 host/macos/start.sh starts it with the HUD, unless `zmk-layer-hud menubar disable` said not to.
 """
 
+import fcntl
 import os
 import subprocess
 import sys
@@ -18,9 +19,10 @@ from pathlib import Path
 
 try:
     import objc
-    from AppKit import (NSApp, NSApplication, NSApplicationActivationPolicyAccessory, NSEventModifierFlagControl,
-                        NSEventMaskLeftMouseUp, NSEventMaskRightMouseUp, NSEventTypeRightMouseUp, NSImage,
-                        NSImageLeft, NSMenu, NSMenuItem, NSStatusBar, NSVariableStatusItemLength)
+    from AppKit import (NSApp, NSApplication, NSApplicationActivationPolicyAccessory, NSBezierPath, NSColor,
+                        NSCompositingOperationClear, NSCompositingOperationSourceOver, NSEventModifierFlagControl,
+                        NSEventMaskLeftMouseUp, NSEventMaskRightMouseUp, NSEventTypeRightMouseUp, NSGraphicsContext,
+                        NSImage, NSImageLeft, NSMenu, NSMenuItem, NSStatusBar, NSVariableStatusItemLength)
     from Foundation import NSObject, NSTimer
     from PyObjCTools import AppHelper
 except ImportError:
@@ -34,6 +36,32 @@ COMMAND = str(ROOT / "bin" / "zmk-layer-hud")
 RUN = panelstate.default_dir()
 
 
+def crossed(base):
+    """The keyboard symbol struck through, for a HUD that is not running, as Omarchy's bar draws it.
+    SF Symbols has no keyboard.slash, so the stroke is drawn: a gap cut first, then the line in it,
+    the way the system's own .slash symbols are."""
+    size = base.size()
+
+    def draw(rect):
+        base.drawInRect_(rect)
+        line = NSBezierPath.bezierPath()
+        line.moveToPoint_((rect.origin.x + 1.5, rect.origin.y + 0.5))
+        line.lineToPoint_((rect.origin.x + rect.size.width - 1.5, rect.origin.y + rect.size.height - 0.5))
+        line.setLineCapStyle_(1)        # round
+        context = NSGraphicsContext.currentContext()
+        context.setCompositingOperation_(NSCompositingOperationClear)
+        line.setLineWidth_(3.2)
+        line.stroke()
+        context.setCompositingOperation_(NSCompositingOperationSourceOver)
+        NSColor.blackColor().set()
+        line.setLineWidth_(1.4)
+        line.stroke()
+        return True
+    image = NSImage.imageWithSize_flipped_drawingHandler_(size, False, draw)
+    image.setTemplate_(True)
+    return image
+
+
 class Icon(NSObject):
     def init(self):
         self = objc.super(Icon, self).init()
@@ -42,8 +70,10 @@ class Icon(NSObject):
         button = self.item.button()
         image = NSImage.imageWithSystemSymbolName_accessibilityDescription_("keyboard", "zmk-layer-hud") \
             if hasattr(NSImage, "imageWithSystemSymbolName_accessibilityDescription_") else None
+        self.image = self.stopped_image = None
         if image is not None:
             image.setTemplate_(True)         # drawn in the menubar's own colour, light or dark
+            self.image, self.stopped_image = image, crossed(image)
             button.setImage_(image)
             button.setImagePosition_(NSImageLeft)
         else:
@@ -66,7 +96,8 @@ class Icon(NSObject):
         button = self.item.button()
         button.setAppearsDisabled_(not (st and st["shown"]))
         text = f" {st['wpm']}" if st else ""
-        if button.image() is not None:
+        if self.image is not None:
+            button.setImage_(self.image if st else self.stopped_image)
             button.setTitle_(text)
         else:
             button.setTitle_("⌨" + text)
@@ -116,6 +147,14 @@ class Icon(NSObject):
 
 
 def main():
+    # One icon, however many times it is started: start.sh starts it with every HUD, and pgrep on
+    # macOS does not see its own ancestors -- this, when the HUD was started from this icon.
+    os.makedirs(RUN, exist_ok=True)
+    lock = open(os.path.join(RUN, "menubar.lock"), "w")
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        sys.exit(0)
     # A session of its own: a login item's launchd job ends its whole process group when the HUD
     # quits, and this is to stay.
     try:

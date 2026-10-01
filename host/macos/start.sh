@@ -34,7 +34,9 @@ stop() {
 # here when it is not running yet, unless `zmk-layer-hud menubar disable` said not to.
 menubar() {
   [ -e "$HOME/.config/zmk-layer-hud/menubar-off" ] && return 0
-  pgrep -f "$HERE/menubar.py" >/dev/null && return 0
+  # -a: macOS's pgrep leaves out its own ancestors, and when the HUD is started from the icon the
+  # icon is one. (menubar.py also takes a lock, so a second one goes at once.)
+  pgrep -a -f "$HERE/menubar.py" >/dev/null && return 0
   nohup "$PYTHON" -u "$HERE/menubar.py" >"$RUN/menubar.log" 2>&1 &
 }
 
