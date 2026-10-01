@@ -34,6 +34,11 @@ hud:
   stats_bar: 1                # the stats block beside the panel (0 hides it; the chevron on the panel does too)
   dark: 0                     # 1: dark keys, the heat in indigo (the theme box in the stats changes it on this machine)
 
+# The global shortcuts, the same on macOS and Omarchy. Shown with the defaults; null turns one off.
+shortcuts:
+  toggle: ctrl+alt+l          # shows or hides the HUD
+  power: ctrl+alt+gui+l       # starts or stops it
+
 # The stats bar's chips, left to right (true shows one). Shown with the defaults.
 stats:
   wpm: true                   # live words per minute

@@ -51,6 +51,10 @@
 # hud: { width: 700, press_ms: 320 }
 # feed: { dead_key_ms: 60 }
 
+# Optional: the global shortcuts, the same on macOS and Omarchy (null turns one off). toggle shows or
+# hides the HUD, power starts or stops it. Modifiers: ctrl, alt, shift, gui; the key a letter or digit.
+# shortcuts: { toggle: ctrl+alt+l, power: ctrl+alt+gui+l }
+
 # Optional: the stats bar's chips (see config/diamond.yaml for all of them), and the finger that
 # strikes each key when the HUD cannot tell from a split board's columns.
 # stats: { sfb: true, slow: true, layer: false }

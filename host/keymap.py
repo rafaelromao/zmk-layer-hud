@@ -26,6 +26,7 @@ The rest are read at runtime:
   stats:          which chips the stats bar shows, true or false; see STATS_DEFAULTS  (optional)
   fingers:        the finger that strikes each drawer key (FINGERS), in drawer order, for the
                   hands' shares and same-finger bigrams; worked out for a split board's columns (optional)
+  shortcuts:      {toggle, power}: the global shortcuts, read by host/shortcuts.py     (optional)
   keyboard:       {vid, pid, name} of the keyboard to read the layer signal from    (optional)
   serial:         {port, probe_s} of its CDC-ACM interface, when finding it fails   (optional)
   ble:            {address, enabled} for reading the signal over BLE                (optional)
