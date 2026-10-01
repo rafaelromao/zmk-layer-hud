@@ -54,7 +54,7 @@ Item {
   }
 
   FileView {
-    id: state
+    id: panelFile       // not `state`: that is every Item's own property
     path: root.stateDir + "/panel.json"
     watchChanges: true
     onFileChanged: reload()
@@ -74,7 +74,7 @@ Item {
     running: true
     repeat: true
     onTriggered: {
-      state.reload()
+      panelFile.reload()
       if (root.pid > 0 && !alive.running) alive.running = true
     }
   }

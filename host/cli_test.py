@@ -373,7 +373,8 @@ class OmarchyPlugin(unittest.TestCase):
         with mock.patch.object(cli.shutil, "which", side_effect=lambda n: "/usr/bin/" + n), \
                 mock.patch.object(cli.subprocess, "call", return_value=0) as call:
             self.assertEqual(0, self.run_cli("menubar", "enable")[0])
-        self.assertEqual([["omarchy-shell", "shell", "rescanPlugins"], ["omarchy", "plugin", "enable", cli.APP_ID]],
+        self.assertEqual([["omarchy-shell", "shell", "rescanPlugins"], ["omarchy", "plugin", "enable", cli.APP_ID],
+                          ["omarchy", "bar", "put", cli.APP_ID, "--section", "right"]],
                          [c[0][0] for c in call.call_args_list])
         with open(os.path.join(self.tmp.name, cli.APP_ID, "manifest.json"), encoding="utf-8") as f:
             d = json.load(f)["barWidget"]["defaults"]

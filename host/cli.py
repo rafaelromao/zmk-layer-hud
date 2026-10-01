@@ -1054,12 +1054,16 @@ def cmd_menubar(args):
     if args.action == "enable":
         dest = install_plugin()
         print(f"    {dest}")
-        if omarchy("omarchy-shell", "shell", "rescanPlugins") and omarchy("omarchy", "plugin", "enable", APP_ID):
+        # enable does not always put a bar widget in the bar's layout (omacom/omarchy#10264), and
+        # `bar put` does only where it is absent: both, in that order.
+        if omarchy("omarchy-shell", "shell", "rescanPlugins") and omarchy("omarchy", "plugin", "enable", APP_ID) \
+                and omarchy("omarchy", "bar", "put", APP_ID, "--section", "right"):
             print("the HUD's icon is in Omarchy's bar (`omarchy bar move` puts it elsewhere)")
         else:
             print("installed, but Omarchy's shell did not take it yet; run these where it runs:")
             print("    omarchy-shell shell rescanPlugins")
             print(f"    omarchy plugin enable {APP_ID}")
+            print(f"    omarchy bar put {APP_ID} --section right")
         return 0
     omarchy("omarchy", "plugin", "disable", APP_ID)
     shutil.rmtree(plugin_dir(), ignore_errors=True)
