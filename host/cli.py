@@ -1357,9 +1357,11 @@ def main(argv=None):
     if not getattr(args, "cmd", None):
         parser.print_help()
         return 0
-    if needs_venv(args):
-        reexec_into_venv()
     try:
+        # Inside the try: no venv is a sentence, not a traceback -- and at login, with no one
+        # watching, a traceback is all the log would have.
+        if needs_venv(args):
+            reexec_into_venv()
         return args.func(args) or 0
     except Fail as e:
         warn(f"zmk-layer-hud {args.cmd}: {e}")

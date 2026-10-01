@@ -31,7 +31,7 @@ try:
                         NSWindowStyleMaskBorderless, NSWindowStyleMaskNonactivatingPanel)
     from Foundation import NSNotificationCenter, NSObject, NSURL
     from WebKit import WKUserContentController, WKWebView, WKWebViewConfiguration
-    from PyObjCTools import AppHelper
+    from PyObjCTools import AppHelper, MachSignals
 except ImportError:
     sys.exit("panel: pyobjc is required: make venv (installs pyobjc-framework-Cocoa and -WebKit)")
 
@@ -212,6 +212,13 @@ class Bridge(NSObject):
         f = notification.object().frame()
         save_state({"frame": [f.origin.x, f.origin.y, f.size.width, f.size.height]})
 
+    def applicationWillTerminate_(self, notification):
+        """The one way out that still runs Python: stopEventLoop (✕, a signal) ends in
+        NSApp.terminate_, which calls exit() rather than returning from the run loop, so code
+        after runEventLoop never runs. What the session has counted and not yet written goes now."""
+        if Host.instance:
+            Host.instance.stop()
+
     def webView_didStartProvisionalNavigation_(self, webview, navigation):
         Host.instance.page_leaving()
 
@@ -244,6 +251,7 @@ class Host:
 
     def __init__(self):
         Host.instance = self
+        self.stopped = False
         self.ready = False
         self.loaded = False             # the first page has loaded (page_ready): a later one is a reload
         self.queue = []
@@ -265,6 +273,8 @@ class Host:
         panel.setFloatingPanel_(True)
         NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
             self.bridge, "windowDidMove:", "NSWindowDidMoveNotification", panel)
+        NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
+            self.bridge, "applicationWillTerminate:", "NSApplicationWillTerminateNotification", None)
 
         config = WKWebViewConfiguration.alloc().init()
         ucc = WKUserContentController.alloc().init()
@@ -369,21 +379,27 @@ class Host:
             self.queue.append(js)
 
     def stop(self):
+        if self.stopped:
+            return
+        self.stopped = True
         self.feed.stop()
         self.socket.stop()
         self.panel.orderOut_(None)
 
 
 def main():
+    # Handlers first: a signal that comes in before its handler takes the default action, which
+    # for these is to end the process. MachSignals rather than signal.signal: Python runs a
+    # handler only when Python next runs on the main thread, and an idle HUD runs none there, so a
+    # `stop` used to wait for the next keystroke. These wake the run loop instead -- its default
+    # mode only, so they wait while a menu or an alert is open.
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        MachSignals.signal(sig, lambda _sig: AppHelper.stopEventLoop())
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)  # no Dock icon, no menu bar
-    host = Host()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        signal.signal(sig, lambda *_: AppHelper.stopEventLoop())
-    try:
-        AppHelper.runEventLoop(installInterrupt=False)
-    finally:
-        host.stop()
+    Host()
+    # Host.stop runs on the way out from applicationWillTerminate_: this never returns.
+    AppHelper.runEventLoop(installInterrupt=False)
 
 
 if __name__ == "__main__":

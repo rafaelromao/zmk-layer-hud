@@ -97,6 +97,13 @@ class Parser(unittest.TestCase):
         names = [r[0].strip() for r in cli.compare_rows(a, b, session)]
         self.assertLess(names.index("alpha"), names.index("sym"))           # B's most used layer first
 
+    def test_a_verb_that_needs_the_venv_says_so_without_a_traceback(self):
+        # At login no one is watching, and a traceback would be all the log had to say.
+        with mock.patch.object(cli, "VENV_PYTHON", os.path.join(ROOT, "no-such-venv", "python3")), \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            self.assertEqual(1, cli.main(["keymap"]))
+        self.assertIn("zmk-layer-hud keymap: no venv yet", err.getvalue())
+
     def test_needs_venv_names_real_verbs(self):
         # NEEDS_VENV is consulted by name before the parser runs, so a typo there would silently
         # stop a verb from re-execing into the venv.
