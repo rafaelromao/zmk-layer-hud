@@ -47,7 +47,7 @@ class Parser(unittest.TestCase):
     def test_the_documented_verbs_are_all_there(self):
         expected = {"start", "stop", "restart", "status", "log", "doctor", "setup", "update",
                     "uninstall", "import", "sync", "keymap", "config", "demo", "poke", "feed",
-                    "version", "session", "heatmap", "show", "hide", "toggle", "menubar", "autostart"}
+                    "version", "session", "heatmap", "show", "hide", "toggle", "menubar", "autostart", "power"}
         self.assertEqual(expected, set(self.verbs))
 
     def test_the_session_verbs_need_no_venv(self):
@@ -218,6 +218,17 @@ class ShowHide(unittest.TestCase):
         code, said = self.run_cli("show", pids=[proc.pid])
         self.assertEqual(0, code)
         self.assertIn("HUD shown", said)
+
+    def test_power_stops_a_running_hud_and_starts_one_that_is_not(self):
+        with mock.patch.object(cli, "reexec_into_venv"), mock.patch.object(cli, "cmd_stop", return_value=0) as stop, \
+                mock.patch.object(cli, "cmd_start", return_value=0) as start:
+            self.assertEqual(0, self.run_cli("power", pids=[12345])[0])
+            stop.assert_called_once()
+            start.assert_not_called()
+            self.assertEqual(0, self.run_cli("power")[0])
+            start.assert_called_once()
+            args = start.call_args[0][0]
+            self.assertEqual((False, False, False), (args.reserve, args.hidden, args.foreground))
 
     def test_nothing_running_is_said_and_a_stale_word_goes(self):
         gone = subprocess.Popen([sys.executable, "-c", "pass"])

@@ -5,6 +5,7 @@ Every verb of `zmk-layer-hud`, as its own `--help` prints it. Written by `make c
 - [`start`](#start) — start the HUD
 - [`stop`](#stop) — stop the HUD
 - [`restart`](#restart) — stop the HUD, then start it
+- [`power`](#power) — start the HUD if it is not running, stop it if it is
 - [`show`](#show) — bring the HUD back on screen
 - [`hide`](#hide) — take the HUD off screen; it goes on running and counting
 - [`toggle`](#toggle) — show the HUD if it is hidden, hide it if it is shown
@@ -65,6 +66,17 @@ options:
   -h, --help  show this help message and exit
   --reserve   as for `start`
   --hidden    as for `start`
+```
+
+## power
+
+```text
+usage: zmk-layer-hud power [-h]
+
+start the HUD if it is not running, stop it if it is
+
+options:
+  -h, --help  show this help message and exit
 ```
 
 ## show

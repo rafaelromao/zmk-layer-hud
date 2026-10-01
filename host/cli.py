@@ -3,7 +3,7 @@
 
 `bin/zmk-layer-hud` finds an interpreter and hands off here. The verbs split in two:
 
-  the HUD          start, stop, restart, show, hide, toggle, status, log
+  the HUD          start, stop, restart, power, show, hide, toggle, status, log
   the typing       session, heatmap
   the keymap       keymap, import, sync, config
   this machine     setup, doctor, menubar, autostart, update, uninstall, version
@@ -63,7 +63,7 @@ if platform.system() == "Darwin":
 
 # Verbs that need keymap-drawer, pyserial, websockets or pyobjc. Everything else must keep
 # working on a half-installed machine.
-NEEDS_VENV = {"start", "restart", "keymap", "import", "sync", "poke", "feed", "demo"}
+NEEDS_VENV = {"start", "restart", "power", "keymap", "import", "sync", "poke", "feed", "demo"}
 
 
 class Fail(Exception):
@@ -197,6 +197,14 @@ def cmd_restart(args):
         raise Fail(missing)
     run_host("stop")
     return run_host("start", args.reserve, args.hidden)
+
+
+def cmd_power(args):
+    """Ctrl+Alt+Gui+L's verb: the HUD started, shown, when it is not running, and stopped when it is."""
+    if panel_pids():
+        return cmd_stop(args)
+    args.reserve = args.hidden = args.foreground = False
+    return cmd_start(args)
 
 
 def pgrep(pattern):
@@ -1676,6 +1684,9 @@ def cmd_uninstall(args):
         os.remove(AUTOSTART_DESKTOP)
         print(f"    removed {AUTOSTART_DESKTOP}")
     if platform.system() == "Linux":
+        import shortcuts
+        if shortcuts.remove_hyprland():
+            print(f"    took the shortcuts out of {shortcuts.HYPR_DIR}")
         for pid in (OMARCHY_ID,) + OLD_OMARCHY_IDS:
             if remove_plugin(pid):
                 print(f"    took the {pid} bar plugin out of Omarchy")
@@ -1747,6 +1758,8 @@ def build_parser():
     s.add_argument("--reserve", action="store_true", help="as for `start`")
     s.add_argument("--hidden", action="store_true", help="as for `start`")
     s.set_defaults(func=cmd_restart)
+
+    add("power", "start the HUD if it is not running, stop it if it is").set_defaults(func=cmd_power)
 
     add("show", "bring the HUD back on screen").set_defaults(func=cmd_show)
     add("hide", "take the HUD off screen; it goes on running and counting").set_defaults(func=cmd_hide)
