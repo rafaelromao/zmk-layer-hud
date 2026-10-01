@@ -99,6 +99,22 @@ function main() {
       chips = strip.children.map(c => c.textContent);
       if (chips.join("|") !== "USAGE9B") fail.push({ legend: "usage9b, no press", expected: "USAGE9B", actual: JSON.stringify(chips) });
     }
+    // ...and when the keys pressed are a combo, the keystroke is the combo's: the chip reads its
+    // legend, as the pill does (l+o+u types cancel on the Diamond), not its last key's.
+    const zmkOf = {};
+    for (const [p, idx] of Object.entries(data.positions || {})) zmkOf[idx] = Number(p);
+    const combo = (data.combos || []).find(c => c.layers.includes(data.base) && c.key.tap && c.key.tap.length > 1 &&
+                                                c.positions.every(i => zmkOf[i] !== undefined));
+    if (combo) {
+      const unnamed = { type: "keyDown", name: "usage9d", chars: "", code: 0x9d, flags: {} };
+      page.clock.advance(IDLE_CLEAR + 1000);
+      checked++;
+      for (const i of combo.positions) page.hud.pressAt(zmkOf[i]);
+      page.hud.key(unnamed);
+      for (const i of combo.positions) page.hud.releaseAt(zmkOf[i]);
+      const chips = strip.children.map(c => c.textContent);
+      if (chips.join("|") !== combo.key.tap) fail.push({ legend: "usage9d, a combo", expected: combo.key.tap, actual: JSON.stringify(chips) });
+    }
   }
 
   let shown = 0;

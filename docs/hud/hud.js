@@ -1419,14 +1419,17 @@
 
   /* A usage the feed has no name for -- usage9b, a key bound to something past F24 -- is a name no
    * one reads. The strip says instead what the board says of the key that sent it: the last key
-   * down, from the firmware's positions, while that press is this keystroke's. */
+   * down, from the firmware's positions, while that press is this keystroke's. When that press
+   * completed a combo, the keystroke is the combo's, and the strip says what its pill says: l+o+u
+   * on the Diamond types cancel, which read as whichever of l, o and u went down last. */
   const STRIP_PRESS_MS = 1000;
   function stripEvent(ev) {
     if (!state.data || ev.type !== "keyDown" || !/^usage[0-9a-f]+$/.test(ev.name || "")) return ev;
     const p = state.lastPress;
     if (!p || Date.now() - p.t > STRIP_PRESS_MS) return ev;
-    const r = resolveBinding(p.idx, p.stack);
-    const legend = r && (r.key.tap || r.key.glyph);
+    const r = p.combo ? null : resolveBinding(p.idx, p.stack);
+    const key = p.combo || (r && r.key);
+    const legend = key && (key.tap || key.glyph);
     return legend ? Object.assign({}, ev, { label: legend }) : ev;
   }
 
@@ -1820,6 +1823,7 @@
           state.comboEntry = ledgerAdd({ kind: "combo", layer: comboLayer, key: comboKey(combo.positions), t: now,
                                          due: now + term, eligible: !sent });
           for (const p of recentPos.slice(start)) if (p.entry) p.entry.chord = true;   // one keystroke (strokes)
+          entry.combo = combo.key;      // what this keystroke is, for the strip (stripEvent)
           // Not flash(): these keys are down, and it is their release that unlights them. flash's
           // press_ms timer would replace the held timer each key got from its own press and take
           // the chord out from under the user's fingers after a third of a second — along with
