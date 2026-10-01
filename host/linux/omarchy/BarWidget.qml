@@ -139,14 +139,15 @@ BarWidget {
       font.pixelSize: 12
     }
 
-    // As wide as the glyph's ink, with the glyph shifted so that ink is what fills it.
+    // Halfway between the room the glyph's text takes and the width of its ink, and shifted half
+    // as far: by the room alone the glyph sat off to one side, by the ink alone too far the other.
     Item {
       anchors.verticalCenter: parent.verticalCenter
-      width: Math.ceil(ink.tightBoundingRect.width)
+      width: Math.ceil((ink.tightBoundingRect.width + ink.advanceWidth) / 2)
       height: glyphText.implicitHeight
       Text {
         id: glyphText
-        x: -ink.tightBoundingRect.x
+        x: -ink.tightBoundingRect.x / 2
         text: root.glyph
         color: root.bar ? root.bar.foreground : "white"
         font.family: root.bar ? root.bar.fontFamily : "monospace"
