@@ -24,8 +24,10 @@ DEBUG = os.environ.get("ZMKHUD_DEBUG") == "1"  # log every layer and position me
 
 try:
     import objc
-    from AppKit import (NSAlert, NSApplication, NSApplicationActivationPolicyAccessory, NSBackingStoreBuffered,
-                        NSColor, NSEvent, NSEventMaskLeftMouseDown, NSMakeRect, NSMenu, NSMenuItem, NSOnState,
+    from AppKit import (NSAlert, NSApp, NSApplication, NSApplicationActivationPolicyAccessory, NSBackingStoreBuffered,
+                        NSColor, NSEvent, NSEventMaskLeftMouseDown, NSEventMaskLeftMouseUp, NSEventMaskRightMouseUp,
+                        NSEventModifierFlagControl, NSEventTypeRightMouseUp, NSImage, NSMakeRect, NSMenu, NSMenuItem,
+                        NSOnState, NSStatusBar, NSVariableStatusItemLength,
                         NSPanel, NSTextField, NSScreen, NSStatusWindowLevel, NSWindowCollectionBehaviorCanJoinAllSpaces,
                         NSWindowCollectionBehaviorFullScreenAuxiliary, NSWindowCollectionBehaviorStationary,
                         NSWindowStyleMaskBorderless, NSWindowStyleMaskNonactivatingPanel)
@@ -223,6 +225,22 @@ class Bridge(NSObject):
     def newSession_(self, sender):
         self._sessions(session_mod.new)
 
+    # The menubar icon (Host.make_status_item): a click shows or hides the HUD, a right-click (or a
+    # control-click) offers the same and Quit.
+    def statusClicked_(self, sender):
+        event = NSApp().currentEvent()
+        if event is not None and (event.type() == NSEventTypeRightMouseUp
+                                  or event.modifierFlags() & NSEventModifierFlagControl):
+            Host.instance.status_menu()
+        else:
+            Host.instance.set_shown(not Host.instance.shown)
+
+    def toggleHUD_(self, sender):
+        Host.instance.set_shown(not Host.instance.shown)
+
+    def quitHUD_(self, sender):
+        AppHelper.stopEventLoop()
+
     def windowDidMove_(self, notification):
         f = notification.object().frame()
         save_state({"frame": [f.origin.x, f.origin.y, f.size.width, f.size.height]})
@@ -332,6 +350,7 @@ class Host:
         self.feed = hudfeed.Feed(emit, log=log).start()
         hub.on_inject, hub.sessions = self.feed.resync, self.feed.sessions
         self.socket.start()
+        self.make_status_item()
         # Width from the config (hud.width), whether or not its keymap converts; the height follows
         # the page (see resize).
         width = (self.feed.cfg.get("hud") or {}).get("width")
@@ -339,6 +358,44 @@ class Host:
             self.resize(int(width), None)
         # main() put the signal's handler in first: the CLI signals whatever pid this file names.
         panelstate.write(RUN, self.shown)
+
+    def make_status_item(self):
+        """The menubar icon, which is how a hidden HUD comes back without a terminal. Kept on self:
+        an NSStatusItem nobody holds leaves the menubar."""
+        self.status = NSStatusBar.systemStatusBar().statusItemWithLength_(NSVariableStatusItemLength)
+        button = self.status.button()
+        image = None
+        if hasattr(NSImage, "imageWithSystemSymbolName_accessibilityDescription_"):
+            image = NSImage.imageWithSystemSymbolName_accessibilityDescription_("keyboard", "zmk-layer-hud")
+        if image is not None:
+            image.setTemplate_(True)         # drawn in the menubar's own colour, light or dark
+            button.setImage_(image)
+        else:
+            button.setTitle_("⌨")
+        button.setTarget_(self.bridge)
+        button.setAction_("statusClicked:")
+        button.sendActionOn_(NSEventMaskLeftMouseUp | NSEventMaskRightMouseUp)
+        self.menu = NSMenu.alloc().initWithTitle_("zmk-layer-hud")
+        self.menu_toggle = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("", "toggleHUD:", "")
+        self.menu_toggle.setTarget_(self.bridge)
+        self.menu.addItem_(self.menu_toggle)
+        self.menu.addItem_(NSMenuItem.separatorItem())
+        quit_item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_("Quit HUD", "quitHUD:", "")
+        quit_item.setTarget_(self.bridge)
+        self.menu.addItem_(quit_item)
+        self.show_status()
+
+    def show_status(self):
+        button = self.status.button()
+        button.setAppearsDisabled_(not self.shown)       # dimmed while hidden
+        button.setToolTip_("zmk-layer-hud: click to " + ("hide it (it keeps counting)" if self.shown else "show it"))
+        self.menu_toggle.setTitle_("Hide HUD" if self.shown else "Show HUD")
+
+    def status_menu(self):
+        # The menu only for this click: one set on the item for good would open on a left click too.
+        self.status.setMenu_(self.menu)
+        self.status.button().performClick_(None)
+        self.status.setMenu_(None)
 
     def set_shown(self, shown):
         """On screen or off it; the page goes on as before either way."""
@@ -351,6 +408,8 @@ class Host:
                 AppHelper.callLater(3.0, self.say_visibility)
         if shown:
             self.panel.orderFrontRegardless()
+        if getattr(self, "status", None) is not None:
+            self.show_status()
         panelstate.write(RUN, shown)
 
     def say_visibility(self):
