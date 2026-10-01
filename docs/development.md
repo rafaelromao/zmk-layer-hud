@@ -162,6 +162,18 @@ is running or not:
   its QML. Then it lists that id in `bar.layout.right` of `~/.config/omarchy/shell.json`, which is
   what enables a third-party widget.
 
+The global shortcuts (`host/shortcuts.py`, `shortcuts:` in the config) run the same verbs:
+`toggle`, and `power`, which starts a HUD that is not running and stops one that is.
+- **macOS:** the menubar process binds them as Carbon hotkeys (`RegisterEventHotKey` through
+  ctypes, since PyObjC does not wrap it). They need no Accessibility or Input Monitoring grant, and
+  they take the key from the app in front. The config's mtime is checked on the icon's 0.5 s timer,
+  and the hotkeys are bound again when it changes.
+- **Omarchy:** a Wayland client cannot take a key for itself, so `hud.sh` runs `shortcuts.py` on
+  every start. That writes `~/.config/hypr/zmk-layer-hud.conf`, an `unbind` and then a `bindd` per
+  key, and sources it at the end of `hyprland.conf`. The source line goes last so that the
+  `unbind`s come after Omarchy's own bindings: Hyprland fires every bind on a key. The labels go to
+  `$STATE/shortcuts.json` for the bar's menu.
+
 The macOS login item (`autostart enable`) runs `host/macos/launcher.c`, compiled into
 `ZMK Layer HUD.app` with its own Info.plist and an ad-hoc signature. macOS's privacy checks ask the
 *responsible* app, which a child inherits from its parent. Started by launchd as plain Python,

@@ -173,8 +173,8 @@ zmk-layer-hud sync --watch</code></pre>
         top speed, accuracy, combo share, and the share of the layer on screen.</p></li>
       <li><h3>Sessions</h3><p>There is always one, kept like a tmux session: name it, save it, load it
         back, and see its heatmap. Counts only, never what was typed, in files only you can read.</p></li>
-      <li><h3>Off screen, still counting</h3><p>Hide it from its own button, its menubar icon or
-        <code>zmk-layer-hud hide</code>, and it goes on counting, the live WPM beside the icon; <code>autostart enable</code> starts it
+      <li><h3>Off screen, still counting</h3><p>Hide it from its own button, its menubar icon,
+        <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>L</kbd> or <code>zmk-layer-hud hide</code>, and it goes on counting, the live WPM beside the icon; <code>autostart enable</code> starts it
         that way at every login, so the session begins with the day's first keystroke.</p></li>
     </ul>
   </section>
@@ -249,10 +249,12 @@ zmk-layer-hud autostart enable   # optional: start it hidden at every login</cod
     <h2 class="banner" id="runs-title">Runs on</h2>
     <dl class="hosts">
       <div><dt>macOS</dt><dd>An overlay panel over every Space and full-screen app. Drag it anywhere;
-        it stays where it was put. A menubar icon with the live WPM shows, hides or starts it.</dd></div>
+        it stays where it was put. A menubar icon with the live WPM shows, hides or starts it, and so
+        do <kbd>⌃⌥L</kbd> and <kbd>⌃⌥⌘L</kbd>.</dd></div>
       <div><dt>Linux on Hyprland</dt><dd>A layer-shell overlay that takes no room from your windows;
         drag it anywhere. <code>start --reserve</code> tiles them beside it instead, for recording.
-        On Omarchy, <code>zmk-layer-hud menubar enable</code> puts the same icon in the bar. On pacman systems the GTK packages are installed for you.</dd></div>
+        On Omarchy, <code>zmk-layer-hud menubar enable</code> puts the same icon in the bar, and the
+        same shortcuts are Hyprland binds (Super for ⌘). On pacman systems the GTK packages are installed for you.</dd></div>
       <div><dt>Anything else</dt><dd><code>zmk-layer-hud feed</code> serves every message on a local
         WebSocket (<a href="https://github.com/rafaelromao/zmk-layer-hud/blob/main/docs/protocol.md">docs/protocol.md</a>).
         Windows is not supported.</dd></div>
