@@ -433,7 +433,7 @@ nothing can take it back: a combo counts as one keystroke, and a report that bea
 position is not counted twice.
 
 Its last box is the keys: `light`, as keymap-drawer draws them, or `dark`, with the heat in one
-indigo. A click changes it, and the feed remembers the choice on this machine; until one is made,
+indigo, light blue cold and dark blue hot. A click changes it, and the feed remembers the choice on this machine; until one is made,
 `hud.dark: 1` in the config makes them dark. The chevron at the top right of the panel puts the
 block away and brings it back, remembered the same way; `hud.stats_bar: 0` leaves it out.
 

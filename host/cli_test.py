@@ -808,7 +808,7 @@ class Shim(unittest.TestCase):
                                  capture_output=True, text=True, env=env)
             self.assertEqual(0, run.returncode, run.stderr)
             with open(out, encoding="utf-8") as f:
-                self.assertIn("rect.key.hs6 { fill: #6366f1; }", f.read())
+                self.assertIn("rect.key.hs6 { fill: #3730a3; }", f.read())
 
     def test_tree_is_found_through_a_chain_of_symlinks(self):
         with tempfile.TemporaryDirectory() as tmp:

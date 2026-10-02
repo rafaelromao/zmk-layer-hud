@@ -516,9 +516,11 @@
    * (hud.css .key::before) is what makes the fade smooth. */
   const HEAT_TICK_MS = 100;
   const HEAT_STEP = 0.4;      // of the gap to full heat, closed by one press
-  // The overlay's opacity at full heat: the legends must stay readable. Dark keys take more of the
-  // indigo before their light legends stop reading (hud.css body.dark).
-  const heatMax = () => (theme() === "dark" ? 0.85 : 0.55);
+  // The light keys' glow at full heat, the overlay's opacity: the legends must stay readable.
+  const HEAT_MAX = 0.55;
+  // Dark keys have no glow: a warm key takes the step of the session's ramp its heat is at (hud.css
+  // .lh1 to .lh6), dark blue hot and light blue as it cools, the way the light keys' glow goes.
+  const LIVE_STEPS = 6;
   const HEAT_LEVELS = 20;     // opacity is written in this many steps, so a fading key is touched ~20 times
   const HEAT_GAMMA = 0.6;     // drawn as heat^0.6: a key pressed once still shows, not a faint blush
 
@@ -550,16 +552,20 @@
     armHeat();
   }
 
-  // The key's --heat, the overlay's opacity, written only when its step changes. A key that has
-  // cooled is forgotten and the property cleared, not left at 0.
+  // The key's --heat, the overlay's opacity, written only when its step changes -- or on dark keys
+  // its .lhN, the ramp's step. A key that has cooled is forgotten and both cleared, not left at 0.
   function paintKeyHeat(idx, now) {
     const e = state.heat.get(idx);
     const v = e ? heatAt(e, now) : 0;
     if (e && v <= 0) state.heat.delete(idx);
     const el = state.keyEls[idx];
     if (!el) return;
-    const step = Math.ceil(Math.pow(v, HEAT_GAMMA) * HEAT_LEVELS);   // ceil: a key still warm never paints cold
-    const value = step > 0 ? String(Math.round(step / HEAT_LEVELS * heatMax() * 1000) / 1000) : "";
+    const dark = theme() === "dark", warm = Math.pow(v, HEAT_GAMMA);
+    const live = dark && v > 0 ? Math.max(1, Math.ceil(warm * LIVE_STEPS)) : 0;   // ceil: a key still warm never paints cold
+    for (let i = 1; i <= LIVE_STEPS; i++) if (i !== live && el.classList.contains("lh" + i)) el.classList.remove("lh" + i);
+    if (live && !el.classList.contains("lh" + live)) el.classList.add("lh" + live);
+    const step = dark ? 0 : Math.ceil(warm * HEAT_LEVELS);
+    const value = step > 0 ? String(Math.round(step / HEAT_LEVELS * HEAT_MAX * 1000) / 1000) : "";
     if (el.style.getPropertyValue("--heat") !== value) el.style.setProperty("--heat", value);
   }
 
@@ -659,7 +665,7 @@
     }
     if (body.classList.contains("dark") !== (theme() === "dark")) {
       body.classList.toggle("dark", theme() === "dark");
-      paintHeat();                  // the glow's opacity goes with the theme (heatMax)
+      paintHeat();                  // light keys glow, dark keys take the ramp's steps (paintKeyHeat)
     }
     if (body.classList.contains("side-hidden") === sideShown()) body.classList.toggle("side-hidden", !sideShown());
     const side = $("side");

@@ -27,12 +27,16 @@ MODES = ("session", "physical", "speed")
 RAMP = ("#ffffcc", "#ffeda0", "#fed976", "#feb24c", "#fd8d3c", "#fc4e2a")
 LEGEND = "#24292e"
 # The dark keys (hud/hud.css body.dark), the way LayoutMaster draws its board: dark keys, and the
-# steps one indigo over them, brighter the hotter, under light legends.
+# steps one indigo over them, light blue cold to dark blue hot -- Tailwind's indigo 200 to 600, then 800 --
+# with dark legends on the colder three and light ones on the hotter.
 DARK_BOARD = {"background": "#1a1b26", "key": "#24283b", "stroke": "#3b4261", "text": "#e6e8ef",
               "small": "#a9b1d6", "trans": "#545c7e", "combo": "#2f334d", "held": "#5a3b46",
               "dendron": "#565f89"}
-DARK_RAMP = ("#313460", "#3a3e7b", "#444796", "#4d50b1", "#585bd0", "#6366f1")
-DARK_LEGEND = "#d5d8ff"   # a heated key's hold and shifted legends
+DARK_RAMP = ("#c7d2fe", "#a5b4fc", "#818cf8", "#6366f1", "#4f46e5", "#3730a3")
+DARK_LEGEND = "#d5d8ff"   # a heated key's hold and shifted legends, on the hotter steps
+DARK_COLD = 3             # the steps up to this one are light, and their legends dark
+DARK_COLD_LEGEND = "#1a1b26"
+DARK_COLD_SMALL = "#2e3240"   # ...and the hold and shifted ones on them
 
 
 def _log_steps(counts):
@@ -84,7 +88,8 @@ def levels(session, message, mode="session"):
 def stylesheet(dark=False):
     """The steps' colours, after keymap-drawer's own styles and whatever the drawer config's dark
     mode made of them. On light keys: the key's fill, and dark legends on it. `dark`: the HUD's dark
-    keys, the steps' fills over them, and light legends."""
+    keys, the steps' fills over them, and the legends that read on each: dark on the colder steps
+    (up to DARK_COLD), light on the hotter."""
     if not dark:
         rules = [f"rect.key.hs{i + 1} {{ fill: {c}; }}" for i, c in enumerate(RAMP)]
         rules.append(", ".join(f"g.hs{i + 1} text" for i in range(LEVELS)) + f" {{ fill: {LEGEND}; }}")
@@ -100,8 +105,11 @@ def stylesheet(dark=False):
                  f"text.trans {{ fill: {b['trans']}; }}",
                  f"path.combo {{ stroke: {b['dendron']}; }}"]
         rules += [f"rect.key.hs{i + 1} {{ fill: {c}; }}" for i, c in enumerate(DARK_RAMP)]
-        rules.append(", ".join(f"g.hs{i + 1} text.{t}" for i in range(LEVELS) for t in ("hold", "shifted"))
+        rules.append(", ".join(f"g.hs{i} text.{t}" for i in range(DARK_COLD + 1, LEVELS + 1) for t in ("hold", "shifted"))
                      + f" {{ fill: {DARK_LEGEND}; }}")
+        rules.append(", ".join(f"g.hs{i} text" for i in range(1, DARK_COLD + 1)) + f" {{ fill: {DARK_COLD_LEGEND}; }}")
+        rules.append(", ".join(f"g.hs{i} text.{t}" for i in range(1, DARK_COLD + 1) for t in ("hold", "shifted"))
+                     + f" {{ fill: {DARK_COLD_SMALL}; }}")
     return "/* zmk-layer-hud: the session's heatmap */\n" + "\n".join(rules)
 
 

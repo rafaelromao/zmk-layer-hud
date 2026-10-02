@@ -825,7 +825,20 @@ function main() {
     check("a click makes them dark", dark(p) && box(p, "theme") === "keys dark", box(p, "theme"));
     check("and the host is told, to remember it", posted.some(m => m.kind === "pref" && m.name === "theme" && m.value === "dark"),
           JSON.stringify(posted));
-    check("dark keys glow brighter", level(p, A.idx) > lightGlow, `${lightGlow} -> ${level(p, A.idx)}`);
+    // Dark keys have no glow: a warm key takes the ramp's step, dark blue hot and light blue as it
+    // cools (hud.js paintKeyHeat), and then none.
+    const liveStep = page => {
+      const cl = page.hud.state.keyEls[A.idx].classList;
+      for (let i = 1; i <= 6; i++) if (cl.contains("lh" + i)) return i;
+      return 0;
+    };
+    const was = liveStep(p);
+    check("dark keys take the ramp's step instead of a glow", lightGlow > 0 && level(p, A.idx) === 0 && was >= 1,
+          `${lightGlow} -> ${level(p, A.idx)}, step ${was}`);
+    p.clock.advance(1500);
+    check("and as one cools it takes a lighter step", liveStep(p) >= 1 && liveStep(p) < was, `${was} -> ${liveStep(p)}`);
+    p.clock.advance(2000);
+    check("and then none", liveStep(p) === 0 && level(p, A.idx) === 0, `step ${liveStep(p)}`);
     const width = () => posted.filter(m => m.kind === "size").pop().width;
     const out = width();
     p.hud.setPref("side", "hidden");

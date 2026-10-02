@@ -86,7 +86,7 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 .key::before {
   content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; border-radius: 6px;
   z-index: -1; pointer-events: none; background: var(--heat-live); opacity: var(--heat, 0);
-  transition: opacity 120ms linear;
+  transition: opacity 120ms linear, background-color 240ms linear;
 }
 /* The ring inside a key's edge, in --ring's colour (.activator, .mod): on its own layer after the
    heat's, so a warm key keeps it. As when it was the key's own box-shadow, a pressed or combo key
@@ -235,27 +235,44 @@ body.demo .key::before, body.demo #stats { display: none; }
 
 /* Dark keys (body.dark: the theme box in the stats block, remembered by the feed): the board the
    way LayoutMaster draws its own, dark keys and the heat in one indigo, brighter the hotter. The
-   light keys above stay the default. hud.js heatMax() raises the live glow's opacity to match. */
+   light keys above stay the default.
+   The heat is light blue cold and dark blue hot, as it goes light to dark on the light keys:
+   Tailwind's indigo 200 to 600, then its 800, #6366f1 (its 500) among them. The colder three take dark legends,
+   which read on them as light ones would not; the hotter three keep light ones. The live heatmap
+   steps through the same six as a key cools (hud.js paintKeyHeat, .lh1 to .lh6) instead of fading
+   one colour out, and dissolves from the coldest, which is why that is --heat-live too. */
 body.dark {
   --key-bg: #24283b; --key-fg: #e6e8ef; --key-dim: #545c7e; --key-border: #3b4261;
   --held: #5a3b46;                           /* keymap-drawer's held key, in the red of its dark mode */
-  --heat-live: #6366f1;                      /* the live glow and a pressed key: the steps' top indigo */
+  --heat-live: #c7d2fe;                      /* what a cooled key dissolves from: the coldest step */
 }
 body.dark .key .hold, body.dark .key .shifted { color: #a9b1d6; }
 body.dark .key.trans, body.dark .key.blank, body.dark .key.ghost { background: #1f2335; }
 body.dark .key.activator { background: #2e3c64; }
-body.dark .key.hs1::before { background: #313460; opacity: 1; }
-body.dark .key.hs2::before { background: #3a3e7b; opacity: 1; }
-body.dark .key.hs3::before { background: #444796; opacity: 1; }
-body.dark .key.hs4::before { background: #4d50b1; opacity: 1; }
-body.dark .key.hs5::before { background: #585bd0; opacity: 1; }
-body.dark .key.hs6::before { background: #6366f1; opacity: 1; }
+body.dark .key.hs1::before { background: #c7d2fe; opacity: 1; }
+body.dark .key.hs2::before { background: #a5b4fc; opacity: 1; }
+body.dark .key.hs3::before { background: #818cf8; opacity: 1; }
+body.dark .key.hs4::before { background: #6366f1; opacity: 1; }
+body.dark .key.hs5::before { background: #4f46e5; opacity: 1; }
+body.dark .key.hs6::before { background: #3730a3; opacity: 1; }
+body.dark .key.lh1::before { background: #c7d2fe; opacity: 1; }
+body.dark .key.lh2::before { background: #a5b4fc; opacity: 1; }
+body.dark .key.lh3::before { background: #818cf8; opacity: 1; }
+body.dark .key.lh4::before { background: #6366f1; opacity: 1; }
+body.dark .key.lh5::before { background: #4f46e5; opacity: 1; }
+body.dark .key.lh6::before { background: #3730a3; opacity: 1; }
 body.dark .key.heated .hold, body.dark .key.heated .shifted { color: #d5d8ff; }
+/* The colder half is light: dark legends on it, as on the light keys. */
+body.dark .key.hs1, body.dark .key.hs2, body.dark .key.hs3,
+body.dark .key.lh1, body.dark .key.lh2, body.dark .key.lh3 { --key-fg: #1a1b26; }
+body.dark .key.hs1 .hold, body.dark .key.hs1 .shifted, body.dark .key.hs2 .hold, body.dark .key.hs2 .shifted,
+body.dark .key.hs3 .hold, body.dark .key.hs3 .shifted, body.dark .key.lh1 .hold, body.dark .key.lh1 .shifted,
+body.dark .key.lh2 .hold, body.dark .key.lh2 .shifted, body.dark .key.lh3 .hold, body.dark .key.lh3 .shifted { color: #2e3240; }
 body.dark #board.vim .key, body.dark #board.vim-insert .key, body.dark #board.vim-cmdline .key { background: #1f2a47; border-color: #34426b; }
 body.dark #board.momentary .key { background: #2a2442; border-color: #463c66; }
 body.dark #board.raw .key, body.dark #board.off .key { background: var(--key-bg); }
 /* A pressed key over any tint lights in the indigo: the tints outrank a key's classes, hence the id. */
-body.dark #board .key.pressed, body.dark #board .key.pressed.combo { background: var(--heat-live); }
+body.dark #board .key.pressed, body.dark #board .key.pressed.combo { background: #6366f1; }   /* a first press's step (lh4) */
 body.dark .combo-pill { background: #2f334d; }
 body.dark .combo-pill .combo-label, body.dark .combo-pill .combo-sub { color: #a9b1d6; }
 
