@@ -1,10 +1,15 @@
 """Whether the running panel is on screen, and how the command line asks it to change.
 
 A running panel -- host/macos/panel.py or host/linux/panel.py -- keeps $STATE/panel.json saying
-which process it is, whether it is shown, and the live WPM the page last showed. `zmk-layer-hud
+which process it is, whether it is shown, the live WPM the page last showed, and -- once the page
+has said them -- the session's average and top WPM and the rows of its stats column. `zmk-layer-hud
 status` reads it, and so do the menubar icons (host/macos/menubar.py, host/linux/omarchy). `show`
 and `hide` write what they want to $STATE/panel.want and send the panel SIGNAL. The panel does it, then writes panel.json again,
 which is how they know it has.
+
+Which of the three WPMs the icons show -- the live one, the session's average, or its top -- is
+the icons' own choice, in $STATE/menubar.json: their menus set it through `zmk-layer-hud menubar
+wpm`, and both read it.
 
 One signal and a file, rather than SIGUSR1 for one and SIGUSR2 for the other: on Linux WebKit
 takes SIGUSR1 to suspend its own threads (JSC_SIGNAL_FOR_GC), and the GTK panel is a WebKit
@@ -21,6 +26,10 @@ import signal
 SIGNAL = signal.SIGUSR2
 STATE_FILE = "panel.json"
 WANT_FILE = "panel.want"
+CHOICE_FILE = "menubar.json"
+WPM_CHOICES = ("current", "average", "top")
+ROWS_MAX = 24           # rows of the stats column, and each one's label and value at most this long:
+TEXT_MAX = 64           # a page says what its column shows, and nothing like a page of it
 
 
 def default_dir():
@@ -57,10 +66,33 @@ def alive(pid):
     return True
 
 
-def write(d, shown, pid=None, wpm=0):
-    """The panel's word: which process it is, whether it is on screen, and how fast it is being
-    typed on."""
-    _write(os.path.join(d, STATE_FILE), {"pid": pid or os.getpid(), "shown": bool(shown), "wpm": int(wpm or 0)})
+def write(d, shown, pid=None, wpm=0, stats=None):
+    """The panel's word: which process it is, whether it is on screen, how fast it is being typed
+    on, and `stats` (from stats_of) once the page has said them."""
+    obj = {"pid": pid or os.getpid(), "shown": bool(shown), "wpm": int(wpm or 0)}
+    obj.update(stats or {})
+    _write(os.path.join(d, STATE_FILE), obj)
+
+
+def _wpm_or_none(n):
+    return n if type(n) is int and 0 <= n <= 1000 else None
+
+
+def stats_of(msg):
+    """What a page's {"kind": "stats"} says, checked, as panel.json keeps it: {"avg_wpm", "top_wpm"
+    (each a number, or None while there is none yet), "session" (its name, where the column shows
+    it, else None), "stats": [[label, value], ...], the rows of its stats column in order}. None for
+    a message that is not one."""
+    if not isinstance(msg, dict) or not isinstance(msg.get("rows"), list) or len(msg["rows"]) > ROWS_MAX:
+        return None
+    rows = []
+    for row in msg["rows"]:
+        if not (isinstance(row, list) and len(row) == 2 and all(isinstance(t, str) and len(t) <= TEXT_MAX for t in row)):
+            return None
+        rows.append(list(row))
+    session = msg.get("session")
+    return {"avg_wpm": _wpm_or_none(msg.get("avg")), "top_wpm": _wpm_or_none(msg.get("top")),
+            "session": session if isinstance(session, str) and 0 < len(session) <= TEXT_MAX else None, "stats": rows}
 
 
 def read(d):
@@ -71,6 +103,10 @@ def read(d):
         return None
     if type(st.get("wpm")) is not int:
         st["wpm"] = 0
+    # A panel from before it said these, or a page that has not said them yet.
+    checked = stats_of({"avg": st.get("avg_wpm"), "top": st.get("top_wpm"), "session": st.get("session"),
+                        "rows": st.get("stats")}) or {"avg_wpm": None, "top_wpm": None, "session": None, "stats": []}
+    st.update(checked)
     return st if alive(st["pid"]) else None
 
 
@@ -101,3 +137,24 @@ def wanted(d):
     """What the command line last asked for, or None."""
     w = _load(os.path.join(d, WANT_FILE))
     return w["shown"] if w and isinstance(w.get("shown"), bool) else None
+
+
+def wpm_choice(d):
+    """Which WPM the icons show: "current" (the live one, until another was chosen), "average" or
+    "top"."""
+    c = _load(os.path.join(d, CHOICE_FILE))
+    return c["wpm"] if c and c.get("wpm") in WPM_CHOICES else "current"
+
+
+def set_wpm_choice(d, choice):
+    if choice not in WPM_CHOICES:
+        raise ValueError(f"{choice!r} is not one of {', '.join(WPM_CHOICES)}")
+    _write(os.path.join(d, CHOICE_FILE), {"wpm": choice})
+
+
+def wpm_shown(st, choice):
+    """The number an icon shows for `choice`, from what read() returned: None while there is none
+    (no average before ten seconds of typing, no top before a full window of it)."""
+    if not st:
+        return None
+    return {"current": st.get("wpm"), "average": st.get("avg_wpm"), "top": st.get("top_wpm")}.get(choice)

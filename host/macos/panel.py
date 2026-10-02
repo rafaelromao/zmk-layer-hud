@@ -180,6 +180,8 @@ class Bridge(NSObject):
             Host.instance.set_shown(False)
         elif kind == "wpm":
             Host.instance.set_wpm(msg.get("wpm"))
+        elif kind == "stats":       # what its stats column shows, for the menubar's menu
+            Host.instance.set_stats(msg)
         elif kind == "nodrag":
             rects = msg.get("rects")
             if isinstance(rects, list):
@@ -273,6 +275,7 @@ class Host:
         self.stopped = False
         self.shown = not HIDDEN
         self.wpm = 0
+        self.stats = None               # the page's stats column, once it has said it (panelstate.stats_of)
         self.ready = False
         self.loaded = False             # the first page has loaded (page_ready): a later one is a reload
         self.queue = []
@@ -356,13 +359,20 @@ class Host:
                 AppHelper.callLater(3.0, self.say_visibility)
         if shown:
             self.panel.orderFrontRegardless()
-        panelstate.write(RUN, shown, wpm=self.wpm)
+        panelstate.write(RUN, shown, wpm=self.wpm, stats=self.stats)
 
     def set_wpm(self, wpm):
         """The page's live WPM, for the menubar icon (host/macos/menubar.py) to show beside it."""
         if isinstance(wpm, int) and wpm != self.wpm:
             self.wpm = wpm
-            panelstate.write(RUN, self.shown, wpm=wpm)
+            panelstate.write(RUN, self.shown, wpm=wpm, stats=self.stats)
+
+    def set_stats(self, msg):
+        """The page's average and top WPM and the rows of its stats column, for the menubar's menu."""
+        stats = panelstate.stats_of(msg)
+        if stats is not None and stats != self.stats:
+            self.stats = stats
+            panelstate.write(RUN, self.shown, wpm=self.wpm, stats=stats)
 
     def say_visibility(self):
         """ZMKHUD_DEBUG: what WebKit makes of the hidden HUD. `visible` is the point of hiding it

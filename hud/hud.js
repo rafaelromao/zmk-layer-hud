@@ -107,6 +107,10 @@
     typing: newTyping(),      // live WPM, over everything shown
     ownTyping: newTyping(),   // ...and over the keyboard's own typing, for the session's peak
     wpmTimer: null,
+    statsSaid: null,          // the stats column as the panel was last told it (postStats)
+    statsWaiting: null,       // ...and as it is now, when that has not been said yet
+    statsTimer: null,
+    statsAt: 0,
     session: null,            // the host's active session ({"kind":"session"}), when it keeps one
     inflight: [],             // counts sent to it that it has not said it has
     seq: 0,
@@ -1013,6 +1017,11 @@
   // the board's (postSize), so the keys stay the size hud.width gives them. Each value is written
   // only when its text changes.
   const STATS_COLUMN = 188 + 8;    // hud.css: #stats width (a session name and its label fit) + its margin-left
+  // Each stat's rows, by label, in the column's order (STAT_DEFAULTS); null is the layer tile's,
+  // which says the layer's name instead.
+  const STAT_ROWS = { wpm: ["wpm"], session: ["avg wpm", "top wpm"], accuracy: ["accurate"], keys: ["keys", "combos"],
+                      layer: [null], time: ["typing"], hands: ["left hand", "right hand"], sfb: ["same finger"],
+                      slow: ["slowest", "its time"] };
   const bar = {};
   function buildStats() {
     const host = $("stats");
@@ -1035,11 +1044,11 @@
       return { chip: c, vals, names };
     };
     // In the config's order (host/keymap.py STATS_DEFAULTS), each shown or not by its `stats:` word.
-    bar.wpm = chip("wpm", ["wpm"]);
-    bar.session = chip("session", ["avg wpm", "top wpm"]);
-    bar.accuracy = chip("acc", ["accurate"]);
-    bar.keys = chip("keys", ["keys", "combos"]);
-    bar.layer = chip("layer", [null]);
+    bar.wpm = chip("wpm", STAT_ROWS.wpm);
+    bar.session = chip("session", STAT_ROWS.session);
+    bar.accuracy = chip("acc", STAT_ROWS.accuracy);
+    bar.keys = chip("keys", STAT_ROWS.keys);
+    bar.layer = chip("layer", STAT_ROWS.layer);
     // A combobox of every drawn layer: one picked is drawn until the next keystroke (pickLayer).
     // Its list opens over the page, so picking never makes the panel taller.
     const pick = el("select", "layer-pick");
@@ -1048,11 +1057,11 @@
     pick.addEventListener("change", () => pickLayer(pick.value || null));
     bar.layer.chip.appendChild(pick);
     bar.layer.pick = pick;
-    bar.time = chip("time", ["typing"]);
-    bar.hands = chip("hands", ["left hand", "right hand"]);
-    bar.sfb = chip("sfb", ["same finger"]);
+    bar.time = chip("time", STAT_ROWS.time);
+    bar.hands = chip("hands", STAT_ROWS.hands);
+    bar.sfb = chip("sfb", STAT_ROWS.sfb);
     bar.sfb.chip.title = "same-finger bigrams: two keys in a row struck by one finger";
-    bar.slow = chip("slow", ["slowest", "its time"]);
+    bar.slow = chip("slow", STAT_ROWS.slow);
     bar.slow.chip.title = "the key that takes longest after the key before it, on average";
     // `stats: heatmap` shows both: the session the counts go to, and what the keys glow with.
     bar.named = chip("named", ["session"]);
@@ -1125,26 +1134,18 @@
     return text.length > 8 ? text.slice(0, 7) + "…" : text;
   }
 
-  function renderStats() {
-    if (!bar.host) buildStats();
-    if (!bar.host) return;
-    const off = !(T("stats_bar") > 0);
-    if (bar.host.classList.contains("off") !== off) bar.host.classList.toggle("off", off);
-    if (off) { followBar(); return; }
+  /* What every stat says now, by the stat (STAT_ROWS), worked out once for the column and for the
+   * panel (postStats); `avg` and `top` are the session's speeds as numbers, null while there is none. */
+  function statValues(now) {
+    const v = view();
     const fingers = !!(state.data && state.data.fingers);
-    for (const name of Object.keys(STAT_DEFAULTS)) {
-      // Hands and same-finger bigrams need to know whose finger struck each key.
-      toggleChip(bar[name], statOn(name) && (fingers || (name !== "hands" && name !== "sfb")));
-    }
-    const named = state.session && state.session.name;
-    toggleChip(bar.named, statOn("heatmap") && !!named);
-    const now = Date.now(), v = view();
     const live = Math.round(wpmOf(state.typing, now));
-    put(bar.wpm, [v.chars || state.typing.win.length ? String(live) : "—"]);
-    put(bar.session, [v.active_ms >= 10000 ? String(Math.round(v.active_net / 5 / (v.active_ms / 60000))) : "—",
-                      v.peak_wpm ? String(v.peak_wpm) : "—"]);
-    put(bar.accuracy, [v.chars ? pct(Math.max(0, 1 - v.deleted / v.chars)) : "—"]);
-    put(bar.time, [v.active_ms ? fmtDuration(v.active_ms) : "—"]);
+    const avg = v.active_ms >= 10000 ? Math.round(v.active_net / 5 / (v.active_ms / 60000)) : null;
+    const out = { fingers, avg, top: v.peak_wpm || null, hands: ["—", "—"], sfb: ["—"] };
+    out.wpm = [v.chars || state.typing.win.length ? String(live) : "—"];
+    out.session = [avg === null ? "—" : String(avg), v.peak_wpm ? String(v.peak_wpm) : "—"];
+    out.accuracy = [v.chars ? pct(Math.max(0, 1 - v.deleted / v.chars)) : "—"];
+    out.time = [v.active_ms ? fmtDuration(v.active_ms) : "—"];
     if (fingers) {
       const hand = { l: 0, r: 0 };
       for (const layer in v.presses) for (const pos in v.presses[layer]) {
@@ -1152,11 +1153,11 @@
         if (f) hand[f[0]] += v.presses[layer][pos];
       }
       const both = hand.l + hand.r;
-      put(bar.hands, both ? [pct(hand.l / both), pct(hand.r / both)] : ["—", "—"]);
-      put(bar.sfb, [v.bigrams >= SFB_MIN ? (Math.round(v.sfb / v.bigrams * 1000) / 10).toFixed(1) + "%" : "—"]);
+      if (both) out.hands = [pct(hand.l / both), pct(hand.r / both)];
+      out.sfb = [v.bigrams >= SFB_MIN ? (Math.round(v.sfb / v.bigrams * 1000) / 10).toFixed(1) + "%" : "—"];
     }
     const slow = slowest(v);
-    put(bar.slow, slow ? [legendAt(slow.layer, slow.pos), Math.round(slow.mean) + " ms"] : ["—", "—"]);
+    out.slow = slow ? [legendAt(slow.layer, slow.pos), Math.round(slow.mean) + " ms"] : ["—", "—"];
     // A combo is one keystroke made with several keys: its share is of keystrokes, not of keys.
     let presses = 0, combos = 0, members = 0;
     for (const layer in v.presses) presses += sum(v.presses[layer]);
@@ -1164,10 +1165,67 @@
       combos += v.combos[layer][key]; members += v.combos[layer][key] * key.split(",").length;
     }
     const strokes = presses - members + combos;
-    put(bar.keys, [fmtCount(presses), strokes > 0 ? pct(combos / strokes) : "—"]);
+    out.keys = [fmtCount(presses), strokes > 0 ? pct(combos / strokes) : "—"];
     const top = state.data ? stack()[0] : null;
-    put(bar.layer, [top && presses ? pct(sum(v.presses[top] || {}) / presses) : "—"],
-        [top ? (state.pick ? layerLabel(top) : drawingLabel(top)) : "layer"]);
+    out.layer = [top && presses ? pct(sum(v.presses[top] || {}) / presses) : "—"];
+    out.layerName = top ? (state.pick ? layerLabel(top) : drawingLabel(top)) : "layer";
+    return out;
+  }
+
+  // The column's rows as [label, value], as it shows them: the stats the config turns on
+  // (`stats:`), the hands and same-finger bigrams only with fingers to tell them by. Not its
+  // controls: the layer picker, the heatmap, the keys, the background.
+  function statRows(s) {
+    const rows = [];
+    for (const name of Object.keys(STAT_ROWS)) {
+      if (!statOn(name) || (!s.fingers && (name === "hands" || name === "sfb"))) continue;
+      STAT_ROWS[name].forEach((label, i) => rows.push([label === null ? s.layerName : label, s[name][i]]));
+    }
+    return rows;
+  }
+
+  /* The column, to the panel, which keeps it in panel.json for the icons (host/panelstate.py):
+   * their menus' average and top WPM, and Omarchy's hover panel. Said when it changes, at most
+   * once a second, and whether or not the column is on screen: hidden, the HUD still counts. */
+  const STATS_POST_MS = 1000;
+  function postStats(s) {
+    if (!panelHandler()) return;
+    // The session's name too, where the column names it.
+    const named = statOn("heatmap") && state.session && state.session.name || null;
+    const text = JSON.stringify({ kind: "stats", avg: s.avg, top: s.top, session: named, rows: statRows(s) });
+    state.statsWaiting = text === state.statsSaid ? null : text;
+    if (state.statsWaiting && state.statsTimer === null) {
+      state.statsTimer = setTimeout(sayStats, Math.max(0, state.statsAt + STATS_POST_MS - Date.now()));
+    }
+  }
+  function sayStats() {
+    state.statsTimer = null;
+    const h = panelHandler(), text = state.statsWaiting;
+    state.statsWaiting = null;
+    if (!h || !text) return;
+    state.statsSaid = text;
+    state.statsAt = Date.now();
+    h.postMessage(text);
+  }
+
+  function renderStats() {
+    if (!bar.host) buildStats();
+    if (!bar.host) return;
+    const s = statValues(Date.now());
+    postStats(s);
+    const off = !(T("stats_bar") > 0);
+    if (bar.host.classList.contains("off") !== off) bar.host.classList.toggle("off", off);
+    if (off) { followBar(); return; }
+    for (const name of Object.keys(STAT_DEFAULTS)) {
+      // Hands and same-finger bigrams need to know whose finger struck each key.
+      toggleChip(bar[name], statOn(name) && (s.fingers || (name !== "hands" && name !== "sfb")));
+    }
+    const named = state.session && state.session.name;
+    toggleChip(bar.named, statOn("heatmap") && !!named);
+    for (const name of Object.keys(STAT_ROWS)) {
+      if (name === "layer") put(bar.layer, s.layer, [s.layerName]);
+      else if (s.fingers || (name !== "hands" && name !== "sfb")) put(bar[name], s[name]);
+    }
     renderLayerPick();
     put(bar.named, [named || ""]);
     bar.named.chip.title = named || "";   // a long name is cut short on the column

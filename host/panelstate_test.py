@@ -25,10 +25,41 @@ class PanelState(unittest.TestCase):
 
     def test_what_a_live_panel_says_is_read_back(self):
         panelstate.write(self.d, False)
-        self.assertEqual({"pid": os.getpid(), "shown": False, "wpm": 0}, panelstate.read(self.d))
+        self.assertEqual({"pid": os.getpid(), "shown": False, "wpm": 0, "avg_wpm": None, "top_wpm": None, "session": None,
+                          "stats": []}, panelstate.read(self.d))
         panelstate.write(self.d, True, wpm=63)
         self.assertEqual(63, panelstate.read(self.d)["wpm"])
         self.assertEqual(["panel.json"], os.listdir(self.d))       # no temporary file left beside it
+
+    def test_what_the_pages_stats_column_shows_is_kept_with_it(self):
+        said = panelstate.stats_of({"kind": "stats", "avg": 52, "top": None, "session": "colemak-1",
+                                    "rows": [["wpm", "46"], ["avg wpm", "52"], ["top wpm", "—"], ["ALPHA 1", "88%"]]})
+        self.assertEqual({"avg_wpm": 52, "top_wpm": None, "session": "colemak-1",
+                          "stats": [["wpm", "46"], ["avg wpm", "52"], ["top wpm", "—"], ["ALPHA 1", "88%"]]}, said)
+        panelstate.write(self.d, True, wpm=46, stats=said)
+        st = panelstate.read(self.d)
+        self.assertEqual((46, 52, None, said["stats"]), (st["wpm"], st["avg_wpm"], st["top_wpm"], st["stats"]))
+        # What is not a stats message is none, and a file with rows that are not rows reads as no rows.
+        for bad in (None, {}, {"rows": "wpm"}, {"rows": [["wpm"]]}, {"rows": [["wpm", 46]]},
+                    {"rows": [["x" * 65, "1"]]}, {"rows": [["a", "b"]] * 25}):
+            self.assertIsNone(panelstate.stats_of(bad), bad)
+        self.assertEqual(None, panelstate.stats_of({"rows": [], "avg": True})["avg_wpm"])     # a bool is no speed
+        self.assertEqual(None, panelstate.stats_of({"rows": [], "session": ""})["session"])
+        panelstate.write(self.d, True, stats={"avg_wpm": 50, "top_wpm": 70, "stats": [["wpm", 46]]})
+        self.assertEqual((None, None, []), tuple(panelstate.read(self.d)[k] for k in ("avg_wpm", "top_wpm", "stats")))
+
+    def test_the_icons_show_the_wpm_chosen_for_them(self):
+        self.assertEqual("current", panelstate.wpm_choice(self.d))         # until one is chosen
+        panelstate.set_wpm_choice(self.d, "top")
+        self.assertEqual("top", panelstate.wpm_choice(self.d))
+        with self.assertRaises(ValueError):
+            panelstate.set_wpm_choice(self.d, "best")
+        st = {"wpm": 46, "avg_wpm": 52, "top_wpm": None}
+        self.assertEqual((46, 52, None), tuple(panelstate.wpm_shown(st, c) for c in panelstate.WPM_CHOICES))
+        self.assertIsNone(panelstate.wpm_shown(None, "current"))
+        with open(os.path.join(self.d, "menubar.json"), "w", encoding="utf-8") as f:
+            f.write('{"wpm": "fastest"}')
+        self.assertEqual("current", panelstate.wpm_choice(self.d))
 
     def test_a_panel_that_is_gone_says_nothing(self):
         gone = subprocess.Popen([sys.executable, "-c", "pass"])

@@ -675,7 +675,8 @@ function main() {
     check("the Linux panel is told how tall the page is", size && Number.isInteger(size.height), JSON.stringify(posted));
     tap(p, A.pos);
     p.clock.advance(settle + 3000);
-    check("and is never sent the counts", posted.every(m => m.kind === "size" || m.kind === "nodrag"),
+    // What its stats column shows, for the bar icon, but never the counts: those go through the socket.
+    check("and is never sent the counts", posted.every(m => ["size", "nodrag", "stats"].includes(m.kind)),
           JSON.stringify(posted.map(m => m.kind)));
     // It moves its surface itself, so it is told where the controls are, as the macOS panel is.
     check("and is told where the controls are, to drag from anywhere else", posted.some(m => m.kind === "nodrag"),
@@ -712,6 +713,29 @@ function main() {
       p.clock.advance(60000);
       const last = posted.filter(m => m.kind === "wpm").pop();
       check("and that it is back to 0 once the typing stops", last && last.wpm === 0, JSON.stringify(last));
+    }
+    {
+      // ...and the stats column, for the icons' menus and Omarchy's hover panel: what it shows, as
+      // label and value, with the session's speeds as numbers, at most once a second.
+      const p = loadPage();
+      const posted = [];
+      p.window.webkit = { messageHandlers: { zmkhud: { postMessage: s => posted.push(Object.assign(JSON.parse(s), { at: p.clock.now })) } } };
+      p.hud.load(data);
+      p.hud.setLayers([]);
+      typeText(p, "x".repeat(60), 200);
+      p.clock.advance(15000);              // past the WPM window: the live speed has run down to 0
+      const said = posted.filter(m => m.kind === "stats"), last = said[said.length - 1];
+      const column = p.document.getElementById("stats").querySelectorAll(".stat")
+        .filter(c => !c.classList.contains("off") && !["named", "mode", "theme", "opacity"].some(n => c.classList.contains(n)))
+        .flatMap(c => c.children.filter(row => row.className === "row").map(row => row.children.map(x => x.textContent)));
+      check("the panel is told what the stats column shows", last && JSON.stringify(last.rows) === JSON.stringify(column),
+            JSON.stringify([last && last.rows, column]));
+      check("and the session's average and top speed", last && last.avg === 60 && last.top >= 60, JSON.stringify(last));
+      check("at most once a second", said.length > 1 && said.every((m, i) => i === 0 || m.at - said[i - 1].at >= 1000),
+            JSON.stringify(said.map(m => m.at)));
+      p.clock.advance(60000);
+      check("and not again while nothing changes", posted.filter(m => m.kind === "stats").length === said.length,
+            `${said.length} then ${posted.filter(m => m.kind === "stats").length}`);
     }
     const p = loadPage();
     p.hud.load(data);
