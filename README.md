@@ -105,8 +105,8 @@ zmk-layer-hud demo --config ~/.local/share/zmk-layer-hud/config/example-4x12.yam
 (From a clone, the second is `--config config/example-4x12.yaml`.) That loads the sample's
 definitions, committed beside its config, serves the pages and opens them, fed by a socket of their own the way the Linux panel's are. In
 the browser console, `hud.setLayers([1])` switches layers, `hud.pressAt(13)` lights a key and
-`hud.releaseAt(13)` lets it go; `zmk-layer-hud poke --url ws://127.0.0.1:8767 --type hello` types
-on it from a terminal.
+`hud.releaseAt(13)` lets it go; `zmk-layer-hud poke --url <the socket demo printed> --type hello`
+types on it from a terminal (the demo's socket URL carries its token, like a running HUD's).
 
 **A demo that types.** A script says what the keyboard does, and the demo plays it in real time:
 
@@ -255,16 +255,16 @@ Where things live, and what moves them:
 | | default | |
 |---|---|---|
 | `ZMKHUD_CONFIG` | `~/.config/zmk-layer-hud/config.yaml` | the config to read |
-| `ZMKHUD_STATE` | `~/.local/state/zmk-layer-hud` | where `panel.log`, `hudfeed.log` and the `sessions/` go |
+| `ZMKHUD_STATE` | `~/.local/state/zmk-layer-hud` | where `panel.log`, `hudfeed.log`, the socket's `token` and the `sessions/` go (this user's alone) |
 | `ZMKHUD_ROOT` | the installed tree | the tree the command runs from |
 | `ZMKHUD_HOME` | `~/.local/share/zmk-layer-hud` | where `install.sh` puts the tree |
 | `ZMKHUD_BIN_DIR` | `~/.local/bin` | where `setup` puts the command |
 | `ZMKHUD_PYTHON` | the tree's `.venv/bin/python3` | the interpreter the feed runs under |
-| `ZMKHUD_PORT` | `8766` | the feed's WebSocket port |
+| `ZMKHUD_PORT` | `8766` | the feed's WebSocket port; the URL is `ws://127.0.0.1:8766/<token>`, the token in `$ZMKHUD_STATE/token` for the run |
 | `ZMKHUD_CACHE` | `~/.cache/zmk-layer-hud/repos` | where `import` keeps a repo given by URL |
 | `ZMKHUD_REF` | `main` | the branch `install.sh` and `update` fetch |
 | `ZMKHUD_RESERVE` | `0` | what `start --reserve` sets |
-| `ZMKHUD_DEBUG` | unset | the macOS panel logs every layer and position message |
+| `ZMKHUD_DEBUG` | unset | the panel and the feed log every layer message with a timestamp (never the key positions) |
 
 ### Sessions
 
@@ -517,7 +517,8 @@ beside anything that is wrong. What it cannot see:
   `key position N is not in the keymap's … drawer keys`.
 - **A key stays lit ~5 s**: the firmware is reporting presses but not releases. Rebuild and
   reflash it.
-- `ZMKHUD_DEBUG=1 zmk-layer-hud start` logs every layer and position message with timestamps.
+- `ZMKHUD_DEBUG=1 zmk-layer-hud start` logs every layer message with a timestamp. Key positions
+  are never logged: with the keymap they are the typing. (`feed --raw` does log them, and says so.)
 
 ## Limits
 
@@ -530,7 +531,10 @@ beside anything that is wrong. What it cannot see:
   that matters.
 - The HUD's socket takes one port (`ZMKHUD_PORT`, 8766). If something else holds it when the macOS
   panel starts (a `zmk-layer-hud feed` of its own, say), the panel runs without a socket and
-  `zmk-layer-hud poke` cannot reach it. Its log says so.
+  `zmk-layer-hud poke` cannot reach it. Its log says so. The socket takes a token in its URL path,
+  one per run, kept in `$ZMKHUD_STATE/token`: `poke` reads it from there, and a page or process
+  without it is refused (HTTP 403) before it sees a message — a browser applies no same-origin
+  rule to WebSockets, and what travels there is your typing.
 
 ## Contributing
 

@@ -9,19 +9,29 @@ reading a HUD that looks right: only the keyboard proves anything.
 
 ## The socket
 
-`zmk-layer-hud feed` serves `ws://127.0.0.1:8766` (`--port`, or `ZMKHUD_PORT`; `--no-ws` turns it
-off). This is how the Linux panel is fed, and it is what `zmk-layer-hud poke` talks to.
+`zmk-layer-hud feed` serves `ws://127.0.0.1:8766/<token>` (`--port`, or `ZMKHUD_PORT`; `--no-ws`
+turns it off). This is how the Linux panel is fed, and it is what `zmk-layer-hud poke` talks to.
+
+The token is made for each run and kept in `$ZMKHUD_STATE/token`, readable by this user alone;
+`poke` reads it from there (or from `ZMKHUD_TOKEN`). A client whose URL path is not the token is
+refused before the upgrade, with HTTP 403, and so is a browser page from any origin other than a
+local one (`file://`, `null`, or `http(s)://127.0.0.1|localhost|[::1]`). The reason is what the
+socket carries: every key typed, as text. A browser applies no same-origin rule to WebSockets, so
+without the token any web page open on the machine, or any other local user, could read it. The
+feed logs each refusal, never what was offered.
 
 The macOS panel runs the feed in-process and hands its messages to its page directly. It serves the
-same socket on the same port as well, so `poke` (and `poke --play`) drives it too, and a browser
-page pointed at `index.html?ws=ws://127.0.0.1:8766` watches it. What a client sends in there
-reaches the panel's page marked `sent`, like any typing sent in. The panel's page reports its
-counts through the panel's bridge, not the socket. If the port is taken (a `zmk-layer-hud feed`
-already running), the panel says so in its log and goes on without a socket.
+same socket on the same port as well, with a token of its own in `$ZMKHUD_STATE/token`, so `poke`
+(and `poke --play`) drives it too, and a browser page pointed at
+`index.html?ws=ws://127.0.0.1:8766/<token>` from disk or from a local server watches it. What a
+client sends in there reaches the panel's page marked `sent`, like any typing sent in. The panel's
+page reports its counts through the panel's bridge, not the socket. If the port is taken (a
+`zmk-layer-hud feed` already running), the panel says so in its log and goes on without a socket.
 
-`zmk-layer-hud demo` serves a socket of its own, `ws://127.0.0.1:8767` (`--ws-port`), feeding its
-pages with no keyboard behind it: the same messages, `poke --url` sends to it, and a demo script
-it plays (`--play`) goes through it as typing sent in.
+`zmk-layer-hud demo` serves a socket of its own, `ws://127.0.0.1:8767/<token>` (`--ws-port`),
+feeding its pages with no keyboard behind it: the same messages, `poke --url` sends to it (the
+demo prints the URL, token included, rather than writing over a running HUD's token file), and a
+demo script it plays (`--play`) goes through it as typing sent in.
 
 ## Outbound messages
 
@@ -67,9 +77,10 @@ A client may send `layers`, `press`, `release`, `key` and `device`, and each is 
 client as a keyboard's would be — a `key` with one field more, [below](#typing-sent-in):
 
 ```bash
-python3 -c 'import asyncio,websockets,json
+python3 -c 'import asyncio,websockets,json,os
+token = open(os.path.expanduser("~/.local/state/zmk-layer-hud/token")).read().strip()
 async def main():
-    async with websockets.connect("ws://127.0.0.1:8766") as ws:
+    async with websockets.connect("ws://127.0.0.1:8766/" + token) as ws:
         await ws.send(json.dumps({"kind":"layers","ids":[2]}))
 asyncio.run(main())'
 ```
@@ -82,8 +93,10 @@ in lights its key exactly as the keyboard's would, and this field is what keeps 
 counts: the page draws it, times it and lets it glow, but a session records only the keyboard's own
 typing.
 
-`{"kind":"close"}` from any client exits the feed and takes the HUD down with it — that is what the
-page's ✕ sends. `--no-inject` refuses the five message kinds above; it does not disable `close`.
+`{"kind":"close"}` from any client holding the token exits the feed and takes the HUD down with it
+— that is what the page's ✕ sends. `--no-inject` refuses the five message kinds above; it does not
+disable `close`. Nothing without the token is connected at all, so neither reaches the feed from a
+stranger.
 
 The page's hide button sends nothing here: it posts `{"kind":"hide"}` to its own panel (the macOS
 bridge, or the Linux panel's `zmkhudsize` handler), and the panel goes off screen while the page
@@ -119,8 +132,10 @@ batch than its press.
 
 These are taken only with `token`, which the Linux panel makes for each run and gives to the feed
 (`ZMKHUD_TALLY_TOKEN`) and to its own page alone (`index.html?…&tally=`): a second page on the
-socket shows the session without adding its counts a second time. The macOS panel's page reports
-through the panel's own bridge and needs no token. A batch names the session and `gen` it was
+socket shows the session without adding its counts a second time. This is a second secret, apart
+from the socket's own: a page that holds the socket's token (a browser pointed at the running HUD)
+may watch, and still must not count twice. The macOS panel's page reports through the panel's own
+bridge and needs no tally token. A batch names the session and `gen` it was
 typed under, so what was on the way when a session was loaded or reset lands where it belongs.
 
 The keymap is not injectable: it is large, it is built from the HUD's own files (the config and

@@ -15,18 +15,26 @@ One signal and a file, rather than SIGUSR1 for one and SIGUSR2 for the other: on
 takes SIGUSR1 to suspend its own threads (JSC_SIGNAL_FOR_GC), and the GTK panel is a WebKit
 process. A stray SIGUSR1 there hangs or crashes it.
 
+The feed's socket takes a token in its URL path, one per run (host/hudfeed.py, Hub.process_request):
+whoever serves the socket keeps it in $STATE/token, readable by this user alone, and `zmk-layer-hud
+poke` reads it from there. A browser page on another origin, or another user on the machine, has
+no way to it.
+
 Stdlib only, and Python 3.9: `status` runs under Apple's python before any venv exists, and the
 Linux panel runs under the system one.
 """
 
+import contextlib
 import json
 import os
 import signal
+import tempfile
 
 SIGNAL = signal.SIGUSR2
 STATE_FILE = "panel.json"
 WANT_FILE = "panel.want"
 CHOICE_FILE = "menubar.json"
+TOKEN_FILE = "token"
 WPM_CHOICES = ("current", "average", "top")
 ROWS_MAX = 24           # rows of the stats column, and each one's label and value at most this long:
 TEXT_MAX = 64           # a page says what its column shows, and nothing like a page of it
@@ -55,6 +63,45 @@ def _load(path):
     except (OSError, ValueError):
         return None
     return obj if isinstance(obj, dict) else None
+
+
+def _write_private(path, text):
+    """For this user alone (0600, in a 0700 directory), and whole or not at all."""
+    d = os.path.dirname(path)
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    os.chmod(d, 0o700)              # makedirs leaves an existing directory's mode as it was
+    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".", suffix=".tmp", dir=d)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
+def write_token(d, token):
+    """The socket's token for this run, from whoever serves the socket."""
+    _write_private(os.path.join(d, TOKEN_FILE), token + "\n")
+
+
+def read_token(d):
+    """The running feed's socket token, or None while nothing serves one."""
+    try:
+        with open(os.path.join(d, TOKEN_FILE), encoding="utf-8") as f:
+            token = f.read().strip()
+    except OSError:
+        return None
+    return token or None
+
+
+def remove_token(d, token):
+    """On the way out -- unless the file is already a newer run's: a restart's new feed can have
+    written its token before the old one has finished going."""
+    if read_token(d) == token:
+        with contextlib.suppress(OSError):
+            os.remove(os.path.join(d, TOKEN_FILE))
 
 
 def alive(pid):

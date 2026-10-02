@@ -81,9 +81,9 @@ class Parser(unittest.TestCase):
     def test_demo_plays_a_script_on_a_socket_of_its_own(self):
         args = self.parser.parse_args(["demo", "--play", "docs/demo-type.json", "--loop", "--no-browser"])
         self.assertEqual(("docs/demo-type.json", True, True, 8767), (args.play, args.loop, args.no_browser, args.ws_port))
-        page, ws = cli.demo_urls(8765, 8767)
-        self.assertEqual("ws://127.0.0.1:8767", ws)
-        self.assertEqual("http://127.0.0.1:8765/index.html?ws=ws://127.0.0.1:8767", page)
+        page, ws = cli.demo_urls(8765, 8767, "tok")
+        self.assertEqual("ws://127.0.0.1:8767/tok", ws)     # the token in the path: the page, and `poke --url`, carry it
+        self.assertEqual("http://127.0.0.1:8765/index.html?ws=ws://127.0.0.1:8767/tok", page)
 
     def test_session_takes_an_action_and_a_name(self):
         args = self.parser.parse_args(["session", "save", "week1"])

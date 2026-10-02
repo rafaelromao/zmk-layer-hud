@@ -802,9 +802,10 @@ def config_link(args):
 
 # ---------- the sample board ----------
 
-def demo_urls(port, ws_port):
-    """The page the demo opens, and the socket that feeds it (which `poke --url` takes)."""
-    ws = f"ws://127.0.0.1:{ws_port}"
+def demo_urls(port, ws_port, token):
+    """The page the demo opens, and the socket that feeds it (which `poke --url` takes). The demo's
+    token is in both: the page connects with it, and so must anyone else."""
+    ws = f"ws://127.0.0.1:{ws_port}/{token}"
     return f"http://127.0.0.1:{port}/index.html?ws={ws}", ws
 
 
@@ -882,17 +883,21 @@ def cmd_demo(args):
 
 async def demo_socket(args, message, compiled, play_mod):
     import asyncio
+    import secrets
     import webbrowser
     import hudfeed
     try:
-        import websockets
+        import websockets  # noqa: F401
     except ImportError:
         raise Fail("python-websockets is not in the venv: zmk-layer-hud setup")
-    page, ws_url = demo_urls(args.port, args.ws_port)
-    hub = hudfeed.Hub()
+    # A token of the demo's own, printed with its URLs rather than kept in $STATE/token, which is
+    # a running HUD's.
+    token = secrets.token_hex(16)
+    page, ws_url = demo_urls(args.port, args.ws_port, token)
+    hub = hudfeed.Hub(token=token)
     await hub.send(message)   # kept, and replayed to the page when it connects
     try:
-        server = await websockets.serve(hub.handler, "127.0.0.1", args.ws_port, max_size=None)
+        server = await hudfeed.serve_hub(hub, "127.0.0.1", args.ws_port)
     except OSError as e:
         raise Fail(f"cannot open the demo's socket on port {args.ws_port}: {e}. Pass --ws-port to pick another.")
     async with server:

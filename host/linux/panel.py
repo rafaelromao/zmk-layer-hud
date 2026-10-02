@@ -57,6 +57,9 @@ RESERVE = os.environ.get("ZMKHUD_RESERVE") == "1"
 # The session takes counts only from the page this panel shows: the feed and that page are given
 # this, and a browser pointed at the socket is not.
 TALLY_TOKEN = secrets.token_hex(16)
+# The socket's own token (hudfeed.Hub.process_request): in the pages' socket URLs and in the feed's
+# environment. The feed writes it to $STATE/token for `zmk-layer-hud poke`.
+SOCKET_TOKEN = secrets.token_hex(16)
 # `zmk-layer-hud start --hidden`: off screen from the first frame.
 HIDDEN = os.environ.get("ZMKHUD_HIDDEN") == "1"
 # Hidden is drawn as nothing, not unmapped. An unmapped view's page is a hidden page to WebKit,
@@ -157,7 +160,7 @@ def surface(monitor, page, namespace, width, height, query="", on_size=None):
     view.set_background_color(Gdk.RGBA(0, 0, 0, 0))
     view.set_size_request(width, height)
     view.load_uri((PAGES / page).as_uri() +
-                  f"?ws=ws://127.0.0.1:{os.environ.get('ZMKHUD_PORT', '8766')}" + query)
+                  f"?ws=ws://127.0.0.1:{os.environ.get('ZMKHUD_PORT', '8766')}/{SOCKET_TOKEN}" + query)
     window.add(view)
     WINDOWS.append(window)
     return window, manager
@@ -398,12 +401,19 @@ def main():
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, panelstate.SIGNAL, asked)
     # Only now, with the handler in: the CLI signals whatever pid this file names.
     panelstate.write(RUN, shown[0])
-    RUN.mkdir(exist_ok=True)
-    with (RUN / "hudfeed.log").open("w") as output:
+    RUN.mkdir(mode=0o700, exist_ok=True)
+    RUN.chmod(0o700)
+    # The feed's log is this user's alone, like the rest of $STATE: O_CREAT leaves the mode of a
+    # file from an earlier run as it was, so it is set again. ZMKHUD_DEBUG=1 adds the layer
+    # messages with timestamps, as it does for the macOS panel; never the presses.
+    log_path = RUN / "hudfeed.log"
+    with os.fdopen(os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as output:
+        os.chmod(log_path, 0o600)
         feed_python = os.environ.get("ZMKHUD_PYTHON", sys.executable)
-        feed = subprocess.Popen([feed_python, "-u", str(ROOT / "host" / "hudfeed.py"), "--debug"],
+        debug = ["--debug"] if os.environ.get("ZMKHUD_DEBUG") == "1" else []
+        feed = subprocess.Popen([feed_python, "-u", str(ROOT / "host" / "hudfeed.py"), *debug],
                                 stdout=output, stderr=output, start_new_session=True,
-                                env=dict(os.environ, ZMKHUD_TALLY_TOKEN=TALLY_TOKEN))
+                                env=dict(os.environ, ZMKHUD_TALLY_TOKEN=TALLY_TOKEN, ZMKHUD_TOKEN=SOCKET_TOKEN))
     def watch_feed():
         if feed.poll() is not None:
             quit_host()

@@ -21,6 +21,12 @@ typing.
                                           evdev, no layout guessing
 A client sending {"kind":"close"} (the ✕ button) makes this script exit.
 
+The socket takes a token in its URL path, ws://127.0.0.1:8766/<token>, one per run: the typing it
+carries is the user's, and a browser applies no same-origin rule to WebSockets, so without one any
+web page open on the machine could read it. The feed keeps the token in $STATE/token (0600) for
+`zmk-layer-hud poke`; the panels give it to their own pages. A client without it is refused before
+the upgrade (HTTP 403), as is one from an Origin that is not a local page (Hub.process_request).
+
 Two sources, because they failed in different ways and the fixes are different.
 
 Layers and positions come from the channel above. They used to travel inside the keyboard report as
@@ -54,13 +60,19 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import hmac
+import http
 import json
 import os
+import re
+import secrets
 import sys
 import threading
+import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import keymap as keymap_mod  # noqa: E402  (host/keymap.py)
+import panelstate  # noqa: E402  (host/panelstate.py)
 import session as session_mod  # noqa: E402  (host/session.py)
 import signal_frame  # noqa: E402  (host/signal_frame.py)
 
@@ -1183,22 +1195,37 @@ def sent_in(msg):
     return msg
 
 
+# Where a browser page that may hold the socket is: the panels' pages are files, the demo's and a
+# developer's are served from this machine. A page from anywhere else is refused whatever it holds.
+# "null" is what a file: page says of itself in some engines (and what a sandboxed frame says, which
+# is why the Origin is the second gate and the token the first). A Python client sends no Origin.
+PAGE_ORIGINS = ("null", "file://")
+LOCAL_ORIGIN = re.compile(r"https?://(127\.0\.0\.1|localhost|\[::1\])(:\d+)?")
+REFUSAL = ("zmk-layer-hud: this socket takes a per-run token in its path, ws://127.0.0.1:PORT/<token>; "
+           "a running HUD keeps it in $STATE/token\n")
+
+
 class Hub:
     """Fans messages out to WebSocket clients and/or stdout; replays the cached keymap and layer
     set to new clients so a page that (re)connects is right immediately.
+
+    Every client holds the run's token (process_request): what travels here is the user's typing,
+    and the token is what keeps a web page on another origin, or another user on the machine, from
+    reading it. The same gate covers what comes in -- {"kind":"close"} and the INJECTABLE kinds --
+    so nothing without the token can take the HUD down or draw on it.
 
     Messages also travel the other way. A client may send any of INJECTABLE and it is broadcast to
     every client exactly as a keyboard's would be, which is how the page is exercised without one --
     host/hudpoke.py is the sender. Only the keyboard can produce a real frame, so this tests the
     page and not the firmware, and it is worth being clear about which of the two you just proved.
-
-    On by default, because the inbound channel already existed and already carried something
-    stronger: {"kind":"close"} from any local client calls os._exit(). Cosmetic messages are less
-    power than that, not more. --no-inject closes it."""
+    On by default: a client that holds the token is the user's own, and the channel already carries
+    `close`, which is more power than a cosmetic message. --no-inject closes it."""
 
     def __init__(self, stdout=False, debug=False, inject=True, on_inject=None, sessions=None, tally_token=None,
-                 on_sent_in=None):
+                 on_sent_in=None, token=None):
         self.stdout, self.debug, self.inject = stdout, debug, inject
+        # The run's socket token: a client connects to ws://host:port/<token>, or not at all.
+        self.token = token
         # Called after an injected message, so the keyboard's own state can be re-asserted.
         self.on_inject = on_inject
         # Given each message sent in, as the clients got it: for a page that is not one of them
@@ -1214,10 +1241,24 @@ class Hub:
     def log(self, *a):
         print(*a, file=sys.stderr, flush=True)
 
+    def process_request(self, connection, request):
+        """websockets' hook, before the upgrade: the token in the path, then the Origin. A client
+        that fails either gets HTTP 403 and never sees a message. What it offered is never logged."""
+        given = urllib.parse.urlsplit(request.path).path.strip("/")
+        origin = request.headers.get("Origin")
+        token_ok = bool(self.token) and hmac.compare_digest(given.encode("utf-8"), self.token.encode("utf-8"))
+        origin_ok = origin is None or origin in PAGE_ORIGINS or LOCAL_ORIGIN.fullmatch(origin) is not None
+        if token_ok and origin_ok:
+            return None
+        why = "no token" if not given else "wrong token" if not token_ok else f"origin {origin}"
+        self.log(f"hudfeed: refused a client ({why})")
+        return connection.respond(http.HTTPStatus.FORBIDDEN, REFUSAL)
+
     async def send(self, msg):
         if msg["kind"] in ("keymap", "layers", "device", "session", "secure"):
             self.cache[msg["kind"]] = msg
-        if self.debug and msg["kind"] in ("layers", "press"):
+        # Layers only: a press with a timestamp is typing, and this log is a plain file.
+        if self.debug and msg["kind"] == "layers":
             import time
             self.log(f"hudfeed: {time.monotonic() * 1000:.0f}ms", json.dumps(msg, ensure_ascii=False))
         data = json.dumps(msg, ensure_ascii=False)
@@ -1257,8 +1298,10 @@ class Hub:
                     os._exit(0)
                 if kind in ("tally", "heatmap", "pref"):
                     # A page's counts, or the heatmap or a preference it switched to: only from the
-                    # page the token was given to. `--no-inject` is about drawing, not this.
-                    if self.sessions is not None and self.tally_token and msg.get("token") == self.tally_token:
+                    # page the tally token was given to -- a second secret, because a second page
+                    # holding the socket's must still not count twice. `--no-inject` is about
+                    # drawing, not this.
+                    if self.sessions is not None and self.tally_token and self._tally_ok(msg.get("token")):
                         if kind == "tally":
                             self.sessions.apply(msg)
                         elif kind == "heatmap":
@@ -1270,6 +1313,18 @@ class Hub:
                     await self.send_in(msg)
         finally:
             self.clients.discard(ws)
+
+    def _tally_ok(self, token):
+        return isinstance(token, str) and hmac.compare_digest(token.encode("utf-8"), self.tally_token.encode("utf-8"))
+
+
+def serve_hub(hub, host, port, **kw):
+    """websockets.serve for a Hub, with its gate in front: the one way a Hub is served, so no
+    socket is ever opened without the token."""
+    if not hub.token:
+        raise ValueError("a Hub serves only with a token: Hub(token=secrets.token_hex(16))")
+    import websockets
+    return websockets.serve(hub.handler, host, port, process_request=hub.process_request, **kw)
 
 
 class HubThread:
@@ -1324,10 +1379,10 @@ class HubThread:
             self.log("hudfeed: no socket: python-websockets is missing (make venv)")
             return
         try:
-            async with websockets.serve(self.hub.handler, self.host, self.port) as server:
+            async with serve_hub(self.hub, self.host, self.port) as server:
                 self.port = server.sockets[0].getsockname()[1]      # the one taken, when asked for any (0)
                 self.serving = True
-                self.log(f"hudfeed: ws://{self.host}:{self.port}")
+                self.log(f"hudfeed: ws://{self.host}:{self.port}/<token> (the token is in $STATE/token)")
                 self.ready.set()
                 await self._stopping.wait()
         except OSError as e:
@@ -1367,8 +1422,11 @@ def parse_args(argv=None):
 
 
 async def main(args):
+    # The Linux panel makes the token and gives it to its pages and to this (ZMKHUD_TOKEN); run by
+    # hand, the feed makes its own. Either way $STATE/token is where `poke` finds it.
+    token = os.environ.get("ZMKHUD_TOKEN") or secrets.token_hex(16)
     hub = Hub(stdout=args.stdout, debug=args.debug, inject=not args.no_inject,
-              tally_token=os.environ.get("ZMKHUD_TALLY_TOKEN") or None)
+              tally_token=os.environ.get("ZMKHUD_TALLY_TOKEN") or None, token=token)
     loop = asyncio.get_running_loop()
 
     def emit(msg):
@@ -1394,9 +1452,14 @@ async def main(args):
                 import websockets
             except ImportError:
                 sys.exit("python-websockets is required for the WebSocket (or pass --no-ws): pip install websockets")
-            async with websockets.serve(hub.handler, "127.0.0.1", args.port):
-                hub.log(f"hudfeed: ws://127.0.0.1:{args.port}")
-                await stopping.wait()
+            state = panelstate.default_dir()
+            async with serve_hub(hub, "127.0.0.1", args.port):
+                panelstate.write_token(state, token)
+                hub.log(f"hudfeed: ws://127.0.0.1:{args.port}/<token> (the token is in {state}/{panelstate.TOKEN_FILE})")
+                try:
+                    await stopping.wait()
+                finally:
+                    panelstate.remove_token(state, token)
         else:
             await stopping.wait()
     finally:

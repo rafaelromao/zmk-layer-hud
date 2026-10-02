@@ -25,12 +25,47 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import panelstate  # noqa: E402  (host/panelstate.py)
 import uskeys  # noqa: E402  (host/uskeys.py)
+
+
+def feed_url(args, environ=os.environ):
+    """The socket to send to. --url as given; else the running feed's, whose token it keeps in
+    $STATE/token (ZMKHUD_TOKEN says it directly, as the Linux panel does for its feed)."""
+    if args.url:
+        return args.url
+    state = panelstate.default_dir()
+    token = environ.get("ZMKHUD_TOKEN") or panelstate.read_token(state)
+    if not token:
+        sys.exit(f"hudpoke: no running HUD has written {os.path.join(state, panelstate.TOKEN_FILE)}; "
+                 "start one, or pass --url ws://127.0.0.1:PORT/<token> as `zmk-layer-hud demo` prints it")
+    return f"ws://127.0.0.1:{environ.get('ZMKHUD_PORT', '8766')}/{token}"
+
+
+def shown(url):
+    """The URL as it is said back, its token kept out of the terminal's scrollback."""
+    base, _, path = url.partition("//")
+    host, slash, rest = path.partition("/")
+    return f"{base}//{host}{slash}{'<token>' if rest else ''}"
+
+
+@contextlib.asynccontextmanager
+async def connected(websockets, url, **kw):
+    """websockets.connect, with the one refusal the feed makes explained."""
+    try:
+        async with websockets.connect(url, **kw) as ws:
+            yield ws
+    except websockets.InvalidStatus as e:
+        if e.response.status_code == 403:
+            sys.exit("hudpoke: the feed refused this token (HTTP 403): the HUD was restarted since, "
+                     "or --url names another feed's socket")
+        raise
 
 
 def key_events(text, gap_ms=90):
@@ -102,7 +137,7 @@ async def play_script(args, url, websockets):
         script = play_mod.load(args.play)
     except play_mod.PlayError as e:
         sys.exit(f"hudpoke: {e}")
-    async with websockets.connect(url, max_size=None) as ws:
+    async with connected(websockets, url, max_size=None) as ws:
         if args.keymap:
             with open(args.keymap, encoding="utf-8") as f:
                 keymap = json.load(f)
@@ -128,7 +163,7 @@ async def play_script(args, url, websockets):
                                        loop=args.loop or c.loop, duration_ms=c.duration_ms)
         finally:
             drainer.cancel()
-    print(f"hudpoke: played {args.play}: {sent} messages to {url}", file=sys.stderr)
+    print(f"hudpoke: played {args.play}: {sent} messages to {shown(url)}", file=sys.stderr)
 
 
 async def main(args):
@@ -137,11 +172,11 @@ async def main(args):
     except ImportError:
         sys.exit("python-websockets is required: pip install websockets (or make venv)")
 
-    url = args.url or f"ws://127.0.0.1:{os.environ.get('ZMKHUD_PORT', '8766')}"
+    url = feed_url(args)
     if args.play:
         return await play_script(args, url, websockets)
     sent = 0
-    async with websockets.connect(url) as ws:
+    async with connected(websockets, url) as ws:
         for wait_ms, msg in says_combos(messages(args), args.combos):
             if wait_ms:
                 await asyncio.sleep(wait_ms / 1000)
@@ -151,12 +186,14 @@ async def main(args):
                 print(json.dumps(msg, ensure_ascii=False))
         # The send is fire-and-forget, so give the last one time out of the socket.
         await asyncio.sleep(0.1)
-    print(f"hudpoke: sent {sent} message{'' if sent == 1 else 's'} to {url}", file=sys.stderr)
+    print(f"hudpoke: sent {sent} message{'' if sent == 1 else 's'} to {shown(url)}", file=sys.stderr)
 
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--url", help="hudfeed's WebSocket (default: ws://127.0.0.1:$ZMKHUD_PORT or 8766)")
+    p.add_argument("--url", help="hudfeed's WebSocket, token included, as `zmk-layer-hud demo` prints it "
+                                 "(default: ws://127.0.0.1:$ZMKHUD_PORT or 8766, with the running HUD's "
+                                 "token from $ZMKHUD_STATE/token)")
     p.add_argument("--type", metavar="TEXT", help="type TEXT one character at a time")
     p.add_argument("--legend", action="append", metavar="L", help="type one legend (repeatable)")
     p.add_argument("--combos", action="store_true",

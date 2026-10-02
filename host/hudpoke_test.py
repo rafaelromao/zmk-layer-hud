@@ -4,18 +4,64 @@ Only the messages; the socket itself is websockets' business, and the pages' rea
 messages is hud/tests/words_test.js's.
 """
 
+import contextlib
+import io
 import os
 import sys
+import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import hudpoke  # noqa: E402
+import panelstate  # noqa: E402
 
 
 def sent(argv):
     args = hudpoke.parse_args(argv)
     return [msg for _, msg in hudpoke.says_combos(hudpoke.messages(args), args.combos)]
+
+
+class Url(unittest.TestCase):
+    """Where `poke` sends: the running feed's socket, with the token the feed keeps in $STATE/token."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.env = mock.patch.dict(os.environ, {"ZMKHUD_STATE": self.tmp.name}, clear=False)
+        self.env.start()
+        for name in ("ZMKHUD_TOKEN", "ZMKHUD_PORT"):
+            os.environ.pop(name, None)
+
+    def tearDown(self):
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def url(self, *argv):
+        return hudpoke.feed_url(hudpoke.parse_args([*argv, "--layers", "1"]))
+
+    def test_the_running_feeds_token_is_read_from_the_state_directory(self):
+        panelstate.write_token(self.tmp.name, "abc123")
+        self.assertEqual("ws://127.0.0.1:8766/abc123", self.url())
+        os.environ["ZMKHUD_PORT"] = "9000"
+        self.assertEqual("ws://127.0.0.1:9000/abc123", self.url())
+
+    def test_the_environment_and_url_come_first(self):
+        panelstate.write_token(self.tmp.name, "abc123")
+        os.environ["ZMKHUD_TOKEN"] = "fromenv"
+        self.assertEqual("ws://127.0.0.1:8766/fromenv", self.url())
+        self.assertEqual("ws://127.0.0.1:8767/demo", self.url("--url", "ws://127.0.0.1:8767/demo"))
+
+    def test_with_no_running_feed_it_says_where_the_token_would_be(self):
+        err = io.StringIO()
+        with self.assertRaises(SystemExit) as stop, contextlib.redirect_stderr(err):
+            self.url()
+        self.assertIn(os.path.join(self.tmp.name, "token"), str(stop.exception))
+        self.assertIn("--url", str(stop.exception))
+
+    def test_the_token_is_kept_out_of_what_is_said_back(self):
+        self.assertEqual("ws://127.0.0.1:8766/<token>", hudpoke.shown("ws://127.0.0.1:8766/abc123"))
+        self.assertEqual("ws://127.0.0.1:8766", hudpoke.shown("ws://127.0.0.1:8766"))
 
 
 class Combos(unittest.TestCase):

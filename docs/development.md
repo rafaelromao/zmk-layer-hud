@@ -73,7 +73,9 @@ does. A case the two disagree about is a hole in the shim.
 
 `zmk-layer-hud poke` sends the feed the messages a keyboard would have produced, and
 `zmk-layer-hud demo` serves the pages against a sample keymap, on a socket of its own that `poke
---url` reaches. The WebSocket both speak is documented in [protocol.md](protocol.md).
+--url` reaches. The WebSocket both speak is documented in [protocol.md](protocol.md). Its URL
+carries a token for the run: `poke` reads a running HUD's from `$ZMKHUD_STATE/token`, and the
+demo prints its own with its URLs.
 
 A demo script ([demo-scripts.md](demo-scripts.md)) is compiled by `host/play.py` into the
 positions, layers and reports a keyboard would send, and when. `host/play_test.py` holds it to the

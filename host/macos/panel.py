@@ -15,12 +15,13 @@ Input Monitoring for the app that launched this (your terminal).
 
 import json
 import os
+import secrets
 import signal
 import sys
 import time
 from pathlib import Path
 
-DEBUG = os.environ.get("ZMKHUD_DEBUG") == "1"  # log every layer and position message with a timestamp
+DEBUG = os.environ.get("ZMKHUD_DEBUG") == "1"  # log every layer message with a timestamp
 
 try:
     import objc
@@ -330,8 +331,10 @@ class Host:
         # The feed runs in this process; its worker threads hand messages to the main thread, and
         # to the socket the Linux panel's feed serves too (ZMKHUD_PORT): a browser can watch, and
         # `zmk-layer-hud poke` drives this page -- what it sends in comes back here (on_sent_in).
-        # Counts reach the session through the bridge alone, so the socket gets no tally token.
-        hub = hudfeed.Hub(on_sent_in=lambda msg: AppHelper.callAfter(self.deliver, msg))
+        # Counts reach the session through the bridge alone, so the socket gets no tally token. It
+        # gets the run's socket token, kept in $STATE/token for `poke` (hudfeed.Hub.process_request).
+        self.token = secrets.token_hex(16)
+        hub = hudfeed.Hub(on_sent_in=lambda msg: AppHelper.callAfter(self.deliver, msg), token=self.token)
         self.socket = hudfeed.HubThread(hub, int(os.environ.get("ZMKHUD_PORT", "8766")), log=log)
 
         def emit(msg):
@@ -347,6 +350,7 @@ class Host:
             self.resize(int(width), None)
         # main() put the signal's handler in first: the CLI signals whatever pid this file names.
         panelstate.write(RUN, self.shown)
+        panelstate.write_token(RUN, self.token)
 
     def set_shown(self, shown):
         """On screen or off it; the page goes on as before either way."""
@@ -422,7 +426,7 @@ class Host:
 
     def deliver(self, msg):
         data = json.dumps(msg, ensure_ascii=False)
-        if DEBUG and msg["kind"] in ("layers", "press", "release"):
+        if DEBUG and msg["kind"] == "layers":   # never the positions: with the keymap, those are the typing
             log(f"{time.monotonic() * 1000:.0f}ms {data}")
         if msg.get("sent"):
             js = f"hud.receive({data})"   # sent in (poke): lit the same, and never counted (`sent`)
@@ -454,6 +458,7 @@ class Host:
             return
         self.stopped = True
         panelstate.remove(RUN)
+        panelstate.remove_token(RUN, self.token)
         self.feed.stop()
         self.socket.stop()
         self.panel.orderOut_(None)

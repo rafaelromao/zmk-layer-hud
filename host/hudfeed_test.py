@@ -10,13 +10,14 @@ import os
 import shutil
 import sys
 import tempfile
+import types
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
 from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SignalDecoder,  # noqa: E402
-                     Stream, hid_scan_note, hidraw_match, sent_in, split_report)
+                     Stream, hid_scan_note, hidraw_match, sent_in, serve_hub, split_report)
 
 try:
     import yaml  # noqa: F401
@@ -547,6 +548,54 @@ def can_listen():
         return False
 
 
+class Gate(unittest.TestCase):
+    """What the socket lets through, before the upgrade: the run's token in the URL path, from a
+    local page or a client that is not a browser. Driven directly, with no port."""
+
+    def request(self, path, origin=None):
+        headers = {} if origin is None else {"Origin": origin}
+        return types.SimpleNamespace(path=path, headers=headers)
+
+    def gate(self, path, origin=None, token="t0ken"):
+        hub = Hub(token=token)
+        hub.log = lambda *a: self.said.append(" ".join(str(x) for x in a))
+        connection = types.SimpleNamespace(respond=lambda status, text: (int(status), text))
+        return hub.process_request(connection, self.request(path, origin))
+
+    def setUp(self):
+        self.said = []
+
+    def test_the_token_in_the_path_lets_a_client_in(self):
+        self.assertIsNone(self.gate("/t0ken"))
+        self.assertIsNone(self.gate("/t0ken/"))
+        self.assertIsNone(self.gate("/t0ken?x=1"))             # a query is not the token's business
+        self.assertEqual([], self.said)
+
+    def test_without_it_or_with_another_a_client_is_refused_before_the_upgrade(self):
+        for path in ("/", "", "/T0KEN", "/t0ke", "/t0ken1", "/other/t0ken"):
+            status, text = self.gate(path)
+            self.assertEqual(403, status, path)
+            self.assertIn("token", text)
+        self.assertEqual(6, len(self.said))
+        self.assertTrue(all("refused" in s for s in self.said), self.said)
+        self.assertFalse(any("T0KEN" in s or "t0ke" in s for s in self.said), "what was offered is never logged")
+
+    def test_a_hub_without_a_token_refuses_everyone_and_cannot_be_served(self):
+        self.assertEqual(403, self.gate("/", token=None)[0])
+        with self.assertRaises(ValueError):
+            serve_hub(Hub(), "127.0.0.1", 0)
+
+    def test_a_local_page_gets_in_and_a_page_from_elsewhere_does_not(self):
+        for origin in ("file://", "null", "http://127.0.0.1:8765", "http://localhost", "https://localhost:443",
+                       "http://[::1]:8790"):
+            self.assertIsNone(self.gate("/t0ken", origin), origin)
+        for origin in ("https://evil.example", "http://127.0.0.1.evil.example", "http://localhost.evil.example",
+                       "ws://127.0.0.1", "file:///etc", ""):
+            status, _ = self.gate("/t0ken", origin)
+            self.assertEqual(403, status, origin)
+        self.assertIn("origin https://evil.example", self.said[0])
+
+
 @unittest.skipUnless(HAVE_WEBSOCKETS, "the socket needs python-websockets (the venv)")
 @unittest.skipUnless(can_listen(), "this process may not open a local port")
 class Socket(unittest.TestCase):
@@ -554,13 +603,13 @@ class Socket(unittest.TestCase):
 
     def test_what_is_sent_early_is_there_for_a_client_and_what_it_sends_comes_back(self):
         given = []
-        thread = HubThread(Hub(on_sent_in=given.append), 0, log=lambda *a: None)
+        thread = HubThread(Hub(on_sent_in=given.append, token="t"), 0, log=lambda *a: None)
         thread.send({"kind": "keymap", "layers": {}})              # the feed starts before the socket
         thread.start()
         self.assertTrue(thread.ready.wait(5) and thread.serving)
 
         async def client():
-            async with websockets.connect(f"ws://127.0.0.1:{thread.port}") as ws:
+            async with websockets.connect(f"ws://127.0.0.1:{thread.port}/t") as ws:
                 first = json.loads(await asyncio.wait_for(ws.recv(), 3))
                 await ws.send(json.dumps({"kind": "press", "pos": 5}))
                 echo = json.loads(await asyncio.wait_for(ws.recv(), 3))
@@ -573,11 +622,40 @@ class Socket(unittest.TestCase):
         self.assertEqual({"kind": "press", "pos": 5, "sent": True}, echo)
         self.assertEqual([echo], given)
 
+    def test_a_client_without_the_token_or_from_another_site_gets_nothing(self):
+        given = []
+        hub = Hub(on_sent_in=given.append, token="t")
+        thread = HubThread(hub, 0, log=lambda *a: None)
+        thread.send({"kind": "keymap", "layers": {}})
+        thread.start()
+        self.assertTrue(thread.ready.wait(5) and thread.serving)
+
+        async def refused(url, **kw):
+            try:
+                async with websockets.connect(url, **kw) as ws:
+                    await ws.send(json.dumps({"kind": "press", "pos": 5}))
+                    return "connected"
+            except websockets.InvalidStatus as e:
+                return e.response.status_code
+
+        async def client():
+            return (await refused(f"ws://127.0.0.1:{thread.port}"),
+                    await refused(f"ws://127.0.0.1:{thread.port}/T"),
+                    await refused(f"ws://127.0.0.1:{thread.port}/t", origin="https://evil.example"),
+                    await refused(f"ws://127.0.0.1:{thread.port}/t", origin="http://127.0.0.1:8765"))
+        try:
+            outcomes = asyncio.run(client())
+        finally:
+            thread.stop()
+        self.assertEqual((403, 403, 403, "connected"), outcomes)
+        self.assertEqual(1, len(given), "only the local page's press was fanned out")
+        self.assertEqual(set(), hub.clients)
+
     def test_a_port_taken_is_said_and_nothing_breaks(self):
         said = []
-        first = HubThread(Hub(), 0, log=lambda *a: None).start()
+        first = HubThread(Hub(token="t"), 0, log=lambda *a: None).start()
         self.assertTrue(first.ready.wait(5) and first.serving)
-        second = HubThread(Hub(), first.port, log=said.append).start()
+        second = HubThread(Hub(token="t"), first.port, log=said.append).start()
         try:
             self.assertTrue(second.ready.wait(5))
             self.assertFalse(second.serving)

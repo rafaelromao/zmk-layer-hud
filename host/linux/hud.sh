@@ -16,6 +16,8 @@
 # venv from `make venv`, and this script hands that interpreter to hudfeed; the system python is
 # used only for the panel, because the GTK bindings are not in the venv.
 set -euo pipefail
+# What this run writes -- the logs, panel.json, the socket's token -- is this user's alone.
+umask 077
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 # Logs live outside the tree: `zmk-layer-hud update` replaces the tree wholesale, and that cannot

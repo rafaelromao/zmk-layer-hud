@@ -3,6 +3,7 @@
 
 import os
 import signal
+import stat
 import subprocess
 import sys
 import tempfile
@@ -12,6 +13,45 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import panelstate  # noqa: E402
+
+
+class Token(unittest.TestCase):
+    """The socket's token for the run, kept where `poke` finds it and nobody else does."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.d = os.path.join(self.tmp.name, "state")      # not there yet, as on a first run
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_written_for_this_user_alone_and_read_back(self):
+        panelstate.write_token(self.d, "abc123")
+        self.assertEqual("abc123", panelstate.read_token(self.d))
+        self.assertEqual(0o600, stat.S_IMODE(os.stat(os.path.join(self.d, "token")).st_mode))
+        self.assertEqual(0o700, stat.S_IMODE(os.stat(self.d).st_mode))
+        self.assertEqual(["token"], os.listdir(self.d))     # no temporary file left beside it
+
+    def test_an_existing_directory_is_closed_to_others_too(self):
+        os.makedirs(self.d, mode=0o755)
+        panelstate.write_token(self.d, "abc123")
+        self.assertEqual(0o700, stat.S_IMODE(os.stat(self.d).st_mode))
+
+    def test_none_while_nothing_serves(self):
+        self.assertIsNone(panelstate.read_token(self.d))
+        os.makedirs(self.d)
+        with open(os.path.join(self.d, "token"), "w") as f:
+            f.write("\n")
+        self.assertIsNone(panelstate.read_token(self.d))
+
+    def test_removed_on_the_way_out_unless_a_newer_run_wrote_its_own(self):
+        panelstate.write_token(self.d, "old")
+        panelstate.write_token(self.d, "new")           # the restart's feed, up before the old one is gone
+        panelstate.remove_token(self.d, "old")
+        self.assertEqual("new", panelstate.read_token(self.d))
+        panelstate.remove_token(self.d, "new")
+        self.assertIsNone(panelstate.read_token(self.d))
+        panelstate.remove_token(self.d, "new")          # twice is fine
 
 
 class PanelState(unittest.TestCase):
