@@ -323,6 +323,8 @@ every number `zmk-layer-hud session` prints, layers' shares included, written ag
 file, for anything that reads it. Never what was typed, in what order, or when within a day. Nothing leaves the machine. Only the keyboard's own typing is counted: `poke` and
 the demo light the board and time their typing, and a session never sees them. `feed.sessions: 0`
 in the config (or `feed --no-sessions`) keeps no files, and `uninstall --purge` removes them.
+What the HUD protects and what it cannot — the socket's token, the serial port, Bluetooth, the
+installer's trust in a branch — is written up in [docs/security-review.md](docs/security-review.md).
 
 **Passwords.** On macOS, while a password field has focus (or a terminal's Secure Keyboard Entry
 is on), the system turns on secure input, and the feed then passes on nothing typed: no
