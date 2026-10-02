@@ -4,7 +4,7 @@
   "name": "ZMK Layer HUD",
   "version": "1.0.0",
   "author": "Rafael Romão",
-  "description": "Shows or hides the ZMK layer HUD; it keeps counting while hidden",
+  "description": "Shows or hides the ZMK layer HUD, which keeps counting while hidden, and shows its stats on hover",
   "license": "MIT",
   "kinds": [
     "bar-widget"
@@ -14,7 +14,7 @@
   },
   "barWidget": {
     "displayName": "ZMK Layer HUD",
-    "description": "A click shows or hides the HUD, or starts it when it is not running",
+    "description": "A click shows or hides the HUD, or starts it when it is not running; resting on it shows its stats",
     "category": "System",
     "allowMultiple": false,
     "defaultSection": "right"
