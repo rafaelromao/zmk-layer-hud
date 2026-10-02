@@ -160,7 +160,16 @@ is running or not:
 - **Omarchy:** `host/linux/omarchy` is a bar-widget plugin for Omarchy 4's shell. `menubar enable`
   copies it into `~/.config/omarchy/plugins/rafaelromao.zmk-layer-hud`, with the paths written into
   its QML. Then it lists that id in `bar.layout.right` of `~/.config/omarchy/shell.json`, which is
-  what enables a third-party widget.
+  what enables a third-party widget. Its menu and its hover panel are the shell's own `PopupCard`
+  (`qs.Ui`): the menu in click mode, drawn as the tray draws its menus, and the stats in hover mode,
+  with an owner of their own, because the bar closes a popout through its owner's `close()` and
+  PopupCard's own would undo the binding to `open`.
+
+What the icons show comes from the page: `{"kind":"stats"}` (docs/protocol.md) carries the
+session's average and top WPM and the rows of its stats column, at most once a second, and the
+panel writes them into `panel.json`. Which WPM an icon shows, the live one or the session's
+average or top, is `$STATE/menubar.json`, which both icons read and set through
+`zmk-layer-hud menubar wpm`.
 
 The global shortcuts (`host/shortcuts.py`, `shortcuts:` in the config) run the same verbs:
 `toggle`, and `power`, which starts a HUD that is not running and stops one that is.

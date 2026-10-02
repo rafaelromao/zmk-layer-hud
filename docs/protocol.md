@@ -88,7 +88,20 @@ page's ✕ sends. `--no-inject` refuses the five message kinds above; it does no
 The page's hide button sends nothing here: it posts `{"kind":"hide"}` to its own panel (the macOS
 bridge, or the Linux panel's `zmkhudsize` handler), and the panel goes off screen while the page
 goes on counting. `zmk-layer-hud show` brings it back. The page posts the live WPM the same way,
-`{"kind":"wpm","wpm":N}` each time it changes, for the panel to pass to the menubar icon.
+`{"kind":"wpm","wpm":N}` each time it changes, for the panel to pass to the menubar icon. And it
+posts what its stats column shows, at most once a second and only when that changed, for the
+icons' menus and Omarchy's hover panel:
+
+```json
+{"kind": "stats", "avg": 52, "top": 78, "session": "colemak-1",
+ "rows": [["wpm", "46"], ["avg wpm", "52"], ["top wpm", "78"], ["accurate", "94%"],
+          ["keys", "21k"], ["combos", "4%"], ["Alpha 1", "88%"]]}
+```
+
+`avg` and `top` are the session's speeds, `null` while there is none yet. `rows` are the column's
+own label and value, the layer tile's named by its layer, for the stats `stats:` turns on.
+`session` is the session's name where the column shows it, else `null`. The panel keeps all of it
+in `panel.json` (`avg_wpm`, `top_wpm`, `session`, `stats`).
 
 The page counts what it draws and reports the keyboard's own counts to the session every two
 seconds; it also says when its heatmap chip is switched:

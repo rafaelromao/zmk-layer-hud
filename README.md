@@ -151,15 +151,19 @@ work:
 - `zmk-layer-hud hide` takes it off screen and `show` brings it back. `toggle` does whichever
   applies, which suits a keybinding.
 - The HUD's own minus button, beside the ✕, hides it too. The ✕ still quits.
-- On macOS a keyboard icon sits in the menubar, with the live WPM to its left while the HUD runs,
-  shown or hidden. It is struck through while the HUD is not running. It is dimmed while the HUD is hidden, and it stays after the HUD quits. A click
-  shows or hides the HUD, or starts it; a right-click also offers Quit HUD and Remove Icon. `start`
-  brings the icon back, and `zmk-layer-hud menubar disable` keeps it away.
+- On macOS a keyboard icon sits in the menubar, with a WPM to its left while the HUD runs, shown
+  or hidden. It is struck through while the HUD is not running. It is dimmed while the HUD is hidden, and it stays after the HUD quits. A click
+  shows or hides the HUD, or starts it. A right-click lists the live WPM, the session's average
+  and its top, each with its number now: the one picked is the one beside the icon
+  (`zmk-layer-hud menubar wpm current|average|top` does the same). It also offers Quit HUD and
+  Remove Icon. `start` brings the icon back, and `zmk-layer-hud menubar disable` keeps it away.
 - On Omarchy 4, `zmk-layer-hud menubar enable` puts the same icon in the bar. It installs the
   plugin `rafaelromao.zmk-layer-hud` and lists it first in `bar.layout.right` of
   `~/.config/omarchy/shell.json`, keeping the old file as `shell.json.bak-zmk-layer-hud`. It looks
-  and works like the macOS one, live WPM included. If it does not appear, run
-  `omarchy-restart-shell`: the shell caches the plugins it has loaded.
+  and works like the macOS one, its menu's three WPMs included, in the shell's own menu style.
+  Resting the pointer on it also opens the HUD's stats column, laid out across in the shell's
+  popout: the same tiles the HUD shows (`stats:` in the config picks them). If it does not appear,
+  run `omarchy-restart-shell`: the shell caches the plugins it has loaded.
 
 Two global shortcuts do the same from the keyboard, on both systems: **Ctrl+Alt+L** shows or
 hides the HUD, and **Ctrl+Alt+Gui+L** (Cmd on macOS, Super on Omarchy) starts or stops it. The
@@ -200,7 +204,7 @@ flags of any one of them, and [docs/cli.md](docs/cli.md) has every verb's in one
 | `heatmap [live\|session\|physical\|speed\|off]` | what the keys glow with: what was just typed, every press this session on the layer on screen or on all of them, each key's time, or nothing |
 | `doctor` | check this machine and say what is missing |
 | `autostart [enable\|disable]` | start the HUD hidden at login, counting from the first keystroke, or stop doing so |
-| `menubar [enable\|disable]` | the icon that shows, hides or starts the HUD, with its live WPM: in the macOS menubar, and on Omarchy a plugin for its bar |
+| `menubar [enable\|disable\|wpm]` | the icon that shows, hides or starts the HUD, with its WPM (`wpm current\|average\|top` picks it): in the macOS menubar, and on Omarchy a plugin for its bar |
 | `setup` | prepare this machine: packages, virtualenv, config, permissions |
 | `update`, `uninstall` | fetch a newer tree; remove the tree and the command |
 | `keymap` | check the HUD's own files load: the config and the definitions import wrote |
