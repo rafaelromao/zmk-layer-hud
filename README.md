@@ -174,7 +174,8 @@ off.
   icon does (`menubar disable`, Remove Icon). A config change takes effect at once.
 - **On Omarchy** they are Hyprland binds. Every `start` writes `~/.config/hypr/zmk-layer-hud.conf`
   from the config, and the first one adds a `source =` line for it at the end of
-  `hyprland.conf`. The binds stay after the HUD stops, so the power shortcut starts it again. The
+  `hyprland.conf`, keeping a copy of the file as it was in `hyprland.conf.bak-zmk-layer-hud`.
+  The binds stay after the HUD stops, so the power shortcut starts it again. The
   file unbinds those keys first, so anything else bound to them stops working. A config change
   takes effect on the next start, and `uninstall` removes both the file and the line.
 
@@ -493,7 +494,10 @@ beside anything that is wrong. What it cannot see:
 
 - **`cannot open <keyboard>`** (Linux, `~/.local/state/zmk-layer-hud/hudfeed.log`): tty permissions
   for the signal channel — install the udev rule, or add yourself to `dialout`. The serial port
-  itself needs no permission on macOS.
+  itself needs no permission on macOS, where it is open to every user; once the feed has
+  recognised the signal on a port it takes the port for itself (`TIOCEXCL`), so with `positions;`
+  on, the key positions it carries are not there for another process to read. A tool that needs
+  that same port (`tio`, ZMK Studio) gets it back when the HUD stops.
 - **`cannot read what is typed on <keyboard>`**: that is the HID half, and it does need one. On
   macOS grant Input Monitoring to whatever runs the feed (your terminal, or Hammerspoon), and untick
   the keyboard under Karabiner-Elements → Devices, which seizes a keyboard whose events it modifies.

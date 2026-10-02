@@ -70,6 +70,7 @@ class PanelState(unittest.TestCase):
         panelstate.write(self.d, True, wpm=63)
         self.assertEqual(63, panelstate.read(self.d)["wpm"])
         self.assertEqual(["panel.json"], os.listdir(self.d))       # no temporary file left beside it
+        self.assertEqual(0o600, stat.S_IMODE(os.stat(self.path).st_mode))   # and this user's alone
 
     def test_what_the_pages_stats_column_shows_is_kept_with_it(self):
         said = panelstate.stats_of({"kind": "stats", "avg": 52, "top": None, "session": "colemak-1",

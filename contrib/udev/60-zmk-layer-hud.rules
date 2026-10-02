@@ -1,7 +1,8 @@
 # zmk-layer-hud: let the active seat user read the ZMK keyboard's layer signal, which
 # host/hudfeed.py reads from the keyboard's own CDC-ACM interface (the tty rule at the
-# bottom). The hidraw rules are zmk-vim-mode's daemon, which still reads HID reports;
-# this file is identical to its 60-zmk-vim-mode.rules, so installing either one is enough.
+# bottom), and its HID reports, which the typed-keys strip is drawn from (the hidraw rules).
+# Nothing here is written to, and nothing else is granted: the evdev node, which
+# zmk-vim-mode's daemon reads, is an opt-in at the end for those who run it too.
 #
 # Install: `zmk-layer-hud setup` does this, printing each line and asking first. By hand:
 #   sudo cp 60-zmk-layer-hud.rules /etc/udev/rules.d/
@@ -11,9 +12,10 @@
 # The file must sort before systemd's 73-seat-late.rules, which is what turns
 # TAG+="uaccess" into an ACL for the user of the active logind session.
 #
-# 1D50:615E is ZMK's default VID:PID and is shared by every stock ZMK board.
-# If you run several ZMK keyboards and want only one driven, use the daemon's
-# --device-name flag instead of narrowing these rules.
+# 1D50:615E is ZMK's default VID:PID and is shared by every stock ZMK board, so these
+# rules apply to every one of them plugged into this machine. If you run several ZMK
+# keyboards, `keyboard.name` in the config picks the one the HUD reads; narrowing the
+# rules is not needed for that.
 #
 # uaccess needs an active local (seat) session. On a headless or SSH-only box
 # use the group form instead:
@@ -28,12 +30,15 @@ SUBSYSTEM=="hidraw", KERNELS=="0005:1D50:615E.*", TAG+="uaccess"
 # USB again via the usb_device ancestor, in case the HID parent is named differently.
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="615e", TAG+="uaccess"
 
-# The matching evdev node is read (never written) for EV_LED echoes, which is
-# how the daemon learns the kernel overwrote the indicator bits.
-SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/vendor}=="1d50", ATTRS{id/product}=="615e", TAG+="uaccess"
-
 # The layer signal itself: the keyboard's CDC-ACM interface, which hudfeed.py reads and
 # never writes. Without this the tty belongs to root:dialout and the feed reports
 # "cannot open". The group form, if uaccess is no use on a headless box, is:
 #   SUBSYSTEM=="tty", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="615e", GROUP="dialout", MODE="0660"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1d50", ATTRS{idProduct}=="615e", TAG+="uaccess"
+
+# Opt-in, for zmk-vim-mode only. Its daemon reads the matching evdev node for EV_LED echoes,
+# which is how it learns the kernel overwrote the indicator bits. This HUD never reads evdev,
+# and the node is the keyboard's raw input: a grant on it lets any process of the seat user
+# read every key, which the compositor otherwise keeps to itself. Uncomment if you run that
+# daemon, and keep its own 60-zmk-vim-mode.rules out, or the two will say the same thing twice.
+#SUBSYSTEM=="input", KERNEL=="event*", ATTRS{id/vendor}=="1d50", ATTRS{id/product}=="615e", TAG+="uaccess"

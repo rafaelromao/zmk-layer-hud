@@ -12,12 +12,13 @@ import sys
 import tempfile
 import types
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
-from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SignalDecoder,  # noqa: E402
-                     Stream, hid_scan_note, hidraw_match, sent_in, serve_hub, split_report)
+from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SerialReader,  # noqa: E402
+                     SignalDecoder, Stream, hid_scan_note, hidraw_match, sent_in, serve_hub, split_report)
 
 try:
     import yaml  # noqa: F401
@@ -664,6 +665,65 @@ class Socket(unittest.TestCase):
             first.stop()
             second.stop()
         self.assertTrue(any("poke" in m for m in said), said)
+
+
+class PortTaken(unittest.TestCase):
+    """Once a port has produced a frame it is the signal, and the feed takes it for this process
+    alone (TIOCEXCL): on macOS /dev/cu.* is open to every user, and with `positions;` on the port
+    carries which key went down and when. Not before: a composite board's other CDC ports are tried
+    too, and the tools that want them must still get them."""
+
+    class Dev:
+        """A serial port that produces what it was given and then nothing, at which point it
+        stops the reader -- the real loop runs until the feed stops or the port goes."""
+        def __init__(self, frames, reader):
+            self.chunks, self.reader = list(frames), reader
+            self.in_waiting, self.timeout, self.closed = 0, 0.5, False
+        def fileno(self): return 42
+        def read(self, n):
+            if self.chunks:
+                return self.chunks.pop(0)
+            self.reader.stop()
+            return b""
+        def close(self): self.closed = True
+
+    @staticmethod
+    def frame(kind, payload):
+        body = bytes([signal_frame.VERSION, kind, len(payload)]) + payload
+        return signal_frame.MAGIC + body + bytes([signal_frame.crc8(body)])
+
+    def read_once(self, frames, reader):
+        # The frames go in, then the empty read: the probe is over (probe_s < 0) and the reader stopped.
+        reader.probe_s = -1
+        dev = self.Dev(frames, reader)
+        reader._read_loop("/dev/cu.test", dev, "Test Board")
+        return dev
+
+    def test_taken_once_the_first_frame_has_been_seen(self):
+        import termios
+        emitted, said = [], []
+        reader = SerialReader(emitted.append, log=said.append)
+        with mock.patch("fcntl.ioctl") as ioctl:
+            dev = self.read_once([self.frame(signal_frame.KIND_LAYERS, (0b110).to_bytes(4, "little"))], reader)
+        ioctl.assert_called_once_with(42, termios.TIOCEXCL)
+        self.assertEqual([{"kind": "layers", "ids": [1, 2]}, {"kind": "device", "name": "Test Board"}],
+                         [{k: v for k, v in m.items() if k != "device"} if m["kind"] != "device" else m for m in emitted])
+        self.assertTrue(dev.closed)
+
+    def test_a_port_that_is_not_the_signal_is_left_as_it_was(self):
+        reader = SerialReader(lambda m: None, log=lambda *a: None)
+        with mock.patch("fcntl.ioctl") as ioctl:
+            self.read_once([b"\x00\x01\x02 not a frame"], reader)
+        ioctl.assert_not_called()
+        self.assertEqual("no frames", reader._quiet.get("/dev/cu.test"))
+
+    def test_a_port_that_cannot_be_taken_is_still_read(self):
+        said = []
+        reader = SerialReader(lambda m: None, log=said.append)
+        with mock.patch("fcntl.ioctl", side_effect=OSError(25, "Inappropriate ioctl for device")):
+            self.read_once([self.frame(signal_frame.KIND_LAYERS, (1).to_bytes(4, "little"))], reader)
+        self.assertTrue(any("could not take the port" in s for s in said), said)
+        self.assertTrue(any("reading Test Board" in s for s in said), said)
 
 
 @unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")

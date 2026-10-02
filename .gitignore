@@ -16,6 +16,11 @@ hud/timeline.json
 # editor/agent local config
 .claude/
 
+# local secrets and logs, should any ever be put beside the tree
+.env
+.env.*
+*.log
+
 # python virtualenv (make venv)
 .venv/
 

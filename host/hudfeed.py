@@ -303,6 +303,21 @@ class Stream:
         self.emit(msg)
 
 
+def take_port(dev, log):
+    """The port for this process alone (TIOCEXCL): with `positions;` on, what it carries is which
+    key went down and when, and on macOS /dev/cu.* is open to every user. Only once the port is
+    known to be the signal -- a composite board's other CDC ports (ZMK Studio, USB logging) are
+    tried too, and stay open to the tools that want them. pyserial's `exclusive=True` is an
+    advisory flock, which stops nothing. A later open() by another process gets EBUSY until the
+    feed closes the port; the kernel clears the flag with the last close."""
+    try:
+        import fcntl
+        import termios
+        fcntl.ioctl(dev.fileno(), termios.TIOCEXCL)
+    except (ImportError, AttributeError, OSError) as e:
+        log(f"hudfeed: could not take the port for this process alone ({e})")
+
+
 class SerialReader:
     """Reads the keyboard's CDC-ACM interface on a thread and calls emit(message) for each decoded
     message. Rescans every `rescan` seconds, so unplugging and replugging just works.
@@ -419,6 +434,7 @@ class SerialReader:
                     announced = True
                     self.log(f"hudfeed: reading {product} on {path}")
                     self.emit({"kind": "device", "name": product})
+                    take_port(dev, self.log)
         except Exception as e:  # SerialException on unplug, and anything else the port throws
             if not self._stop.is_set():
                 self.log(f"hudfeed: {product} gone ({type(e).__name__}: {e})")

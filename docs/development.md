@@ -11,7 +11,10 @@ make install
 `make install` is `bin/zmk-layer-hud setup --link`: it puts `zmk-layer-hud` on your PATH pointing
 at the clone, so you run exactly what everyone else runs. Everything else — the virtualenv, the
 system packages, the config, the udev rule — is what `setup` does for any machine. `make venv`
-builds just the virtualenv, which is what the error messages that mention it mean.
+builds just the virtualenv, which is what the error messages that mention it mean. What goes in
+it is pinned in `host/requirements.txt`, which `update` installs from as well; to bump one,
+`.venv/bin/pip install --upgrade <package>`, copy the version `.venv/bin/pip freeze` prints into
+the file, and `make venv && make test`.
 
 `$ZMKHUD_BIN_DIR` puts the command somewhere other than `~/.local/bin`.
 
@@ -183,7 +186,8 @@ The global shortcuts (`host/shortcuts.py`, `shortcuts:` in the config) run the s
   and the hotkeys are bound again when it changes.
 - **Omarchy:** a Wayland client cannot take a key for itself, so `hud.sh` runs `shortcuts.py` on
   every start. That writes `~/.config/hypr/zmk-layer-hud.conf`, an `unbind` and then a `bindd` per
-  key, and sources it at the end of `hyprland.conf`. The source line goes last so that the
+  key, and sources it at the end of `hyprland.conf` (the first run keeps a copy of that file as
+  `hyprland.conf.bak-zmk-layer-hud`). The source line goes last so that the
   `unbind`s come after Omarchy's own bindings: Hyprland fires every bind on a key. The labels go to
   `$STATE/shortcuts.json` for the bar's menu.
 

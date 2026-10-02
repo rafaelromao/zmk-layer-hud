@@ -48,12 +48,20 @@ def default_dir():
 
 
 def _write(path, obj):
-    """Whole or not at all: the CLI and the bar widget read these at any moment."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = "%s.%d.tmp" % (path, os.getpid())
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(obj, f)
-    os.replace(tmp, path)
+    """Whole or not at all: the CLI and the bar widget read these at any moment. For this user
+    alone (mkstemp's 0600): what they say -- the live WPM, the session's name -- is theirs, and
+    everything that reads them runs as them."""
+    d = os.path.dirname(path)
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".", suffix=".tmp", dir=d)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(obj, f)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
 
 
 def _load(path):
