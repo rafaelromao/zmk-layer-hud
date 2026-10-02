@@ -392,6 +392,7 @@ class ResolveSource(unittest.TestCase):
                 mock.patch.object(sync, "run") as run:
             sync.resolve_source("github.com/you/zmk-config")
         self.assertEqual("https://github.com/you/zmk-config", run.call_args[0][0][-2])
+        self.assertEqual("--", run.call_args[0][0][-3])      # a URL from a file is never an option to git
 
 
 class Import(unittest.TestCase):

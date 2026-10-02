@@ -86,7 +86,9 @@ def resolve_source(spec, fresh=False):
         run(["git", "-C", dest, "fetch", "--quiet", "--depth", "1", "origin", "HEAD"])
         run(["git", "-C", dest, "checkout", "--quiet", "--force", "FETCH_HEAD"])
     else:
-        run(["git", "clone", "--quiet", "--depth", "1", url, dest])
+        # `--`: the URL may have come from a definitions file, and one that starts with a dash
+        # would otherwise reach git as an option.
+        run(["git", "clone", "--quiet", "--depth", "1", "--", url, dest])
     return dest, "url"
 
 

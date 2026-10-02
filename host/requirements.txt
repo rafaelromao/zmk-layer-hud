@@ -1,0 +1,18 @@
+# What the venv holds (`zmk-layer-hud setup`, `make venv`), pinned: the feed runs the user's typing
+# through these, so what `pip install` brings in is decided here and not by whatever PyPI has that
+# day. `update` installs from this file too, so a bump reaches installs with the tree.
+#
+# To bump one: `.venv/bin/pip install --upgrade <package>`, copy the version `.venv/bin/pip freeze`
+# prints into this file, then `make venv && make test`. What these pull in (pydantic, PyYAML,
+# tree-sitter...) is not pinned here.
+#
+# hidapi and PyObjC are macOS only: Linux reads /dev/hidrawN itself, and the hidapi wheel there
+# bundles the libusb backend, which wants an access no udev rule grants and detaches the kernel HID
+# driver. The macOS panel and menubar are PyObjC.
+pyserial==3.5
+keymap-drawer==0.23.0
+websockets==17.1
+bleak==3.0.2
+hidapi==0.15.0 ; sys_platform == "darwin"
+pyobjc-framework-Cocoa==12.2.2 ; sys_platform == "darwin"
+pyobjc-framework-WebKit==12.2.2 ; sys_platform == "darwin"

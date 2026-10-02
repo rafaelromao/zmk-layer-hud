@@ -54,12 +54,9 @@ AUTOSTART_DESKTOP = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.ex
                                  "autostart", "zmk-layer-hud.desktop")
 PYTHON_MIN = (3, 10)
 
-# The one definition of what the venv holds. hidapi is macOS only: Linux reads /dev/hidrawN
-# itself, and the wheel there bundles the libusb backend, which wants an access no udev rule
-# grants and detaches the kernel HID driver.
-VENV_PKGS = ["pyserial", "keymap-drawer", "websockets", "bleak"]
-if platform.system() == "Darwin":
-    VENV_PKGS += ["hidapi", "pyobjc-framework-Cocoa", "pyobjc-framework-WebKit"]
+# The one definition of what the venv holds, pinned, with the macOS-only packages marked so
+# (hidapi, PyObjC): host/requirements.txt says why, and how to bump one.
+REQUIREMENTS = os.path.join(ROOT, "host", "requirements.txt")
 
 # Verbs that need keymap-drawer, pyserial, websockets or pyobjc. Everything else must keep
 # working on a half-installed machine.
@@ -956,7 +953,7 @@ def make_venv(args):
     print(f"==> venv ({python}, Python {version})")
     subprocess.check_call([python, "-m", "venv", "--clear", venv_dir])
     subprocess.check_call([VENV_PYTHON, "-m", "pip", "install", "--quiet", "--upgrade", "pip"])
-    subprocess.check_call([VENV_PYTHON, "-m", "pip", "install", "--quiet"] + VENV_PKGS)
+    subprocess.check_call([VENV_PYTHON, "-m", "pip", "install", "--quiet", "-r", REQUIREMENTS])
     print(f"    ready: {VENV_PYTHON}")
 
 
@@ -1671,12 +1668,21 @@ def fetch_tree(ref, dest):
                 parts = m.name.split("/", 1)
                 if len(parts) != 2 or not parts[1]:
                     continue
-                # Refuse anything that would land outside dest.
+                # Refuse anything that would land outside dest: a path that climbs, and a link,
+                # which a later entry could write through to anywhere. The tree holds files and
+                # directories and nothing else.
                 if parts[1].startswith("/") or ".." in parts[1].split("/"):
                     raise Fail(f"refusing a tarball entry that escapes the tree: {m.name}")
+                if not (m.isfile() or m.isdir()):
+                    raise Fail(f"refusing a tarball entry that is not a file or a directory: {m.name}")
                 m.name = parts[1]
                 members.append(m)
-            tar.extractall(dest, members=members)
+            # Python >= 3.12 has the data filter, which checks the same things again and strips
+            # the modes a tree should not carry; older interpreters have the checks above.
+            if hasattr(tarfile, "data_filter"):
+                tar.extractall(dest, members=members, filter="data")
+            else:
+                tar.extractall(dest, members=members)
 
 
 def cmd_update(args):
@@ -1723,8 +1729,9 @@ def cmd_update(args):
     os.chmod(os.path.join(ROOT, "bin", "zmk-layer-hud"), 0o755)
     print("==> tree updated")
     if venv_ok():
-        # A dependency may have been added since; pip is quiet and quick when nothing changed.
-        subprocess.call([VENV_PYTHON, "-m", "pip", "install", "--quiet", "--upgrade"] + VENV_PKGS)
+        # A dependency may have been added or bumped since; the pins say which, and pip is quiet
+        # and quick when nothing changed.
+        subprocess.call([VENV_PYTHON, "-m", "pip", "install", "--quiet", "-r", REQUIREMENTS])
         print("    venv refreshed")
     if os.path.isdir(plugin_dir()):
         # The new tree's own command: this process is still the old code.
@@ -1760,7 +1767,7 @@ def cmd_uninstall(args):
         print(f"    removed {AUTOSTART_DESKTOP}")
     if platform.system() == "Linux":
         import shortcuts
-        if shortcuts.remove_hyprland():
+        if shortcuts.remove():
             print(f"    took the shortcuts out of {shortcuts.HYPR_DIR}")
         for pid in (OMARCHY_ID,) + OLD_OMARCHY_IDS:
             if remove_plugin(pid):

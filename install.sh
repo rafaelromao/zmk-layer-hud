@@ -7,69 +7,91 @@
 # over to `zmk-layer-hud setup` for the machine itself. Nothing here runs as root: setup prints
 # every privileged step and asks first, and under a pipe -- where there is no one to ask -- it
 # prints them and stops. $ZMKHUD_HOME moves the tree, $ZMKHUD_REF picks a branch.
+#
+# What you run is whatever that branch holds at the moment: there is no signature to check. Read
+# it first if that matters to you (`curl -fsSL .../install.sh | less`), or clone the repository and
+# run `make install` from the clone, which `git` then updates.
 set -eu
 
 REPO=rafaelromao/zmk-layer-hud
 REF=${ZMKHUD_REF:-main}
 HOME_DIR=${ZMKHUD_HOME:-$HOME/.local/share/zmk-layer-hud}
+TMP=
+NEW=
 
-case "$(uname -s)" in
-  Darwin|Linux) ;;
-  *) echo "zmk-layer-hud: no host for $(uname -s); macOS and Linux (Hyprland) only" >&2; exit 1 ;;
-esac
+# The tree this installs, as against any other directory that happens to be at $HOME_DIR: nothing
+# below removes or moves a directory that does not have the command in it.
+is_tree() { [ -x "$1/bin/zmk-layer-hud" ]; }
 
-command -v tar >/dev/null 2>&1 || { echo "zmk-layer-hud: tar is needed" >&2; exit 1; }
-if command -v curl >/dev/null 2>&1; then
-  fetch() { curl -fsSL "$1" -o "$2"; }
-elif command -v wget >/dev/null 2>&1; then
-  fetch() { wget -qO "$2" "$1"; }
-else
-  echo "zmk-layer-hud: curl or wget is needed" >&2; exit 1
-fi
+# Everything in one function, called on the last line: under `curl | sh` a download cut short is
+# then a syntax error that runs nothing, not a script that runs as far as it got.
+main() {
+  case "$(uname -s)" in
+    Darwin|Linux) ;;
+    *) echo "zmk-layer-hud: no host for $(uname -s); macOS and Linux (Hyprland) only" >&2; exit 1 ;;
+  esac
 
-# A clone is updated with `git pull`; overwriting one would throw away whatever is uncommitted.
-if [ -d "$HOME_DIR/.git" ]; then
-  echo "zmk-layer-hud: $HOME_DIR is a git clone -- update it with: git -C $HOME_DIR pull" >&2
-  exit 1
-fi
+  command -v tar >/dev/null 2>&1 || { echo "zmk-layer-hud: tar is needed" >&2; exit 1; }
+  if command -v curl >/dev/null 2>&1; then
+    fetch() { curl -fsSL "$1" -o "$2"; }
+  elif command -v wget >/dev/null 2>&1; then
+    fetch() { wget -qO "$2" "$1"; }
+  else
+    echo "zmk-layer-hud: curl or wget is needed" >&2; exit 1
+  fi
 
-TMP=$(mktemp -d)
-mkdir -p "$(dirname "$HOME_DIR")"
-# Staged beside the destination, not in $TMP: /tmp is often another filesystem, and the whole
-# point of staging is that the swap is two renames within one directory. A half-finished copy
-# across devices is exactly how someone loses the venv that was moved into it.
-NEW="$HOME_DIR.new"
-rm -rf "$NEW"
-# shellcheck disable=SC2064
-trap "rm -rf '$TMP' '$NEW'" EXIT INT TERM
+  # A clone is updated with `git pull`; overwriting one would throw away whatever is uncommitted.
+  if [ -d "$HOME_DIR/.git" ]; then
+    echo "zmk-layer-hud: $HOME_DIR is a git clone -- update it with: git -C $HOME_DIR pull" >&2
+    exit 1
+  fi
+  if [ -e "$HOME_DIR" ] && ! is_tree "$HOME_DIR"; then
+    echo "zmk-layer-hud: $HOME_DIR exists and is not a zmk-layer-hud tree; move it, or set ZMKHUD_HOME" >&2
+    exit 1
+  fi
+  if [ -e "$HOME_DIR.old" ] && ! is_tree "$HOME_DIR.old"; then
+    echo "zmk-layer-hud: $HOME_DIR.old exists and is not a zmk-layer-hud tree; move it first" >&2
+    exit 1
+  fi
 
-echo "==> fetching $REPO@$REF"
-fetch "https://codeload.github.com/$REPO/tar.gz/refs/heads/$REF" "$TMP/tree.tar.gz"
-mkdir -p "$NEW"
-tar xzf "$TMP/tree.tar.gz" -C "$NEW" --strip-components=1
+  TMP=$(mktemp -d)
+  mkdir -p "$(dirname "$HOME_DIR")"
+  # Staged beside the destination, not in $TMP: /tmp is often another filesystem, and the whole
+  # point of staging is that the swap is two renames within one directory. A half-finished copy
+  # across devices is exactly how someone loses the venv that was moved into it. mktemp names it,
+  # so nothing that was already there is removed to make room.
+  NEW=$(mktemp -d "$HOME_DIR.new.XXXXXX")
+  trap 'rm -rf "$TMP" "$NEW"' EXIT INT TERM
 
-# The venv is expensive to rebuild and holds nothing the tree owns, so it survives a reinstall.
-if [ -d "$HOME_DIR/.venv" ]; then
-  mv "$HOME_DIR/.venv" "$NEW/.venv"
-  echo "    kept the existing venv"
-fi
+  echo "==> fetching $REPO@$REF"
+  fetch "https://codeload.github.com/$REPO/tar.gz/refs/heads/$REF" "$TMP/tree.tar.gz"
+  tar xzf "$TMP/tree.tar.gz" -C "$NEW" --strip-components=1
+  is_tree "$NEW" || chmod 755 "$NEW/bin/zmk-layer-hud"   # a tarball carries whatever mode the archive held
 
-if [ -d "$HOME_DIR" ]; then
+  # The venv is expensive to rebuild and holds nothing the tree owns, so it survives a reinstall.
+  if [ -d "$HOME_DIR/.venv" ]; then
+    mv "$HOME_DIR/.venv" "$NEW/.venv"
+    echo "    kept the existing venv"
+  fi
+
+  if [ -d "$HOME_DIR" ]; then
+    rm -rf "$HOME_DIR.old"
+    mv "$HOME_DIR" "$HOME_DIR.old"
+  fi
+  mv "$NEW" "$HOME_DIR"
+  NEW=
   rm -rf "$HOME_DIR.old"
-  mv "$HOME_DIR" "$HOME_DIR.old"
-fi
-mv "$NEW" "$HOME_DIR"
-rm -rf "$HOME_DIR.old"
-# A tarball carries whatever mode the archive held; the command is useless without the bit.
-chmod 755 "$HOME_DIR/bin/zmk-layer-hud"
-echo "    tree at $HOME_DIR"
+  echo "    tree at $HOME_DIR"
 
-# setup owns the symlink, the PATH advice and the machine itself, so there is one implementation
-# of each. Under `curl | sh` stdin is the pipe, so reopen the terminal where there is one -- that
-# is what lets setup ask before anything privileged instead of silently skipping it.
-echo
-if [ -r /dev/tty ]; then
-  "$HOME_DIR/bin/zmk-layer-hud" setup --link </dev/tty
-else
-  "$HOME_DIR/bin/zmk-layer-hud" setup --link
-fi
+  # setup owns the symlink, the PATH advice and the machine itself, so there is one implementation
+  # of each. Under `curl | sh` stdin is the pipe, so reopen the terminal where there is one -- that
+  # is what lets setup ask before anything privileged instead of silently skipping it.
+  echo
+  if [ -r /dev/tty ]; then
+    "$HOME_DIR/bin/zmk-layer-hud" setup --link </dev/tty
+  else
+    "$HOME_DIR/bin/zmk-layer-hud" setup --link
+  fi
+}
+
+main "$@"

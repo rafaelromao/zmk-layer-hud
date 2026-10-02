@@ -619,6 +619,66 @@ class Launcher(unittest.TestCase):
         self.assertEqual(7, proc.wait(timeout=10))
 
 
+class Update(unittest.TestCase):
+    """What `update` takes out of the tarball: files and directories under the archive's one top
+    directory, and nothing that could land outside the staged tree."""
+
+    def tarball(self, build):
+        import io
+        import tarfile
+        buf = io.BytesIO()
+        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+            def add(name, data=b"", **kw):
+                info = tarfile.TarInfo(name)
+                for k, v in kw.items():
+                    setattr(info, k, v)
+                if info.type == tarfile.REGTYPE:
+                    info.size = len(data)
+                    tar.addfile(info, io.BytesIO(data))
+                else:
+                    tar.addfile(info)
+            build(add, tarfile)
+        return buf.getvalue()
+
+    def fetch(self, data):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        dest = os.path.join(tmp.name, "staging")
+        os.makedirs(dest)
+
+        def retrieve(url, path):
+            with open(path, "wb") as f:
+                f.write(data)
+        with mock.patch("urllib.request.urlretrieve", retrieve), contextlib.redirect_stdout(io.StringIO()):
+            cli.fetch_tree("main", dest)
+        return dest
+
+    def test_the_tree_comes_out_without_its_top_directory(self):
+        def build(add, tarfile):
+            add("zmk-layer-hud-main/", type=tarfile.DIRTYPE, mode=0o755)
+            add("zmk-layer-hud-main/bin/", type=tarfile.DIRTYPE, mode=0o755)
+            add("zmk-layer-hud-main/bin/zmk-layer-hud", b"#!/bin/sh\n", mode=0o755)
+            add("zmk-layer-hud-main/README.md", b"hi\n", mode=0o644)
+            add("LICENSE", b"a file at the top, outside the one directory, is not part of the tree\n")
+        dest = self.fetch(self.tarball(build))
+        self.assertEqual({"bin", "README.md"}, set(os.listdir(dest)))
+        with open(os.path.join(dest, "bin", "zmk-layer-hud")) as f:
+            self.assertEqual("#!/bin/sh\n", f.read())
+
+    def test_a_link_or_a_path_that_climbs_is_refused_whole(self):
+        for what, build in {
+            "a symlink": lambda add, tarfile: (add("t/README.md", b"x\n"),
+                                               add("t/.venv", type=tarfile.SYMTYPE, linkname="/etc")),
+            "a hardlink": lambda add, tarfile: add("t/x", type=tarfile.LNKTYPE, linkname="../../etc/passwd"),
+            "a climb": lambda add, tarfile: add("t/../outside", b"x\n"),
+            "an absolute path": lambda add, tarfile: add("t//etc/passwd", b"x\n"),
+            "a device": lambda add, tarfile: add("t/dev", type=tarfile.CHRTYPE),
+        }.items():
+            with self.assertRaises(cli.Fail, msg=what) as e:
+                self.fetch(self.tarball(build))
+            self.assertIn("refusing", str(e.exception), what)
+
+
 class Reference(unittest.TestCase):
     """docs/cli.md is what the parsers say, every verb of it."""
 
