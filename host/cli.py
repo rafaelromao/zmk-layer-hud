@@ -1273,8 +1273,27 @@ def macos_menubar(action):
     return 0
 
 
+# How `menubar wpm` names each of the WPMs an icon can show.
+WPM_WORDS = {"current": "live WPM", "average": "session's average WPM", "top": "session's top WPM"}
+
+
+def menubar_wpm(which):
+    """Which WPM the icons show beside the keyboard: the live one, or the session's average or
+    top. Both icons' menus set it through here, as they do everything else (panelstate)."""
+    if which is None:
+        print(f"the icon shows the {WPM_WORDS[panelstate.wpm_choice(STATE)]}")
+        return 0
+    panelstate.set_wpm_choice(STATE, which)
+    print(f"the icon shows the {WPM_WORDS[which]} from now on")
+    return 0
+
+
 def cmd_menubar(args):
     import json
+    if args.action == "wpm":
+        return menubar_wpm(args.which)
+    if args.which is not None:
+        raise Fail(f"`menubar {args.action}` takes nothing after it; `menubar wpm {args.which}` picks the WPM")
     if platform.system() == "Darwin":
         return macos_menubar(args.action)
     installed = os.path.isfile(os.path.join(plugin_dir(), "manifest.json"))
@@ -1857,9 +1876,12 @@ def build_parser():
                    help="status (default), enable, disable; disable leaves a running HUD running")
     s.set_defaults(func=cmd_autostart)
 
-    s = add("menubar", "the icon that shows, hides or starts the HUD, with its live WPM: macOS's menubar, Omarchy's bar")
-    s.add_argument("action", nargs="?", default="status", choices=("status", "enable", "disable"),
-                   help="status (default), enable, disable")
+    s = add("menubar", "the icon that shows, hides or starts the HUD, with its WPM: macOS's menubar, Omarchy's bar")
+    s.add_argument("action", nargs="?", default="status", choices=("status", "enable", "disable", "wpm"),
+                   help="status (default), enable, disable; wpm: which WPM the icon shows")
+    s.add_argument("which", nargs="?", choices=panelstate.WPM_CHOICES,
+                   help="for wpm: the live one (current, the first), or the session's average or top; "
+                        "none: say which it is")
     s.set_defaults(func=cmd_menubar)
 
     s = add("setup", "set this machine up (packages, venv, config, permissions)")

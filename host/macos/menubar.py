@@ -2,9 +2,10 @@
 """zmk-layer-hud's menubar icon on macOS: a process of its own, so it stays when the HUD quits,
 the way Omarchy's bar icon does (host/linux/omarchy).
 
-The keyboard symbol has the live WPM to its left while the HUD runs, shown or hidden, and is dimmed
-while the HUD is hidden or not running. A click shows or hides the HUD, or starts it; a right-click
-offers the same, Quit HUD, and Remove Icon. What it shows comes from $STATE/panel.json, which the
+The keyboard symbol has a WPM to its left while the HUD runs, shown or hidden -- the live one, or
+the session's average or top, as its menu picked -- and is dimmed while the HUD is hidden or not
+running. A click shows or hides the HUD, or starts it; a right-click offers the three WPMs, each
+with its number now, then the same, Quit HUD, and Remove Icon. What it shows comes from $STATE/panel.json, which the
 running panel keeps (host/panelstate.py), and what it does goes through the command line, like
 any other caller.
 
@@ -26,6 +27,7 @@ from pathlib import Path
 try:
     import objc
     from AppKit import (NSApp, NSApplication, NSApplicationActivationPolicyAccessory, NSBezierPath, NSColor,
+                        NSControlStateValueOff, NSControlStateValueOn,
                         NSCompositingOperationClear, NSCompositingOperationSourceOver, NSEventModifierFlagCommand,
                         NSEventModifierFlagControl, NSEventModifierFlagOption, NSEventModifierFlagShift,
                         NSEventMaskLeftMouseUp, NSEventMaskRightMouseUp, NSEventTypeRightMouseUp, NSGraphicsContext,
@@ -66,6 +68,8 @@ KEYCODES = dict(zip("asdfhgzxcv", range(0x00, 0x0A)), b=0x0B, q=0x0C, w=0x0D, e=
                 **{"1": 0x12, "2": 0x13, "3": 0x14, "4": 0x15, "6": 0x16, "5": 0x17, "9": 0x19, "7": 0x1A,
                    "8": 0x1C, "0": 0x1D})
 CARBON_MODS = {"gui": 0x100, "shift": 0x200, "alt": 0x800, "ctrl": 0x1000}
+# The menu's names for the WPMs the icon can show (panelstate.WPM_CHOICES).
+WPM_ITEMS = (("current", "Current WPM"), ("average", "Average WPM"), ("top", "Top WPM"))
 MENU_MODS = {"gui": NSEventModifierFlagCommand, "shift": NSEventModifierFlagShift,
              "alt": NSEventModifierFlagOption, "ctrl": NSEventModifierFlagControl}
 
@@ -154,6 +158,8 @@ class Icon(NSObject):
     def init(self):
         self = objc.super(Icon, self).init()
         self.st = None
+        self.choice = "current"         # which WPM the icon shows (panelstate.wpm_choice)
+        self.look = None                # what the button shows, to set it again only when that changes
         self.item = NSStatusBar.systemStatusBar().statusItemWithLength_(NSVariableStatusItemLength)
         button = self.item.button()
         image = NSImage.imageWithSystemSymbolName_accessibilityDescription_("keyboard", "zmk-layer-hud") \
@@ -210,13 +216,16 @@ class Icon(NSObject):
     def refresh_(self, timer):
         if timer is not None:
             self.reshortcut()
-        st = panelstate.read(RUN)
-        if st == self.st and timer is not None:
+        st, choice = panelstate.read(RUN), panelstate.wpm_choice(RUN)
+        self.st, self.choice = st, choice   # the menu's numbers, kept even when the button stays as it is
+        n = panelstate.wpm_shown(st, choice)
+        look = (st is not None, bool(st and st["shown"]), n)
+        if look == self.look and timer is not None:
             return
-        self.st = st
+        self.look = look
         button = self.item.button()
         button.setAppearsDisabled_(not (st and st["shown"]))
-        text = f"{st['wpm']} " if st else ""
+        text = (f"{n} " if n is not None else "— ") if st else ""
         if self.image is not None:
             button.setImage_(self.image if st else self.stopped_image)
             button.setTitle_(text)
@@ -227,9 +236,9 @@ class Icon(NSObject):
                                                 "not running: click to start it"))
 
     @objc.python_method
-    def run(self, verb):
+    def run(self, *argv):
         env = dict(os.environ, ZMKHUD_STATE=RUN)
-        subprocess.Popen([COMMAND, verb], env=env, stdin=subprocess.DEVNULL,
+        subprocess.Popen([COMMAND, *argv], env=env, stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
 
     def clicked_(self, sender):
@@ -243,6 +252,17 @@ class Icon(NSObject):
     @objc.python_method
     def pop_menu(self):
         self.menu.removeAllItems()
+        if self.st is not None:
+            # Which WPM the icon shows, each with its number now; the one it shows is checked.
+            for choice, title in WPM_ITEMS:
+                n = panelstate.wpm_shown(self.st, choice)
+                item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                    f"{title}: {'—' if n is None else n}", "wpm:", "")
+                item.setTarget_(self)
+                item.setRepresentedObject_(choice)
+                item.setState_(NSControlStateValueOn if choice == self.choice else NSControlStateValueOff)
+                self.menu.addItem_(item)
+            self.menu.addItem_(NSMenuItem.separatorItem())
         # The third of each is the shortcut that does the same, drawn beside it by the menu.
         items = [("Start HUD", "start", "power")] if self.st is None else \
             [("Hide HUD" if self.st["shown"] else "Show HUD", "hide" if self.st["shown"] else "show", "toggle"),
@@ -266,6 +286,10 @@ class Icon(NSObject):
 
     def verb_(self, sender):
         self.run(str(sender.representedObject()))
+
+    def wpm_(self, sender):
+        # Through the command line like the rest; the button follows on its next look (refresh_).
+        self.run("menubar", "wpm", str(sender.representedObject()))
 
     def remove_(self, sender):
         # Until the next `zmk-layer-hud start`; `zmk-layer-hud menubar disable` keeps it away.

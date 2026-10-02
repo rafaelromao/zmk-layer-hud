@@ -54,6 +54,26 @@ class Parser(unittest.TestCase):
         # They only touch files, and must work on a machine where the venv is not built yet.
         self.assertFalse({"session", "heatmap"} & cli.NEEDS_VENV)
 
+    def test_the_icons_wpm_is_picked_on_the_command_line(self):
+        args = self.parser.parse_args(["menubar", "wpm", "average"])
+        self.assertEqual(("wpm", "average"), (args.action, args.which))
+        self.assertEqual(("status", None), (self.parser.parse_args(["menubar"]).action, self.parser.parse_args(["menubar"]).which))
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            self.parser.parse_args(["menubar", "wpm", "fastest"])
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.object(cli, "STATE", tmp):
+            with contextlib.redirect_stdout(io.StringIO()) as out:
+                self.assertEqual(0, cli.main(["menubar", "wpm"]))
+                self.assertEqual(0, cli.main(["menubar", "wpm", "top"]))
+                self.assertEqual(0, cli.main(["menubar", "wpm"]))
+            self.assertEqual("top", cli.panelstate.wpm_choice(tmp))
+            self.assertEqual(["the icon shows the live WPM", "the icon shows the session's top WPM from now on",
+                              "the icon shows the session's top WPM"], out.getvalue().splitlines())
+            # A choice after any other action is a mistake, said before that action does anything.
+            with mock.patch.object(cli, "macos_menubar") as mac, contextlib.redirect_stderr(io.StringIO()) as err:
+                self.assertEqual(1, cli.main(["menubar", "enable", "top"]))
+            mac.assert_not_called()
+            self.assertIn("menubar wpm top", err.getvalue())
+
     def test_showing_and_hiding_need_no_venv(self):
         # A signal and two small files: a bar widget runs them, and so does a keybinding.
         self.assertFalse({"show", "hide", "toggle", "menubar", "autostart"} & cli.NEEDS_VENV)
