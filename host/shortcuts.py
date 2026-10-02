@@ -9,18 +9,24 @@ turns one off. Nothing in a menu edits them; the menus only show them.
 
 Who binds them differs. On macOS it is the menubar icon's process (host/macos/menubar.py), which
 stays when the HUD quits and so can start it again. A Wayland app cannot take a key for itself, so
-on Hyprland they are binds: `install_hyprland` writes ~/.config/hypr/zmk-layer-hud.conf and sources
-it at the end of hyprland.conf, after Omarchy's own bindings, so that its `unbind`s take whatever
-else was on those keys. host/linux/hud.sh runs this file on every start, which does that.
+on Hyprland they are binds, written in the language its config is. A Lua config (Omarchy 4's
+~/.config/hypr/hyprland.lua) gets ~/.config/hypr/zmk-layer-hud.lua, read by a line at its end
+(`install_lua`); a hyprlang one gets ~/.config/hypr/zmk-layer-hud.conf, sourced at the end of
+hyprland.conf (`install_hyprland`). Either way they come after Omarchy's own bindings, so they take
+whatever else was on those keys. host/linux/hud.sh runs this file on every start, which does that
+and has Hyprland read its config again when anything changed.
 
 Stdlib only: the menubar runs it in the venv, but the CLI's `uninstall` may not.
 """
 
+import contextlib
 import json
 import os
 import shlex
 import shutil
+import subprocess
 import sys
+import tempfile
 
 DEFAULTS = {"toggle": "ctrl+alt+l", "power": "ctrl+alt+gui+l"}
 WHAT = {"toggle": "shows or hides", "power": "starts or stops"}
@@ -39,6 +45,11 @@ HYPR_DIR = os.path.expanduser("~/.config/hypr")
 HYPR_FILE = "zmk-layer-hud.conf"
 HYPR_SOURCE = f"source = ~/.config/hypr/{HYPR_FILE}"
 JSON_FILE = "shortcuts.json"
+HYPR_LUA = "zmk-layer-hud.lua"
+# What a Lua config gets, once, at its end. In a pcall: a file gone missing, or one that fails,
+# costs the shortcuts and nothing else of the config.
+LUA_LOAD = 'pcall(dofile, (os.getenv("HOME") or "") .. "/.config/hypr/' + HYPR_LUA + '")'
+LUA_MARK = "-- zmk-layer-hud's shortcuts (`shortcuts:` in its config)"
 
 
 class ShortcutError(ValueError):
@@ -116,20 +127,47 @@ def label(sc, system="Linux"):
     return "+".join([LINUX_NAMES[m] for m in mods] + [key.upper()])
 
 
-def hyprland_conf(sets, command, state, start_with=""):
-    """The Hyprland file: each shortcut taken from whatever had it, then bound to its verb."""
-    lines = ["# Written by zmk-layer-hud on every start, from `shortcuts:` in its config; edits here are lost.",
-             f"# {HYPR_SOURCE} at the end of hyprland.conf reads it. `zmk-layer-hud uninstall` takes both out.",
-             ""]
+def _binds(sets, command, state, start_with=""):
+    """(mods, key, what the bind is called, the command it runs) for each shortcut that is on."""
+    out = []
     for name, sc in sets.items():
         if not sc:
             continue
         mods, key = sc
-        combo = f"{' '.join(HYPR_NAMES[m] for m in mods)}, {key.upper()}"
         # A HUD a bind starts would live in Hyprland's own cgroup without uwsm-app.
         run = (start_with + " " if start_with and name == "power" else "") + \
             f"env ZMKHUD_STATE={shlex.quote(state)} {shlex.quote(command)} {name}"
-        lines += [f"unbind = {combo}", f"bindd = {combo}, ZMK HUD {'show/hide' if name == 'toggle' else 'start/stop'}, exec, {run}"]
+        out.append((mods, key, f"ZMK HUD {'show/hide' if name == 'toggle' else 'start/stop'}", run))
+    return out
+
+
+def hyprland_conf(sets, command, state, start_with=""):
+    """The Hyprland file, in hyprlang: each shortcut taken from whatever had it, then bound to its verb."""
+    lines = ["# Written by zmk-layer-hud on every start, from `shortcuts:` in its config; edits here are lost.",
+             f"# {HYPR_SOURCE} at the end of hyprland.conf reads it. `zmk-layer-hud uninstall` takes both out.",
+             ""]
+    for mods, key, what, run in _binds(sets, command, state, start_with):
+        combo = f"{' '.join(HYPR_NAMES[m] for m in mods)}, {key.upper()}"
+        lines += [f"unbind = {combo}", f"bindd = {combo}, {what}, exec, {run}"]
+    return "\n".join(lines) + "\n"
+
+
+def lua_string(text):
+    """Any text as a Lua string literal: quoted, with its backslashes, quotes and line ends escaped."""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r") + '"'
+
+
+def lua_conf(sets, command, state, start_with=""):
+    """The same file in Lua, for a config written in it (Omarchy 4's): what Omarchy's own o.rebind
+    does -- hl.unbind, in a pcall because nothing may have those keys, then hl.bind -- in
+    Hyprland's own calls, so it needs nothing of Omarchy's."""
+    lines = ["-- Written by zmk-layer-hud on every start, from `shortcuts:` in its config; edits here are lost.",
+             "-- The last line of hyprland.lua reads it. `zmk-layer-hud uninstall` takes both out.",
+             ""]
+    for mods, key, what, run in _binds(sets, command, state, start_with):
+        keys = lua_string(" + ".join([HYPR_NAMES[m] for m in mods] + [key.upper()]))
+        lines += [f"pcall(hl.unbind, {keys})",
+                  f"hl.bind({keys}, hl.dsp.exec_cmd({lua_string(run)}), {{ description = {lua_string(what)} }})"]
     return "\n".join(lines) + "\n"
 
 
@@ -140,12 +178,27 @@ def _write_if_changed(path, text):
                 return False
     except OSError:
         pass
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = f"{path}.{os.getpid()}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.replace(tmp, path)
+    d = os.path.dirname(path)
+    os.makedirs(d, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".", suffix=".tmp", dir=d)   # 0600, as the rest of ours
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
     return True
+
+
+def _backup_once(path):
+    """A copy of the user's file as it was before this ever touched it, kept beside it as
+    `<file>.bak-zmk-layer-hud` (the name `menubar enable` uses for Omarchy's shell.json). Made
+    once: a later run must not write over the one copy that predates us."""
+    bak = path + ".bak-zmk-layer-hud"
+    if not os.path.exists(bak):
+        shutil.copy2(path, bak)      # follows a hyprland.conf that is a link, as the edit does
 
 
 def write_labels(state, sets, system):
@@ -164,6 +217,7 @@ def install_hyprland(sets, command, state, hypr_dir=HYPR_DIR, start_with=""):
     with open(main, encoding="utf-8") as f:
         text = f.read()
     if HYPR_SOURCE not in text.splitlines():
+        _backup_once(main)
         with open(main, "a", encoding="utf-8") as f:       # in place: a hyprland.conf that is a link stays one
             f.write(("" if text.endswith("\n") or not text else "\n") +
                     "\n# zmk-layer-hud's shortcuts (`shortcuts:` in its config)\n" + HYPR_SOURCE + "\n")
@@ -184,6 +238,7 @@ def remove_hyprland(hypr_dir=HYPR_DIR):
     if text is not None and HYPR_SOURCE in text.splitlines():
         out = text.replace("\n# zmk-layer-hud's shortcuts (`shortcuts:` in its config)\n" + HYPR_SOURCE + "\n", "")
         out = "\n".join(line for line in out.split("\n") if line != HYPR_SOURCE)
+        _backup_once(main)
         with open(main, "w", encoding="utf-8") as f:
             f.write(out)
         had = True
@@ -195,6 +250,53 @@ def remove_hyprland(hypr_dir=HYPR_DIR):
     return had
 
 
+def install_lua(sets, command, state, hypr_dir=HYPR_DIR, start_with=""):
+    """For a config written in Lua: our file written, and read once from the end of hyprland.lua;
+    whether either changed, or None without a hyprland.lua."""
+    main = os.path.join(hypr_dir, "hyprland.lua")
+    if not os.path.isfile(main):
+        return None
+    changed = _write_if_changed(os.path.join(hypr_dir, HYPR_LUA), lua_conf(sets, command, state, start_with))
+    with open(main, encoding="utf-8") as f:
+        text = f.read()
+    if LUA_LOAD not in text.splitlines():
+        _backup_once(main)
+        with open(main, "a", encoding="utf-8") as f:       # in place: a hyprland.lua that is a link stays one
+            f.write(("" if text.endswith("\n") or not text else "\n") + "\n" + LUA_MARK + "\n" + LUA_LOAD + "\n")
+        changed = True
+    write_labels(state, sets, "Linux")
+    return changed
+
+
+def remove_lua(hypr_dir=HYPR_DIR):
+    """Undo install_lua; whether there was anything to take."""
+    had = False
+    main = os.path.join(hypr_dir, "hyprland.lua")
+    try:
+        with open(main, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        text = None
+    if text is not None and LUA_LOAD in text.splitlines():
+        out = text.replace("\n" + LUA_MARK + "\n" + LUA_LOAD + "\n", "")
+        out = "\n".join(line for line in out.split("\n") if line != LUA_LOAD)
+        _backup_once(main)
+        with open(main, "w", encoding="utf-8") as f:
+            f.write(out)
+        had = True
+    try:
+        os.remove(os.path.join(hypr_dir, HYPR_LUA))
+        had = True
+    except OSError:
+        pass
+    return had
+
+
+def remove(hypr_dir=HYPR_DIR):
+    """Both kinds undone, as `zmk-layer-hud uninstall` does; whether there was anything to take."""
+    return remove_lua(hypr_dir) | remove_hyprland(hypr_dir)
+
+
 def main():
     """host/linux/hud.sh's step: the binds written for the config the HUD is starting with."""
     root = os.environ.get("ZMKHUD_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -204,13 +306,24 @@ def main():
         sets = read()
     except ShortcutError as e:
         sys.exit(f"shortcuts: {e}")
-    done = install_hyprland(sets, os.path.join(root, "bin", "zmk-layer-hud"), state,
-                            start_with="uwsm-app --" if shutil.which("uwsm-app") else "")
+    command = os.path.join(root, "bin", "zmk-layer-hud")
+    start_with = "uwsm-app --" if shutil.which("uwsm-app") else ""
+    # A Lua config wins: Hyprland reads hyprland.lua where there is one (Omarchy 4), and nothing
+    # reads a hyprland.conf left beside it, so what an earlier version wrote there goes.
+    if os.path.isfile(os.path.join(HYPR_DIR, "hyprland.lua")):
+        remove_hyprland(hypr_dir=HYPR_DIR)
+        done = install_lua(sets, command, state, hypr_dir=HYPR_DIR, start_with=start_with)
+        path = os.path.join(HYPR_DIR, HYPR_LUA)
+    else:
+        done = install_hyprland(sets, command, state, hypr_dir=HYPR_DIR, start_with=start_with)
+        path = os.path.join(HYPR_DIR, HYPR_FILE)
     if done is None:
-        print(f"shortcuts: no {HYPR_DIR}/hyprland.conf, so none are bound", file=sys.stderr)
+        print(f"shortcuts: no {HYPR_DIR}/hyprland.lua or hyprland.conf, so none are bound", file=sys.stderr)
     elif done:
+        # Hyprland told to read its config again, as Omarchy's own scripts do after editing it.
+        subprocess.call(["hyprctl", "reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print("shortcuts: " + ", ".join(f"{label(sc)} {WHAT[n]} the HUD" for n, sc in sets.items() if sc) +
-              f" ({os.path.join(HYPR_DIR, HYPR_FILE)})")
+              f" ({path})")
 
 
 if __name__ == "__main__":

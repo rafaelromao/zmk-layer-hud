@@ -90,8 +90,7 @@ def save_position(top, right):
             state = {}
         state = state if isinstance(state, dict) else {}
         state["linux"] = {"top": top, "right": right}
-        POSITION.parent.mkdir(parents=True, exist_ok=True)
-        POSITION.write_text(json.dumps(state))
+        panelstate._write(str(POSITION), state)     # whole or not at all, and this user's alone
     except OSError as e:
         print(f"panel: could not save {POSITION}: {e}", file=sys.stderr, flush=True)
 
@@ -117,6 +116,54 @@ def cursor():
         return int(at["x"]), int(at["y"])
     except (OSError, ValueError, KeyError, TypeError):
         return None
+
+
+def pick_monitor():
+    """(Hyprland's monitor, GDK's) for the HUD: the first that is not the laptop's own (eDP), else
+    the laptop's, matched by position rather than by assuming GDK and Hyprland number them alike.
+    (None, None) when Hyprland says nothing, (info, None) while GDK does not have it."""
+    try:
+        monitors = json.loads(subprocess.check_output(["hyprctl", "monitors", "-j"], timeout=5))
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None, None
+    if not monitors:
+        return None, None
+    info = next((m for m in monitors if not m["name"].startswith("eDP")), monitors[0])
+    display = Gdk.Display.get_default()
+    for i in range(display.get_n_monitors()):
+        m = display.get_monitor(i)
+        if (m.get_geometry().x, m.get_geometry().y) == (info["x"], info["y"]):
+            return info, m
+    return info, None
+
+
+def surface_there():
+    """Whether Hyprland has the HUD's surface. A panel can outlive its surface unseen, told to show
+    a HUD there is nothing left of; True when Hyprland cannot be asked."""
+    try:
+        layers = json.loads(subprocess.check_output(["hyprctl", "layers", "-j"], timeout=5))
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return True
+    return any(e.get("namespace") == "zmkhud-layer"
+               for m in layers.values() if isinstance(m, dict)
+               for entries in (m.get("levels") or {}).values() for e in entries)
+
+
+# A page whose web process went away -- crashed, or killed for its memory -- leaves an empty view,
+# and an empty view is a transparent one: the HUD is gone while the panel goes on as if it were
+# there. The page is loaded again, the hide sheet (the view's, not the page's) keeping a hidden
+# HUD hidden, and a page that keeps going away is tried again less and less often.
+RELOADS = {}
+
+
+def reload_page(view, reason):
+    if reason == getattr(WebKit2.WebProcessTerminationReason, "TERMINATED_BY_API", None):
+        return
+    n = RELOADS[view] = RELOADS.get(view, 0) + 1
+    delay = min(60, 2 ** n)
+    print(f"panel: the page's web process went away ({reason.value_nick}); loading it again in {delay} s",
+          file=sys.stderr, flush=True)
+    GLib.timeout_add_seconds(delay, lambda: view.reload() or False)
 
 
 def surface(monitor, page, namespace, width, height, query="", on_size=None):
@@ -158,6 +205,7 @@ def surface(monitor, page, namespace, width, height, query="", on_size=None):
                         lambda _manager, result: on_size(result.get_js_value().to_string()))
     view = WebKit2.WebView.new_with_user_content_manager(manager)
     view.set_background_color(Gdk.RGBA(0, 0, 0, 0))
+    view.connect("web-process-terminated", reload_page)
     view.set_size_request(width, height)
     view.load_uri((PAGES / page).as_uri() +
                   f"?ws=ws://127.0.0.1:{os.environ.get('ZMKHUD_PORT', '8766')}/{SOCKET_TOKEN}" + query)
@@ -169,15 +217,9 @@ def surface(monitor, page, namespace, width, height, query="", on_size=None):
 def main():
     if not GtkLayerShell.is_supported():
         sys.exit("A Wayland compositor with layer-shell support is required")
-    monitors = json.loads(subprocess.check_output(["hyprctl", "monitors", "-j"]))
-    info = next((m for m in monitors if not m["name"].startswith("eDP")), monitors[0])
-    display = Gdk.Display.get_default()
-    # Match output geometry rather than assuming GDK and Hyprland enumeration agree.
-    monitor = next((display.get_monitor(i) for i in range(display.get_n_monitors())
-                    if (display.get_monitor(i).get_geometry().x,
-                        display.get_monitor(i).get_geometry().y) == (info["x"], info["y"])), None)
+    info, monitor = pick_monitor()
     if monitor is None:
-        sys.exit(f"Cannot locate recording monitor {info['name']} in GDK")
+        sys.exit(f"Cannot locate recording monitor {info['name'] if info else '(Hyprland lists none)'} in GDK")
 
     css = Gtk.CssProvider()
     css.load_from_data(b"window, webview { background-color: transparent; }")
@@ -247,6 +289,8 @@ def main():
     def set_shown(want):
         """On screen or off it; the pages go on as before either way. The rail goes with the HUD,
         so a hidden one takes no room from the windows either."""
+        if want and not surface_there():
+            remap("asked to show the HUD, and Hyprland had no surface of it")
         if want != shown[0]:
             shown[0] = want
             for window, css in ((hud, hud_css), (keys, keys_css)):
@@ -384,6 +428,51 @@ def main():
         "overlay, nothing reserved (--reserve tiles windows beside it)"
     print(f"Panel on {info['name']}: {room}; "
           f"HUD inset top={top}, right={right}; keys below HUD", flush=True)
+
+    # Its output going away -- a monitor asleep or unplugged, a suspend -- takes the HUD's surfaces
+    # with it: the compositor closes them, and gtk-layer-shell hands that on as a delete event, which
+    # would destroy the windows and leave a panel answering `show` with nothing. So a closed window
+    # is kept, and the surfaces are put on the monitor the panel would pick now and mapped again
+    # whenever monitors come or go, a surface is closed, or `show` finds Hyprland without the HUD's.
+    screen = {"monitor": monitor, "due": None}
+
+    def remap(why):
+        nonlocal geo                # move_to keeps the HUD on it
+        screen["due"] = None
+        info_now, mon = pick_monitor()
+        if mon is None:
+            print(f"panel: {why}; no monitor to put the HUD on yet", file=sys.stderr, flush=True)
+            return False
+        geo = mon.get_geometry()
+        for window in [hud, keys] + ([rail] if rail is not None else []):
+            window.hide()
+            GtkLayerShell.set_monitor(window, mon)
+        screen["monitor"] = mon
+        move_to(*pos)               # kept on it, should it be a smaller one
+        keys.show_all()
+        hud.show_all()
+        if rail is not None and shown[0]:
+            rail.show_all()
+        take_input(hud)
+        take_input(keys)
+        print(f"panel: {why}; the HUD is on {info_now['name']} again", flush=True)
+        return False
+
+    def remap_soon(why):
+        # Monitors come and go in bursts, and Hyprland places an output a moment after it appears.
+        if screen["due"] is None:
+            screen["due"] = GLib.timeout_add(1000, remap, why)
+
+    def closed(_window, _event):
+        remap_soon("the compositor closed the HUD's surface")
+        return True                 # kept: a destroyed window could not come back
+
+    for window in [hud, keys] + ([rail] if rail is not None else []):
+        window.connect("delete-event", closed)
+    display = Gdk.Display.get_default()
+    display.connect("monitor-added", lambda *_: remap_soon("a monitor came"))
+    display.connect("monitor-removed",
+                    lambda _display, gone: gone == screen["monitor"] and remap_soon("the HUD's monitor went away"))
 
     def quit_host(*_):
         Gtk.main_quit()
