@@ -44,6 +44,14 @@ BIN_DIR = os.path.expanduser(os.environ.get("ZMKHUD_BIN_DIR") or "~/.local/bin")
 BIN_LINK = os.path.join(BIN_DIR, "zmk-layer-hud")
 
 REPO = "rafaelromao/zmk-layer-hud"
+# What install.sh and `update` fetch: a branch, a release's tag (v1.0.0), or `latest`, the newest
+# release. A ref goes into a URL, so only these characters, and a tag is v and a digit first.
+REF_OK = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$")
+TAG = re.compile(r"^v\d")
+# In an installed tree, what it was installed from: {"ref", "commit"}, written by install.sh and
+# `update`. A clone has git to say it instead.
+INSTALLED = ".installed.json"
+COMMIT = re.compile(r"^[0-9a-f]{40}$")
 # The macOS login item's bundle id and label.
 APP_ID = "io.github.rafaelromao.zmk-layer-hud"
 OMARCHY_PLUGINS = os.path.expanduser("~/.config/omarchy/plugins")
@@ -1648,13 +1656,68 @@ def cmd_doctor(args):
 
 # ---------- update / uninstall ----------
 
+def latest_release():
+    """The newest release's tag, as GitHub's API names it."""
+    import json
+    import urllib.request
+    url = f"https://api.github.com/repos/{REPO}/releases/latest"
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"}),
+                                    timeout=30) as r:
+            tag = json.load(r).get("tag_name")
+    except (OSError, ValueError, AttributeError) as e:
+        raise Fail(f"could not ask GitHub for the latest release ({e}); `--ref main` fetches the main branch")
+    if not (isinstance(tag, str) and REF_OK.match(tag) and TAG.match(tag)):
+        raise Fail(f"GitHub's latest release has a tag this does not take: {tag!r}")
+    return tag
+
+
+def tarball_url(ref):
+    """Where GitHub serves the tree at `ref`: a release's tag under refs/tags, a branch under
+    refs/heads -- never a ref of any other kind, and nothing that is not a plain name."""
+    if not REF_OK.match(ref) or ".." in ref:
+        raise Fail(f"{ref!r} is not a branch or a release's tag")
+    return f"https://codeload.github.com/{REPO}/tar.gz/refs/{'tags' if TAG.match(ref) else 'heads'}/{ref}"
+
+
+def installed_version(root=None):
+    """What an installed tree says it came from, {"ref", "commit"}; None for a clone, or for a tree
+    from before it said (the commit is None when the archive did not carry one)."""
+    import json
+    try:
+        with open(os.path.join(root or ROOT, INSTALLED), encoding="utf-8") as f:
+            said = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not (isinstance(said, dict) and isinstance(said.get("ref"), str) and REF_OK.match(said["ref"])):
+        return None
+    commit = said.get("commit")
+    return {"ref": said["ref"], "commit": commit if isinstance(commit, str) and COMMIT.match(commit) else None}
+
+
+def write_installed(root, ref, commit):
+    import json
+    with open(os.path.join(root, INSTALLED), "w", encoding="utf-8") as f:
+        json.dump({"ref": ref, "commit": commit}, f)
+        f.write("\n")
+
+
+def ref_to_follow(installed):
+    """What `update` fetches when it is not told: the branch a tree was installed from, and for a
+    release -- or a tree that does not say -- the newest release."""
+    if installed and not TAG.match(installed["ref"]):
+        return installed["ref"]
+    return "latest"
+
+
 def fetch_tree(ref, dest):
-    """The tarball, into `dest`. urllib and tarfile rather than curl and tar: this runs from the
-    installed tree, where the only thing guaranteed to be around is the interpreter."""
+    """The tarball, into `dest`, and the commit it is of: GitHub writes that into the archive's own
+    header, so the tree can say what it is. urllib and tarfile rather than curl and tar: this runs
+    from the installed tree, where the only thing guaranteed to be around is the interpreter."""
     import tarfile
     import tempfile
     import urllib.request
-    url = f"https://codeload.github.com/{REPO}/tar.gz/refs/heads/{ref}"
+    url = tarball_url(ref)
     print(f"==> {url}")
     with tempfile.TemporaryDirectory() as tmp:
         archive = os.path.join(tmp, "tree.tar.gz")
@@ -1663,6 +1726,7 @@ def fetch_tree(ref, dest):
         except OSError as e:
             raise Fail(f"could not download {url}: {e}")
         with tarfile.open(archive) as tar:
+            commit = tar.pax_headers.get("comment") or ""
             members = []
             for m in tar.getmembers():
                 parts = m.name.split("/", 1)
@@ -1683,21 +1747,31 @@ def fetch_tree(ref, dest):
                 tar.extractall(dest, members=members, filter="data")
             else:
                 tar.extractall(dest, members=members)
+    return commit if COMMIT.match(commit) else None
 
 
 def cmd_update(args):
     if in_clone():
         print(f"{ROOT} is a git clone -- update it with `git -C {ROOT} pull`")
         return 0
-    if panel_pids():
-        raise Fail("the HUD is running, perhaps hidden; `zmk-layer-hud stop` first")
     import tempfile
+    have = installed_version()
+    ref = args.ref or os.environ.get("ZMKHUD_REF") or ref_to_follow(have)
+    if ref == "latest":
+        ref = latest_release()
     # Staging sits beside the tree so the swap is two renames within one directory. Everything
     # below is ordered so that a failure at any point leaves the working tree where it was: this
     # is the one verb that can destroy someone's install.
     staging = tempfile.mkdtemp(prefix="zmk-layer-hud.", dir=os.path.dirname(ROOT))
     try:
-        fetch_tree(args.ref, staging)
+        commit = fetch_tree(ref, staging)
+        if have and commit and have["commit"] == commit:
+            shutil.rmtree(staging, ignore_errors=True)
+            print(f"already up to date: {describe_installed({'ref': ref, 'commit': commit})}")
+            return 0
+        if panel_pids():
+            raise Fail("the HUD is running, perhaps hidden; `zmk-layer-hud stop` first")
+        write_installed(staging, ref, commit)
     except Exception:
         shutil.rmtree(staging, ignore_errors=True)
         raise
@@ -1727,7 +1801,7 @@ def cmd_update(args):
         raise Fail(f"could not put the new tree in place: {e}; the old one is back")
     shutil.rmtree(old, ignore_errors=True)
     os.chmod(os.path.join(ROOT, "bin", "zmk-layer-hud"), 0o755)
-    print("==> tree updated")
+    print(f"==> tree updated to {describe_installed({'ref': ref, 'commit': commit})}")
     if venv_ok():
         # A dependency may have been added or bumped since; the pins say which, and pip is quiet
         # and quick when nothing changed.
@@ -1798,6 +1872,13 @@ def cmd_version(args):
     return 0
 
 
+def describe_installed(v):
+    """A release by its tag; a branch by its name and where it was, which a branch moves on from."""
+    if TAG.match(v["ref"]) or not v["commit"]:
+        return v["ref"]
+    return f"{v['ref']} {v['commit'][:7]}"
+
+
 def describe_version():
     if in_clone() and shutil.which("git"):
         try:
@@ -1806,7 +1887,8 @@ def describe_version():
                 text=True, stderr=subprocess.DEVNULL).strip()
         except subprocess.SubprocessError:
             pass
-    return "(installed tree)"
+    v = installed_version()
+    return f"{describe_installed(v)} (installed)" if v else "(installed tree)"
 
 
 # ---------- the parser ----------
@@ -1909,8 +1991,8 @@ def build_parser():
     s.set_defaults(func=cmd_setup)
 
     s = add("update", "fetch a newer tree over this one")
-    s.add_argument("--ref", default=os.environ.get("ZMKHUD_REF", "main"),
-                   help="branch to fetch (default: main, or $ZMKHUD_REF)")
+    s.add_argument("--ref", help="what to fetch: latest (the newest release), a release's tag like v1.0.0, or a "
+                                 "branch (default: $ZMKHUD_REF, else the branch this was installed from, else latest)")
     s.set_defaults(func=cmd_update)
 
     s = add("uninstall", "remove the tree and the command")

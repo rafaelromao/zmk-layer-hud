@@ -255,7 +255,8 @@ fetch a newer tree over this one
 
 options:
   -h, --help  show this help message and exit
-  --ref REF   branch to fetch (default: main, or $ZMKHUD_REF)
+  --ref REF   what to fetch: latest (the newest release), a release's tag like v1.0.0, or a branch
+              (default: $ZMKHUD_REF, else the branch this was installed from, else latest)
 ```
 
 ## uninstall

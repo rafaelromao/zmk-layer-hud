@@ -61,7 +61,9 @@ flash the central half, or the dongle; peripherals need nothing.
 curl -fsSL https://raw.githubusercontent.com/rafaelromao/zmk-layer-hud/main/install.sh | sh
 ```
 
-That puts the tree in `~/.local/share/zmk-layer-hud` and hands over to `zmk-layer-hud setup`,
+That puts the latest release in `~/.local/share/zmk-layer-hud` (`ZMKHUD_REF=main` before `sh`
+installs the main branch instead, and `ZMKHUD_REF=v1.0.0` that release) and hands over to
+`zmk-layer-hud setup`,
 which prepares the machine itself: Homebrew's hidapi on macOS, the GTK and layer-shell packages
 and the udev rule on Linux, the virtualenv, a config to start from, and the command in
 `~/.local/bin`. Nothing runs as root without printing the command and asking first, so a piped
@@ -138,8 +140,10 @@ sandbox that denies them.
 
 ### Updating and uninstalling
 
-`zmk-layer-hud update` fetches a newer tree and keeps your config; a clone updates with `git pull`
-instead. `zmk-layer-hud uninstall` removes the tree and the command and leaves your config in
+`zmk-layer-hud update` fetches a newer tree and keeps your config: the newest release, or for a tree
+installed from a branch that branch again, and it leaves a tree that is already there alone.
+`--ref` names another: `latest`, a release's tag like `v1.0.0`, or a branch. `zmk-layer-hud
+version` says which one a tree is. A clone updates with `git pull` instead. `zmk-layer-hud uninstall` removes the tree and the command and leaves your config in
 `~/.config/zmk-layer-hud`, which `--purge` removes too, with the logs and the import cache. On
 Linux the udev rule stays until you remove it:
 `sudo rm /etc/udev/rules.d/60-zmk-layer-hud.rules`.
@@ -266,7 +270,7 @@ Where things live, and what moves them:
 | `ZMKHUD_PYTHON` | the tree's `.venv/bin/python3` | the interpreter the feed runs under |
 | `ZMKHUD_PORT` | `8766` | the feed's WebSocket port; the URL is `ws://127.0.0.1:8766/<token>`, the token in `$ZMKHUD_STATE/token` for the run |
 | `ZMKHUD_CACHE` | `~/.cache/zmk-layer-hud/repos` | where `import` keeps a repo given by URL |
-| `ZMKHUD_REF` | `main` | the branch `install.sh` and `update` fetch |
+| `ZMKHUD_REF` | `latest` | what `install.sh` and `update` fetch: `latest` (the newest release), a release's tag like `v1.0.0`, or a branch |
 | `ZMKHUD_RESERVE` | `0` | what `start --reserve` sets |
 | `ZMKHUD_DEBUG` | unset | the panel and the feed log every layer message with a timestamp (never the key positions) |
 

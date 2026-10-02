@@ -6,15 +6,16 @@
 # It puts the tree in ~/.local/share/zmk-layer-hud and the command in ~/.local/bin, then hands
 # over to `zmk-layer-hud setup` for the machine itself. Nothing here runs as root: setup prints
 # every privileged step and asks first, and under a pipe -- where there is no one to ask -- it
-# prints them and stops. $ZMKHUD_HOME moves the tree, $ZMKHUD_REF picks a branch.
+# prints them and stops. $ZMKHUD_HOME moves the tree; $ZMKHUD_REF picks what is installed: `latest`,
+# the newest release (the default), a release's tag such as v1.0.0, or a branch such as main.
 #
-# What you run is whatever that branch holds at the moment: there is no signature to check. Read
-# it first if that matters to you (`curl -fsSL .../install.sh | less`), or clone the repository and
+# What you run is whatever that release or branch holds: there is no signature to check. Read it
+# first if that matters to you (`curl -fsSL .../install.sh | less`), or clone the repository and
 # run `make install` from the clone, which `git` then updates.
 set -eu
 
 REPO=rafaelromao/zmk-layer-hud
-REF=${ZMKHUD_REF:-main}
+REF=${ZMKHUD_REF:-latest}
 HOME_DIR=${ZMKHUD_HOME:-$HOME/.local/share/zmk-layer-hud}
 TMP=
 NEW=
@@ -63,10 +64,32 @@ main() {
   NEW=$(mktemp -d "$HOME_DIR.new.XXXXXX")
   trap 'rm -rf "$TMP" "$NEW"' EXIT INT TERM
 
+  # `latest` is the newest release, as GitHub names it. The ref goes into a URL, so it is a plain
+  # name and nothing else, and one that starts with v and a digit is a release's tag (host/cli.py
+  # tarball_url says the same).
+  if [ "$REF" = latest ]; then
+    fetch "https://api.github.com/repos/$REPO/releases/latest" "$TMP/latest.json" || {
+      echo "zmk-layer-hud: could not ask GitHub for the latest release; ZMKHUD_REF=main installs the main branch" >&2; exit 1; }
+    REF=$(sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$TMP/latest.json" | head -n 1)
+  fi
+  case "$REF" in
+    ""|*..*|[!A-Za-z0-9]*|*[!A-Za-z0-9._/-]*)
+      echo "zmk-layer-hud: '$REF' is not a branch or a release's tag (ZMKHUD_REF=main installs the main branch)" >&2; exit 1 ;;
+  esac
+  case "$REF" in
+    v[0-9]*) KIND=tags ;;
+    *) KIND=heads ;;
+  esac
+
   echo "==> fetching $REPO@$REF"
-  fetch "https://codeload.github.com/$REPO/tar.gz/refs/heads/$REF" "$TMP/tree.tar.gz"
+  fetch "https://codeload.github.com/$REPO/tar.gz/refs/$KIND/$REF" "$TMP/tree.tar.gz"
   tar xzf "$TMP/tree.tar.gz" -C "$NEW" --strip-components=1
   is_tree "$NEW" || chmod 755 "$NEW/bin/zmk-layer-hud"   # a tarball carries whatever mode the archive held
+  # What the tree is, for `zmk-layer-hud version` and `update`: the ref, and the commit GitHub wrote
+  # into the archive's header, read with the python3 that setup needs anyway, where there is one.
+  COMMIT=$(python3 -c 'import re, sys, tarfile; c = tarfile.open(sys.argv[1]).pax_headers.get("comment") or ""; print(c if re.fullmatch("[0-9a-f]{40}", c) else "")' "$TMP/tree.tar.gz" 2>/dev/null || true)
+  if [ -n "$COMMIT" ]; then COMMIT="\"$COMMIT\""; else COMMIT=null; fi
+  printf '{"ref": "%s", "commit": %s}\n' "$REF" "$COMMIT" > "$NEW/.installed.json"
 
   # The venv is expensive to rebuild and holds nothing the tree owns, so it survives a reinstall.
   if [ -d "$HOME_DIR/.venv" ]; then

@@ -623,11 +623,12 @@ class Update(unittest.TestCase):
     """What `update` takes out of the tarball: files and directories under the archive's one top
     directory, and nothing that could land outside the staged tree."""
 
-    def tarball(self, build):
+    def tarball(self, build, pax=None):
         import io
         import tarfile
         buf = io.BytesIO()
-        with tarfile.open(fileobj=buf, mode="w:gz") as tar:
+        # GitHub's archives are pax ones, the commit in their global header's comment.
+        with tarfile.open(fileobj=buf, mode="w:gz", format=tarfile.PAX_FORMAT, pax_headers=pax or {}) as tar:
             def add(name, data=b"", **kw):
                 info = tarfile.TarInfo(name)
                 for k, v in kw.items():
@@ -650,7 +651,7 @@ class Update(unittest.TestCase):
             with open(path, "wb") as f:
                 f.write(data)
         with mock.patch("urllib.request.urlretrieve", retrieve), contextlib.redirect_stdout(io.StringIO()):
-            cli.fetch_tree("main", dest)
+            self.commit = cli.fetch_tree("main", dest)
         return dest
 
     def test_the_tree_comes_out_without_its_top_directory(self):
@@ -677,6 +678,88 @@ class Update(unittest.TestCase):
             with self.assertRaises(cli.Fail, msg=what) as e:
                 self.fetch(self.tarball(build))
             self.assertIn("refusing", str(e.exception), what)
+
+    def test_the_commit_the_archive_says_it_is_of_comes_back(self):
+        sha = "06846f57b2f0df49a42d508a7324b83638b0bdf9"
+        def build(add, tarfile):
+            add("t/", type=tarfile.DIRTYPE, mode=0o755)
+            add("t/README.md", b"hi\n")
+        self.fetch(self.tarball(build, pax={"comment": sha}))
+        self.assertEqual(sha, self.commit)
+        self.fetch(self.tarball(build, pax={"comment": "not a commit"}))
+        self.assertIsNone(self.commit)
+
+    def test_a_tag_is_fetched_as_a_tag_and_a_branch_as_a_branch(self):
+        self.assertTrue(cli.tarball_url("v1.0.0").endswith("/tar.gz/refs/tags/v1.0.0"))
+        self.assertTrue(cli.tarball_url("main").endswith("/tar.gz/refs/heads/main"))
+        for bad in ("../main", "main/../x", "main;rm", "-x", "a b", ""):
+            with self.assertRaises(cli.Fail, msg=bad):
+                cli.tarball_url(bad)
+
+    def test_latest_is_the_newest_releases_tag(self):
+        class Answer(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+        with mock.patch("urllib.request.urlopen", lambda *a, **k: Answer(b'{"tag_name": "v1.2.0"}')):
+            self.assertEqual("v1.2.0", cli.latest_release())
+        with mock.patch("urllib.request.urlopen", lambda *a, **k: Answer(b'{"tag_name": "nightly"}')), \
+                self.assertRaises(cli.Fail):
+            cli.latest_release()
+
+    def test_an_installed_tree_says_what_it_is_and_update_follows_it(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = os.path.join(tmp.name, "tree")
+        os.makedirs(os.path.join(root, "bin"))
+        sha = "06846f57b2f0df49a42d508a7324b83638b0bdf9"
+        with mock.patch.object(cli, "ROOT", root), mock.patch.object(cli, "in_clone", lambda: False):
+            self.assertEqual("(installed tree)", cli.describe_version())          # from before it said
+            self.assertEqual("latest", cli.ref_to_follow(cli.installed_version()))
+            cli.write_installed(root, "v1.0.0", sha)
+            self.assertEqual("v1.0.0 (installed)", cli.describe_version())
+            self.assertEqual("latest", cli.ref_to_follow(cli.installed_version()))  # a release: the newest
+            cli.write_installed(root, "main", sha)
+            self.assertEqual("main 06846f5 (installed)", cli.describe_version())
+            self.assertEqual("main", cli.ref_to_follow(cli.installed_version()))    # a branch: that branch again
+
+    def test_update_leaves_a_tree_already_at_the_commit_alone_and_swaps_one_that_is_not(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = os.path.join(tmp.name, "tree")
+        os.makedirs(os.path.join(root, "bin"))
+        with open(os.path.join(root, "bin", "zmk-layer-hud"), "w") as f:
+            f.write("old\n")
+        old, new = "1" * 40, "2" * 40
+        cli.write_installed(root, "v1.0.0", old)
+        answer, fetched = {"commit": old}, []
+
+        def fetch(ref, dest):
+            fetched.append(ref)
+            os.makedirs(os.path.join(dest, "bin"))
+            with open(os.path.join(dest, "bin", "zmk-layer-hud"), "w") as f:
+                f.write("new\n")
+            return answer["commit"]
+        args = cli.build_parser().parse_args(["update"])
+        with mock.patch.object(cli, "ROOT", root), mock.patch.object(cli, "in_clone", lambda: False), \
+                mock.patch.object(cli, "fetch_tree", fetch), mock.patch.object(cli, "latest_release", lambda: "v1.1.0"), \
+                mock.patch.object(cli, "panel_pids", lambda: []), mock.patch.object(cli, "venv_ok", lambda: False), \
+                mock.patch.object(cli, "plugin_dir", lambda: os.path.join(tmp.name, "no-plugin")), \
+                mock.patch.dict(os.environ, {"ZMKHUD_REF": ""}), contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(0, cli.cmd_update(args))
+            with open(os.path.join(root, "bin", "zmk-layer-hud")) as f:
+                self.assertEqual("old\n", f.read())                           # the same commit: left alone
+            answer["commit"] = new
+            self.assertEqual(0, cli.cmd_update(args))
+        with open(os.path.join(root, "bin", "zmk-layer-hud")) as f:
+            self.assertEqual("new\n", f.read())
+        self.assertEqual({"ref": "v1.1.0", "commit": new}, cli.installed_version(root))
+        self.assertEqual(["v1.1.0", "v1.1.0"], fetched)                       # a release follows the newest
+        self.assertEqual(["tree"], os.listdir(tmp.name))                       # no staging left behind
+        self.assertIn("already up to date: v1.1.0", out.getvalue())
+        self.assertIn("tree updated to v1.1.0", out.getvalue())
 
 
 class Reference(unittest.TestCase):
