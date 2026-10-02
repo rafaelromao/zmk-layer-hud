@@ -172,12 +172,15 @@ the config: `shortcuts: { toggle: ctrl+alt+l, power: ctrl+alt+gui+l }`, with `nu
 off.
 - **On macOS** the menubar icon holds them, so they need no permission, but they go away when the
   icon does (`menubar disable`, Remove Icon). A config change takes effect at once.
-- **On Omarchy** they are Hyprland binds. Every `start` writes `~/.config/hypr/zmk-layer-hud.conf`
-  from the config, and the first one adds a `source =` line for it at the end of
-  `hyprland.conf`, keeping a copy of the file as it was in `hyprland.conf.bak-zmk-layer-hud`.
-  The binds stay after the HUD stops, so the power shortcut starts it again. The
-  file unbinds those keys first, so anything else bound to them stops working. A config change
-  takes effect on the next start, and `uninstall` removes both the file and the line.
+- **On Omarchy** they are Hyprland binds, written in the language its config is. Omarchy 4's
+  `~/.config/hypr/hyprland.lua` gets `~/.config/hypr/zmk-layer-hud.lua`, written by every `start`
+  from the config, and the first one adds a line at the end of `hyprland.lua` that reads it (in a
+  `pcall`, so a missing file never breaks the rest of the config). A classic `hyprland.conf` gets
+  `zmk-layer-hud.conf` and a `source =` line instead. The first edit keeps a copy of the file as it
+  was in `<file>.bak-zmk-layer-hud`, and Hyprland reads its config again whenever the binds changed.
+  The binds stay after the HUD stops, so the power shortcut starts it again. They unbind those keys
+  first, so anything else bound to them stops working. A config change takes effect on the next
+  start, and `uninstall` removes both the file and the line.
 
 `zmk-layer-hud autostart enable` starts the HUD hidden at every login, and `autostart disable`
 stops doing so; it leaves a running HUD alone.

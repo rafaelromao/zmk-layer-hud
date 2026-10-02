@@ -185,11 +185,23 @@ The global shortcuts (`host/shortcuts.py`, `shortcuts:` in the config) run the s
   they take the key from the app in front. The config's mtime is checked on the icon's 0.5 s timer,
   and the hotkeys are bound again when it changes.
 - **Omarchy:** a Wayland client cannot take a key for itself, so `hud.sh` runs `shortcuts.py` on
-  every start. That writes `~/.config/hypr/zmk-layer-hud.conf`, an `unbind` and then a `bindd` per
-  key, and sources it at the end of `hyprland.conf` (the first run keeps a copy of that file as
-  `hyprland.conf.bak-zmk-layer-hud`). The source line goes last so that the
-  `unbind`s come after Omarchy's own bindings: Hyprland fires every bind on a key. The labels go to
-  `$STATE/shortcuts.json` for the bar's menu.
+  every start. A config in Lua (Omarchy 4's `hyprland.lua`) gets `~/.config/hypr/zmk-layer-hud.lua`:
+  per key `hl.unbind` in a `pcall` (nothing may have it) and then `hl.bind`, the calls Omarchy's own
+  `o.rebind` makes, read by a `pcall(dofile, ...)` line appended to `hyprland.lua`. A hyprlang
+  config gets `zmk-layer-hud.conf`, an `unbind` and a `bindd` per key, sourced at the end of
+  `hyprland.conf`. Either line goes last, so its unbinds come after Omarchy's own bindings:
+  Hyprland fires every bind on a key. When either file changed, `hyprctl reload`, as Omarchy's own
+  scripts do after an edit; the first edit of a file keeps a copy as `<file>.bak-zmk-layer-hud`. The
+  labels go to `$STATE/shortcuts.json` for the bar's menu.
+
+An output going away -- a monitor asleep or unplugged, a suspend -- takes the Linux panel's layer
+surfaces with it. gtk-layer-shell drops that close from 0.10 on, leaving the window with no surface
+under it, and before 0.10 it destroyed the window: either way the panel answered `show` with
+nothing until it was restarted. So it asks for the close (`set_respect_close`), keeps the window
+(its `delete-event` returns true), and maps its surfaces again on the monitor it would pick now
+whenever monitors come or go, a surface is closed, or a `show` finds Hyprland without the HUD's
+(`surface_there`). A WebKit web process that goes away leaves an empty view, which is a
+transparent one, so the page is loaded again, less and less often if it keeps going.
 
 The macOS login item (`autostart enable`) runs `host/macos/launcher.c`, compiled into
 `ZMK Layer HUD.app` with its own Info.plist and an ad-hoc signature. macOS's privacy checks ask the

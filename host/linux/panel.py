@@ -468,6 +468,10 @@ def main():
         return True                 # kept: a destroyed window could not come back
 
     for window in [hud, keys] + ([rail] if rail is not None else []):
+        # From gtk-layer-shell 0.10 on, a closed surface is dropped unless asked for: the window
+        # stays as it was, with no surface under it. Before, it always came as a delete event.
+        if hasattr(GtkLayerShell, "set_respect_close"):
+            GtkLayerShell.set_respect_close(window, True)
         window.connect("delete-event", closed)
     display = Gdk.Display.get_default()
     display.connect("monitor-added", lambda *_: remap_soon("a monitor came"))
