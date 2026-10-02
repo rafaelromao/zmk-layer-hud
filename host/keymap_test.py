@@ -290,6 +290,104 @@ class Settings(unittest.TestCase):
         self.assertIn("bold/x-bold.svg", km.glyph_url("phosphor:bold/x", urls))
 
 
+class Glyphs(unittest.TestCase):
+    """A glyph is markup the page draws, and the page sees every keystroke: one that is anything
+    but a drawing is refused, wherever it came from. hud.js (glyphOK) keeps the same rules."""
+
+    HOSTILE = {
+        "an event handler": '<svg onload="x()"><path d="M0 0"/></svg>',
+        "a script": "<svg><script>x()</script></svg>",
+        "a foreignObject": "<svg><foreignObject><div>x</div></foreignObject></svg>",
+        "a use of something elsewhere": '<svg><use href="https://e.example/x.svg#a"/></svg>',
+        "a use of something elsewhere, xlink": '<svg xmlns:xlink="http://www.w3.org/1999/xlink"><use xlink:href="//e/x#a"/></svg>',
+        "a link": '<svg><a href="javascript:1"><path d="M0 0"/></a></svg>',
+        "an image": '<svg><image href="https://e.example/x"/></svg>',
+        "a style element": "<svg><style>path{fill:red}</style></svg>",
+        "a style attribute": '<svg style="background:url(x)"><path d="M0 0"/></svg>',
+        "an entity": '<!DOCTYPE svg [<!ENTITY x "y">]><svg>&x;</svg>',
+        "an animation": '<svg><animate attributeName="x" onbegin="x()"/></svg>',
+        "not an svg": "<div>x</div>",
+        "not xml": "<svg><path d='M0 0'></svg>",
+        "a handler in another case": '<svg ONLOAD="x()"></svg>',
+    }
+    BENIGN = {
+        "mdi": '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/></svg>',
+        "with a licence comment": '<!--! Font Awesome Free 6.5.1 by @fontawesome - https://fontawesome.com License - '
+                                  'https://fontawesome.com/license/free (Icons: CC BY 4.0) -->'
+                                  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><path d="M0 0h1"/></svg>',
+        "a local use": '<svg><defs><path id="p" d="M0 0"/></defs><use href="#p"/></svg>',
+        "a gradient": '<svg><linearGradient id="g"><stop offset="0"/></linearGradient><rect fill="url(#g)"/></svg>',
+        "a placeholder": '<svg data-glyph="mdi:cog"></svg>',
+        "text": '<svg><text x="0" y="0">a</text></svg>',
+    }
+
+    def test_what_could_run_is_refused(self):
+        for what, svg in self.HOSTILE.items():
+            self.assertIsNotNone(km.glyph_problem(svg), what)
+
+    def test_a_drawing_is_taken(self):
+        for what, svg in self.BENIGN.items():
+            self.assertIsNone(km.glyph_problem(svg), f"{what}: {km.glyph_problem(svg)}")
+
+    def test_every_shipped_glyph_is_a_drawing(self):
+        for name in ("config/diamond.definitions.json", "docs/boards/diamond.json", "hud/tests/fixtures/diamond.json"):
+            with open(os.path.join(REPO, name), encoding="utf-8") as f:
+                doc = json.load(f)
+            glyphs = (doc.get("drawing") or doc).get("glyphs") or {}
+            self.assertTrue(glyphs, name)
+            for glyph, svg in glyphs.items():
+                self.assertIsNone(km.glyph_problem(svg), f"{name}: {glyph}: {km.glyph_problem(svg)}")
+
+    def test_an_inline_glyph_that_could_run_is_refused_and_said(self):
+        said = []
+        cfg = {"draw_config": {"glyphs": {"bad": self.HOSTILE["a script"], "good": self.BENIGN["mdi"]}}}
+        with mock.patch.dict(km._glyph_memo, clear=True), \
+                mock.patch.object(km, "glyph_cache_dir", return_value=tempfile.mkdtemp()):
+            out = km.resolve_glyphs({"bad", "good"}, cfg, log=said.append, fetch=False)
+        self.assertEqual(["good"], list(out))
+        self.assertEqual(1, len(said))
+        self.assertIn("bad", said[0])
+        self.assertIn("<script>", said[0])
+
+    def test_a_cached_glyph_is_checked_too(self):
+        cache = tempfile.mkdtemp()
+        with open(os.path.join(cache, "mdi:evil.svg"), "w", encoding="utf-8") as f:
+            f.write(self.HOSTILE["an event handler"])
+        with open(os.path.join(cache, "mdi:fine.svg"), "w", encoding="utf-8") as f:
+            f.write(self.BENIGN["mdi"])
+        with mock.patch.dict(km._glyph_memo, clear=True), mock.patch.object(km, "glyph_cache_dir", return_value=cache):
+            out = km.resolve_glyphs({"mdi:evil", "mdi:fine"}, None, log=lambda *a: None, fetch=False)
+        self.assertEqual(["mdi:fine"], list(out))
+
+    def test_only_https_sources_are_fetched_and_what_comes_is_checked_before_it_is_cached(self):
+        import urllib.request
+        cache = tempfile.mkdtemp()
+        cfg = {"draw_config": {"glyph_urls": {"local": "file:///etc/{}.svg", "mine": "https://icons.example/{}.svg"}}}
+        said = []
+
+        class Reply:
+            def __init__(self, body): self.body = body
+            def __enter__(self): return self
+            def __exit__(self, *a): return False
+            def read(self): return self.body
+        replies = {"https://icons.example/evil.svg": Reply(self.HOSTILE["a script"].encode()),
+                   "https://icons.example/fine.svg": Reply(self.BENIGN["mdi"].encode())}
+        with mock.patch.dict(km._glyph_memo, clear=True), mock.patch.object(km, "glyph_cache_dir", return_value=cache), \
+                mock.patch.object(urllib.request, "urlopen", side_effect=lambda url, timeout: replies[url]) as opened:
+            out = km.resolve_glyphs({"local:passwd", "mine:evil", "mine:fine"}, cfg, log=said.append, fetch=True)
+        self.assertEqual(["mine:fine"], list(out))
+        self.assertEqual({"https://icons.example/evil.svg", "https://icons.example/fine.svg"},
+                         {c.args[0] for c in opened.call_args_list})
+        self.assertEqual(["mine:fine.svg"], os.listdir(cache))            # the refused one is not cached
+        self.assertTrue(any("local:passwd" in s and "https" in s for s in said), said)
+        self.assertTrue(any("mine:evil" in s and "refused" in s for s in said), said)
+
+    def test_the_message_drops_a_glyph_from_old_definitions_that_could_run(self):
+        drawing = km.draw(DOC, fetch=False)["drawing"]
+        drawing["glyphs"] = {"mdi:fine": self.BENIGN["mdi"], "mdi:evil": self.HOSTILE["an event handler"]}
+        self.assertEqual(["mdi:fine"], list(km.build_message({}, drawing)["glyphs"]))
+
+
 class Message(unittest.TestCase):
     def test_default_layer_ids_follow_yaml_order(self):
         msg = message({}, DOC)

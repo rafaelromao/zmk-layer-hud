@@ -219,9 +219,49 @@
   // A legend is text, or the SVG keymap-drawer draws for a $$glyph$$ (sent with the keymap). The
   // glyph replaces the text rather than joining it: a key's `tap` carries the glyph's own text
   // spelling so something still shows when the SVG could not be resolved.
+  //
+  // A glyph goes into the page as markup, and this page sees every keystroke, so a glyph is used
+  // as it came or not at all -- never rewritten -- and only when nothing in it can run. The SVGs
+  // come from icon repos on moving branches, or from a drawer config's own glyph_urls.
+  // host/keymap.py (glyph_problem) applies the same rules when the definitions are written and
+  // when the message is built; this is the last word, and the two lists are kept the same.
+  const GLYPH_TAGS = new Set(["svg", "g", "path", "circle", "ellipse", "rect", "line", "polyline", "polygon",
+                              "defs", "clippath", "mask", "lineargradient", "radialgradient", "stop", "title",
+                              "desc", "symbol", "use", "text", "tspan"]);
+  const glyphVerdicts = new Map();
+  function glyphOK(svg) {
+    if (!glyphVerdicts.has(svg)) glyphVerdicts.set(svg, glyphIsDrawing(svg));
+    return glyphVerdicts.get(svg);
+  }
+  function glyphIsDrawing(svg) {
+    if (typeof svg !== "string" || svg.includes("\0")) return false;
+    // Comments as HTML reads them (an icon's licence header is one); then no doctype, entity,
+    // CDATA section or processing instruction may be left.
+    const s = svg.replace(/<!--(?:-?>|[\s\S]*?--!?>)/g, "");
+    if (/<[!?]/.test(s)) return false;
+    const tag = /<\/?([A-Za-z][^\s/>]*)((?:[^>"']|"[^"]*"|'[^']*')*)\/?>/g;
+    const attr = /([^\s"'<>/=]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+)))?/g;
+    let first = true, between = "", last = 0, m;
+    while ((m = tag.exec(s)) !== null) {
+      if (first && s.slice(0, m.index).trim() !== "") return false;  // nothing but space outside the root
+      if (!first) between += s.slice(last, m.index);
+      last = tag.lastIndex;
+      const name = m[1].toLowerCase().replace(/^[^:]*:/, "");         // svg:path is path
+      if (first) { if (name !== "svg" || m[0][1] === "/") return false; first = false; }
+      if (!GLYPH_TAGS.has(name)) return false;
+      let a;
+      while ((a = attr.exec(m[2])) !== null) {
+        const an = a[1].toLowerCase(), av = (a[2] !== undefined ? a[2] : a[3] !== undefined ? a[3] : a[4]) || "";
+        if (an.startsWith("on") || an === "style") return false;
+        if ((an === "href" || an === "xlink:href") && !av.trim().startsWith("#")) return false;
+      }
+    }
+    if (first || s.slice(last).trim() !== "") return false;          // ...and after it
+    return !between.includes("<");                                     // text between tags is text
+  }
   function legendHTML(text, glyph) {
     const svg = glyph && state.data.glyphs && state.data.glyphs[glyph];
-    return svg ? `<span class="glyph">${svg}</span>` : null;
+    return svg && glyphOK(svg) ? `<span class="glyph">${svg}</span>` : null;
   }
   function setLegend(el, text, glyph) {
     const html = legendHTML(text, glyph);
@@ -1995,6 +2035,15 @@
   // Generic host: index.html?ws=ws://127.0.0.1:8766 — messages are
   //   {"kind":"keymap",…}  {"kind":"key", ...event}  {"kind":"layers","ids":[…]}   (host/hudfeed.py speaks this).
   const params = new URLSearchParams(location.search);
+  // ?ws=, ?keymap=, ?script= and ?timeline= name what the page connects to and fetches. They are
+  // for the hosts and for development, both of which load the page from disk or from this machine;
+  // a published copy honours none of them, or a link could point it at any server and have the
+  // page draw what that server says -- a glyph is markup.
+  const LOCAL_HOSTS = new Set(["127.0.0.1", "localhost", "[::1]", "::1"]);
+  const local = location.protocol === "file:" || LOCAL_HOSTS.has(location.hostname);
+  if (!local && ["ws", "keymap", "script", "timeline"].some(p => params.get(p) !== null)) {
+    console.warn("hud: ?ws=, ?keymap=, ?script= and ?timeline= are honoured only from file: or a local server");
+  }
   // A GIF still is drawn as it always was: no glow, whatever demoFrame presses. Said here, before
   // anything loads -- demoShown arrives only after the frame's keys have gone down.
   if (params.get("demo") !== null) { state.demo = true; document.body.classList.add("demo"); }
@@ -2004,7 +2053,7 @@
   // has no host to close, goes (hud.css html.embed).
   const embedded = params.get("embed") !== null;
   if (embedded) document.documentElement.classList.add("embed");
-  const wsUrl = params.get("ws");
+  const wsUrl = local ? params.get("ws") : null;
   if (wsUrl) {
     const connect = () => {
       const s = new WebSocket(wsUrl);
@@ -2127,7 +2176,7 @@
   }
   hud.replayTo = replayTo;
 
-  if (params.get("keymap")) {
+  if (local && params.get("keymap")) {
     const demo = params.get("demo"), timeline = params.get("timeline");
     const script = demo !== null ? fetch(params.get("script") || "demo.json").then(r => r.json())
                  : timeline ? fetch(timeline).then(r => r.json()) : Promise.resolve(null);

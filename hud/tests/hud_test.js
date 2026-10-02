@@ -158,6 +158,97 @@ function checkEmbed() {
   return fails;
 }
 
+/* ?ws=, ?keymap=, ?script= and ?timeline= say what the page connects to and fetches. The hosts
+ * load the page from disk and the demo from 127.0.0.1; the published copy on GitHub Pages must
+ * honour none of them, or a link could point it at any server and have it draw that server's
+ * glyphs as markup. */
+function checkLocalOnly() {
+  const fails = [];
+  const query = "?keymap=x.json&ws=ws://127.0.0.1:8766/t&demo=0&script=s.json";
+  const cases = [
+    { opts: { protocol: "https:", hostname: "someone.github.io", search: query, quiet: true }, fetched: 0, sockets: 0, where: "github.io" },
+    { opts: { protocol: "http:", hostname: "example.com", search: query, quiet: true }, fetched: 0, sockets: 0, where: "example.com" },
+    { opts: { protocol: "file:", search: query }, fetched: 2, sockets: 1, where: "file:" },
+    { opts: { protocol: "http:", hostname: "localhost", search: query }, fetched: 2, sockets: 1, where: "localhost" },
+    { opts: { protocol: "http:", hostname: "127.0.0.1", search: query }, fetched: 2, sockets: 1, where: "127.0.0.1" },
+  ];
+  for (const c of cases) {
+    const page = loadPage(c.opts);
+    if (page.fetched.length !== c.fetched) fails.push(`${c.where}: fetched ${JSON.stringify(page.fetched)}, want ${c.fetched} requests`);
+    if (page.sockets.length !== c.sockets) fails.push(`${c.where}: opened ${JSON.stringify(page.sockets)}, want ${c.sockets} sockets`);
+  }
+  return fails;
+}
+
+/* A glyph is markup the page draws, and the page sees every keystroke. One that is anything but a
+ * drawing is not drawn: the legend shows the glyph's text spelling instead. The rules are
+ * host/keymap.py's (glyph_problem); here they are applied to what reaches the page. The published
+ * board's own glyphs, all of them real icons, must all draw. */
+function checkGlyphs() {
+  const fails = [];
+  const hostile = [
+    '<svg onload="x()"><path d="M0 0"/></svg>',
+    "<svg><script>x()</script></svg>",
+    "<svg><foreignObject><div>x</div></foreignObject></svg>",
+    '<svg><use href="https://e.example/x.svg#a"/></svg>',
+    '<svg><a href="javascript:1"><path d="M0 0"/></a></svg>',
+    '<svg><image href="https://e.example/x"/></svg>',
+    "<svg><style>path{fill:red}</style></svg>",
+    '<svg style="background:url(x)"><path d="M0 0"/></svg>',
+    '<!DOCTYPE svg [<!ENTITY x "y">]><svg>&x;</svg>',
+    "<svg/onload=x()>",
+    '<svg title=">" onload="x()"></svg>',
+    "<svg><!--><script>x()</script>--></svg>",
+    "<svg><![CDATA[x]]></svg>",
+    "<div>x</div>",
+    "x<svg></svg>",
+    "<svg></svg>x",
+    "<svg></svg><svg onload=x()></svg>",
+  ];
+  const place = (data, layerName) => {
+    // Which ZMK layer ids put `layerName` on top: none for the base layer.
+    if (layerName === data.base) return [];
+    const id = Object.keys(data.zmk_layers || {}).find(i => data.zmk_layers[i].drawer === layerName || data.zmk_layers[i].name === layerName);
+    return id === undefined ? null : [Number(id)];
+  };
+  const tapOf = (page, idx) => page.hud.state.keyEls[idx].querySelector(".tap");
+
+  // A key with a glyph on the fixture's base layer, to try each hostile glyph on.
+  const data = JSON.parse(fs.readFileSync(FIXTURE, "utf8"));
+  const baseKeys = data.layers[data.base] || [];
+  const idx = baseKeys.findIndex(k => k.glyph && data.glyphs[k.glyph]);
+  if (idx < 0) return ["the fixture's base layer has no key with a glyph"];
+  for (const svg of hostile) {
+    const d = JSON.parse(JSON.stringify(data));
+    d.glyphs[baseKeys[idx].glyph] = svg;
+    const page = loadPage();
+    page.hud.load(d);
+    page.hud.setLayers([]);
+    const tap = tapOf(page, idx);
+    if (tap.children.length !== 0) fails.push(`drew ${svg}`);
+    else if (!tap.textContent) fails.push(`${svg}: refused, but the legend shows nothing in its place`);
+  }
+
+  // The published board: every glyph on every layer draws.
+  const board = JSON.parse(fs.readFileSync(path.join(REPO, "docs", "boards", "diamond.json"), "utf8"));
+  const page = loadPage();
+  page.hud.load(board);
+  let drawn = 0;
+  for (const layerName of board.layer_order) {
+    const ids = place(board, layerName);
+    if (ids === null) continue;
+    page.hud.setLayers(ids);
+    (board.layers[layerName] || []).forEach((k, i) => {
+      if (!k.glyph || !board.glyphs[k.glyph] || k.type === "trans") return;
+      const tap = tapOf(page, i);
+      if (tap.children.length !== 1) fails.push(`${layerName} key ${i}: ${k.glyph} did not draw`);
+      else drawn++;
+    });
+  }
+  if (drawn < 20) fails.push(`only ${drawn} glyphs of the published board were drawn; the check proves little`);
+  return fails;
+}
+
 /* A board drawn in capitals, the way `keymap parse` draws letters (the committed 3x5 sample): the
  * page places typing sent in by itself, and a lowercase letter is found on its capital's key -- the
  * legend is the keycap. h and H light the same key. */
@@ -278,6 +369,18 @@ async function main() {
   const embedFailures = checkEmbed();
   if (embedFailures.length) {
     for (const failure of embedFailures) console.error(`FAIL embed: ${failure}`);
+    process.exit(1);
+  }
+
+  const localFailures = checkLocalOnly();
+  if (localFailures.length) {
+    for (const failure of localFailures) console.error(`FAIL local-only: ${failure}`);
+    process.exit(1);
+  }
+
+  const glyphFailures = checkGlyphs();
+  if (glyphFailures.length) {
+    for (const failure of glyphFailures) console.error(`FAIL glyphs: ${failure}`);
     process.exit(1);
   }
 

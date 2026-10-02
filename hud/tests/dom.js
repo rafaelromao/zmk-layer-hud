@@ -247,23 +247,29 @@ function makeDocument() {
  *
  * `search` is the page's query string, for what hud.js decides from it at load (a GIF still's
  * &demo=N, ?embed). A query that names a keymap makes the page fetch it; `fetch` here never settles,
- * so the page stays exactly as the test loads it rather than racing a second load in. `protocol`
- * is "file:" unless given: "http:" is a page in a browser, which installs the dev keydown listener. */
+ * so the page stays exactly as the test loads it rather than racing a second load in, and what it
+ * asked for is in `fetched`; a `?ws=` opens a WebSocket, which here only records its URL in
+ * `sockets`. `protocol` is "file:" unless given: "http:" is a page in a browser, which installs the
+ * dev keydown listener. `hostname` is "" for file: and "localhost" otherwise, unless given: a
+ * published copy on some other host honours no URL parameter. */
 function loadPage(opts = {}) {
   const clock = new Clock();
   const document = makeDocument();
   const board = document.getElementById("board");
   board.ownerBoard = board;
   const protocol = opts.protocol || "file:";
+  const hostname = opts.hostname !== undefined ? opts.hostname : (protocol === "file:" ? "" : "localhost");
   const listeners = new Map();   // window's, by event type
+  const fetched = [], sockets = [];
 
   const sandbox = {
     document,
-    location: { search: opts.search || "", protocol,
-                href: (protocol === "file:" ? "file:///" : protocol + "//localhost/") + "hud/index.html" + (opts.search || "") },
-    fetch: () => new Promise(() => {}),
+    location: { search: opts.search || "", protocol, hostname,
+                href: (protocol === "file:" ? "file:///" : protocol + "//" + hostname + "/") + "hud/index.html" + (opts.search || "") },
+    fetch: url => { fetched.push(String(url)); return new Promise(() => {}); },
+    WebSocket: class { constructor(url) { sockets.push(String(url)); } },
     navigator: { userAgent: "node" },
-    console,
+    console: opts.quiet ? { ...console, warn: () => {} } : console,   // a test that expects the page's warning
     URLSearchParams,
     setTimeout: (fn, ms) => clock.setTimeout(fn, ms),
     clearTimeout: id => clock.clearTimeout(id),
@@ -290,7 +296,7 @@ function loadPage(opts = {}) {
     const src = fs.readFileSync(path.join(HUD_DIR, file), "utf8");
     vm.runInContext(src, sandbox, { filename: path.join(HUD_DIR, file) });
   }
-  return { hud: sandbox.hud, keys: sandbox.keys, document, board, clock, window: sandbox, dispatch };
+  return { hud: sandbox.hud, keys: sandbox.keys, document, board, clock, window: sandbox, dispatch, fetched, sockets };
 }
 
 // Date with a movable now(). hud.js only ever calls Date.now(), but keep the rest of the class

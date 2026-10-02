@@ -60,7 +60,9 @@ reads) and lists every such chord.
 `hud/tests/dom.js` is a browser small enough to read — the DOM the page touches and a clock the
 test drives by hand — so `hud/hud.js` and `hud/keys.js` run under node exactly as they ship, with
 no npm and nothing to build. A DOM that small can also be wrong, so the same cases run in the real
-page: serve `hud/`, open `index.html?keymap=tests/fixtures/diamond.json`, and
+page: serve `hud/` on localhost (the page honours `?keymap=` and `?ws=` only from `file:` or a
+local server, so a link cannot point a published copy at another server), open
+`index.html?keymap=tests/fixtures/diamond.json`, and
 
 ```js
 await import("./tests/browser.js"); await hudBrowserSweep("tests/fixtures/diamond.json")

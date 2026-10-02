@@ -66,6 +66,7 @@ import json
 import os
 import re
 import sys
+import xml.etree.ElementTree as ET
 from itertools import chain
 
 DEFAULT_CONFIG = os.path.expanduser("~/.config/zmk-layer-hud/config.yaml")
@@ -620,6 +621,47 @@ GLYPH_URLS = {
 }
 _glyph_memo = {}
 
+# A glyph goes into the page as markup, and the page sees every keystroke, so a glyph is taken as it
+# came or not at all -- never rewritten -- and only when nothing in it can run. These are the
+# elements a drawing is made of; anything else (script, style, foreignObject, image, a, animate...)
+# refuses the glyph, as does an on* or style attribute, or an href that points outside it. hud.js
+# (glyphOK) applies the same list to whatever reaches it, so the two are kept the same.
+GLYPH_TAGS = frozenset(("svg", "g", "path", "circle", "ellipse", "rect", "line", "polyline", "polygon", "defs",
+                        "clippath", "mask", "lineargradient", "radialgradient", "stop", "title", "desc", "symbol",
+                        "use", "text", "tspan"))
+
+
+def glyph_problem(svg):
+    """Why an SVG may not be put on the page, or None when it is a drawing and nothing more."""
+    if not isinstance(svg, str):
+        return "not text"
+    if "\0" in svg:
+        return "a NUL byte"
+    if re.search(r"<[!?]", re.sub(r"<!--.*?-->", "", svg, flags=re.S)):
+        return "a doctype, entity, CDATA section or processing instruction"
+    try:
+        root = ET.fromstring(svg)
+    except ET.ParseError as e:
+        return f"not well-formed XML ({e})"
+
+    def local(tag):
+        return tag.rsplit("}", 1)[-1].lower()
+    if local(root.tag) != "svg":
+        return f"its root is <{local(root.tag)}>, not <svg>"
+    for el in root.iter():
+        name = local(el.tag)
+        if name not in GLYPH_TAGS:
+            return f"<{name}> is not drawing"
+        for attr, value in el.attrib.items():
+            a = local(attr)
+            if a.startswith("on"):
+                return f"an {a} attribute"
+            if a == "style":
+                return "a style attribute"
+            if a == "href" and not value.strip().startswith("#"):
+                return "an href that points outside the glyph"
+    return None
+
 
 def glyph_cache_dir():
     """keymap-drawer's own glyph cache, so a glyph fetched by either tool serves both."""
@@ -656,25 +698,43 @@ def glyph_url(name, urls):
 def resolve_glyphs(names, drawer_cfg, log=None, fetch=True):
     """name -> SVG text, from draw_config.glyphs, keymap-drawer's cache, or the glyph_urls (fetched
     in parallel, once, and cached there). Names that cannot be resolved are left out; the page
-    shows text for them. Fetching stops for this run after the first network failure."""
+    shows text for them. Fetching stops for this run after the first network failure. Whatever the
+    source, a glyph that is not a drawing alone (glyph_problem) is left out too, and said."""
     dc = (drawer_cfg or {}).get("draw_config", {}) if drawer_cfg else {}
     inline = dc.get("glyphs") or {}
     urls = dict(GLYPH_URLS)
     urls.update(dc.get("glyph_urls") or {})
     cache = glyph_cache_dir()
     out, to_fetch = {}, {}
+
+    def take(name, svg, memo=True):
+        why = glyph_problem(svg)
+        if why:
+            if log:
+                log(f"keymap: glyph {name} refused ({why}); showing text")
+            return False
+        out[name] = svg
+        if memo:
+            _glyph_memo[name] = svg
+        return True
+
     for name in sorted(names):
         if name in inline:
-            out[name] = inline[name]
+            take(name, inline[name], memo=False)
         elif name in _glyph_memo:
             out[name] = _glyph_memo[name]
         else:
             path = os.path.join(cache, f"{name.replace('/', '@')}.svg")
             if os.path.isfile(path):
                 with open(path, encoding="utf-8") as f:
-                    out[name] = _glyph_memo[name] = f.read()
+                    take(name, f.read())
             elif fetch and not _glyph_memo.get("__offline__"):
                 url = glyph_url(name, urls)
+                if url and not url.startswith("https://"):
+                    # A drawer config's glyph_urls may say anything; only https is fetched.
+                    if log:
+                        log(f"keymap: glyph {name} not fetched (its source is not https); showing text")
+                    url = None
                 if url:
                     to_fetch[name] = (url, path)
     if to_fetch:
@@ -686,6 +746,9 @@ def resolve_glyphs(names, drawer_cfg, log=None, fetch=True):
             try:
                 with urlopen(url, timeout=5) as f:
                     svg = f.read().decode("utf-8")
+                why = glyph_problem(svg)
+                if why:
+                    return name, None, f"refused: {why}"   # and not cached: the cache serves keymap-drawer too
                 os.makedirs(cache, exist_ok=True)
                 with open(path, "w", encoding="utf-8") as f:
                     f.write(svg)
@@ -853,7 +916,9 @@ def build_message(cfg, drawing, source=""):
         # How long the keyboard must be idle before a combo (ZMK require-prior-idle-ms): a chord
         # struck sooner after another key is its keys. 0: no such rule.
         "combo_idle": int(cfg.get("combo_idle_ms") or 0),
-        "glyphs": drawing.get("glyphs") or {},
+        # Checked again here, for definitions written before the check existed or by hand: the
+        # page draws what this says as markup.
+        "glyphs": {name: svg for name, svg in (drawing.get("glyphs") or {}).items() if glyph_problem(svg) is None},
         "positions": pos_to_idx,
         "layout": layout,
         "layers": layers,
