@@ -238,6 +238,38 @@ function page(opts) {
   check(nl(2) - nl(1) >= 300 * narrow.hud.state.scale - 1e-6, "on a narrow screen the halves keep the gap the layout draws");
 })();
 
+(function theStatsSitBetweenTheHalvesWhenTheyFit() {
+  const split = JSON.parse(JSON.stringify(MSG));
+  split.layout = { width: 600, height: 100, keys: [50, 150, 450, 550].map((x) => ({ x, y: 50, w: 100, h: 100, r: 0 })) };
+  const root = (p) => p.document.documentElement;
+  const p = loadPage();
+  p.hud.load(split);
+  p.board.style.width = "1600px";
+  p.hud.setDock({ on: true, max_height: 240 });
+  const st = p.hud.state, stats = p.document.getElementById("stats");
+  check(root(p).classList.contains("stats-middle"), "a wide screen's split board has the stats between its halves");
+  const leftHalfEnd = parseFloat(st.keyEls[1].style.left) + parseFloat(st.keyEls[1].style.width);
+  const rightHalfStart = parseFloat(st.keyEls[2].style.left);
+  const sl = parseFloat(stats.style.left);
+  check(sl > leftHalfEnd && sl + 188 < rightHalfStart, `between them: ${leftHalfEnd.toFixed(0)} < ${sl.toFixed(0)}..${(sl + 188).toFixed(0)} < ${rightHalfStart.toFixed(0)}`);
+  check(Math.abs((sl + 94) - (leftHalfEnd + rightHalfStart) / 2) < st.gap, "in the middle");
+  check(stats.style.maxHeight === Math.ceil(100 * st.scale) + "px", `no taller than the board: ${stats.style.maxHeight}`);
+  p.hud.setDock({ on: false });
+  check(!root(p).classList.contains("stats-middle") && stats.style.left === "", "floating again, the column goes back to the side");
+
+  const narrow = loadPage();
+  narrow.hud.load(split);
+  narrow.board.style.width = "600px";            // the halves ~195 px apart: less than the column and its margins
+  narrow.hud.setDock({ on: true, max_height: 240 });
+  check(!narrow.document.documentElement.classList.contains("stats-middle"), "a gap narrower than the column keeps it away");
+
+  const tablet = loadPage({ search: "?embed" });
+  tablet.hud.load(split);
+  tablet.board.style.width = "1600px";
+  tablet.hud.setDock({ on: true, max_height: 240 });
+  check(!tablet.document.documentElement.classList.contains("stats-middle"), "and a tablet's keyboard page has none");
+})();
+
 // The same board with a combo on its first two keys -- a and b together are Escape, on the base layer
 // alone -- for the chips: a copy, since a combo would make the tests above that roll a and b chord.
 function chipPage(combos) {

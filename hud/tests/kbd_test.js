@@ -141,6 +141,12 @@ function tap(k, idx, t, ms) {
   const whole = k.geometry(1400, 200, false);
   check(Math.abs(whole.rects[0].x - (1400 - 700 * whole.scale) / 2 - whole.gap / 2) < 1e-6, "in one piece, centred");
   check(View.halves(MSG.layout).left.size === 3, "the left half is the three keys before the gap");
+  const row = (xs) => ({ width: Math.max(...xs) + 50, height: 100, keys: xs.map((x) => ({ x, y: 50, w: 100, h: 100, r: 0 })) });
+  // The Diamond's thumb clusters come within 0.43 of a key of each other: still two halves.
+  check(View.halves(row([50, 150, 250, 393, 493, 593])) !== null, "halves a little under half a key apart are halves");
+  check(View.halves(row([50, 150, 250, 375, 475, 575])) === null, "a quarter of a key apart is one board");
+  // A unibody's cluster set apart near one end (a nav cluster) is not a split.
+  check(View.halves(row([50, 150, 250, 350, 450, 550, 650, 790])) === null, "a gap near the end is not the middle");
 })();
 
 console.log(`the touch keyboard for native shells: ${checks} checks, ${fail.length} failures`);

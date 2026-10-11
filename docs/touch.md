@@ -184,7 +184,13 @@ set, glass changes a few things:
   the host allows (`max_height`); the stats column, the status line and the strip are hidden, and
   the banner is one thin line. A split board's halves go to the two sides of the screen, where the
   thumbs are on a tablet held in two hands (`"split": false` keeps it in one piece); a board in one
-  piece is centred. The page reports the height it took.
+  piece is centred. The page reports the height it took. A board is split when its widest gap
+  between key columns is a third of a key or more and lies in the middle half of the board (a split
+  board's thumb clusters can come close; a unibody's nav cluster sits apart near one end).
+- When the room between the halves holds it, the **stats column** sits there (`html.stats-middle`):
+  centred, from the board's top and no taller than it, scrolling when it is taller, and hidden still
+  when it was hidden. Not on the remote page or a tablet's keyboard, where touch typing counts
+  nothing.
 - **Combo chips** (`touch.combos: "chips"`, the default; `"off"` draws none). A finger cannot
   press two keys within a combo's timeout the way a hand does, so each combo that fires on the
   layer up, whose keys are all drawn and that the drawing gives a legend, is a chip between its

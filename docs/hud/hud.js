@@ -204,6 +204,26 @@
       state.keyEls[idx] = e;
     });
     paintHeat();   // the glow lives by index, not on the elements just replaced
+    placeStats(g);
+  }
+
+  // Docked with a split board's halves at the sides, the room between them holds the stats column
+  // when it fits (hud.css html.stats-middle): centred there, from the board's top and no taller than
+  // it. Not on a tablet's pages (the remote page, a tablet keyboard's), where touch typing counts
+  // nothing and the column would only say so.
+  const STATS_WIDTH = 188;          // hud.css #stats width
+  const STATS_ROOM = STATS_WIDTH + 2 * 12;
+  function placeStats(g) {
+    const root = document.documentElement, host = $("stats"), frame = $("frame"), board = $("board");
+    const fits = !!(state.dock && g.middle && g.middle.w >= STATS_ROOM && host && frame &&
+                    !root.classList.contains("remote") && !root.classList.contains("embed"));
+    root.classList.toggle("stats-middle", fits);
+    if (!host) return;
+    if (!fits) { host.style.left = host.style.top = host.style.maxHeight = ""; return; }
+    const b = board.getBoundingClientRect(), f = frame.getBoundingClientRect();
+    host.style.left = (b.left - f.left + g.middle.x + (g.middle.w - STATS_WIDTH) / 2) + "px";
+    host.style.top = (b.top - f.top) + "px";
+    host.style.maxHeight = g.height + "px";
   }
 
   // ZMK layer id → keymap entry ({name, drawer, label, cls}); falls back to the YAML order.

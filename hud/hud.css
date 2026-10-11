@@ -374,6 +374,12 @@ html.dock #layer { min-height: 20px; padding: 0 4px 2px; border-bottom-width: 2p
 html.dock #layerName { font-size: 15px; line-height: 20px; }
 html.dock #layerSub { padding-top: 0; }
 html.dock #stats, html.dock #status, html.dock #keys, html.dock #side { display: none; }
+/* ...but a split board's halves at the sides leave room between them, and there the stats column
+   sits when it fits (hud.js placeStats): as tall as the board, scrolling when it is taller. Hidden
+   still when it was hidden (the chevron's choice, stats_bar: 0). */
+html.stats-middle #frame { position: relative; }
+html.dock.stats-middle body:not(.side-hidden) #stats:not(.off) { display: grid; position: absolute; margin: 0;
+  overflow-y: auto; overscroll-behavior: contain; }
 
 /* The remote page (host/remote.py, remote.js): a tablet's browser, the whole window the keyboard.
    The board sits at the bottom, where the thumbs are; the page never scrolls, bounces or selects,

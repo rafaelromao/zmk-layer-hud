@@ -11,7 +11,10 @@
   // ---------- where the keys go ----------
 
   // The two halves of a split board as its layout draws them: the keys left of the widest gap
-  // between columns, and the rest. null for a board in one piece (a gap narrower than half a key).
+  // between columns, and the rest. null for a board in one piece: no gap of a third of a key or
+  // more in the middle half of the board. A third, because a split board's thumb clusters can come
+  // close (the Diamond's are 0.43 of a key apart); the middle, because a unibody board's nav
+  // cluster sits apart near one end.
   function halves(lay) {
     const spans = lay.keys.map(k => ({ l: k.x - k.w / 2, r: k.x + k.w / 2 })).sort((a, b) => a.l - b.l);
     let reach = -Infinity, best = null;
@@ -19,7 +22,9 @@
       if (reach > -Infinity && s.l - reach > (best ? best.gap : 0)) best = { gap: s.l - reach, at: s.l };
       reach = Math.max(reach, s.r);
     }
-    if (!best || best.gap < Math.min(...lay.keys.map(k => k.w)) / 2) return null;
+    if (!best || best.gap < Math.min(...lay.keys.map(k => k.w)) / 3) return null;
+    const mid = best.at - best.gap / 2;
+    if (mid < lay.width / 4 || mid > lay.width * 3 / 4) return null;
     const left = new Set();
     lay.keys.forEach((k, idx) => { if (k.x < best.at) left.add(idx); });
     return { left, gap: best.gap };
@@ -34,12 +39,13 @@
    * on a tablet held in two hands, never closer than the layout draws them, and a board in one
    * piece is centred. The gap grows with the keys, so a board scaled up for glass is not all key.
    *
-   * Returns {scale, gap, offsetX, centers: [{x, y}], rects: [{x, y, w, h, r}], height, kh}: each key's
-   * centre (what a touch between keys is measured from), its box before rotation, the board's
-   * height, and the typical key's height (what legends scale with). */
+   * Returns {scale, gap, offsetX, centers: [{x, y}], rects: [{x, y, w, h, r}], height, kh, middle}: each
+   * key's centre (what a touch between keys is measured from), its box before rotation, the board's
+   * height, the typical key's height (what legends scale with), and for a split board docked the
+   * room between its halves, {x, w} (null otherwise). */
   function geometry(lay, opts) {
     const width = opts.width;
-    let scale = width / lay.width, gap = opts.gap, offsetX = 0;
+    let scale = width / lay.width, gap = opts.gap, offsetX = 0, middle = null;
     let offsetOf = () => offsetX;
     if (opts.dock) {
       const room = Math.max(40, opts.dock.maxHeight - (opts.chrome || 0));
@@ -56,6 +62,7 @@
         scale = Math.min((width - 2 * gap) / span, room / lay.height);
         const toLeft = gap - lMin * scale, toRight = width - gap - rMax * scale;
         offsetOf = idx => (split.left.has(idx) ? toLeft : toRight);
+        middle = { x: toLeft + lMax * scale, w: (toRight + rMin * scale) - (toLeft + lMax * scale) };
       } else {
         scale = Math.min(scale, room / lay.height);
         offsetX = Math.max(0, (width - lay.width * scale) / 2);
@@ -68,7 +75,7 @@
       return { x: centers[idx].x - w / 2, y: k.y * scale - h / 2, w, h, r: k.r || 0 };
     });
     return { scale, gap, offsetX, centers, rects, height: Math.ceil(lay.height * scale),
-             kh: Math.min(...lay.keys.map(k => k.h)) * scale - gap };
+             kh: Math.min(...lay.keys.map(k => k.h)) * scale - gap, middle };
   }
 
   // ---------- which legend ----------
