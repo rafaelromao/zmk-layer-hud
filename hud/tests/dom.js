@@ -48,6 +48,14 @@ class Clock {
     return id;
   }
   clearTimeout(id) { this.timers.delete(id); }
+  /* Again and again until cleared: touch.js says its keys again every half second while held. */
+  setInterval(fn, ms) {
+    const id = ++this.seq;
+    const every = Math.max(1, Number(ms) || 0);
+    const run = () => { this.timers.set(id, { fn: run, at: this.now + every, seq: id }); fn(); };
+    this.timers.set(id, { fn: run, at: this.now + every, seq: id });
+    return id;
+  }
   /* Inline, not queued. Both files use rAF only to add the `show` class that fades a pill or a
    * chip in, so running it at once makes "it is on screen" observable without advancing time —
    * and advancing time is how the tests check teardown, which would otherwise be conflated. */
@@ -155,11 +163,24 @@ class El {
   }
   // What a press on a button does: its click listeners, in the order added. The event is returned,
   // so a test can tell whether a link's own action was kept from happening.
-  click() {
-    const ev = { type: "click", target: this, defaultPrevented: false, preventDefault() { ev.defaultPrevented = true; } };
-    for (const fn of ((this.listeners && this.listeners.get("click")) || []).slice()) fn(ev);
+  click() { return this.fire("click"); }
+  /* An event of any type on this element, its listeners called in the order added -- then its
+   * parents', as a bubbling event would reach them (touch.js listens on the board for the keys'
+   * pointer events). `props` is what the event carries (pointerId, clientX, ...). */
+  fire(type, props) {
+    const ev = Object.assign({ type, target: this, defaultPrevented: false, button: 0 }, props || {});
+    ev.preventDefault = () => { ev.defaultPrevented = true; };
+    for (let node = this; node; node = node.parentNode) {
+      for (const fn of ((node.listeners && node.listeners.get(type)) || []).slice()) fn(ev);
+    }
     return ev;
   }
+  closest(sel) {
+    for (let node = this; node; node = node.parentNode) if (node.matches && node.matches(sel)) return node;
+    return null;
+  }
+  setPointerCapture() {}
+  releasePointerCapture() {}
 
   matches(sel) {
     const m = SIMPLE.exec(sel.trim());
@@ -239,6 +260,7 @@ function makeStyle() {
 const PAGE_IDS = ["frame", "hud", "layer", "layerName", "layerSub", "side", "hide", "close", "board", "stats", "statsHead", "status", "feed", "title", "keys"];
 // ...each with the attributes index.html gives it: the heading's href, which ?embed takes away.
 const PAGE_HTML = fs.readFileSync(path.join(HUD_DIR, "index.html"), "utf8");
+const SCRIPTS = [...PAGE_HTML.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
 function pageAttributes(id) {
   const tag = new RegExp(`<\\w+\\s[^>]*\\bid="${id}"[^>]*>`).exec(PAGE_HTML);
   return tag ? [...tag[0].matchAll(/([\w-]+)="([^"]*)"/g)].map(m => [m[1], m[2]]) : [["id", id]];
@@ -266,14 +288,27 @@ function makeDocument() {
   doc.getElementById = id => byId.get(id) || null;
   doc.querySelector = sel => doc.body.querySelector(sel);
   doc.querySelectorAll = sel => doc.body.querySelectorAll(sel);
-  doc.addEventListener = () => {};
+  // The document's own listeners (touch.js: visibilitychange, gesturestart), fired by a test.
+  const docListeners = new Map();
+  doc.addEventListener = (type, fn) => {
+    if (!docListeners.has(type)) docListeners.set(type, []);
+    docListeners.get(type).push(fn);
+  };
+  doc.fire = (type, props) => {
+    const ev = Object.assign({ type, defaultPrevented: false }, props || {});
+    ev.preventDefault = () => { ev.defaultPrevented = true; };
+    for (const fn of (docListeners.get(type) || []).slice()) fn(ev);
+    return ev;
+  };
+  doc.hidden = false;
   return doc;
 }
 
 // ---------- the page ----------
 
-/* Load hud.js and keys.js into one sandbox, exactly as index.html loads them (keys.js first, so
- * window.keys exists by the time hud.key forwards to it). Returns the handles a test needs.
+/* Load the page's scripts into one sandbox, exactly as index.html loads them (keys.js first, so
+ * window.keys exists by the time hud.key forwards to it; the touch keyboard's after hud.js).
+ * Returns the handles a test needs.
  *
  * `search` is the page's query string, for what hud.js decides from it at load (a GIF still's
  * &demo=N, ?embed). A query that names a keymap makes the page fetch it; `fetch` here never settles,
@@ -303,10 +338,11 @@ function loadPage(opts = {}) {
     URLSearchParams,
     setTimeout: (fn, ms) => clock.setTimeout(fn, ms),
     clearTimeout: id => clock.clearTimeout(id),
-    setInterval: () => 0,
-    clearInterval: () => {},
+    setInterval: (fn, ms) => clock.setInterval(fn, ms),
+    clearInterval: id => clock.clearTimeout(id),
     requestAnimationFrame: fn => clock.requestAnimationFrame(fn),
     Date: makeDate(clock),
+    innerHeight: opts.innerHeight || 800,
   };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
@@ -322,7 +358,8 @@ function loadPage(opts = {}) {
   const dispatch = (type, event) => { for (const fn of (listeners.get(type) || []).slice()) fn(event); };
 
   vm.createContext(sandbox);
-  for (const file of ["keys.js", "hud.js"]) {
+  // Every script index.html loads, in its order, as site/build.py reads them (hud_files).
+  for (const file of SCRIPTS) {
     const src = fs.readFileSync(path.join(HUD_DIR, file), "utf8");
     vm.runInContext(src, sandbox, { filename: path.join(HUD_DIR, file) });
   }

@@ -1,0 +1,239 @@
+/* zmk-layer-hud — the touch keyboard: the board types when its keys are touched (docs/touch.md).
+ *
+ * A finger on a key is a key going down at that key's ZMK position, and the virtual firmware
+ * (engine.js) does with it what the keyboard would: hold-taps, layers, sticky keys, macros. What
+ * it sends goes to the page's sink -- report snapshots for a desktop host, which presses the keys
+ * at its operating system, or text for a tablet's keyboard (hidtext.js) -- and the board draws the
+ * engine's layers, the keys under fingers, and what is latched.
+ *
+ * A sink comes from the host ({"kind":"touch","on":true,"sink":{...}}, sent through hud.receive,
+ * typing then going back through the panel's bridge), or from a native shell or the remote page
+ * calling hud.setTouch({output, repeat, pages, shortcuts, mouse, send}). Without one the board is
+ * the HUD it always was.
+ *
+ * Touch typing counts nowhere: not the session, the WPM, the tallies. It warms the live heat and
+ * shows in the strip (touch.heat, touch.strip), and while a secret is being typed only the
+ * typing goes on.
+ */
+(function () {
+  "use strict";
+  const hud = window.hud, Engine = window.ZmkEngine, HidText = window.ZmkHidText;
+  const board = document.getElementById("board");
+  if (!hud || !Engine || !HidText || !board) return;
+  const html = document.documentElement;
+  const HEARTBEAT_MS = 500;      // a host lets a silent page's keys go after 1.5 s (docs/touch.md)
+  const REFUSED_MS = 300;
+
+  let data = null, sink = null, engine = null, driver = null, decoder = null;
+  let view = { ids: null, down: [], latched: {}, mods: 0 };
+  let problem = "";              // the host's word on why typing cannot happen (typing.state)
+  const pointers = new Map();    // pointerId -> {input, idx}
+  let last = null, seq = 0, beat = null, deadTimer = null;
+
+  const typing = () => !!(sink && engine);
+
+  function setTouch(s) {
+    sink = s || null;
+    html.classList.toggle("touch", !!sink);
+    rebuild();
+    hud.relayout();
+  }
+
+  function rebuild() {
+    if (driver) { driver.releaseAll(); driver.stop(); }
+    engine = driver = null;
+    pointers.clear();
+    clearInterval(beat); beat = null; last = null;
+    view = { ids: null, down: [], latched: {}, mods: 0 };
+    const usable = data && data.actions && !data.actions.error && data.touch && data.touch.enabled;
+    if (!sink || !usable) { hud.setTouchView(null); return; }
+    engine = Engine.create(data.actions, { touch: data.touch, sink: {
+      repeat: sink.repeat || "os", pages: sink.pages || [7, 12], mouse: sink.mouse || "none" } });
+    driver = Engine.drive(engine, { now: () => Date.now(), setTimeout: (f, ms) => setTimeout(f, ms),
+                                    clearTimeout: (t) => clearTimeout(t), emit });
+    decoder = HidText.decoder({ altgr: !!data.altgr });
+    // The keyboard's own layers, as the engine's start: the board stays on the layer it shows.
+    driver.adopt((hud.state.live && hud.state.live.ids) || []);
+    view.ids = engine.state().layers;
+    show();
+  }
+
+  // ---------- what the engine says ----------
+
+  function emit(events) {
+    let changed = false;
+    for (const e of events) {
+      if (e.kind === "report") { report(e); changed = true; }
+      else if (e.kind === "layers") { view.ids = e.ids; changed = true; }
+      else if (e.kind === "latches") { view.latched = byIdx(e.latches); changed = true; }
+      else if (e.kind === "unsupported") refuse(e.input);
+    }
+    if (changed) show();
+  }
+
+  function report(e) {
+    view.mods = e.mods;
+    const keyEvents = decoder.feed(e, e.t);
+    if (sink.output === "text") {
+      sendOps(keyEvents);
+    } else {
+      last = { kind: "hid", v: 1, mods: e.mods, keys: e.keys.slice(0, 10) };
+      if (e.consumer && e.consumer.length) last.consumer = e.consumer.slice();
+      send(last);
+      // While anything is held, said again: a host that hears nothing lets the page's keys go.
+      clearInterval(beat); beat = null;
+      if (last.mods || last.keys.length || last.consumer) beat = setInterval(() => send(last), HEARTBEAT_MS);
+    }
+    stripOf(keyEvents);
+    // A dead key waits for its letter; alone, it is typed when its time is up.
+    clearTimeout(deadTimer);
+    if (decoder.pending()) {
+      deadTimer = setTimeout(() => { const late = decoder.flush(Date.now()); if (sink && sink.output === "text") sendOps(late); stripOf(late); },
+                             (window.ZmkHidTables ? window.ZmkHidTables.DEAD_KEY_MS : 60) + 5);
+    }
+  }
+
+  function send(msg) {
+    if (!sink || !sink.send) return;
+    try { sink.send(Object.assign({}, msg, { seq: ++seq })); } catch (x) { console.error(x); }
+  }
+
+  function sendOps(keyEvents) {
+    const ops = HidText.textEvents(keyEvents, { shortcuts: sink.shortcuts !== false });
+    if (ops.length) send({ kind: "ops", v: 1, ops });
+  }
+
+  function stripOf(keyEvents) {
+    if (!data.touch.strip) return;
+    for (const ev of keyEvents) if (ev.type === "keyDown") hud.strip(ev);
+  }
+
+  function idxOf(pos) {
+    const map = data.positions || {};
+    if (map[String(pos)] !== undefined) return map[String(pos)];
+    return Object.keys(map).length ? null : pos;
+  }
+
+  function byIdx(latches) {
+    const out = {};
+    for (const l of latches) {
+      const idx = idxOf(l.pos);
+      if (idx != null) out[idx] = l.state;
+    }
+    return out;
+  }
+
+  function refuse(pos) {
+    const idx = pos == null ? null : idxOf(pos);
+    const el = idx == null ? null : hud.state.keyEls[idx];
+    if (!el) return;
+    el.classList.add("refused");
+    setTimeout(() => el.classList.remove("refused"), REFUSED_MS);
+  }
+
+  function note() {
+    if (problem) return problem;
+    const states = Object.values(view.latched);
+    if (states.includes("locked")) return "touch · locked";
+    if (states.includes("oneshot")) return "touch · one shot";
+    if (pointers.size && view.ids && view.ids[0] !== (data.actions.default || 0)) return "touch · held";
+    return "";
+  }
+
+  function show() {
+    view.down = [...new Set([...pointers.values()].map((p) => p.idx).filter((i) => i != null))];
+    hud.setTouchView(Object.assign({}, view, { note: note() }));
+  }
+
+  // ---------- fingers ----------
+
+  // The key under a finger: a chip, the key element itself, or -- in the gap between keys -- the
+  // nearest key within half a gap and a little, its rotation undone. A key the firmware reports no
+  // position for is drawn, not typed.
+  function hit(e) {
+    const t = e.target && e.target.closest ? e.target : null;
+    const chip = t && t.closest(".combo-chip");
+    if (chip) return { input: { combo: Number(chip.dataset.combo) }, idx: null };
+    const keyEl = t && t.closest(".key");
+    const idx = keyEl ? Number(keyEl.dataset.idx) : keyAt(e.clientX, e.clientY);
+    if (idx == null || Number.isNaN(idx)) return null;
+    const g = hud.geometry();
+    const pos = g && g.posOf[idx];
+    return pos == null ? null : { input: { pos }, idx };
+  }
+
+  function keyAt(clientX, clientY) {
+    const g = hud.geometry();
+    if (!g) return null;
+    const rect = board.getBoundingClientRect();
+    const x = clientX - rect.left, y = clientY - rect.top;
+    let best = null, bestD = Infinity;
+    g.keys.forEach((k, idx) => {
+      const a = -(k.r || 0) * Math.PI / 180;
+      const dx = x - (g.offsetX + k.x * g.scale), dy = y - k.y * g.scale;
+      const lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
+      const d = Math.hypot(Math.max(0, Math.abs(lx) - (k.w * g.scale - g.gap) / 2),
+                           Math.max(0, Math.abs(ly) - (k.h * g.scale - g.gap) / 2));
+      if (d < bestD) { bestD = d; best = idx; }
+    });
+    return bestD <= g.gap / 2 + 2 ? best : null;
+  }
+
+  board.addEventListener("pointerdown", (e) => {
+    if (!typing() || e.button > 0) return;
+    const h = hit(e);
+    if (!h) return;
+    e.preventDefault();
+    try { board.setPointerCapture(e.pointerId); } catch (x) { /* a pointer the board cannot hold */ }
+    pointers.set(e.pointerId, h);
+    if (data.touch.heat && h.idx != null) hud.warmKey(h.idx);
+    driver.down(h.input);
+    show();
+  });
+  function lift(e) {
+    const h = pointers.get(e.pointerId);
+    if (!h) return;
+    pointers.delete(e.pointerId);
+    driver.up(h.input);
+    show();
+  }
+  for (const type of ["pointerup", "pointercancel", "lostpointercapture"]) board.addEventListener(type, lift);
+  // A long press is a hold, not a menu or a selection.
+  board.addEventListener("contextmenu", (e) => { if (typing()) e.preventDefault(); });
+  for (const type of ["gesturestart", "dblclick"]) document.addEventListener(type, (e) => { if (typing()) e.preventDefault(); });
+
+  // A page going away (a reload, the panel hidden, a tablet locked) lets everything go.
+  function releaseAll() {
+    if (!driver) return;
+    pointers.clear();
+    driver.releaseAll();
+    show();
+  }
+  document.addEventListener("visibilitychange", () => { if (document.hidden) releaseAll(); });
+  window.addEventListener("pagehide", releaseAll);
+
+  // ---------- the page ----------
+
+  hud.on("load", (d) => { data = d; rebuild(); });
+  hud.on("layers", (ids) => { if (engine && engine.idle()) driver.adopt(ids); });
+  hud.on("touch", (m) => {
+    if (m.on === false) { setTouch(null); return; }
+    // The panel's sink: typing goes back through its bridge.
+    setTouch(Object.assign({}, m.sink || {}, { send: (msg) => hud.post(msg) }));
+  });
+  hud.on("typing", (m) => {
+    problem = !m.state || m.state === "ok" ? "" :
+      m.state === "off" ? "touch typing is off" : `touch cannot type · ${m.fix || m.state}`;
+    if (engine) show();
+  });
+  hud.setTouch = setTouch;
+  hud.touch = { state: () => (engine ? engine.state() : null), releaseAll };
+
+  // Dev, from disk or a local server: &touch types into the console (and the strip), &dock docks.
+  const params = new URLSearchParams(location.search);
+  const local = location.protocol === "file:" || ["127.0.0.1", "localhost", "[::1]", "::1"].includes(location.hostname);
+  if (local && params.get("touch") !== null) {
+    setTouch({ output: "hid", repeat: "synthetic", send: (m) => console.log("touch:", JSON.stringify(m)) });
+  }
+  if (local && params.get("dock") !== null) hud.setDock({ on: true, max_height: Number(params.get("dock")) || window.innerHeight });
+})();

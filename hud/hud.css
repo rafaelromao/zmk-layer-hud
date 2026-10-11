@@ -347,3 +347,23 @@ body.demo #side { display: none; }
    overflow is the root's and the WebKit builds the panels run have no :has(). */
 html.embed { overflow: hidden; }
 html.embed #close, html.embed #hide { display: none; }
+
+/* The touch keyboard (touch.js): the board types. A finger is never a scroll, a zoom, a selection
+   or a callout menu there; a hold let go and still on is ringed -- one-shot in amber, locked in
+   amber and tinted -- and a key that cannot type here flashes. */
+html.touch #board { touch-action: none; }
+html.touch .key { -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; cursor: pointer; }
+.key.latched { --ring: #e0af68; }
+.key.locked { --ring: #e0af68; background: #f6e3c0; }
+.key.locked::after { box-shadow: inset 0 0 0 3px var(--ring); }
+.key.refused { background: #f7768e; transition: none; }
+
+/* Docked along the bottom of a screen (hud.js setDock): the board as wide as the window, centred,
+   and nothing around it but a thin banner. hud.js DOCK_CHROME is the height of what is not the
+   board: 4 + 6 padding, 2 border, the banner's 20 + 2 + 2, and one 4px gap -- the two agree. */
+html.dock #frame { width: 100%; }
+html.dock #hud { padding: 4px 10px 6px; gap: 4px; border-radius: 0; }
+html.dock #layer { min-height: 20px; padding: 0 4px 2px; border-bottom-width: 2px; gap: 8px; }
+html.dock #layerName { font-size: 15px; line-height: 20px; }
+html.dock #layerSub { padding-top: 0; }
+html.dock #stats, html.dock #status, html.dock #keys, html.dock #side { display: none; }

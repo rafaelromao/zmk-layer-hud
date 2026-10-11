@@ -53,6 +53,7 @@ test-hud: ## the HUD page: every key and combo, the heatmap, the strip, and ever
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/words_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/play_test.js && \
 	  $(NODE) hud/tests/engine_test.js && \
+	  $(NODE) hud/tests/touch_test.js && \
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/hidtext_test.js && \
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/engine_legends_test.js; \
 	fi

@@ -124,7 +124,21 @@
     seq: 0,
     tallyTimer: null,
     viewCache: null,
+    touch: null,              // the touch keyboard's view (touch.js, setTouchView): {ids, down, latched, mods, note}
+    dock: null,               // docked along the bottom of the screen (setDock): {on, maxHeight}
+    offsetX: 0,               // the board's left margin when docked: it is centred, not stretched
   };
+  // What other scripts on the page hook into (hud.on): touch.js follows the keymap and the layers.
+  const hooks = {};
+  function fire(name, arg) {
+    for (const fn of hooks[name] || []) {
+      try { fn(arg); } catch (e) { console.error(e); }
+    }
+  }
+  // Docked, the banner is one thin line and nothing else sits around the board: this is the
+  // height of what is not the board (hud.css html.dock #hud and #layer), which the host's
+  // max_height has to make room for.
+  const DOCK_CHROME = 40;
 
   const $ = id => document.getElementById(id);
   const base = () => state.data ? state.data.base : null;
@@ -147,28 +161,36 @@
     board.innerHTML = "";
     state.keyEls = [];
     const width = board.clientWidth || 570;
-    const scale = width / lay.width;
-    state.scale = scale;
+    let scale = width / lay.width, gap = GAP, offsetX = 0;
+    if (state.dock) {
+      // Docked: as wide as the screen allows and no taller than the host lets the strip be, centred.
+      // The gap grows with the keys, so a board scaled up for glass is not all key.
+      const room = Math.max(40, (state.dock.maxHeight || window.innerHeight || 360) - DOCK_CHROME);
+      scale = Math.min(scale, room / lay.height);
+      offsetX = Math.max(0, (width - lay.width * scale) / 2);
+      gap = Math.max(2, Math.min(8, Math.round(Math.min(...lay.keys.map(k => k.h)) * scale * 0.1)));
+    }
+    state.scale = scale; state.offsetX = offsetX; state.gap = gap;
     board.style.height = Math.ceil(lay.height * scale) + "px";
     // Legends scale with the typical key height (see --kh in hud.css).
-    const kh = Math.min(...lay.keys.map(k => k.h)) * scale - GAP;
+    const kh = Math.min(...lay.keys.map(k => k.h)) * scale - gap;
     board.style.setProperty("--kh", Math.max(20, kh) + "px");
     // What a combo's pill is placed around (pillSpot): the board's extent, each key's box as drawn
     // (a rotated key's is the box around it), and the size of a key, the unit its distances go by.
     state.boardSize = { w: width, h: Math.ceil(lay.height * scale) };
     state.keyBoxes = [];
-    state.keyUnit = Math.max(1, Math.min(...lay.keys.map(k => Math.min(k.w, k.h))) * scale - GAP);
+    state.keyUnit = Math.max(1, Math.min(...lay.keys.map(k => Math.min(k.w, k.h))) * scale - gap);
     state.pillSpots = new Map();
     lay.keys.forEach((k, idx) => {
       const e = el("div", "key");
       e.dataset.idx = idx;
       e.title = `#${idx}`;
-      const w = k.w * scale - GAP, h = k.h * scale - GAP;
-      const a = (k.r || 0) * Math.PI / 180, cx = k.x * scale, cy = k.y * scale;
+      const w = k.w * scale - gap, h = k.h * scale - gap;
+      const a = (k.r || 0) * Math.PI / 180, cx = offsetX + k.x * scale, cy = k.y * scale;
       const hw = (Math.abs(w * Math.cos(a)) + Math.abs(h * Math.sin(a))) / 2;
       const hh = (Math.abs(w * Math.sin(a)) + Math.abs(h * Math.cos(a))) / 2;
       state.keyBoxes[idx] = { l: cx - hw, t: cy - hh, r: cx + hw, b: cy + hh };
-      e.style.left = (k.x * scale - w / 2) + "px";
+      e.style.left = (offsetX + k.x * scale - w / 2) + "px";
       e.style.top = (k.y * scale - h / 2) + "px";
       e.style.width = w + "px";
       e.style.height = h + "px";
@@ -213,9 +235,22 @@
     return s;
   }
 
+  // The touch keyboard's layers, top first (touch.js: the engine's, which takes the keyboard's own
+  // while nothing on glass holds one), drawn as liveStack draws the keyboard's.
+  function touchStack() {
+    const names = [];
+    for (const id of state.touch.ids) {
+      const z = zl(id);
+      if (z && z.drawer && !names.includes(z.drawer)) names.push(z.drawer);
+    }
+    if (!names.includes(base())) names.push(base());
+    return names;
+  }
+
   function stack() {
     // A layer picked to look at is drawn over the base alone, until the next keystroke (unpick).
     if (state.pick) return state.pick === base() ? [base()] : [state.pick, base()];
+    if (state.touch && state.touch.ids) return touchStack();
     const s = [];
     if (state.oneShot) s.push(state.oneShot);
     for (let i = state.momentary.length - 1; i >= 0; i--) s.push(state.momentary[i].layer);
@@ -327,12 +362,22 @@
     // tapped as a one-shot, only ever reaches us as this flag. A single lowercase letter is the
     // whole of what it changes: \p{Ll} so the accented alphabets shift too (á -> Á), and a glyph,
     // a word or a symbol is left alone, because shift does not make ␣ or `nav` into anything.
-    const shifting = !!state.mods.shift;
+    // A Shift latched on glass (touch.js: the report's modifier byte, either Shift) shifts the
+    // legends as one held on the keyboard does.
+    const touch = state.touch;
+    const shifting = !!state.mods.shift || !!(touch && touch.mods & 0x22);
     const shiftLegend = t => (shifting && typeof t === "string" && /^\p{Ll}$/u.test(t)) ? t.toUpperCase() : t;
     state.data.layout.keys.forEach((k, idx) => {
       const e = state.keyEls[idx];
       const r = resolveBinding(idx, layers);
-      e.classList.remove("trans", "blank", "ghost", "held", "activator", "mod");
+      e.classList.remove("trans", "blank", "ghost", "held", "activator", "mod", "latched", "locked");
+      // A finger on the key lights it however often the board is rebuilt under it; a hold let go
+      // and still on (one-shot or locked) is ringed.
+      if (touch) {
+        if (touch.down && touch.down.includes(idx)) e.classList.add("pressed");
+        const latch = touch.latched && touch.latched[idx];
+        if (latch) e.classList.add(latch === "locked" ? "locked" : "latched");
+      }
       if (!r) {
         e.classList.add("blank");
         fit(e.querySelector(".tap"), "");
@@ -403,9 +448,20 @@
     return layerLabel(drawer);
   }
 
+  // The touch keyboard's layers on the banner, as liveSummary says the keyboard's, and what glass
+  // is holding on the sub line (touch.js: touch · held, touch · one shot, touch · locked).
+  function touchSummary() {
+    const entries = state.touch.ids.map(zl).filter(z => z && z.drawer);
+    const top = entries[0];
+    const sub = state.touch.note || (entries.length > 2 ? entries.slice(0, -1).map(z => z.name).join(" · ") : "");
+    if (!top || top.drawer === base()) return { name: layerLabel(base()), cls: "off", sub };
+    return { name: top.label, cls: top.cls || "momentary", sub };
+  }
+
   // What to print on the banner: an inferred held/one-shot layer on top of the base, else the base.
   function activeSummary() {
     if (state.pick) return { name: layerLabel(state.pick), cls: state.pick === base() ? "off" : "momentary", sub: "picked · type to follow the keyboard" };
+    if (state.touch && state.touch.ids) return touchSummary();
     const b = baseSummary();
     const top = state.oneShot || (state.momentary.length ? state.momentary[state.momentary.length - 1].layer : null);
     if (!top) return b;
@@ -509,7 +565,9 @@
     // slider's whole box, not just its track, so a press a little off the thumb works.
     let rects = [];
     try {
-      const controls = [$("side"), $("hide"), $("close"), $("statsHead"), bar.layer && bar.layer.pick]
+      // The board itself while it types (touch.js): a press on a key is a keystroke, not a drag.
+      const typing = document.documentElement.classList.contains("touch") ? $("board") : null;
+      const controls = [$("side"), $("hide"), $("close"), $("statsHead"), bar.layer && bar.layer.pick, typing]
         .concat(["heatmap", "theme", "opacity"].map(n => bar[n] && bar[n].chip));
       rects = controls.filter(Boolean).map(e => e.getBoundingClientRect())
         .filter(r => r.width > 0 && r.height > 0)
@@ -524,6 +582,8 @@
   function postSize() {
     let width = (state.data && state.data.hud && state.data.hud.width) || null;
     if (width && bar.host && !bar.host.classList.contains("off") && sideShown()) width += STATS_COLUMN;
+    // Docked, the host decides the width (the screen's) and the page only says how tall it came out.
+    if (state.dock) width = null;
     const height = Math.ceil(document.body.scrollHeight);
     // The macOS panel reads it on its bridge. The Linux panel has a handler for nothing else
     // (host/linux/panel.py), named apart so that the page never takes it for the bridge a
@@ -1799,6 +1859,7 @@
     state.momentary = []; state.oneShot = null;
     if (gained.length) recredit(gained, now);
     render();
+    fire("layers", ids);
   }
 
   /* A layer change held back for a flash is the keyboard's word all the same, and the moment
@@ -1847,6 +1908,7 @@
       renderTitle();
       postSize();
       render();
+      fire("load", data);
     },
     // The keyboard's active ZMK layer ids (layer 0 omitted). Clears every inference: from now on
     // the stack is what the keyboard says.
@@ -2070,7 +2132,54 @@
       else if (m.kind === "session") applySession(m);
       else if (m.kind === "secure") setSecure(m.on, m.watched);
       else if (m.kind === "heat") setHeatmap(m.mode, true);   // a demo's moment: shown, never kept
+      else if (m.kind === "dock") hud.setDock(m);
+      else if (hooks[m.kind]) fire(m.kind, m);   // touch and typing: touch.js (docs/touch.md)
       if (m.device) hud.setDevice(m.device);  // the keyboard that is typing names the panel
+    },
+    // Another script's hook: "load" (the keymap message), "layers" (the keyboard's ids), or a
+    // message kind hud.receive has no handling of its own for ("touch", "typing").
+    on(name, fn) { (hooks[name] = hooks[name] || []).push(fn); },
+    // What the touch keyboard holds (touch.js): {ids: its layers top first, down: drawer idx under
+    // a finger, latched: {idx: "oneshot"|"locked"}, mods: the report's modifier byte, note: the
+    // banner's sub line}; null when it is off. Drawn over whatever the keyboard reports.
+    setTouchView(view) {
+      const before = (state.touch && state.touch.down) || [];
+      state.touch = view || null;
+      const now = (view && view.down) || [];
+      for (const idx of before) {
+        // A finger lifted: its key goes dark, unless the keyboard itself is holding it.
+        if (!now.includes(idx) && state.keyEls[idx] && !state.held.has(idx)) state.keyEls[idx].classList.remove("pressed");
+      }
+      if (view && now.length) unpick();
+      if (state.data) render();
+    },
+    // Docked along the bottom of a screen ({"kind":"dock","on":true,"max_height":N}): the board as
+    // wide as the window and no taller than the host allows, and nothing around it but the banner.
+    setDock(d) {
+      const on = !!(d && d.on);
+      state.dock = on ? { maxHeight: Number(d.max_height) || null } : null;
+      document.documentElement.classList.toggle("dock", on);
+      if (state.data) { buildBoard(); render(); }
+      postSize();
+    },
+    // A touched key's glow, and the strip's chip for what it typed: never counted, never in a
+    // session (the keyboard's own counts are the session's), and nothing at all while a secret
+    // is being typed.
+    warmKey(idx) { if (!state.secure) bumpHeat(idx); },
+    strip(ev) { if (!state.secure && window.keys) window.keys.key(stripEvent(ev)); },
+    // A message for the panel this page is in (its bridge); false where there is none.
+    post(obj) {
+      const h = panelHandler();
+      if (!h) return false;
+      h.postMessage(JSON.stringify(obj));
+      return true;
+    },
+    // Something the panel's drag rects depend on changed (touch.js turning typing on or off).
+    relayout() { postSize(); },
+    // Where the keys are drawn, for hit-testing a touch between them (touch.js).
+    geometry() {
+      return state.data ? { scale: state.scale, offsetX: state.offsetX || 0, gap: state.gap || GAP,
+                            keys: state.data.layout.keys, posOf: state.posOf } : null;
     },
     // What the keys glow with: "live" (what was just typed), "session" (every press counted) or
     // "off". The bar's last chip cycles it too.

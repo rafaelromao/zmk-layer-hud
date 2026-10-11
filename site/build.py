@@ -85,6 +85,9 @@ def publish(message, board):
     out = dict(message)
     out["source"] = board["source"]
     out["hud"] = dict(message.get("hud") or {}, opacity=100, dark=1)
+    # The page shows the HUD and does not type: the touch keyboard's actions would only weigh it down.
+    for key in ("actions", "touch"):
+        out.pop(key, None)
     return out
 
 
