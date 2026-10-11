@@ -13,6 +13,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import play  # noqa: E402
+import session  # noqa: E402
 import ways  # noqa: E402
 from hudfeed import INJECTABLE  # noqa: E402
 
@@ -185,6 +186,17 @@ class OneShots(unittest.TestCase):
             self.assertAlmostEqual(gap, alpha2 - a, delta=2)
             self.assertAlmostEqual(wait, e - alpha2, delta=2)
             self.assertLessEqual(at(c, "release", 18)[0] - e, play.SLOW_HOLD_MS)
+
+    def test_a_heatmap_step_switches_the_glow_without_taking_time(self):
+        c = compiled([{"heatmap": "off"}, {"type": "a"}, {"heatmap": "live"}], ROMAK)
+        heat = [(t, m["mode"]) for t, m in absolute(c) if m["kind"] == "heat"]
+        a = [t for t, m in absolute(c) if m["kind"] == "press"][0]
+        self.assertEqual(["off", "live"], [mode for _, mode in heat])
+        self.assertLessEqual(heat[0][0], a)
+        self.assertGreater(heat[1][0], a)
+        self.assertEqual(session.HEATMAP_MODES, play.HEAT_MODES)
+        with self.assertRaises(play.PlayError):
+            compiled([{"heatmap": "warm"}], ROMAK)
 
     def test_c_cedilla_is_altgr_comma_on_a_host_whose_right_alt_is_altgr(self):
         self.assertTrue(ROMAK["altgr"])

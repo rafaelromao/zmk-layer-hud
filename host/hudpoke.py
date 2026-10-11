@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Drive the HUD without a keyboard, by sending hudfeed the messages one would have produced.
 
-hudfeed accepts layers / press / release / key from a WebSocket client and fans them out to the
+hudfeed accepts layers / press / release / key / heat from a WebSocket client and fans them out to the
 pages exactly as it fans out the keyboard's own (see Hub.INJECTABLE). This is the sender.
 
     host/hudpoke.py --type "hello, world"     type it, character by character

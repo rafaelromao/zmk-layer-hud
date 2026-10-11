@@ -10,7 +10,8 @@ chapter's time in the recording, for the video's description). With --keymap (zm
 starts; without, the chapters are left as they were.
 
 Each part is text, the pace it is typed at, and how slowed (`speed`: slow motion, so a one-shot
-layer is seen up before its key). The narration says what the video shows as it shows it.
+layer is seen up before its key, with the heatmap off). The narration says what the video shows as
+it shows it.
 """
 
 import argparse
@@ -51,21 +52,27 @@ PARTS = [
 
 
 def script():
-    steps = [{"wait": LEAD_MS}]
+    """The script, and the step each part is (1-based, as host/play.py counts them)."""
+    steps, at = [{"wait": LEAD_MS}], []
     for _, text, wpm, speed in PARTS:
         step = {"type": text, "wpm": wpm}
         if speed != 1:
+            # Slow motion shows the keys one by one: the heatmap is off for it, and back after.
             step["speed"] = speed
+            steps.append({"heatmap": "off"})
         steps.append(step)
+        at.append(len(steps))
+        if speed != 1:
+            steps.append({"heatmap": "live"})
     steps.append({"wait": TAIL_MS})
-    return {"wpm": 70, "repeat": True, "steps": steps}
+    return {"wpm": 70, "repeat": True, "steps": steps}, at
 
 
 def main(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--keymap", help="the keymap message, to time the demo and its chapters")
     args = p.parse_args(argv)
-    s = script()
+    s, at = script()
     with open(os.path.join(ROOT, "docs", "demo-romak.json"), "w", encoding="utf-8") as f:
         json.dump(s, f, ensure_ascii=False, indent=1)
         f.write("\n")
@@ -86,8 +93,8 @@ def main(argv=None):
     lines = []
     for n, (chapter, *_rest) in enumerate(PARTS):
         if chapter:
-            at = RECORD_LEAD_S + first[n + 2] / 1000     # step 1 is the lead's wait
-            lines.append(f"{int(at // 60)}:{int(at % 60):02d} {chapter}")
+            when = RECORD_LEAD_S + first[at[n]] / 1000
+            lines.append(f"{int(when // 60)}:{int(when % 60):02d} {chapter}")
     with open(os.path.join(HERE, "chapters.txt"), "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     total = RECORD_LEAD_S + c.duration_ms / 1000

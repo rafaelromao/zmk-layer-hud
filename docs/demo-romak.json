@@ -18,13 +18,22 @@
    "wpm": 80
   },
   {
+   "heatmap": "off"
+  },
+  {
    "type": "é, ã, ô.",
    "wpm": 80,
    "speed": 0.25
   },
   {
+   "heatmap": "live"
+  },
+  {
    "type": "\nO qu sai de uma tecla só da Alpha 2: ",
    "wpm": 85
+  },
+  {
+   "heatmap": "off"
   },
   {
    "type": "quando.",
@@ -32,8 +41,14 @@
    "speed": 0.25
   },
   {
+   "heatmap": "live"
+  },
+  {
    "type": "\nDepois do ç, a camada de extensão dá ão numa tecla: ",
    "wpm": 90
+  },
+  {
+   "heatmap": "off"
   },
   {
    "type": "ação.",
@@ -41,8 +56,14 @@
    "speed": 0.25
   },
   {
+   "heatmap": "live"
+  },
+  {
    "type": "\nMaiúsculas usam o shift de um toque: ",
    "wpm": 95
+  },
+  {
+   "heatmap": "off"
   },
   {
    "type": "Às, João.",
@@ -50,13 +71,22 @@
    "speed": 0.25
   },
   {
+   "heatmap": "live"
+  },
+  {
    "type": "\nLetras dobradas usam a tecla de repetição: ",
    "wpm": 100
+  },
+  {
+   "heatmap": "off"
   },
   {
    "type": "carro, 100.",
    "wpm": 100,
    "speed": 0.25
+  },
+  {
+   "heatmap": "live"
   },
   {
    "type": "\nSem câmera lenta, o ritmo sobe até 120 palavras por minuto. Repare no calor: ",

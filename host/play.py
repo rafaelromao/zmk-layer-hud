@@ -61,6 +61,7 @@ for _legend, _name in uskeys.NAME_FOR_LEGEND.items():
     if _name not in GLYPH_FOR_NAME and uskeys.keystrokes_for(_legend) is not None:
         GLYPH_FOR_NAME[_name] = _legend
 FLAGS = ("cmd", "ctrl", "alt", "shift", "fn")
+HEAT_MODES = ("live", "session", "physical", "speed", "off")   # host/session.py HEATMAP_MODES
 
 Compiled = collections.namedtuple("Compiled", "timeline stills strokes problems loop duration_ms")
 
@@ -366,6 +367,13 @@ def compile(script, keymap, speed=1.0, combos=None):
     for n, step in enumerate(script["steps"]):
         if not isinstance(step, dict):
             raise PlayError(f"step {n + 1} is not an object")
+
+        if "heatmap" in step:
+            # What the keys glow with from here: shown on the pages, never kept (hudfeed INJECTABLE).
+            if step["heatmap"] not in HEAT_MODES:
+                raise PlayError(f"step {n + 1}: `heatmap` is one of {', '.join(HEAT_MODES)}")
+            board.send(t, {"kind": "heat", "mode": step["heatmap"]})
+            continue
 
         if "wait" in step:
             ms = span(float(step["wait"]))

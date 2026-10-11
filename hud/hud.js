@@ -1983,6 +1983,7 @@
       else if (m.kind === "release") hud.releaseAt(m.pos);
       else if (m.kind === "session") applySession(m);
       else if (m.kind === "secure") setSecure(m.on);
+      else if (m.kind === "heat") setHeatmap(m.mode, true);   // a demo's moment: shown, never kept
       if (m.device) hud.setDevice(m.device);  // the keyboard that is typing names the panel
     },
     // What the keys glow with: "live" (what was just typed), "session" (every press counted) or

@@ -1204,7 +1204,9 @@ class Feed:
 # Kinds a client may send in, to be fanned out as if the keyboard had produced them. The keymap is
 # not among them: it is large, it is built from files this already watches, and a page fed a wrong
 # one has no way back to the right one.
-INJECTABLE = ("layers", "press", "release", "key", "device")
+# `heat`: what the keys glow with, for a moment of a demo (a slow-motion part with the heat off) --
+# on the pages only, never the session's choice, which `heatmap` from the panel's own page is.
+INJECTABLE = ("layers", "press", "release", "key", "device", "heat")
 
 # Whether typing sent in is drawn with the keymap's combos. A `key` a client sends says it with
 # `combos`; one that does not say gets this. It is off because a combo is a choice of technique,

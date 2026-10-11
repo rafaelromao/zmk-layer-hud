@@ -428,7 +428,7 @@ options:
   --no-hid-keys         do not read the keyboard's HID reports for the typed-keys strip (needs
                         Input Monitoring on macOS); layers and positions are unaffected
   --no-inject           refuse messages sent in by a WebSocket client (layers, press, release,
-                        key, device), which host/hudpoke.py uses to drive the page without a
+                        key, device, heat), which host/hudpoke.py uses to drive the page without a
                         keyboard
   --no-sessions         keep no session files (config `feed.sessions: 0`): the counts last as long
                         as the page

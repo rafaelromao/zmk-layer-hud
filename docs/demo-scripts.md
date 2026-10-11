@@ -47,7 +47,7 @@ At the top, all optional but `steps`:
 | `step_ms`, `hold_ms` | how long a frame stays, played, and how long its keys stay down (1000, 250) |
 | `loop` | play it again and again (as `--loop`) |
 
-A step is one of three things.
+A step is one of four things.
 
 **Text**: `{"type": "…"}`, typed a legend at a time, the longest the keymap has first (`ão`
 before `ã`). Each character goes on the way a typist would use there: on the layer that is
@@ -68,6 +68,10 @@ then `ão` on the ç extension), and what only that layer types is typed there o
 - `stills`: its frames in a GIF, `each` keystroke (the default), the `last` one, or `none`.
 
 **A pause**: `{"wait": 900}`, in ms. Nothing happens and it makes no frame.
+
+**The heat**: `{"heatmap": "off"}` (or `live`, `session`, `physical`, `speed`): what the keys glow
+with from that moment, on the panels only -- the session's own choice is never changed. It takes no
+time and makes no frame; a slow-motion part reads better with the heat off and back on after.
 
 **A frame**: what the GIFs were always made of:
 - `layers`: the ZMK layer ids up;

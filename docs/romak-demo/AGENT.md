@@ -64,7 +64,8 @@ bin/zmk-layer-hud show
 `--reserve` gives the HUD the right side of the screen and windows tile beside it instead of
 under it. Wait until the panel shows "Romak 34" in its corner and its stats say `heat live`.
 The live heatmap counts typing sent in like the keyboard's own; the session heatmaps do not, and
-the demo never reaches the user's sessions.
+the demo never reaches the user's sessions. The script turns the heat off for each slow-motion
+part and back on after it, on the panel only: the user's own choice is not touched.
 
 ## 3. Open the editor
 
@@ -87,7 +88,9 @@ hyprctl keyword cursor:inactive_timeout 1
 ```
 
 Do not touch the keyboard or the mouse from here to step 6: the HUD also draws the real keyboard,
-and a stray key or click lands in the recording or in the typed text.
+and a stray key or click lands in the recording or in the typed text. Better still, ask the user to
+unplug the keyboard (or switch it off) for the take: while it is connected, its heartbeat puts its
+own layers back on the panel every two seconds, which can cut a one-shot layer short on camera.
 
 ## 5. Record
 

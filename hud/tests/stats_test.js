@@ -835,6 +835,11 @@ function main() {
     check("and the page's choice is sent to it", posted.filter(m => m.kind === "heatmap").length === before + 1 &&
           posted[posted.length - 1].mode === "off");
 
+    // A demo's moment (hudfeed INJECTABLE `heat`): shown on the page, never the host's to keep.
+    p.hud.receive({ kind: "heat", mode: "live", sent: true });
+    check("a demo may switch the heat for a moment", p.hud.state.heatMode === "live");
+    check("and the host is not told", posted.filter(m => m.kind === "heatmap").length === before + 1);
+
     // Typing sent in lights and counts on the page, but is never sent.
     const q = bridged();
     tap(q.p, A.pos, true);
