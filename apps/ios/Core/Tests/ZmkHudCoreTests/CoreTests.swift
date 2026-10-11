@@ -26,6 +26,7 @@ struct Golden: Decodable {
         let maxHeight: Double
         let split: Bool
         let answer: Geometry
+        let chips: [Chip]
     }
     let geometry: Shape
     let steps: [Step]
@@ -37,18 +38,21 @@ struct Golden: Decodable {
     @Test func javaScriptCoreAnswersAsNodeDoes() throws {
         let golden = try JSONDecoder().decode(Golden.self, from: Data(text("apps/fixtures/kbd-golden.json").utf8))
         let k = try kbd()
+        let g = golden.geometry
+        #expect(k.chips(width: g.width, maxHeight: g.maxHeight, split: g.split) == g.chips)
         for (n, step) in golden.steps.enumerated() {
             let got: Answer
             switch step.what {
             case "down": got = k.down(step.key!, at: step.t)
             case "up": got = k.up(step.key!, at: step.t)
+            case "chordDown": got = k.chord(step.key!, down: true, at: step.t)
+            case "chordUp": got = k.chord(step.key!, down: false, at: step.t)
             case "tick": got = k.tick(at: step.t)
             default: got = k.releaseAll(at: step.t)
             }
             #expect(got == step.answer, "step \(n): \(step.what) \(step.key.map(String.init) ?? "") at \(step.t)")
             #expect(k.board() == step.board, "step \(n): the board")
         }
-        let g = golden.geometry
         #expect(k.geometry(width: g.width, maxHeight: g.maxHeight, split: g.split) == g.answer)
         #expect(k.title == "Test")
     }
@@ -220,6 +224,12 @@ final class FakeComputer: MessageChannel {
         KeyRect(x: 3, y: 3, w: 94, h: 94, r: 0), KeyRect(x: 103, y: 3, w: 94, h: 94, r: 0),
         KeyRect(x: 303, y: 3, w: 94, h: 94, r: 45),
     ])
+
+    @Test func aChipWinsOverTheKeysItSitsBetween() {
+        let chips = [Chip(combo: 3, keys: [0, 1], x: 100, y: 50, size: 30, tap: "⎋", cls: [])]
+        #expect(HitTest.chip(at: 110, 60, in: chips) == 3)
+        #expect(HitTest.chip(at: 120, 50, in: chips) == nil)
+    }
 
     @Test func theKeyUnderAFingerOrTheNearestAcrossAGap() {
         #expect(HitTest.key(at: 50, 50, in: g) == 0)

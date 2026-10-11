@@ -168,8 +168,11 @@
     const g = View.geometry(lay, { width, gap: GAP, chrome: DOCK_CHROME, dock: state.dock &&
       { maxHeight: state.dock.maxHeight || window.innerHeight || 360, split: state.dock.split } });
     state.scale = g.scale; state.offsetX = g.offsetX; state.gap = g.gap;
-    // Each key's centre on the board, in px: what a touch between keys is measured from (touch.js).
+    // Each key's centre on the board, in px: what a touch between keys is measured from (touch.js),
+    // and its box, which the combo chips keep off.
     state.centers = g.centers;
+    state.rects = g.rects;
+    state.chipsEl = null;   // went with the keys
     board.style.height = g.height + "px";
     // Legends scale with the typical key height (see --kh in hud.css).
     board.style.setProperty("--kh", Math.max(20, g.kh) + "px");
@@ -485,9 +488,33 @@
   }
   function unpick() { if (state.pick) pickLayer(null); }
 
+  // The touch keyboard's combos as chips over the board (view.js chips), when it types and the
+  // config wants them (touch.combos: "chips"). Drawn again with the keys: the layer decides which.
+  function renderChips() {
+    if (state.chipsEl) state.chipsEl.remove();
+    state.chipsEl = null;
+    const t = state.touch;
+    if (!t || !t.ids || !state.rects || (state.data.touch || {}).combos !== "chips") return;
+    const list = View.chips(state.data, { scale: state.scale, centers: state.centers, rects: state.rects }, t);
+    if (!list.length) return;
+    const box = el("div");
+    box.id = "chips";
+    for (const c of list) {
+      const e = el("div", ["combo-chip"].concat(c.cls).join(" "));
+      e.dataset.combo = c.combo;
+      e.style.left = (c.x - c.size / 2) + "px";
+      e.style.top = (c.y - c.size / 2) + "px";
+      e.style.width = e.style.height = c.size + "px";
+      setLegend(e, c.tap, c.glyph);
+      box.appendChild(e);
+    }
+    $("board").appendChild(box);
+    state.chipsEl = box;
+  }
+
   function render() {
     if (!state.data) { renderFeed(); renderStats(); return; }
-    renderBanner(); renderKeys(); renderFeed();
+    renderBanner(); renderKeys(); renderChips(); renderFeed();
     paintSessionHeat(); renderStats();   // both follow the layer on screen
   }
 

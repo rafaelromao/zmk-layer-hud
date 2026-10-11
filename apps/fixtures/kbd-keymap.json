@@ -236,6 +236,14 @@
    },
    {
     "op": "trans"
+   },
+   {
+    "op": "kp",
+    "key": {
+     "page": 7,
+     "id": 41,
+     "mods": 0
+    }
    }
   ],
   "layers": {
@@ -256,7 +264,22 @@
     7
    ]
   },
-  "combos": [],
+  "combos": [
+   {
+    "positions": [
+     0,
+     1
+    ],
+    "layers": [
+     0
+    ],
+    "action": 8,
+    "term": 50,
+    "idle": 0,
+    "slow_release": false,
+    "drawn": 0
+   }
+  ],
   "conditional": []
  },
  "touch": {
@@ -272,5 +295,22 @@
   "combos": "chips",
   "heat": 1,
   "strip": 1
- }
+ },
+ "combos": [
+  {
+   "positions": [
+    0,
+    1
+   ],
+   "key": {
+    "tap": "⎋",
+    "hold": "",
+    "shifted": "",
+    "type": "key"
+   },
+   "layers": [
+    "base"
+   ]
+  }
+ ]
 }

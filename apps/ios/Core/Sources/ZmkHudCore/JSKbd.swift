@@ -62,6 +62,9 @@ public final class JSKbd {
 
     public func up(_ idx: Int, at t: Double) -> Answer { invoke("up", [idx, t]) ?? Self.nothing }
 
+    /// A finger on or off the chip of combo `combo` (chips).
+    public func chord(_ combo: Int, down: Bool, at t: Double) -> Answer { invoke("chord", [combo, down, t]) ?? Self.nothing }
+
     /// When the last answer's `next` comes round.
     public func tick(at t: Double) -> Answer { invoke("tick", [t]) ?? Self.nothing }
 
@@ -74,6 +77,11 @@ public final class JSKbd {
     /// halves at the sides.
     public func geometry(width: Double, maxHeight: Double, split: Bool = true) -> Geometry? {
         invoke("geometry", [width, maxHeight, split])
+    }
+
+    /// The combos to draw as chips on that board, on the layers up now.
+    public func chips(width: Double, maxHeight: Double, split: Bool = true) -> [Chip] {
+        invoke("chips", [width, maxHeight, split]) ?? []
     }
 
     public var title: String { invoke("title", []) ?? "" }

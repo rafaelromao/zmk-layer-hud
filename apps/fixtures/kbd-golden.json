@@ -81,7 +81,22 @@
    ],
    "height": 144,
    "kh": 136
-  }
+  },
+  "chips": [
+   {
+    "combo": 0,
+    "keys": [
+     0,
+     1
+    ],
+    "x": 152,
+    "y": 72,
+    "size": 34,
+    "tap": "⎋",
+    "glyph": null,
+    "cls": []
+   }
+  ]
  },
  "steps": [
   {
@@ -2138,6 +2153,171 @@
    "do": "up",
    "key": 0,
    "t": 8520,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "chordDown",
+   "key": 0,
+   "t": 8700,
+   "answer": {
+    "ops": [
+     {
+      "kind": "key",
+      "key": "escape",
+      "usage": 41,
+      "mods": 0
+     }
+    ],
+    "refused": [],
+    "changed": true,
+    "next": 9150
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "chordUp",
+   "key": 0,
+   "t": 8740,
    "answer": {
     "ops": [],
     "refused": [],

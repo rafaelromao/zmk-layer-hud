@@ -11,6 +11,7 @@ final class KeyboardViewController: UIInputViewController {
     private var kbd: JSKbd?
     private var height: NSLayoutConstraint?
     private var timer: Timer?
+    private var room: (width: Double, maxHeight: Double) = (0, 0)
     private let epoch = CACurrentMediaTime()
     private lazy var field = ProxyField(self)
 
@@ -34,6 +35,10 @@ final class KeyboardViewController: UIInputViewController {
         boardView.globe.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
         boardView.onDown = { [weak self] idx in self?.down(idx) }
         boardView.onUp = { [weak self] idx in self?.up(idx) }
+        boardView.onChord = { [weak self] combo, down in
+            guard let self, let kbd = self.kbd else { return }
+            self.handle(kbd.chord(combo, down: down, at: self.now()))
+        }
         load()
     }
 
@@ -89,9 +94,11 @@ final class KeyboardViewController: UIInputViewController {
         let screen = view.window?.windowScene?.screen.bounds.height ?? UIScreen.main.bounds.height
         let room = Double(screen * Self.maxShare - BoardView.bannerHeight)
         guard let g = kbd.geometry(width: Double(view.bounds.width), maxHeight: room) else { return }
+        self.room = (Double(view.bounds.width), room)
         if boardView.geometry != g {
             boardView.geometry = g
             boardView.board = kbd.board()
+            boardView.chips = kbd.chips(width: self.room.width, maxHeight: room)
         }
         height?.constant = CGFloat(g.height) + BoardView.bannerHeight + 4
     }
@@ -113,7 +120,10 @@ final class KeyboardViewController: UIInputViewController {
     private func handle(_ a: Answer) {
         TextSink.type(a.ops, into: field)
         if !a.refused.isEmpty { boardView.flash(a.refused) }
-        if a.changed, let kbd { boardView.board = kbd.board() }
+        if a.changed, let kbd {
+            boardView.board = kbd.board()
+            boardView.chips = kbd.chips(width: room.width, maxHeight: room.maxHeight)
+        }
         schedule(a.next)
     }
 

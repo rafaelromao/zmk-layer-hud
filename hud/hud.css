@@ -357,6 +357,13 @@ html.touch .key { -webkit-touch-callout: none; -webkit-tap-highlight-color: tran
 .key.locked { --ring: #e0af68; background: #f6e3c0; }
 .key.locked::after { box-shadow: inset 0 0 0 3px var(--ring); }
 .key.refused { background: #f7768e; transition: none; }
+/* A combo as a chip between its keys (hud.js renderChips): tapped, it is the combo. */
+#chips { position: absolute; inset: 0; pointer-events: none; }
+.combo-chip { position: absolute; pointer-events: auto; display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; background: #3b4261; color: #c0caf5; font: 600 12px/1 var(--font); overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.35); touch-action: none; -webkit-touch-callout: none; }
+.combo-chip.pressed { background: #7aa2f7; color: #101420; }
+.combo-chip .glyph svg { width: 70%; height: 70%; }
 
 /* Docked along the bottom of a screen (hud.js setDock): the board as wide as the window, centred,
    and nothing around it but a thin banner. hud.js DOCK_CHROME is the height of what is not the

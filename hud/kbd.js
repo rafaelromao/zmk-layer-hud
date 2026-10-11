@@ -11,7 +11,9 @@
  * `ops` are text ops (hidtext.textEvents: {kind:"text"|"key"|"chord", ...}) for the field, `refused`
  * the keys that cannot type here (to flash), `changed` whether kbd.board() would now say something
  * else, and `next` the time to call tick() at, or null. kbd.board() is the banner and every key's
- * face (view.js board), kbd.geometry(width, maxHeight, split) where the keys go.
+ * face (view.js board), kbd.geometry(width, maxHeight, split) where the keys go, and
+ * kbd.chips(width, maxHeight, split) the combos to draw as chips there, which kbd.chord(i, down, t)
+ * presses.
  *
  * A finger is a key index the shell hit-tested; a key the firmware reports no position for is
  * drawn and never typed. The same rules as the page's touch.js, which drives the DOM board.
@@ -48,6 +50,7 @@
 
     const view = { ids: engine.state().layers, down: [], latched: {}, mods: 0 };
     const fingers = new Map();       // idx -> how many fingers are on it
+    const chipsDown = new Map();     // combo -> the drawer keys it presses, while its chip is held
     let deadAt = null;
 
     function note() {
@@ -88,7 +91,20 @@
       return out;
     }
 
-    function setDown() { view.down = [...fingers.keys()]; }
+    // The methods below use no `this`: a shell may call them detached (JSKbd applies them to null).
+    function geometry(width, maxHeight, split) {
+      return View.geometry(data.layout, { width, gap: GAP, chrome: 0, dock: { maxHeight, split: split !== false } });
+    }
+
+    function setDown() {
+      view.down = [...new Set([...fingers.keys()].concat(...chipsDown.values()))];
+      view.chips = [...chipsDown.keys()];
+    }
+
+    function comboKeys(i) {
+      const c = (data.actions.combos || [])[i];
+      return c ? c.positions.map(idxOf).filter((x) => x != null) : [];
+    }
 
     return {
       down(idx, t) {
@@ -109,6 +125,9 @@
       },
       // A combo chip (P10's chips): its index in data.actions.combos.
       chord(i, isDown, t) {
+        if (isDown) chipsDown.set(i, comboKeys(i));
+        else if (!chipsDown.delete(i)) return answer([], t, false);
+        setDown();
         return answer(isDown ? engine.down({ combo: i }, t) : engine.up({ combo: i }, t), t, true);
       },
       tick(t) {
@@ -123,6 +142,7 @@
       },
       releaseAll(t) {
         fingers.clear();
+        chipsDown.clear();
         setDown();
         const out = answer(engine.releaseAll(t), t, true);
         out.ops.push(...textOf(decoder.flush(null)));
@@ -132,8 +152,10 @@
       board() {
         return View.board(data, Object.assign({}, view, { note: note() }));
       },
-      geometry(width, maxHeight, split) {
-        return View.geometry(data.layout, { width, gap: GAP, chrome: 0, dock: { maxHeight, split: split !== false } });
+      geometry,
+      chips(width, maxHeight, split) {
+        if ((data.touch || {}).combos !== "chips") return [];
+        return View.chips(data, geometry(width, maxHeight, split), view);
       },
       title() { return data.title || ""; },
     };

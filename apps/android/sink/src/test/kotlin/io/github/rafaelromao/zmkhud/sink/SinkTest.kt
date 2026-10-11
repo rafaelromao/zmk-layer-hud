@@ -118,7 +118,8 @@ class SinkTest {
         @Suppress("UNCHECKED_CAST")
         val ops = raw.map { Op.of(it as Map<String, Any?>) }
         assertTrue(ops.isNotEmpty() && ops.none { it == null }, "every op the page sends is one this keyboard reads")
-        assertEquals(listOf("text a", "text A", "text 1", "text  ", "text é", "text '", "text a", "text a", "text a"),
+        assertEquals(listOf("text a", "text A", "text 1", "text  ", "text é", "text '", "text a", "text a", "text a",
+                            "key ${KeyEvent.KEYCODE_ESCAPE} meta 0"),
             typed(Field(), *ops.filterNotNull().toTypedArray()))
     }
 

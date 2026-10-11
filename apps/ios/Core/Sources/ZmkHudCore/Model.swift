@@ -75,6 +75,20 @@ public struct KeyRect: Equatable, Sendable, Decodable {
     public var centerY: Double { y + h / 2 }
 }
 
+/// A combo as a chip to tap, between its keys (hud/view.js chips): the combo's index (JSKbd.chord),
+/// the keys it presses, its centre and size in points, its legend.
+public struct Chip: Equatable, Sendable, Decodable {
+    public let combo: Int
+    public let keys: [Int]
+    public let x: Double
+    public let y: Double
+    public let size: Double
+    public let tap: String
+    public let cls: [String]
+
+    public var pressed: Bool { cls.contains("pressed") }
+}
+
 /// Where the keys go (hud/view.js geometry): each key's box, the gap between keys, the board's height.
 public struct Geometry: Equatable, Sendable, Decodable {
     public let scale: Double

@@ -110,6 +110,25 @@ function tap(k, idx, t, ms) {
         "everything up, the base drawn, nothing lit");
 })();
 
+(function aComboIsAChipToTap() {
+  const k = fresh();
+  const chips = k.chips.call(null, 1400, 200, true);     // as JSKbd calls it: detached
+  check(chips.length === 1 && chips[0].tap === "⎋" && eq(chips[0].keys, [0, 1]), `the base's combo is a chip: ${JSON.stringify(chips)}`);
+  const g = k.geometry(1400, 200, true);
+  check(Math.abs(chips[0].x - (g.centers[0].x + g.centers[1].x) / 2) < 1e-6, "between its keys");
+  const d = k.chord(0, true, 1000);
+  check(k.board().keys[0].cls.includes("pressed") && k.board().keys[1].cls.includes("pressed") &&
+        eq(k.chips(1400, 200, true)[0].cls, ["pressed"]), "held, the chip and its keys light");
+  const u = k.chord(0, false, 1040);
+  check(texts(d.ops.concat(u.ops)) === "<escape>", `tapped, it is the combo: ${JSON.stringify(d.ops.concat(u.ops))}`);
+  check(!k.chord(0, false, 1100).changed, "a chip let go twice is let go once");
+  k.down(2, 2000);
+  k.tick(2300);
+  check(k.chips(1400, 200, true).length === 0, "on nav, which the combo is not on, no chip");
+  const off = Kbd.create(Object.assign({}, MSG, { touch: Object.assign({}, MSG.touch, { combos: "off" }) }));
+  check(off.chips(1400, 200, true).length === 0, "touch.combos: off draws none");
+})();
+
 (function theBoardsGeometryPutsTheHalvesAtTheSides() {
   const k = fresh();
   const g = k.geometry(1400, 200, true);

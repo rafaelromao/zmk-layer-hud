@@ -238,6 +238,64 @@ function page(opts) {
   check(nl(2) - nl(1) >= 300 * narrow.hud.state.scale - 1e-6, "on a narrow screen the halves keep the gap the layout draws");
 })();
 
+// The same board with a combo on its first two keys -- a and b together are Escape, on the base layer
+// alone -- for the chips: a copy, since a combo would make the tests above that roll a and b chord.
+function chipPage(combos) {
+  const m = JSON.parse(JSON.stringify(MSG));
+  m.combos = [{ positions: [0, 1], key: K("⎋"), layers: ["base"] }];
+  m.actions.table.push(kp(0x29));
+  m.actions.combos = [{ positions: [0, 1], layers: [0], action: m.actions.table.length - 1, term: 50, idle: 0,
+                        slow_release: false, drawn: 0 }];
+  m.touch.combos = combos || "chips";
+  const p = loadPage();
+  p.hud.load(m);
+  p.hud.setLayers([]);
+  p.sent = [];
+  p.hud.setTouch({ output: "hid", repeat: "os", send: (msg) => p.sent.push(msg) });
+  p.chips = () => p.board.querySelectorAll(".combo-chip");
+  p.reports = () => p.sent.filter((msg) => msg.kind === "hid").map((msg) => [msg.mods, msg.keys]);
+  return p;
+}
+
+(function aComboIsAChipBetweenItsKeys() {
+  const p = chipPage();
+  const chips = p.chips();
+  check(chips.length === 1, `one chip for the one combo on this layer: ${chips.length}`);
+  const c = chips[0];
+  const left = parseFloat(c.style.left), w = parseFloat(c.style.width);
+  const st = p.hud.state;
+  check(Math.abs(left + w / 2 - (st.centers[0].x + st.centers[1].x) / 2) < 1e-6, "between its keys");
+  check(w >= 18 && w <= 34, `as big as a little of a key: ${w}`);
+  check(c.textContent === "⎋", `with the combo's legend: ${c.textContent}`);
+  const ev = c.fire("pointerdown", { pointerId: 5 });
+  check(ev.defaultPrevented, "a touch on it is the board's");
+  const lit = p.chips()[0];
+  check(lit.classList.contains("pressed") && st.keyEls[0].classList.contains("pressed") && st.keyEls[1].classList.contains("pressed"),
+        "held, the chip and both its keys light");
+  p.clock.advance(40);
+  p.board.fire("pointerup", { pointerId: 5 });
+  check(eq(p.reports(), [[0, [0x29]], [0, []]]), `a tap on it is the combo: ${JSON.stringify(p.reports())}`);
+  check(!st.keyEls[0].classList.contains("pressed") && !p.chips()[0].classList.contains("pressed"), "let go, all dark again");
+})();
+
+(function noChipsOffItsLayerOrWhenTheConfigSaysNot() {
+  const p = chipPage();
+  p.hud.state.keyEls[2].fire("pointerdown", { pointerId: 1 });
+  p.clock.advance(300);
+  check(p.hud.state.touch.ids[0] === 1 && p.chips().length === 0, "on nav, which the combo is not on, there is no chip");
+  p.board.fire("pointerup", { pointerId: 1 });
+  // A hold let go alone is a one-shot: the next key is nav's, and then the base is back.
+  check(p.chips().length === 0, "nav latched for one key, still none");
+  p.hud.state.keyEls[0].fire("pointerdown", { pointerId: 2 });
+  p.clock.advance(30);
+  p.board.fire("pointerup", { pointerId: 2 });
+  check(p.chips().length === 1, "back on the base, it is there again");
+  check(chipPage("off").chips().length === 0, "touch.combos: off draws none");
+  const q = chipPage();
+  q.hud.setTouch(null);
+  check(q.chips().length === 0, "and a board that does not type has none");
+})();
+
 for (const f of fail) console.log("FAIL " + f);
 console.log(`the touch keyboard on the page: ${checks} checks, ${fail.length} failures`);
 process.exit(fail.length ? 1 : 0);

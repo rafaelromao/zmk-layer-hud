@@ -164,6 +164,63 @@
     return { name: top.label, cls: top.cls || "momentary", sub };
   }
 
+  // ---------- combo chips ----------
+
+  // Whether a point is on a key, its rotation undone.
+  function onKey(r, x, y) {
+    const a = -(r.r || 0) * Math.PI / 180, dx = x - (r.x + r.w / 2), dy = y - (r.y + r.h / 2);
+    return Math.abs(dx * Math.cos(a) - dy * Math.sin(a)) <= r.w / 2 && Math.abs(dx * Math.sin(a) + dy * Math.cos(a)) <= r.h / 2;
+  }
+
+  /* The touch keyboard's combos as chips to tap (touch.combos: "chips"): one for each combo that
+   * fires on the top layer, whose keys are all drawn and that the drawing gives a legend. A chip sits
+   * between its keys, at their centres' middle; one that would land on a key is moved off it, to
+   * the nearest point between keys within half a key, and one with no room there beside the others
+   * is not drawn.
+   * Chips are as big as 0.38 of a key, between 18 and 34 px.
+   *
+   * `g` is geometry()'s answer (centers, rects, scale); `touch` the touch keyboard's view (ids, its
+   * layers top first; chips, the combos held). Returns [{combo, keys, x, y, size, tap, glyph, cls}]:
+   * the combo's index in actions.combos, the drawer keys it presses, the chip's centre and size. */
+  function chips(data, g, touch) {
+    const acts = (data.actions && data.actions.combos) || [];
+    const drawn = data.combos || [];
+    if (!touch || !touch.ids || !touch.ids.length || !acts.length) return [];
+    const top = touch.ids[0];
+    const positions = data.positions || {};
+    const mapped = Object.keys(positions).length > 0;
+    const idxOf = (pos) => (mapped ? positions[String(pos)] : pos);
+    const unit = Math.min(...data.layout.keys.map(k => k.h)) * g.scale;
+    const size = Math.max(18, Math.min(34, 0.38 * unit));
+    const placed = [];
+    const free = (x, y) => !g.rects.some(r => onKey(r, x, y)) && placed.every(p => Math.hypot(p.x - x, p.y - y) >= size);
+    const out = [];
+    acts.forEach((c, i) => {
+      const legend = c.drawn != null && drawn[c.drawn] && drawn[c.drawn].key;
+      if (!legend || (c.layers && !c.layers.includes(top))) return;
+      const keys = c.positions.map(idxOf);
+      if (keys.some(k => k == null || !g.centers[k])) return;
+      let x = keys.reduce((s, k) => s + g.centers[k].x, 0) / keys.length;
+      let y = keys.reduce((s, k) => s + g.centers[k].y, 0) / keys.length;
+      if (!free(x, y)) {
+        let found = null;
+        // Never further than half a key: a chip any further away no longer reads as its keys'.
+        for (let r = 2; r <= unit / 2 && !found; r += 2) {
+          for (let n = 0; n < 16 && !found; n++) {
+            const px = x + r * Math.cos(n * Math.PI / 8), py = y + r * Math.sin(n * Math.PI / 8);
+            if (free(px, py)) found = { x: px, y: py };
+          }
+        }
+        if (!found) return;
+        x = found.x; y = found.y;
+      }
+      placed.push({ x, y });
+      out.push({ combo: i, keys, x, y, size, tap: legend.tap || "", glyph: legend.glyph || null,
+                 cls: touch.chips && touch.chips.includes(i) ? ["pressed"] : [] });
+    });
+    return out;
+  }
+
   /* The whole board for a native shell: the banner, and every key's face, on the touch keyboard's
    * layers ({ids, down, latched, mods, note}). */
   function board(data, touch) {
@@ -173,7 +230,7 @@
   }
 
   const ZmkView = { halves, geometry, zl, drawnStack, resolve, bindingClasses, touchClasses, shiftLegend, SHIFT_BITS,
-                    keyFace, layerLabel, touchSummary, board };
+                    keyFace, layerLabel, touchSummary, board, chips };
   if (typeof module === "object" && module.exports) module.exports = ZmkView;
   else root.ZmkView = ZmkView;
 })(typeof globalThis !== "undefined" ? globalThis : this);

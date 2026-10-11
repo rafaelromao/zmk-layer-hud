@@ -18,7 +18,8 @@ const HERE = __dirname;
 const OUT = path.join(HERE, "kbd-golden.json");
 const KEYMAP = JSON.parse(fs.readFileSync(path.join(HERE, "kbd-keymap.json"), "utf8"));
 
-// [what, key or time, time]: the keymap's base is a ' ␣/nav ⇧ e ✕(mouse), nav puts 1 on a.
+// [what, key or chip or time, time]: the keymap's base is a ' ␣/nav ⇧ e ✕(mouse), nav puts 1 on a, and a
+// with ' is Escape, a chip on the base.
 const STEPS = [
   ["down", 0, 1000], ["up", 0, 1040],                                           // a
   ["down", 3, 2000], ["down", 0, 2100], ["up", 0, 2140], ["up", 3, 2200],       // ⇧ held, a: A
@@ -28,18 +29,22 @@ const STEPS = [
   ["down", 1, 6000], ["up", 1, 6040], ["tick", 6200],                           // ' alone, when its time is up
   ["down", 5, 7000], ["up", 5, 7040],                                           // a mouse button: refused
   ["down", 0, 8000], ["tick", 8450], ["tick", 8510], ["up", 0, 8520],           // a held: repeated
+  ["chordDown", 0, 8700], ["chordUp", 0, 8740],                                  // a and ' as a chip: Escape
   ["down", 3, 9000], ["releaseAll", 9100],                                      // the keyboard goes away
 ];
 
 function make() {
   const kbd = Kbd.create(JSON.stringify(KEYMAP));
   const steps = STEPS.map(([what, a, b]) => {
-    const answer = what === "down" ? kbd.down(a, b) : what === "up" ? kbd.up(a, b) : what === "tick" ? kbd.tick(a) : kbd.releaseAll(a);
-    return { do: what, key: what === "down" || what === "up" ? a : null, t: what === "down" || what === "up" ? b : a,
-             answer, board: kbd.board() };
+    const keyed = ["down", "up", "chordDown", "chordUp"].includes(what);
+    const answer = what === "down" ? kbd.down(a, b) : what === "up" ? kbd.up(a, b)
+      : what === "chordDown" ? kbd.chord(a, true, b) : what === "chordUp" ? kbd.chord(a, false, b)
+      : what === "tick" ? kbd.tick(a) : kbd.releaseAll(a);
+    return { do: what, key: keyed ? a : null, t: keyed ? b : a, answer, board: kbd.board() };
   });
   return { _: "written by apps/fixtures/golden.js from hud/kbd.js; do not edit by hand", keymap: "kbd-keymap.json",
-           geometry: { width: 1024, maxHeight: 300, split: true, answer: kbd.geometry(1024, 300, true) }, steps };
+           geometry: { width: 1024, maxHeight: 300, split: true, answer: kbd.geometry(1024, 300, true),
+                       chips: Kbd.create(JSON.stringify(KEYMAP)).chips(1024, 300, true) }, steps };
 }
 
 const text = JSON.stringify(make(), null, 1) + "\n";

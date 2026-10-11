@@ -72,6 +72,11 @@ public enum TextSink {
 /// Which key a finger is on: the key under it, its rotation undone, or in the gap between keys the
 /// nearest one within half a gap and a little (hud/touch.js keyAt).
 public enum HitTest {
+    /// The chip under a finger, which wins over the keys it sits between.
+    public static func chip(at x: Double, _ y: Double, in chips: [Chip]) -> Int? {
+        chips.first { abs(x - $0.x) <= $0.size / 2 && abs(y - $0.y) <= $0.size / 2 }?.combo
+    }
+
     public static func key(at x: Double, _ y: Double, in g: Geometry) -> Int? {
         var best: Int?
         var bestD = Double.infinity

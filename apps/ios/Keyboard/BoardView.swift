@@ -4,22 +4,28 @@ import ZmkHudCore
 /// The board, drawn natively: a banner, and every key a layer with its legends -- the tap one in the
 /// middle, the hold one under it, the shifted one over it -- placed where hud/view.js says, and
 /// marked as the page marks them (a finger on it, a hold latched or locked, a layer below showing
-/// through). Fingers are tracked one by one, so two thumbs chord.
+/// through), with the combos as chips between their keys. Fingers are tracked one by one, so two
+/// thumbs chord; a finger on a chip is that combo.
 final class BoardView: UIView {
     static let bannerHeight: CGFloat = 26
 
     var onDown: ((Int) -> Void)?
     var onUp: ((Int) -> Void)?
+    /// A finger on (true) or off a combo's chip.
+    var onChord: ((Int, Bool) -> Void)?
 
     var geometry: Geometry? { didSet { rebuild() } }
     var board: Board? { didSet { paint() } }
     var problem: String? { didSet { paint() } }
+    var chips: [Chip] = [] { didSet { paintChips() } }
 
     let globe = UIButton(type: .system)
     private let name = UILabel()
     private let sub = UILabel()
     private var keys: [KeyLayer] = []
-    private var fingers: [ObjectIdentifier: Int] = [:]
+    private var chipLayers: [CATextLayer] = []
+    private enum Finger { case key(Int), chip(Int) }
+    private var fingers: [ObjectIdentifier: Finger] = [:]
 
     // The dark keys of hud.css.
     private enum Ink {
@@ -84,6 +90,23 @@ final class BoardView: UIView {
         CATransaction.commit()
     }
 
+    private func paintChips() {
+        chipLayers.forEach { $0.removeFromSuperlayer() }
+        chipLayers = chips.map { c in
+            let l = CATextLayer()
+            l.contentsScale = traitCollection.displayScale
+            l.frame = CGRect(x: c.x - c.size / 2, y: c.y - c.size / 2 + Self.bannerHeight, width: c.size, height: c.size)
+            l.cornerRadius = 6
+            l.backgroundColor = (c.pressed ? Ink.pressed : UIColor(red: 0.23, green: 0.26, blue: 0.38, alpha: 1)).cgColor
+            l.foregroundColor = (c.pressed ? Ink.board : Ink.text).cgColor
+            l.alignmentMode = .center
+            l.fontSize = min(c.size * 0.45, 14)
+            l.string = c.tap
+            layer.addSublayer(l)
+            return l
+        }
+    }
+
     /// A key that cannot type here, flashed.
     func flash(_ idx: [Int]) {
         for i in idx where i < keys.count {
@@ -99,9 +122,14 @@ final class BoardView: UIView {
         guard let g = geometry else { return }
         for t in touches {
             let p = t.location(in: self)
-            guard let idx = HitTest.key(at: Double(p.x), Double(p.y - Self.bannerHeight), in: g) else { continue }
-            fingers[ObjectIdentifier(t)] = idx
-            onDown?(idx)
+            let x = Double(p.x), y = Double(p.y - Self.bannerHeight)
+            if let combo = HitTest.chip(at: x, y, in: chips) {
+                fingers[ObjectIdentifier(t)] = .chip(combo)
+                onChord?(combo, true)
+            } else if let idx = HitTest.key(at: x, y, in: g) {
+                fingers[ObjectIdentifier(t)] = .key(idx)
+                onDown?(idx)
+            }
         }
     }
 
@@ -111,7 +139,11 @@ final class BoardView: UIView {
 
     private func lift(_ touches: Set<UITouch>) {
         for t in touches {
-            if let idx = fingers.removeValue(forKey: ObjectIdentifier(t)) { onUp?(idx) }
+            switch fingers.removeValue(forKey: ObjectIdentifier(t)) {
+            case let .key(idx): onUp?(idx)
+            case let .chip(combo): onChord?(combo, false)
+            case nil: break
+            }
         }
     }
 }

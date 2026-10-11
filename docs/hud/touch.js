@@ -33,6 +33,8 @@
   const typing = () => !!(sink && engine);
 
   function setTouch(s) {
+    // Whatever is held goes up through the sink that pressed it, before another (or none) takes over.
+    if (driver) { driver.releaseAll(); driver.stop(); engine = driver = null; }
     sink = s || null;
     html.classList.toggle("touch", !!sink);
     rebuild();
@@ -141,11 +143,19 @@
   }
 
   function show() {
-    view.down = [...new Set([...pointers.values()].map((p) => p.idx).filter((i) => i != null))];
+    const held = [...pointers.values()];
+    view.down = [...new Set(held.flatMap((p) => (p.idx != null ? [p.idx] : []).concat(p.keys || [])))];
+    view.chips = held.filter((p) => p.input.combo != null).map((p) => p.input.combo);
     hud.setTouchView(Object.assign({}, view, { note: note() }));
   }
 
   // ---------- fingers ----------
+
+  // The drawer keys a combo presses, which light while its chip is held.
+  function comboKeys(i) {
+    const c = data.actions.combos && data.actions.combos[i];
+    return c ? c.positions.map(idxOf).filter((x) => x != null) : [];
+  }
 
   // The key under a finger: a chip, the key element itself, or -- in the gap between keys -- the
   // nearest key within half a gap and a little, its rotation undone. A key the firmware reports no
@@ -153,7 +163,7 @@
   function hit(e) {
     const t = e.target && e.target.closest ? e.target : null;
     const chip = t && t.closest(".combo-chip");
-    if (chip) return { input: { combo: Number(chip.dataset.combo) }, idx: null };
+    if (chip) return { input: { combo: Number(chip.dataset.combo) }, idx: null, keys: comboKeys(Number(chip.dataset.combo)) };
     const keyEl = t && t.closest(".key");
     const idx = keyEl ? Number(keyEl.dataset.idx) : keyAt(e.clientX, e.clientY);
     if (idx == null || Number.isNaN(idx)) return null;
