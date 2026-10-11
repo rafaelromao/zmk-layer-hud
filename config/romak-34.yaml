@@ -10,6 +10,18 @@ keymap: ../examples/romak-34.yaml
 title: Romak 34
 combo_term_ms: 30
 
+# The layers' names as LayerBench gives them.
+layers:
+  map:
+    alpha1: {label: Alpha 1}
+    alpha2: {label: Alpha 2}
+    ç-extension: {label: Ç extension}
+    numbers: {label: Numbers}
+    symbols: {label: Symbols}
+    nav: {label: Navigation}
+    media: {label: Mouse}
+    func: {label: Functions}
+
 # alpha2 and the ç extension are one-shot layers: a key there types and the layer goes.
 extras:
   sticky: [alpha2, ç-extension]

@@ -2248,21 +2248,21 @@
 "cls": "off",
 "drawer": "alpha1",
 "id": 0,
-"label": "Alpha1",
+"label": "Alpha 1",
 "name": "alpha1"
 },
 "1": {
 "cls": "momentary",
 "drawer": "alpha2",
 "id": 1,
-"label": "Alpha2",
+"label": "Alpha 2",
 "name": "alpha2"
 },
 "2": {
 "cls": "momentary",
 "drawer": "ç-extension",
 "id": 2,
-"label": "Ç-extension",
+"label": "Ç extension",
 "name": "ç-extension"
 },
 "3": {
@@ -2283,21 +2283,21 @@
 "cls": "momentary",
 "drawer": "nav",
 "id": 5,
-"label": "Nav",
+"label": "Navigation",
 "name": "nav"
 },
 "6": {
 "cls": "momentary",
 "drawer": "media",
 "id": 6,
-"label": "Media",
+"label": "Mouse",
 "name": "media"
 },
 "7": {
 "cls": "momentary",
 "drawer": "func",
 "id": 7,
-"label": "Func",
+"label": "Functions",
 "name": "func"
 }
 }

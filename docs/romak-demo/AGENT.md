@@ -1,8 +1,9 @@
 # Recording the Romak 34 demo on Omarchy
 
 A runbook for an agent on an Omarchy (Hyprland) machine. It records a silent screen video of the
-HUD drawing Romak 34 while the text in `text.txt` is typed at 70 wpm into a terminal beside it.
-Nothing here is typed on the real keyboard: `drive.py` sends the HUD what the keyboard would send
+HUD drawing Romak 34, its keys glowing with the live heatmap, while the text in `text.txt` is typed
+into a terminal beside it: about two minutes, from 70 up to 120 wpm, with slow-motion parts that
+show the one-shot layers. Nothing here is typed on the real keyboard: `drive.py` sends the HUD what the keyboard would send
 (`host/play.py` compiles `docs/demo-romak.json` on `config/romak-34.yaml`) and types each
 character into the focused window with `wtype`, on one clock.
 
@@ -15,7 +16,9 @@ what step 7 puts back.
 |---|---|
 | `text.txt` | the text, exactly as it must come out |
 | `drive.py` | plays the script into the HUD and types it with wtype |
-| `../demo-romak.json` | the script: one `type` step per line of `text.txt`, `"wpm": 70`, `"repeat": true` |
+| `make-script.py` | writes the script, `text.txt` and `chapters.txt` from one list of parts; edit the text there |
+| `chapters.txt` | each part's time in the recording, for the video's description |
+| `../demo-romak.json` | the script `make-script.py` writes: a pace per part, slow motion (`speed`) where it shows a one-shot |
 | `../../config/romak-34.yaml` | the HUD config; the layout is `../../examples/romak-34.yaml` |
 
 ## 1. Prepare
@@ -44,20 +47,24 @@ $PY docs/romak-demo/drive.py docs/demo-romak.json --keymap "$OUT/keymap.json" --
 diff <(printf '%s' "$(cat docs/romak-demo/text.txt)") "$OUT/dry.txt" && echo dry run matches
 ```
 
-Both must pass (about 1577 keystrokes over about 284 s). If they do not, stop and report.
+Both must pass (about 650 keystrokes over about 113 s). If they do not, stop and report.
 
 ## 2. Start the HUD on Romak 34
 
-Note what the HUD runs now so step 7 can put it back: `bin/zmk-layer-hud status`.
+Note what the HUD runs now and what its keys glow with, so step 7 can put both back:
+`bin/zmk-layer-hud status` and `bin/zmk-layer-hud heatmap` (it prints the mode).
 
 ```bash
 bin/zmk-layer-hud stop
+bin/zmk-layer-hud heatmap live      # each key glows as it is struck and cools in ~3 s
 ZMKHUD_CONFIG=$PWD/config/romak-34.yaml bin/zmk-layer-hud start --reserve
 bin/zmk-layer-hud show
 ```
 
 `--reserve` gives the HUD the right side of the screen and windows tile beside it instead of
-under it. Wait until the panel shows "Romak 34" in its corner.
+under it. Wait until the panel shows "Romak 34" in its corner and its stats say `heat live`.
+The live heatmap counts typing sent in like the keyboard's own; the session heatmaps do not, and
+the demo never reaches the user's sessions.
 
 ## 3. Open the editor
 
@@ -86,8 +93,8 @@ and a stray key or click lands in the recording or in the typed text.
 
 ```bash
 MON=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name')
-wf-recorder -o "$MON" -f "$OUT/romak-70wpm.mp4" &      # no -a: no audio
-# or: gpu-screen-recorder -w "$MON" -f 60 -o "$OUT/romak-70wpm.mp4" &   (no -a: no audio)
+wf-recorder -o "$MON" -f "$OUT/romak-demo.mp4" &      # no -a: no audio
+# or: gpu-screen-recorder -w "$MON" -f 60 -o "$OUT/romak-demo.mp4" &   (no -a: no audio)
 sleep 2
 $PY docs/romak-demo/drive.py docs/demo-romak.json
 sleep 1
@@ -95,16 +102,17 @@ pkill -INT wf-recorder || pkill -INT gpu-screen-recorder
 wait
 ```
 
-`drive.py` takes the keymap from the running HUD, plays for about 4 min 45 s, and returns when
-the last key has faded.
+`drive.py` takes the keymap from the running HUD, plays for about 1 min 53 s, and returns when
+the last key has faded. Its parts start at the times in `chapters.txt` (counted from the
+recorder's start, two seconds before `drive.py`).
 
 ## 6. Check
 
 ```bash
 hyprctl dispatch focuswindow title:romak-demo && wtype -M ctrl d -m ctrl   # ends cat
 diff <(printf '%s' "$(cat docs/romak-demo/text.txt)") <(printf '%s' "$(cat "$OUT/typed.txt")") && echo text matches
-ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "$OUT/romak-70wpm.mp4"   # only: video
-ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT/romak-70wpm.mp4"     # about 290
+ffprobe -v error -show_entries stream=codec_type -of csv=p=0 "$OUT/romak-demo.mp4"   # only: video
+ffprobe -v error -show_entries format=duration -of csv=p=0 "$OUT/romak-demo.mp4"     # about 116
 ```
 
 All three must hold: the typed text matches, the only stream is video, and the duration is close
@@ -117,8 +125,9 @@ from step 3 — never edit the video to hide a fault.
 makoctl mode -r do-not-disturb
 hyprctl reload                      # undoes the cursor setting
 bin/zmk-layer-hud stop
+bin/zmk-layer-hud heatmap <mode>    # the mode step 2 noted
 bin/zmk-layer-hud start             # the user's own config again, as step 2's status showed
 ```
 
 Close the `romak-demo` terminal. Report the video's path, its duration and size, and the three
-checks of step 6.
+checks of step 6, with `chapters.txt` for the video's description.

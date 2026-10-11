@@ -1,9 +1,11 @@
-Este é um exemplo de uso do layout Romak, a 70 wpm:
+Este é um exemplo de uso do layout Romak, de 70 a 120 wpm:
 
-A tecnologia faz parte da nossa rotina, mas nem sempre percebemos como pequenas mudanças podem transformar a maneira como trabalhamos. Quando aprendemos uma nova habilidade, precisamos de paciência, atenção e prática constante. O progresso costuma aparecer aos poucos, especialmente quando enfrentamos desafios que exigem concentração.
-Durante uma manhã tranquila, João decidiu organizar suas tarefas. Primeiro, respondeu às mensagens pendentes; depois, revisou três documentos importantes. Às 10 horas, fez uma pausa para tomar café e conversar com seus colegas. Embora tivesse muito trabalho pela frente, sabia que manter um ritmo equilibrado seria essencial para alcançar bons resultados.
-Aprender a digitar com precisão é um exemplo desse processo. A velocidade importa, porém a consistência é ainda mais valiosa. Não adianta escrever 100 palavras por minuto se precisamos corrigir metade delas. O ideal é encontrar um equilíbrio entre rapidez, conforto e qualidade.
-À medida que desenvolvemos nossa coordenação, movimentos antes difíceis se tornam naturais. Palavras como experiência, organização, frequência, necessário e consequência deixam de exigir esforço consciente. Até mesmo sequências incomuns, como açúcar, exceção, próximo e questão, passam a fluir facilmente.
-No fim, o segredo não está em praticar durante várias horas, mas em repetir bons hábitos todos os dias. Com dedicação e curiosidade, qualquer pessoa pode melhorar significativamente sua habilidade.
+À direita, o HUD mostra cada tecla, a camada ativa e o calor das teclas.
+Os acentos ficam na Alpha 2, a um toque do polegar. Em câmera lenta: é, ã, ô.
+O qu sai de uma tecla só da Alpha 2: quando.
+Depois do ç, a camada de extensão dá ão numa tecla: ação.
+Maiúsculas usam o shift de um toque: Às, João.
+Letras dobradas usam a tecla de repetição: carro, 100.
+Sem câmera lenta, o ritmo sobe até 120 palavras por minuto. Repare no calor: a fileira do meio trabalha mais, e os polegares cuidam do espaço, dos acentos e das camadas.
 
 O layout Romak está disponível em https://rafaelromao.github.io/romak
