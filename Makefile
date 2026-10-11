@@ -75,11 +75,13 @@ audit: ## the drawing against the keyboard's own keymap (SOURCE=<working copy>, 
 samples: ## write the sample boards' definitions again, as import does (the Diamond's needs ~/projects/keyboards' drawer files)
 	$(or $(VENV_PYTHON),$(PYTHON)) host/sync.py import --config config/example-3x5.yaml
 	$(or $(VENV_PYTHON),$(PYTHON)) host/sync.py import --config config/example-4x12.yaml
+	$(or $(VENV_PYTHON),$(PYTHON)) host/sync.py import --config config/romak-34.yaml
 	$(or $(VENV_PYTHON),$(PYTHON)) host/sync.py sync --config config/diamond.yaml
 
-fixture: ## rebuild hud/tests/fixtures/diamond.json from the configured keymap, and the 3x5 sample's (glyphs placeheld)
+fixture: ## rebuild hud/tests/fixtures/diamond.json from the configured keymap, and the 3x5 and Romak 34 samples' (glyphs placeheld)
 	$(PYTHON) host/keymap.py --dump | $(PYTHON) hud/tests/fixtures/make.py > hud/tests/fixtures/diamond.json
 	$(or $(VENV_PYTHON),$(PYTHON)) host/keymap.py --config config/example-3x5.yaml --dump | $(PYTHON) hud/tests/fixtures/make.py examples/3x5.yaml > hud/tests/fixtures/example-3x5.json
+	$(or $(VENV_PYTHON),$(PYTHON)) host/keymap.py --config config/romak-34.yaml --dump | $(PYTHON) hud/tests/fixtures/make.py examples/romak-34.yaml > hud/tests/fixtures/romak-34.json
 
 clean:
 	rm -rf build host/__pycache__

@@ -1,0 +1,16 @@
+# zmk-layer-hud config for Romak 34 (examples/romak-34.yaml, a 3x5+2 split). Paths are relative to
+# this file. The HUD draws from romak-34.definitions.json beside it, which
+#   zmk-layer-hud import --config config/romak-34.yaml
+# writes from `keymap:` below.
+#
+# Try it without a keyboard:
+#   zmk-layer-hud demo --config config/romak-34.yaml --play docs/demo-romak.json
+
+keymap: ../examples/romak-34.yaml
+title: Romak 34
+combo_term_ms: 30
+
+# alpha2 and the ç extension are one-shot layers: a key there types and the layer goes.
+extras:
+  sticky: [alpha2, ç-extension]
+  alpha2: alpha2

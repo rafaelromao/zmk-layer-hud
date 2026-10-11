@@ -1,0 +1,88 @@
+# Romak for 34 keys (3x5+2), as LayerBench has it (layerbench.github.io, layout romak-34): accented
+# vowels on a one-shot second alpha layer, combos there for the other accents, numbers and symbols
+# held from the thumbs. Navigation, mouse and function layers, and the thumb holds that reach them
+# (repeat/nav, shift/media), are the author's ZMK keymap's (github.com/rafaelromao/keyboards,
+# zmk/definitions/keymap.dtsi), less the two outer thumb keys a 34-key board does not have.
+#
+# The Diamond's conventions mark what a key does beyond its legend: `s: sticky` a one-shot (a layer,
+# or Shift), `s: repeat` the key that repeats the last one, `s: auto-sticky` a key that types and
+# leaves the layer its hold names on for the next key (ç, then ão on the ç extension).
+layout:
+  cols_thumbs_notation: "33333+2 2+33333"
+layers:
+  alpha1:
+    - [q, b, m, g, k, x, l, o, u, ";"]
+    - [d, n, s, t, w, z, r, a, e, i]
+    - [y, f, c, p, v, j, h, ",", ., /]
+    - {t: ↻, h: nav, s: repeat}
+    - {t: ␣, h: numbers}
+    - {t: alpha2, h: symbols, s: sticky}
+    - {t: ⇧, h: media, s: sticky}
+  alpha2:
+    - [▽, ▽, qu, ▽, ▽, ▽, ô, ó, ú, ▽]
+    - [▽, ▽, ▽, ▽, ▽, ▽, ã, á, {t: é, h: œ}, í]
+    - [▽, ▽, {t: ç, h: ç-extension, s: auto-sticky}, ▽, ▽, ▽, õ, â, ê, ▽]
+    - "'"
+    - ▽
+    - ▽
+    - "'"
+  ç-extension:
+    - [▽, ▽, ▽, ▽, ▽, ▽, ▽, ▽, ▽, ▽]
+    - [▽, ▽, ▽, ão, ▽, ▽, ã, ▽, ▽, ▽]
+    - [▽, ▽, ▽, ões, ▽, ▽, õ, ▽, ▽, ▽]
+    - {t: alpha2, s: sticky}
+    - ▽
+    - ▽
+    - ▽
+  numbers:
+    - [null, "\\", "{", "}", null, null, "7", "8", "9", null]
+    - [{t: ",", h: func}, "&", "(", ")", null, null, "4", "5", "6", .]
+    - [null, "|", "[", "]", null, null, "1", "2", "3", null]
+    - ▽
+    - {type: held}
+    - {t: ␣, h: symbols}
+    - {t: "0", h: media}
+  symbols:
+    - [null, "~", "#", "'", null, null, "%", "=", ":", null]
+    - ["@", "^", "$", "\"", null, null, "?", "-", "+", {t: _, h: MACROS}]
+    - [null, "<", ">", "`", null, null, "!", /, "*", null]
+    - ▽
+    - ␣
+    - {type: held}
+    - ▽
+  nav:
+    - [null, Swapper, Tabs, Launcher, null, null, ↹, ↵, Esc, null]
+    - [System, Ctrl, Alt, Shift, null, null, ←, ↓, ↑, →]
+    - [null, "Shift Super", "Shift Super", Super, null, null, Del, Home, End, null]
+    - {type: held}
+    - {h: numbers}
+    - {t: ␣, h: symbols}
+    - {t: Ins, h: media}
+  media:
+    - [null, null, "L Click", "R Click", null, null, "⇧ ↹", {t: End, h: ↵}, Esc, null]
+    - [null, "Mouse ←", "Mouse ↑", "Mouse →", null, null, Mic, {t: Mute, h: "Vol −"}, "Vol +", Cam]
+    - [null, "Wheel ↓", "Mouse ↓", "Wheel ↑", null, null, Play, Prev, Next, null]
+    - {h: nav}
+    - ␣
+    - null
+    - {type: held}
+  func:
+    - [null, F13, F14, F15, null, null, F7, F8, F9, null]
+    - [null, Ctrl, Alt, Shift, null, null, F4, F5, F6, F12]
+    - [null, "Shift Super", "Shift Super", Super, null, null, F1, F2, F3, null]
+    - null
+    - null
+    - F10
+    - F11
+combos:
+  - {p: [27, 28], k: ";", l: [alpha1, numbers]}
+  - {p: [6, 7],   k: "-", l: [alpha2]}
+  - {p: [2, 3],   k: "¨", l: [alpha2]}
+  - {p: [12, 13], k: "´", l: [alpha2]}
+  - {p: [21, 22], k: "`", l: [alpha2]}
+  - {p: [11, 12], k: "^", l: [alpha2]}
+  - {p: [22, 23], k: "~", l: [alpha2]}
+  - {p: [16, 17], k: {t: "?", h: "¿"}, l: [alpha2]}
+  - {p: [26, 27], k: {t: "!", h: "¡"}, l: [alpha2]}
+  - {p: [27, 28], k: ":", l: [alpha2]}
+  - {p: [17, 18], k: à, l: [alpha2]}

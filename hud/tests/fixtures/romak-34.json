@@ -1,0 +1,2304 @@
+{
+"activators": [
+{
+"idx": 30,
+"kind": "hold",
+"layer": "nav"
+},
+{
+"idx": 31,
+"kind": "hold",
+"layer": "numbers"
+},
+{
+"idx": 32,
+"kind": "hold",
+"layer": "symbols"
+},
+{
+"idx": 32,
+"kind": "sticky",
+"layer": "alpha2"
+},
+{
+"idx": 33,
+"kind": "hold",
+"layer": "media"
+},
+{
+"idx": 22,
+"kind": "auto-sticky",
+"layer": "ç-extension"
+},
+{
+"idx": 30,
+"kind": "sticky",
+"layer": "alpha2"
+},
+{
+"idx": 10,
+"kind": "hold",
+"layer": "func"
+}
+],
+"base": "alpha1",
+"combo_idle": 0,
+"combo_term": 30,
+"combos": [
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": ";",
+"type": "key"
+},
+"layers": [
+"alpha1",
+"numbers"
+],
+"positions": [
+27,
+28
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "-",
+"type": "key"
+},
+"layers": [
+"alpha2"
+],
+"positions": [
+6,
+7
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "¨",
+"type": "key"
+},
+"layers": [
+"alpha2"
+],
+"positions": [
+2,
+3
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "´",
+"type": "key"
+},
+"layers": [
+"alpha2"
+],
+"positions": [
+12,
+13
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "`",
+"type": "key"
+},
+"layers": [
+"alpha2"
+],
+"positions": [
+21,
+22
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "^",
+"type": "key"
+},
+"layers": [
+"alpha2"
+],
+"positions": [
+11,
+12
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "~",
+"type": "key"
+},
+"layers": [
+"alpha2"
+],
+"positions": [
+22,
+23
+]
+},
+{
+"key": {
+"hold": "¿",
+"shifted": "",
+"tap": "?",
+"type": "key"
+},
+"layers": [
+"alpha2"
+],
+"positions": [
+16,
+17
+]
+},
+{
+"key": {
+"hold": "¡",
+"shifted": "",
+"tap": "!",
+"type": "key"
+},
+"layers": [
+"alpha2"
+],
+"positions": [
+26,
+27
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": ":",
+"type": "key"
+},
+"layers": [
+"alpha2"
+],
+"positions": [
+27,
+28
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "à",
+"type": "key"
+},
+"layers": [
+"alpha2"
+],
+"positions": [
+17,
+18
+]
+}
+],
+"extras": {
+"alpha2": "alpha2",
+"base": "alpha1",
+"search": [
+"alpha2",
+"ç-extension",
+"numbers",
+"symbols",
+"nav",
+"media",
+"func"
+],
+"sticky": [
+"alpha2",
+"ç-extension"
+]
+},
+"fingers": [
+"lp",
+"lr",
+"lm",
+"li",
+"li",
+"ri",
+"ri",
+"rm",
+"rr",
+"rp",
+"lp",
+"lr",
+"lm",
+"li",
+"li",
+"ri",
+"ri",
+"rm",
+"rr",
+"rp",
+"lp",
+"lr",
+"lm",
+"li",
+"li",
+"ri",
+"ri",
+"rm",
+"rr",
+"rp",
+"lt",
+"lt",
+"rt",
+"rt"
+],
+"glyphs": {},
+"hud": {
+"activator_ms": 400,
+"combo_pill_ms": 1000,
+"combo_slack_ms": 20,
+"dark": 0,
+"heatmap_ms": 3000,
+"held_timeout_ms": 5000,
+"momentary_ms": 700,
+"one_shot_ms": 450,
+"opacity": 86,
+"positions_fresh_ms": 3000,
+"press_ms": 320,
+"release_ms": 60,
+"sequence_max": 6,
+"sequence_ms": 200,
+"stats_bar": 1,
+"width": 598,
+"wpm_idle_ms": 3000,
+"wpm_window_ms": 10000
+},
+"kind": "keymap",
+"layer_order": [
+"alpha1",
+"alpha2",
+"ç-extension",
+"numbers",
+"symbols",
+"nav",
+"media",
+"func"
+],
+"layers": {
+"alpha1": [
+{
+"hold": "",
+"shifted": "",
+"tap": "q",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "b",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "m",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "g",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "k",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "x",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "l",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "o",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "u",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": ";",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "d",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "n",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "s",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "t",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "w",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "z",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "r",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "a",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "e",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "i",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "y",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "f",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "c",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "p",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "v",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "j",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "h",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": ",",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": ".",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "/",
+"type": "key"
+},
+{
+"hold": "nav",
+"shifted": "repeat",
+"tap": "↻",
+"type": "key"
+},
+{
+"hold": "numbers",
+"shifted": "",
+"tap": "␣",
+"type": "key"
+},
+{
+"hold": "symbols",
+"shifted": "sticky",
+"tap": "alpha2",
+"type": "key"
+},
+{
+"hold": "media",
+"shifted": "sticky",
+"tap": "⇧",
+"type": "key"
+}
+],
+"alpha2": [
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "qu",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ô",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ó",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ú",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ã",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "á",
+"type": "key"
+},
+{
+"hold": "œ",
+"shifted": "",
+"tap": "é",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "í",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "ç-extension",
+"shifted": "auto-sticky",
+"tap": "ç",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "õ",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "â",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ê",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "'",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "'",
+"type": "key"
+}
+],
+"func": [
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F13",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F14",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F15",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F7",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F8",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F9",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Ctrl",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Alt",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Shift",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F4",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F5",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F6",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F12",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Shift Super",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Shift Super",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Super",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F1",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F2",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F3",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F10",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "F11",
+"type": "key"
+}
+],
+"media": [
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "L Click",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "R Click",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "⇧ ↹",
+"type": "key"
+},
+{
+"hold": "↵",
+"shifted": "",
+"tap": "End",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Esc",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Mouse ←",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Mouse ↑",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Mouse →",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Mic",
+"type": "key"
+},
+{
+"hold": "Vol −",
+"shifted": "",
+"tap": "Mute",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Vol +",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Cam",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Wheel ↓",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Mouse ↓",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Wheel ↑",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Play",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Prev",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Next",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "nav",
+"shifted": "",
+"tap": "",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "␣",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+}
+],
+"nav": [
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Swapper",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Tabs",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Launcher",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "↹",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "↵",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Esc",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "System",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Ctrl",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Alt",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Shift",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "←",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "↓",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "↑",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "→",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Shift Super",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Shift Super",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Super",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Del",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "Home",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "End",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "numbers",
+"shifted": "",
+"tap": "",
+"type": "key"
+},
+{
+"hold": "symbols",
+"shifted": "",
+"tap": "␣",
+"type": "key"
+},
+{
+"hold": "media",
+"shifted": "",
+"tap": "Ins",
+"type": "key"
+}
+],
+"numbers": [
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "\\",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "{",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "}",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "7",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "8",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "9",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "func",
+"shifted": "",
+"tap": ",",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "&",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "(",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": ")",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "4",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "5",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "6",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": ".",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "|",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "[",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "]",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "1",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "2",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "3",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "symbols",
+"shifted": "",
+"tap": "␣",
+"type": "key"
+},
+{
+"hold": "media",
+"shifted": "",
+"tap": "0",
+"type": "key"
+}
+],
+"symbols": [
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "~",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "#",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "'",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "%",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "=",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": ":",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "@",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "^",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "$",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "\"",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "?",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "-",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "+",
+"type": "key"
+},
+{
+"hold": "MACROS",
+"shifted": "",
+"tap": "_",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "<",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": ">",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "`",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "!",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "/",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "*",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "␣",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "held"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+}
+],
+"ç-extension": [
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ão",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ã",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "ões",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "õ",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "sticky",
+"tap": "alpha2",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+}
+]
+},
+"layout": {
+"height": 266.0,
+"keys": [
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 30.0,
+"y": 80.08000000000001
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 90.0,
+"y": 45.36
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 150.0,
+"y": 28.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 210.0,
+"y": 43.68
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 270.0,
+"y": 51.519999999999996
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 360.0,
+"y": 51.519999999999996
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 420.0,
+"y": 43.68
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 480.0,
+"y": 28.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 540.0,
+"y": 45.36
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 600.0,
+"y": 80.08000000000001
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 30.0,
+"y": 136.08
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 90.0,
+"y": 101.36
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 150.0,
+"y": 84.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 210.0,
+"y": 99.68
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 270.0,
+"y": 107.52
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 360.0,
+"y": 107.52
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 420.0,
+"y": 99.68
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 480.0,
+"y": 84.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 540.0,
+"y": 101.36
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 600.0,
+"y": 136.08
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 30.0,
+"y": 192.08
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 90.0,
+"y": 157.36
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 150.0,
+"y": 140.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 210.0,
+"y": 155.68
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 270.0,
+"y": 163.52
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 360.0,
+"y": 163.52
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 420.0,
+"y": 155.68
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 480.0,
+"y": 140.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 540.0,
+"y": 157.36
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 600.0,
+"y": 192.08
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 210.0,
+"y": 230.16
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 270.0,
+"y": 238.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 360.0,
+"y": 238.0
+},
+{
+"h": 56.0,
+"r": 0,
+"w": 60.0,
+"x": 420.0,
+"y": 230.16
+}
+],
+"width": 630.0
+},
+"positions": {
+"0": 0,
+"1": 1,
+"10": 10,
+"11": 11,
+"12": 12,
+"13": 13,
+"14": 14,
+"15": 15,
+"16": 16,
+"17": 17,
+"18": 18,
+"19": 19,
+"2": 2,
+"20": 20,
+"21": 21,
+"22": 22,
+"23": 23,
+"24": 24,
+"25": 25,
+"26": 26,
+"27": 27,
+"28": 28,
+"29": 29,
+"3": 3,
+"30": 30,
+"31": 31,
+"32": 32,
+"33": 33,
+"4": 4,
+"5": 5,
+"6": 6,
+"7": 7,
+"8": 8,
+"9": 9
+},
+"source": "examples/romak-34.yaml",
+"stats": {
+"accuracy": true,
+"hands": false,
+"heatmap": true,
+"keys": true,
+"layer": true,
+"opacity": true,
+"session": true,
+"sfb": false,
+"slow": false,
+"theme": true,
+"time": false,
+"wpm": true
+},
+"title": "Romak 34",
+"zmk_layers": {
+"0": {
+"cls": "off",
+"drawer": "alpha1",
+"id": 0,
+"label": "Alpha1",
+"name": "alpha1"
+},
+"1": {
+"cls": "momentary",
+"drawer": "alpha2",
+"id": 1,
+"label": "Alpha2",
+"name": "alpha2"
+},
+"2": {
+"cls": "momentary",
+"drawer": "ç-extension",
+"id": 2,
+"label": "Ç-extension",
+"name": "ç-extension"
+},
+"3": {
+"cls": "momentary",
+"drawer": "numbers",
+"id": 3,
+"label": "Numbers",
+"name": "numbers"
+},
+"4": {
+"cls": "momentary",
+"drawer": "symbols",
+"id": 4,
+"label": "Symbols",
+"name": "symbols"
+},
+"5": {
+"cls": "momentary",
+"drawer": "nav",
+"id": 5,
+"label": "Nav",
+"name": "nav"
+},
+"6": {
+"cls": "momentary",
+"drawer": "media",
+"id": 6,
+"label": "Media",
+"name": "media"
+},
+"7": {
+"cls": "momentary",
+"drawer": "func",
+"id": 7,
+"label": "Func",
+"name": "func"
+}
+}
+}
