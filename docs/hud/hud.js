@@ -2158,11 +2158,9 @@
       if (state.data) { buildBoard(); render(); }
       postSize();
     },
-    // A touched key's glow, and the strip's chip for what it typed: never counted, never in a
-    // session (the keyboard's own counts are the session's), and nothing at all while a secret
-    // is being typed.
+    // A touched key's glow: never counted, never in a session (the keyboard's own counts are the
+    // session's), and none at all while a secret is being typed.
     warmKey(idx) { if (!state.secure) bumpHeat(idx); },
-    strip(ev) { if (!state.secure && window.keys) window.keys.key(stripEvent(ev)); },
     // A message for the panel this page is in (its bridge); false where there is none.
     post(obj) {
       const h = panelHandler();

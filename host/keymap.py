@@ -135,7 +135,6 @@ TOUCH_DEFAULTS = {
     "repeat_ms": 60,           # ...and then every this
     "combos": "chips",         # chips: a tappable chip per combo; chords: two fingers at once; both; off
     "heat": 1,                 # touch typing warms the live heat (0: it does not)
-    "strip": 1,                # touch typing shows in the typed-keys strip (0: it does not)
     "sound": 30,               # a key's click, as loud as this in 0-100 (0: silent), the moment a finger lands
     "haptics": 1,              # ...and a buzz where the device has one (an Android tablet's browser; 0: none)
 }

@@ -353,6 +353,8 @@ html.embed #close, html.embed #hide { display: none; }
    amber and tinted -- and a key that cannot type here flashes. */
 html.touch #board { touch-action: none; }
 html.touch .key { -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; cursor: pointer; }
+/* The typed-keys strip is the HUD's, not the touch keyboard's: away while the board types. */
+html.touch #keys { display: none; }
 .key.latched { --ring: #e0af68; }
 .key.locked { --ring: #e0af68; background: #f6e3c0; }
 .key.locked::after { box-shadow: inset 0 0 0 3px var(--ring); }

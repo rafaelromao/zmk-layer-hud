@@ -397,6 +397,11 @@ def main():
     # ---------- docked: a strip along the bottom of a screen, as wide as it (host/dock.py) ----------
     settings = host_settings()
     pct = settings["dock"]["height_pct"]
+
+    def strip_wanted():
+        """The typed-keys strip is the HUD's, not the touch keyboard's: away while the board types,
+        docked or floating (touch.floating)."""
+        return not docked[0] and not (settings["touch"]["enabled"] and settings["touch"]["floating"])
     docked = [False]
     dock_geo = [None]       # the dock's screen, as GDK has it
     dock_h = [0]            # the strip's height, and the room it reserves
@@ -475,7 +480,8 @@ def main():
             tell_page({"kind": "dock", "on": False})
             if not (settings["touch"]["enabled"] and settings["touch"]["floating"]):
                 typing.stop()
-            keys.show_all()
+            if strip_wanted():
+                keys.show_all()
             if rail is not None and shown[0]:
                 rail.show_all()
         hud.show_all()
@@ -645,7 +651,8 @@ def main():
     take_input(keys)
     if rail is not None and shown[0]:
         rail.show_all()
-    keys.show_all()
+    if strip_wanted():
+        keys.show_all()
     hud.show_all()
     room = f"reserved right {rail_width}px, bottom reclaimed" if rail is not None else \
         "overlay, nothing reserved (--reserve tiles windows beside it)"
@@ -675,7 +682,8 @@ def main():
         if docked[0]:
             apply_dock()            # docked: on the screen the dock picks now, which may be another
         else:
-            keys.show_all()
+            if strip_wanted():
+                keys.show_all()
             if rail is not None and shown[0]:
                 rail.show_all()
         hud.show_all()

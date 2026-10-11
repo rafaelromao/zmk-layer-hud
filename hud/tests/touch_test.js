@@ -41,7 +41,7 @@ const MSG = {
     layers: { 0: [0, 1, 2, 3], 1: [4, 5, 5, 3] }, combos: [], conditional: [],
   },
   touch: { enabled: 1, floating: 0, hold_ms: 280, flavor: "balanced", latch: 1, lock_ms: 350, sticky_ms: 0,
-           repeat_delay_ms: 450, repeat_ms: 60, combos: "chips", heat: 1, strip: 1 },
+           repeat_delay_ms: 450, repeat_ms: 60, combos: "chips", heat: 1 },
 };
 
 function page(opts) {
@@ -141,7 +141,8 @@ function page(opts) {
   const local = p.hud.stats.local(), unsent = p.hud.stats.unsent();
   check(!Object.keys(local.presses).length && !Object.keys(unsent.presses).length, "touch typing is counted nowhere");
   check(p.hud.stats.wpm() === 0, "nor in the speed");
-  check(p.keys && p.document.getElementById("keys").children.length > 0, "but the strip shows it");
+  check(p.document.getElementById("keys").children.length === 0, "nor in the typed-keys strip");
+  check(p.document.documentElement.classList.contains("touch"), "which the board typing puts away (html.touch #keys)");
   check(p.key(0).style.getPropertyValue("--heat") !== "", "and the key warms");
 })();
 

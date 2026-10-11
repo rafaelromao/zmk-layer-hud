@@ -80,7 +80,7 @@ without an import. The keymap message gains three fields:
                 "why": { "zmk,behavior-adaptive-key": 11 } } },
 "touch": { "enabled": 1, "hold_ms": 280, "flavor": "balanced", "latch": 1, "lock_ms": 350,
            "sticky_ms": 0, "repeat_delay_ms": 450, "repeat_ms": 60, "combos": "chips",
-           "heat": 1, "strip": 1, "sound": 30, "haptics": 1 }
+           "heat": 1, "sound": 30, "haptics": 1 }
 ```
 
 - `table` holds each distinct action once; `layers[id]` lists, for every ZMK position, the index
@@ -186,8 +186,9 @@ set, glass changes a few things:
   Android tablet buzzes, a desktop does not. A sink with `feedback(kind)` of its own is asked
   instead: the Android keyboard buzzes and clicks natively, as its switches and the system's
   settings say. An iPad keyboard without Full Access can do neither.
-- Touch typing counts nowhere: not in the session, the WPM, or the tallies. It warms the live heat
-  and shows in the typed-keys strip, except while a secret is being typed.
+- Touch typing counts nowhere: not in the session, the WPM, or the tallies. It warms the live heat,
+  except while a secret is being typed. The typed-keys strip is put away while the board types,
+  docked or floating: it is the HUD's, not the keyboard's.
 - In **dock** mode (`<html class="dock">`) the board fills the width it is given and the height
   the host allows (`max_height`); the stats column, the status line and the strip are hidden, and
   the banner is one thin line. A split board's halves go to the two sides of the screen, where the

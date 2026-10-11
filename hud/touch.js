@@ -11,9 +11,9 @@
  * calling hud.setTouch({output, repeat, pages, shortcuts, mouse, send}). Without one the board is
  * the HUD it always was.
  *
- * Touch typing counts nowhere: not the session, the WPM, the tallies. It warms the live heat and
- * shows in the strip (touch.heat, touch.strip), and while a secret is being typed only the
- * typing goes on.
+ * Touch typing counts nowhere: not the session, the WPM, the tallies. It warms the live heat
+ * (touch.heat), except while a secret is being typed, and the typed-keys strip is put away while the
+ * board types: it is the HUD's, not the keyboard's (hud.css html.touch).
  */
 (function () {
   "use strict";
@@ -86,11 +86,10 @@
       clearInterval(beat); beat = null;
       if (last.mods || last.keys.length || last.consumer) beat = setInterval(() => send(last), HEARTBEAT_MS);
     }
-    stripOf(keyEvents);
     // A dead key waits for its letter; alone, it is typed when its time is up.
     clearTimeout(deadTimer);
     if (decoder.pending()) {
-      deadTimer = setTimeout(() => { const late = decoder.flush(Date.now()); if (sink && sink.output === "text") sendOps(late); stripOf(late); },
+      deadTimer = setTimeout(() => { const late = decoder.flush(Date.now()); if (sink && sink.output === "text") sendOps(late); },
                              (window.ZmkHidTables ? window.ZmkHidTables.DEAD_KEY_MS : 60) + 5);
     }
   }
@@ -103,11 +102,6 @@
   function sendOps(keyEvents) {
     const ops = HidText.textEvents(keyEvents, { shortcuts: sink.shortcuts !== false });
     if (ops.length) send({ kind: "ops", v: 1, ops });
-  }
-
-  function stripOf(keyEvents) {
-    if (!data.touch.strip) return;
-    for (const ev of keyEvents) if (ev.type === "keyDown") hud.strip(ev);
   }
 
   function idxOf(pos) {
@@ -311,7 +305,7 @@
   hud.setTouch = setTouch;
   hud.touch = { state: () => (engine ? engine.state() : null), releaseAll };
 
-  // Dev, from disk or a local server: &touch types into the console (and the strip), &dock docks.
+  // Dev, from disk or a local server: &touch types into the console, &dock docks.
   const params = new URLSearchParams(location.search);
   const local = location.protocol === "file:" || ["127.0.0.1", "localhost", "[::1]", "::1"].includes(location.hostname);
   if (local && params.get("touch") !== null) {

@@ -31,7 +31,7 @@ const MSG = {
   actions: { v: 1, source: "keymap", positions: 2, default: 0, table: [kp(0x04), kp(0x2A)],
              layers: { 0: [0, 1] }, combos: [], conditional: [] },
   touch: { enabled: 1, floating: 0, hold_ms: 280, flavor: "balanced", latch: 1, lock_ms: 350, sticky_ms: 0,
-           repeat_delay_ms: 450, repeat_ms: 60, combos: "chips", heat: 1, strip: 1 },
+           repeat_delay_ms: 450, repeat_ms: 60, combos: "chips", heat: 1 },
 };
 
 // The banner's next-keyboard key, which ime-boot.js adds (the test DOM finds only the page's own ids).
