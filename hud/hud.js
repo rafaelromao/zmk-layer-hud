@@ -71,6 +71,8 @@
     "⌫": ["bspc", "BSPC", "backspace"], "⌦": ["del", "DEL"], "⇥": ["tab", "TAB", "↹"] };
   // Modifier flags → the glyph a hold legend uses for them (home-row mods light while held).
   const MOD_GLYPH = { shift: "⇧", ctrl: "⌃", alt: "⌥", cmd: "⌘" };
+  // Where the keys go and which legend each shows (hud/view.js), the same answers a native board draws from.
+  const View = window.ZmkView;
 
   const state = {
     data: null,
@@ -161,62 +163,37 @@
     board.innerHTML = "";
     state.keyEls = [];
     const width = board.clientWidth || 570;
-    let scale = width / lay.width, gap = GAP, offsetX = 0;
-    let offsetOf = () => offsetX;
-    if (state.dock) {
-      // Docked: as wide as the screen allows and no taller than the host lets the strip be. A split
-      // board's halves go to the sides, where the thumbs are on a tablet held in two hands; a board
-      // in one piece is centred. The gap grows with the keys, so a board scaled up for glass is not
-      // all key.
-      const room = Math.max(40, (state.dock.maxHeight || window.innerHeight || 360) - DOCK_CHROME);
-      const split = state.dock.split !== false ? halves(lay) : null;
-      if (split) {
-        const ext = (keys, side) => keys.map(k => k.x + side * k.w / 2);
-        const left = lay.keys.filter((k, i) => split.left.has(i)), right = lay.keys.filter((k, i) => !split.left.has(i));
-        const lMin = Math.min(...ext(left, -1)), lMax = Math.max(...ext(left, 1));
-        const rMin = Math.min(...ext(right, -1)), rMax = Math.max(...ext(right, 1));
-        // The halves never come closer than the layout draws them, a gap's margin at either side.
-        const span = (lMax - lMin) + (rMax - rMin) + split.gap;
-        const gapAt = s => Math.max(2, Math.min(8, Math.round(Math.min(...lay.keys.map(k => k.h)) * s * 0.1)));
-        scale = Math.min(width / span, room / lay.height);
-        gap = gapAt(scale);
-        scale = Math.min((width - 2 * gap) / span, room / lay.height);
-        const toLeft = gap - lMin * scale, toRight = width - gap - rMax * scale;
-        offsetOf = idx => (split.left.has(idx) ? toLeft : toRight);
-      } else {
-        scale = Math.min(scale, room / lay.height);
-        offsetX = Math.max(0, (width - lay.width * scale) / 2);
-        gap = Math.max(2, Math.min(8, Math.round(Math.min(...lay.keys.map(k => k.h)) * scale * 0.1)));
-      }
-    }
-    state.scale = scale; state.offsetX = offsetX; state.gap = gap;
+    // Docked: as wide as the screen allows and no taller than the host lets the strip be, a split
+    // board's halves at the sides (View.geometry).
+    const g = View.geometry(lay, { width, gap: GAP, chrome: DOCK_CHROME, dock: state.dock &&
+      { maxHeight: state.dock.maxHeight || window.innerHeight || 360, split: state.dock.split } });
+    state.scale = g.scale; state.offsetX = g.offsetX; state.gap = g.gap;
     // Each key's centre on the board, in px: what a touch between keys is measured from (touch.js).
-    state.centers = lay.keys.map((k, idx) => ({ x: offsetOf(idx) + k.x * scale, y: k.y * scale }));
-    board.style.height = Math.ceil(lay.height * scale) + "px";
+    state.centers = g.centers;
+    board.style.height = g.height + "px";
     // Legends scale with the typical key height (see --kh in hud.css).
-    const kh = Math.min(...lay.keys.map(k => k.h)) * scale - gap;
-    board.style.setProperty("--kh", Math.max(20, kh) + "px");
+    board.style.setProperty("--kh", Math.max(20, g.kh) + "px");
     // What a combo's pill is placed around (pillSpot): the board's extent, each key's box as drawn
     // (a rotated key's is the box around it), and the size of a key, the unit its distances go by.
-    state.boardSize = { w: width, h: Math.ceil(lay.height * scale) };
+    state.boardSize = { w: width, h: g.height };
     state.keyBoxes = [];
-    state.keyUnit = Math.max(1, Math.min(...lay.keys.map(k => Math.min(k.w, k.h))) * scale - gap);
+    state.keyUnit = Math.max(1, Math.min(...lay.keys.map(k => Math.min(k.w, k.h))) * g.scale - g.gap);
     state.pillSpots = new Map();
     lay.keys.forEach((k, idx) => {
       const e = el("div", "key");
       e.dataset.idx = idx;
       e.title = `#${idx}`;
-      const w = k.w * scale - gap, h = k.h * scale - gap;
-      const a = (k.r || 0) * Math.PI / 180, cx = state.centers[idx].x, cy = state.centers[idx].y;
-      const hw = (Math.abs(w * Math.cos(a)) + Math.abs(h * Math.sin(a))) / 2;
-      const hh = (Math.abs(w * Math.sin(a)) + Math.abs(h * Math.cos(a))) / 2;
+      const r = g.rects[idx];
+      const a = r.r * Math.PI / 180, cx = g.centers[idx].x, cy = g.centers[idx].y;
+      const hw = (Math.abs(r.w * Math.cos(a)) + Math.abs(r.h * Math.sin(a))) / 2;
+      const hh = (Math.abs(r.w * Math.sin(a)) + Math.abs(r.h * Math.cos(a))) / 2;
       state.keyBoxes[idx] = { l: cx - hw, t: cy - hh, r: cx + hw, b: cy + hh };
-      e.style.left = (state.centers[idx].x - w / 2) + "px";
-      e.style.top = (k.y * scale - h / 2) + "px";
-      e.style.width = w + "px";
-      e.style.height = h + "px";
+      e.style.left = r.x + "px";
+      e.style.top = r.y + "px";
+      e.style.width = r.w + "px";
+      e.style.height = r.h + "px";
       if (k.r) e.style.transform = `rotate(${k.r}deg)`;
-      if (h < 50) e.classList.add("short");
+      if (r.h < 50) e.classList.add("short");
       e.appendChild(el("div", "shifted"));
       e.appendChild(el("div", "tap"));
       e.appendChild(el("div", "hold"));
@@ -226,41 +203,12 @@
     paintHeat();   // the glow lives by index, not on the elements just replaced
   }
 
-  // The two halves of a split board as its layout draws them: the keys left of the widest gap
-  // between columns, and the rest. null for a board in one piece (a gap narrower than half a key).
-  function halves(lay) {
-    const spans = lay.keys.map(k => ({ l: k.x - k.w / 2, r: k.x + k.w / 2 })).sort((a, b) => a.l - b.l);
-    let reach = -Infinity, best = null;
-    for (const s of spans) {
-      if (reach > -Infinity && s.l - reach > (best ? best.gap : 0)) best = { gap: s.l - reach, at: s.l };
-      reach = Math.max(reach, s.r);
-    }
-    if (!best || best.gap < Math.min(...lay.keys.map(k => k.w)) / 2) return null;
-    const left = new Set();
-    lay.keys.forEach((k, idx) => { if (k.x < best.at) left.add(idx); });
-    return { left, gap: best.gap };
-  }
-
   // ZMK layer id → keymap entry ({name, drawer, label, cls}); falls back to the YAML order.
-  function zl(id) {
-    const t = state.data.zmk_layers || {};
-    if (t[String(id)]) return t[String(id)];
-    const name = state.data.layer_order[id];
-    return name ? { id, name, drawer: name, label: name, cls: id === 0 ? "off" : "momentary" } : null;
-  }
+  function zl(id) { return View.zl(state.data, id); }
 
   // The live stack as drawer layer names, top first: higher ZMK ids win, undrawn layers are
   // skipped, duplicates (two ids drawn by one layer) collapse; the base layer is always last.
-  function liveStack() {
-    const names = [];
-    const ids = state.live.ids.slice().sort((a, b) => b - a);
-    for (const id of ids) {
-      const z = zl(id);
-      if (z && z.drawer && !names.includes(z.drawer)) names.push(z.drawer);
-    }
-    if (!names.includes(base())) names.push(base());
-    return names;
-  }
+  function liveStack() { return View.drawnStack(state.data, state.live.ids.slice().sort((a, b) => b - a)); }
 
   function baseStack() {
     // top first
@@ -273,15 +221,7 @@
 
   // The touch keyboard's layers, top first (touch.js: the engine's, which takes the keyboard's own
   // while nothing on glass holds one), drawn as liveStack draws the keyboard's.
-  function touchStack() {
-    const names = [];
-    for (const id of state.touch.ids) {
-      const z = zl(id);
-      if (z && z.drawer && !names.includes(z.drawer)) names.push(z.drawer);
-    }
-    if (!names.includes(base())) names.push(base());
-    return names;
-  }
+  function touchStack() { return View.drawnStack(state.data, state.touch.ids); }
 
   function stack() {
     // A layer picked to look at is drawn over the base alone, until the next keystroke (unpick).
@@ -295,15 +235,7 @@
   }
 
   // The binding that wins at idx, walking the stack through transparent keys.
-  function resolveBinding(idx, layersTopFirst) {
-    for (const name of layersTopFirst) {
-      const k = state.data.layers[name] && state.data.layers[name][idx];
-      if (!k) continue;
-      if (k.type === "trans") continue;
-      return { key: k, layer: name };
-    }
-    return null;
-  }
+  function resolveBinding(idx, layersTopFirst) { return View.resolve(state.data, idx, layersTopFirst); }
 
   // A legend is text, or the SVG keymap-drawer draws for a $$glyph$$ (sent with the keymap). The
   // glyph replaces the text rather than joining it: a key's `tap` carries the glyph's own text
@@ -401,32 +333,22 @@
     // A Shift latched on glass (touch.js: the report's modifier byte, either Shift) shifts the
     // legends as one held on the keyboard does.
     const touch = state.touch;
-    const shifting = !!state.mods.shift || !!(touch && touch.mods & 0x22);
-    const shiftLegend = t => (shifting && typeof t === "string" && /^\p{Ll}$/u.test(t)) ? t.toUpperCase() : t;
+    const shifting = !!state.mods.shift || !!(touch && touch.mods & View.SHIFT_BITS);
+    const shiftLegend = t => View.shiftLegend(t, shifting);
     state.data.layout.keys.forEach((k, idx) => {
       const e = state.keyEls[idx];
       const r = resolveBinding(idx, layers);
       e.classList.remove("trans", "blank", "ghost", "held", "activator", "mod", "latched", "locked");
       // A finger on the key lights it however often the board is rebuilt under it; a hold let go
       // and still on (one-shot or locked) is ringed.
-      if (touch) {
-        if (touch.down && touch.down.includes(idx)) e.classList.add("pressed");
-        const latch = touch.latched && touch.latched[idx];
-        if (latch) e.classList.add(latch === "locked" ? "locked" : "latched");
-      }
+      for (const c of View.touchClasses(touch, idx)) e.classList.add(c);
+      for (const c of View.bindingClasses(state.data, idx, layers, r)) e.classList.add(c);
       if (!r) {
-        e.classList.add("blank");
         fit(e.querySelector(".tap"), "");
         e.querySelector(".hold").textContent = "";
         e.querySelector(".shifted").textContent = "";
         return;
       }
-      const top = layers[0];
-      const topKey = state.data.layers[top] && state.data.layers[top][idx];
-      if (r.layer !== top && topKey && topKey.type === "trans") e.classList.add("trans");
-      if (r.key.type === "blank") e.classList.add("blank");
-      if (r.key.type === "ghost") e.classList.add("ghost");
-      if (r.key.type.startsWith("held")) e.classList.add("held");
       if (activators.has(idx)) e.classList.add("activator");
       // A held modifier rings the key that turned it on (modSource): the home-row mod held, or the
       // sticky shift tapped. Without positions there is no telling which, so every key that
@@ -440,11 +362,7 @@
   }
 
   // A drawer layer's banner label: the ZMK table's label when one id is drawn by it, else its name.
-  function layerLabel(name) {
-    const t = state.data.zmk_layers || {};
-    for (const z of Object.values(t)) if (z.drawer === name) return z.label;
-    return name;
-  }
+  function layerLabel(name) { return View.layerLabel(state.data, name); }
 
   // Emulated mode: only the base layer is known.
   function codeSummary() {
@@ -486,13 +404,7 @@
 
   // The touch keyboard's layers on the banner, as liveSummary says the keyboard's, and what glass
   // is holding on the sub line (touch.js: touch · held, touch · one shot, touch · locked).
-  function touchSummary() {
-    const entries = state.touch.ids.map(zl).filter(z => z && z.drawer);
-    const top = entries[0];
-    const sub = state.touch.note || (entries.length > 2 ? entries.slice(0, -1).map(z => z.name).join(" · ") : "");
-    if (!top || top.drawer === base()) return { name: layerLabel(base()), cls: "off", sub };
-    return { name: top.label, cls: top.cls || "momentary", sub };
-  }
+  function touchSummary() { return View.touchSummary(state.data, state.touch); }
 
   // What to print on the banner: an inferred held/one-shot layer on top of the base, else the base.
   function activeSummary() {

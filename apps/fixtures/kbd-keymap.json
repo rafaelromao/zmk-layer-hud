@@ -1,0 +1,276 @@
+{
+ "kind": "keymap",
+ "schema": 1,
+ "source": "kbd-test",
+ "title": "Test",
+ "altgr": false,
+ "glyphs": {},
+ "positions": {
+  "0": 0,
+  "1": 1,
+  "2": 2,
+  "3": 3,
+  "4": 4,
+  "5": 5
+ },
+ "layout": {
+  "width": 700,
+  "height": 100,
+  "keys": [
+   {
+    "x": 50,
+    "y": 50,
+    "w": 100,
+    "h": 100,
+    "r": 0
+   },
+   {
+    "x": 150,
+    "y": 50,
+    "w": 100,
+    "h": 100,
+    "r": 0
+   },
+   {
+    "x": 250,
+    "y": 50,
+    "w": 100,
+    "h": 100,
+    "r": 0
+   },
+   {
+    "x": 450,
+    "y": 50,
+    "w": 100,
+    "h": 100,
+    "r": 0
+   },
+   {
+    "x": 550,
+    "y": 50,
+    "w": 100,
+    "h": 100,
+    "r": 0
+   },
+   {
+    "x": 650,
+    "y": 50,
+    "w": 100,
+    "h": 100,
+    "r": 0
+   }
+  ]
+ },
+ "layers": {
+  "base": [
+   {
+    "tap": "a",
+    "hold": "",
+    "shifted": "",
+    "type": "key"
+   },
+   {
+    "tap": "'",
+    "hold": "",
+    "shifted": "",
+    "type": "key"
+   },
+   {
+    "tap": "␣",
+    "hold": "nav",
+    "shifted": "",
+    "type": "key"
+   },
+   {
+    "tap": "⇧",
+    "hold": "",
+    "shifted": "",
+    "type": "key"
+   },
+   {
+    "tap": "e",
+    "hold": "",
+    "shifted": "",
+    "type": "key"
+   },
+   {
+    "tap": "✕",
+    "hold": "",
+    "shifted": "",
+    "type": "key"
+   }
+  ],
+  "nav": [
+   {
+    "tap": "1",
+    "hold": "",
+    "shifted": "",
+    "type": "key"
+   },
+   {
+    "type": "trans",
+    "tap": "",
+    "hold": "",
+    "shifted": ""
+   },
+   {
+    "tap": "",
+    "hold": "",
+    "shifted": "",
+    "type": "held"
+   },
+   {
+    "tap": "⇧",
+    "hold": "",
+    "shifted": "",
+    "type": "key"
+   },
+   {
+    "type": "trans",
+    "tap": "",
+    "hold": "",
+    "shifted": ""
+   },
+   {
+    "type": "trans",
+    "tap": "",
+    "hold": "",
+    "shifted": ""
+   }
+  ]
+ },
+ "layer_order": [
+  "base",
+  "nav"
+ ],
+ "zmk_layers": {
+  "0": {
+   "id": 0,
+   "name": "BASE",
+   "drawer": "base",
+   "label": "Base",
+   "cls": "off"
+  },
+  "1": {
+   "id": 1,
+   "name": "NAV",
+   "drawer": "nav",
+   "label": "Nav",
+   "cls": "momentary"
+  }
+ },
+ "base": "base",
+ "actions": {
+  "v": 1,
+  "source": "keymap",
+  "positions": 6,
+  "default": 0,
+  "table": [
+   {
+    "op": "kp",
+    "key": {
+     "page": 7,
+     "id": 4,
+     "mods": 0
+    }
+   },
+   {
+    "op": "kp",
+    "key": {
+     "page": 7,
+     "id": 52,
+     "mods": 0
+    }
+   },
+   {
+    "op": "ht",
+    "hold": {
+     "op": "mo",
+     "layer": 1,
+     "locking": false
+    },
+    "tap": {
+     "op": "kp",
+     "key": {
+      "page": 7,
+      "id": 44,
+      "mods": 0
+     }
+    },
+    "flavor": "tap-preferred",
+    "term": 200,
+    "quick_tap": -1,
+    "prior_idle": -1,
+    "retro_tap": false,
+    "trigger_positions": null,
+    "trigger_on_release": false
+   },
+   {
+    "op": "kp",
+    "key": {
+     "page": 7,
+     "id": 225,
+     "mods": 0
+    }
+   },
+   {
+    "op": "kp",
+    "key": {
+     "page": 7,
+     "id": 8,
+     "mods": 0
+    }
+   },
+   {
+    "op": "mouse",
+    "button": 1,
+    "raw": "&mkp LCLK"
+   },
+   {
+    "op": "kp",
+    "key": {
+     "page": 7,
+     "id": 30,
+     "mods": 0
+    }
+   },
+   {
+    "op": "trans"
+   }
+  ],
+  "layers": {
+   "0": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5
+   ],
+   "1": [
+    6,
+    7,
+    7,
+    3,
+    7,
+    7
+   ]
+  },
+  "combos": [],
+  "conditional": []
+ },
+ "touch": {
+  "enabled": 1,
+  "floating": 0,
+  "hold_ms": 280,
+  "flavor": "balanced",
+  "latch": 1,
+  "lock_ms": 350,
+  "sticky_ms": 0,
+  "repeat_delay_ms": 450,
+  "repeat_ms": 60,
+  "combos": "chips",
+  "heat": 1,
+  "strip": 1
+ }
+}

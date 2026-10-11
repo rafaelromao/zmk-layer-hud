@@ -110,6 +110,18 @@ class SinkTest {
         assertEquals(names, ImeSink.NAMED.keys)
     }
 
+    @Test fun theGoldenOpsAreReadAndTypedAsTheySay() {
+        // apps/fixtures/kbd-golden.json: what hud/kbd.js types for a script of fingers, the iPad's
+        // and this keyboard's common reference.
+        val golden = Json.parse(File(System.getProperty("zmkhud.root"), "apps/fixtures/kbd-golden.json").readText()) as Map<*, *>
+        val raw = (golden["steps"] as List<*>).flatMap { ((it as Map<*, *>)["answer"] as Map<*, *>)["ops"] as List<*> }
+        @Suppress("UNCHECKED_CAST")
+        val ops = raw.map { Op.of(it as Map<String, Any?>) }
+        assertTrue(ops.isNotEmpty() && ops.none { it == null }, "every op the page sends is one this keyboard reads")
+        assertEquals(listOf("text a", "text A", "text 1", "text  ", "text é", "text '", "text a", "text a", "text a"),
+            typed(Field(), *ops.filterNotNull().toTypedArray()))
+    }
+
     @Test fun thePagesMessages() {
         val ops = PageMessage.parse("""{"kind":"ops","v":1,"seq":4,"ops":[{"kind":"text","text":"a","usage":4,"mods":0},
             {"kind":"key","key":"backspace","usage":42,"mods":0},{"kind":"chord","chars":"c","name":null,"usage":6,"mods":1},

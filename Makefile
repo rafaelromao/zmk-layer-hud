@@ -23,7 +23,7 @@ NODE ?= $(shell command -v node)
 # The audit reads the keyboard's keymap with keymap-drawer, which lives in the venv.
 VENV_PYTHON := $(wildcard .venv/bin/python3)
 
-.PHONY: all install venv test test-firmware test-host test-hud test-site test-apps test-android site cli-docs samples audit fixture zmk-tables hidtables zmk-vectors clean help
+.PHONY: all install venv test test-firmware test-host test-hud test-site test-apps test-android test-ios golden site cli-docs samples audit fixture zmk-tables hidtables zmk-vectors clean help
 
 all: test
 
@@ -55,6 +55,7 @@ test-hud: ## the HUD page: every key and combo, the heatmap, the strip, and ever
 	  $(NODE) hud/tests/engine_test.js && \
 	  $(NODE) hud/tests/touch_test.js && \
 	  $(NODE) hud/tests/remote_test.js && \
+	  $(NODE) hud/tests/kbd_test.js && \
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/hidtext_test.js && \
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/engine_legends_test.js; \
 	fi
@@ -74,8 +75,12 @@ test-apps: ## the tablets' keyboards: the pages they boot, without the Android S
 	@if [ -z "$(NODE)" ]; then \
 	  echo "test-apps: node not found, skipping (brew install node)"; \
 	else \
-	  $(NODE) apps/tests/ime_boot_test.js; \
+	  $(NODE) apps/tests/ime_boot_test.js && \
+	  $(NODE) apps/fixtures/golden.js --check; \
 	fi
+
+golden: ## the answers the tablets' keyboards are held to (apps/fixtures/kbd-golden.json), from hud/kbd.js
+	$(NODE) apps/fixtures/golden.js
 
 GRADLE ?= $(shell command -v gradle)
 ANDROID_JAVA_HOME ?= $(firstword $(wildcard /opt/homebrew/opt/openjdk@21 /usr/lib/jvm/java-21-openjdk))
@@ -85,6 +90,15 @@ test-android: ## the Android keyboard's sink (apps/android/sink): Gradle and a J
 	  echo "test-android: gradle not found, skipping (brew install gradle openjdk@21)"; \
 	else \
 	  cd apps/android && $(if $(ANDROID_JAVA_HOME),JAVA_HOME=$(ANDROID_JAVA_HOME)) $(GRADLE) --console=plain :sink:test; \
+	fi
+
+SWIFT ?= $(shell command -v swift)
+
+test-ios: ## the iPad keyboard's Core (apps/ios/Core): JavaScriptCore, the text sink, hit-testing; a Mac, no Xcode
+	@if [ -z "$(SWIFT)" ]; then \
+	  echo "test-ios: swift not found, skipping (xcode-select --install)"; \
+	else \
+	  cd apps/ios/Core && $(SWIFT) test; \
 	fi
 
 site: ## build the landing page into docs/, which GitHub Pages serves; commit what it writes (STRICT=1: every board, or fail)

@@ -1,0 +1,2371 @@
+{
+ "_": "written by apps/fixtures/golden.js from hud/kbd.js; do not edit by hand",
+ "keymap": "kbd-keymap.json",
+ "geometry": {
+  "width": 1024,
+  "maxHeight": 300,
+  "split": true,
+  "answer": {
+   "scale": 1.44,
+   "gap": 8,
+   "offsetX": 0,
+   "centers": [
+    {
+     "x": 80,
+     "y": 72
+    },
+    {
+     "x": 224,
+     "y": 72
+    },
+    {
+     "x": 368,
+     "y": 72
+    },
+    {
+     "x": 656,
+     "y": 72
+    },
+    {
+     "x": 800,
+     "y": 72
+    },
+    {
+     "x": 944,
+     "y": 72
+    }
+   ],
+   "rects": [
+    {
+     "x": 12,
+     "y": 4,
+     "w": 136,
+     "h": 136,
+     "r": 0
+    },
+    {
+     "x": 156,
+     "y": 4,
+     "w": 136,
+     "h": 136,
+     "r": 0
+    },
+    {
+     "x": 300,
+     "y": 4,
+     "w": 136,
+     "h": 136,
+     "r": 0
+    },
+    {
+     "x": 588,
+     "y": 4,
+     "w": 136,
+     "h": 136,
+     "r": 0
+    },
+    {
+     "x": 732,
+     "y": 4,
+     "w": 136,
+     "h": 136,
+     "r": 0
+    },
+    {
+     "x": 876,
+     "y": 4,
+     "w": 136,
+     "h": 136,
+     "r": 0
+    }
+   ],
+   "height": 144,
+   "kh": 136
+  }
+ },
+ "steps": [
+  {
+   "do": "down",
+   "key": 0,
+   "t": 1000,
+   "answer": {
+    "ops": [
+     {
+      "kind": "text",
+      "text": "a",
+      "usage": 4,
+      "mods": 0
+     }
+    ],
+    "refused": [],
+    "changed": true,
+    "next": 1450
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "up",
+   "key": 0,
+   "t": 1040,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "down",
+   "key": 3,
+   "t": 2000,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "A",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "E",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "down",
+   "key": 0,
+   "t": 2100,
+   "answer": {
+    "ops": [
+     {
+      "kind": "text",
+      "text": "A",
+      "usage": 4,
+      "mods": 2
+     }
+    ],
+    "refused": [],
+    "changed": true,
+    "next": 2550
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "A",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "E",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "up",
+   "key": 0,
+   "t": 2140,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "A",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "E",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "up",
+   "key": 3,
+   "t": 2200,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "down",
+   "key": 2,
+   "t": 3000,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": 3280
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "tick",
+   "key": null,
+   "t": 3300,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Nav",
+     "cls": "momentary",
+     "sub": "touch · held"
+    },
+    "layers": [
+     "nav",
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "1",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "trans"
+      ]
+     },
+     {
+      "tap": "",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "held",
+       "pressed"
+      ]
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "trans"
+      ]
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "trans"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "do": "down",
+   "key": 0,
+   "t": 3400,
+   "answer": {
+    "ops": [
+     {
+      "kind": "text",
+      "text": "1",
+      "usage": 30,
+      "mods": 0
+     }
+    ],
+    "refused": [],
+    "changed": true,
+    "next": 3850
+   },
+   "board": {
+    "banner": {
+     "name": "Nav",
+     "cls": "momentary",
+     "sub": "touch · held"
+    },
+    "layers": [
+     "nav",
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "1",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "trans"
+      ]
+     },
+     {
+      "tap": "",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "held",
+       "pressed"
+      ]
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "trans"
+      ]
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "trans"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "do": "up",
+   "key": 0,
+   "t": 3440,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Nav",
+     "cls": "momentary",
+     "sub": "touch · held"
+    },
+    "layers": [
+     "nav",
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "1",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "trans"
+      ]
+     },
+     {
+      "tap": "",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "held",
+       "pressed"
+      ]
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "trans"
+      ]
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "trans"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "do": "up",
+   "key": 2,
+   "t": 3500,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "down",
+   "key": 2,
+   "t": 4000,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": 4280
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "up",
+   "key": 2,
+   "t": 4050,
+   "answer": {
+    "ops": [
+     {
+      "kind": "text",
+      "text": " ",
+      "usage": 44,
+      "mods": 0
+     }
+    ],
+    "refused": [],
+    "changed": true,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "down",
+   "key": 1,
+   "t": 5000,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": 5065
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "up",
+   "key": 1,
+   "t": 5040,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": 5105
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "down",
+   "key": 4,
+   "t": 5050,
+   "answer": {
+    "ops": [
+     {
+      "kind": "text",
+      "text": "é",
+      "usage": 8,
+      "mods": 0
+     }
+    ],
+    "refused": [],
+    "changed": true,
+    "next": 5500
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "up",
+   "key": 4,
+   "t": 5090,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "down",
+   "key": 1,
+   "t": 6000,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": 6065
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "up",
+   "key": 1,
+   "t": 6040,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": 6105
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "tick",
+   "key": null,
+   "t": 6200,
+   "answer": {
+    "ops": [
+     {
+      "kind": "text",
+      "text": "'",
+      "usage": 52,
+      "mods": 0
+     }
+    ],
+    "refused": [],
+    "changed": false,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "down",
+   "key": 5,
+   "t": 7000,
+   "answer": {
+    "ops": [],
+    "refused": [
+     5
+    ],
+    "changed": true,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "do": "up",
+   "key": 5,
+   "t": 7040,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "down",
+   "key": 0,
+   "t": 8000,
+   "answer": {
+    "ops": [
+     {
+      "kind": "text",
+      "text": "a",
+      "usage": 4,
+      "mods": 0
+     }
+    ],
+    "refused": [],
+    "changed": true,
+    "next": 8450
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "tick",
+   "key": null,
+   "t": 8450,
+   "answer": {
+    "ops": [
+     {
+      "kind": "text",
+      "text": "a",
+      "usage": 4,
+      "mods": 0
+     }
+    ],
+    "refused": [],
+    "changed": true,
+    "next": 8510
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "tick",
+   "key": null,
+   "t": 8510,
+   "answer": {
+    "ops": [
+     {
+      "kind": "text",
+      "text": "a",
+      "usage": 4,
+      "mods": 0
+     }
+    ],
+    "refused": [],
+    "changed": true,
+    "next": 8570
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "up",
+   "key": 0,
+   "t": 8520,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "down",
+   "key": 3,
+   "t": 9000,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "A",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": [
+       "pressed"
+      ]
+     },
+     {
+      "tap": "E",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  },
+  {
+   "do": "releaseAll",
+   "key": null,
+   "t": 9100,
+   "answer": {
+    "ops": [],
+    "refused": [],
+    "changed": true,
+    "next": null
+   },
+   "board": {
+    "banner": {
+     "name": "Base",
+     "cls": "off",
+     "sub": ""
+    },
+    "layers": [
+     "base"
+    ],
+    "keys": [
+     {
+      "tap": "a",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "'",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "␣",
+      "hold": "nav",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "⇧",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "e",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     },
+     {
+      "tap": "✕",
+      "hold": "",
+      "shifted": "",
+      "glyph": null,
+      "glyph_hold": null,
+      "glyph_shifted": null,
+      "cls": []
+     }
+    ]
+   }
+  }
+ ]
+}

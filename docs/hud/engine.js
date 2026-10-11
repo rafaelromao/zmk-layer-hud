@@ -180,14 +180,17 @@
         registerMods(ev.explicit, false);
         implicit = 0;
         report();
+        // The key let go stops repeating now, not when its next repeat finds it gone.
+        if (repeating === ev.id) { cancel(repeatTimer); repeatTimer = null; repeating = null; }
       }
       return BUBBLE;
     }
 
     // Synthetic repeat, for a sink whose host does not repeat a held key itself.
-    let repeatTimer = null;
+    let repeatTimer = null, repeating = null;
     function startRepeat(id) {
       cancel(repeatTimer);
+      repeating = id;
       const again = (t, first) => {
         repeatTimer = at(t + (first ? touch.repeat_delay_ms : touch.repeat_ms), (when) => {
           if (keys[keys.length - 1] !== id) return;
