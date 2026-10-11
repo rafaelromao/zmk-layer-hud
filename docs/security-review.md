@@ -100,8 +100,16 @@ covered what they look for in a tree this size.
   encrypted but a capture of the pairing can be decrypted, and any application on the bonded
   host with Bluetooth access may subscribe. The same is true of the keyboard's HID reports over
   the same link.
-- **Linux has no Secure Input.** What is typed into a password field reaches the feed and its
-  page there. The README says so; stop or hide the HUD when it matters.
+- **Linux has no Secure Input.** A terminal's password prompt is seen (`hudfeed.terminal_probe`:
+  the terminal reads a line with echo off, which is what `sudo`, `ssh` and `getpass` do), and a
+  password field with focus is seen on the accessibility bus (`host/a11y.py`: AT-SPI's `password
+  text` role) in every app that exposes its widgets. For that the feed sets `org.a11y.Status
+  IsEnabled` on the session bus, as a screen reader does, which makes every app of the session
+  keep an accessibility tree that any process of the same user may read: that user already reads
+  the keyboard's own reports through hidraw, so no new party sees the typing, but window contents
+  become readable too. `feed.accessibility: 0` leaves the setting alone. An app that exposes
+  nothing gives no sign, and what is typed into it reaches the feed and its page. The README
+  says so.
 - **The Origin gate trusts `null`.** A `file:` page and a sandboxed frame both say `null`, which
   is why the token, not the Origin, is what admits a client.
 

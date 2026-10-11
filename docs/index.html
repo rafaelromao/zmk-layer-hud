@@ -284,8 +284,10 @@ zmk-layer-hud autostart enable   # optional: start it hidden at every login</cod
       <div><dt>What does it read, and where does it go?</dt><dd>Layers and positions come from the
         module. What you type comes from the keyboard's HID reports and feeds the strip; on macOS
         that needs Input Monitoring, and <code>--no-hid-keys</code> drops both the strip and the
-        permission. While macOS says a password is being typed, the HUD shows and counts nothing of
-        it. Sessions keep counts, never what was typed, and nothing leaves the machine.</dd></div>
+        permission. While a password is being typed, in a field macOS secures, in a field a Linux app
+        shows on the accessibility bus, or at a terminal's prompt on either system, the HUD shows and
+        counts nothing of it. Sessions keep counts, never what was typed, and nothing leaves the
+        machine.</dd></div>
       <div><dt>Does it get in ZMK Studio's way?</dt><dd>No. The feed tries each serial port the board
         exposes and moves on from one that says nothing, so a Studio or logging port beside the
         signal is left alone.</dd></div>

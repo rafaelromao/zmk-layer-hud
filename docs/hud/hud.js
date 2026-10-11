@@ -91,7 +91,7 @@
     heatTimer: null,
     heatMode: "live",         // what the keys glow with: live | session | physical | speed | off
     prefs: {},                // what the viewer chose (setPref): theme light | dark, side shown | hidden
-    secure: false,            // macOS secure input: a secret is being typed, and nothing of it shows
+    secure: false,            // secure input: a secret is being typed, and nothing of it shows
     demo: false,              // a GIF still (&demo=N): drawn as it always was, no heat, no counts
     ledger: [],               // keystrokes drawn and not counted yet (see "ledger")
     ledgerTimer: null,
@@ -403,7 +403,7 @@
     $("board").className = a.cls;
   }
 
-  /* macOS's secure input (host/hudfeed.py SecureInput): a secret is being typed, and the feed has
+  /* Secure input (host/hudfeed.py SecureInput): a secret is being typed, and the feed has
    * stopped passing on keys. What is still on screen of the typing before it goes too -- the
    * strip, the keys lit, their glow, the macro memory -- and the banner says why the board has
    * stopped following. Anything that arrives anyway (sent in) is drawn nowhere until it ends. */
@@ -470,7 +470,8 @@
     const handler = panelHandler();
     if (!handler) return;
     // Everything that takes a click: a press there goes to the page, anywhere else it moves the
-    // panel. The slider's whole box, not just its track, so a press a little off the thumb works.
+    // panel, and the macOS panel shows the hand there (host/macos/panel.py DragWebView). The
+    // slider's whole box, not just its track, so a press a little off the thumb works.
     let rects = [];
     try {
       const controls = [$("side"), $("hide"), $("close"), $("statsHead"), bar.layer && bar.layer.pick]
@@ -1983,6 +1984,7 @@
       else if (m.kind === "release") hud.releaseAt(m.pos);
       else if (m.kind === "session") applySession(m);
       else if (m.kind === "secure") setSecure(m.on);
+      else if (m.kind === "heat") setHeatmap(m.mode, true);   // a demo's moment: shown, never kept
       if (m.device) hud.setDevice(m.device);  // the keyboard that is typing names the panel
     },
     // What the keys glow with: "live" (what was just typed), "session" (every press counted) or

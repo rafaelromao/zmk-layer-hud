@@ -7,9 +7,11 @@ what is tested here is what the HUD gets told. Stream ties the two together.
 import asyncio
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
+import termios
 import types
 import unittest
 from unittest import mock
@@ -18,7 +20,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
 from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SerialReader,  # noqa: E402
-                     SignalDecoder, Stream, hid_scan_note, hidraw_match, sent_in, serve_hub, split_report)
+                     SignalDecoder, Stream, asks_secret, hid_scan_note, hidraw_match, sent_in, serve_hub,
+                     split_report, terminal_probe)
 
 try:
     import yaml  # noqa: F401
@@ -428,6 +431,102 @@ class Secure(unittest.TestCase):
         hub = Hub()
         asyncio.run(hub.send({"kind": "secure", "on": True}))
         self.assertIn("secure", hub.cache)
+
+    def test_the_feed_asks_the_system_and_the_terminals(self):
+        # Either saying so is enough; and where neither can be asked, there is nothing to hold back.
+        said = {"system": False, "terminal": False}
+        probes = {"system": lambda: said["system"], "terminal": lambda: said["terminal"]}
+
+        def feed_with(**have):
+            with mock.patch("hudfeed.carbon_probe", return_value=probes["system"] if have.get("system") else None), \
+                 mock.patch("hudfeed.terminal_probe", return_value=probes["terminal"] if have.get("terminal") else None), \
+                 tempfile.TemporaryDirectory() as tmp:
+                path = os.path.join(tmp, "config.yaml")
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write("keyboard: {name: Test Board}\nserial: {port: /dev/cu.test}\nble: {enabled: false}\n")
+                return Feed(lambda msg: None, log=lambda *a: None, config=path, keys=False, sessions=False)
+        feed = feed_with(system=True, terminal=True)
+        self.assertFalse(feed.secure.probe())
+        said["terminal"] = True
+        self.assertTrue(feed.secure.probe())      # a terminal's prompt counts as much as the switch
+        said.update(system=True, terminal=False)
+        self.assertTrue(feed.secure.probe())
+        said["system"] = False
+        self.assertIsNotNone(feed_with(terminal=True).secure)    # Linux: the terminals alone
+        self.assertIsNone(feed_with().secure)
+
+    def test_on_linux_the_accessibility_bus_is_watched_too(self):
+        # A password field with focus in a window (host/a11y.py), with the apps told to expose their
+        # widgets unless the config says to leave that alone.
+        def feed_with(text):
+            with mock.patch("hudfeed.carbon_probe", return_value=None), \
+                 mock.patch("hudfeed.terminal_probe", return_value=None), \
+                 mock.patch("hudfeed.a11y.available", return_value=True), \
+                 mock.patch("hudfeed.a11y.PasswordFocus") as focus, \
+                 tempfile.TemporaryDirectory() as tmp:
+                focus.return_value.probe.return_value = False
+                path = os.path.join(tmp, "config.yaml")
+                with open(path, "w", encoding="utf-8") as f:
+                    f.write("keyboard: {name: Test Board}\nserial: {port: /dev/cu.test}\nble: {enabled: false}\n" + text)
+                feed = Feed(lambda msg: None, log=lambda *a: None, config=path, keys=False, sessions=False)
+                return feed, focus
+        feed, focus = feed_with("")
+        self.assertIs(feed.focus, focus.return_value)
+        self.assertTrue(focus.call_args.kwargs["enable"])
+        self.assertFalse(feed.secure.probe())
+        focus.return_value.probe.return_value = True
+        self.assertTrue(feed.secure.probe())
+        feed, focus = feed_with("feed: {accessibility: 0}\n")
+        self.assertFalse(focus.call_args.kwargs["enable"])
+        feed, focus = feed_with("feed: {secure_input: 0}\n")
+        self.assertIsNone(feed.focus)
+        self.assertFalse(focus.called)
+
+
+class TerminalPrompts(unittest.TestCase):
+    """A terminal asking for a secret is a secret being typed: on Linux, which has no switch, and
+    on macOS beside it."""
+
+    def setUp(self):
+        try:
+            self.master, self.slave = os.openpty()
+        except OSError as e:               # a sandbox that hands out no terminals
+            self.skipTest(f"no pty to be had here: {e}")
+        self.addCleanup(os.close, self.master)
+        self.addCleanup(os.close, self.slave)
+        self.path = os.ttyname(self.slave)
+
+    def mode(self, on=0, off=0):
+        attrs = termios.tcgetattr(self.slave)
+        attrs[3] = (attrs[3] | on) & ~off
+        termios.tcsetattr(self.slave, termios.TCSANOW, attrs)
+
+    def test_echo_off_a_line_at_a_time_is_a_password_prompt(self):
+        self.mode(on=termios.ECHO | termios.ICANON)
+        self.assertFalse(asks_secret(self.path))         # nothing asked: the terminal echoes
+        self.mode(off=termios.ECHO)
+        self.assertTrue(asks_secret(self.path))          # sudo, ssh, su, getpass: echo off, a line at a time
+        self.mode(off=termios.ICANON)
+        self.assertFalse(asks_secret(self.path))         # a shell's line editor, an editor: raw, key by key
+        self.mode(on=termios.ECHO)
+        self.assertFalse(asks_secret(self.path))
+
+    def test_what_is_not_a_terminal_of_ours_says_nothing(self):
+        self.assertFalse(asks_secret(os.path.join(tempfile.gettempdir(), "no-such-tty")))
+        with tempfile.NamedTemporaryFile() as f:
+            self.assertFalse(asks_secret(f.name))        # a file, not a terminal
+
+    def test_the_probe_looks_through_the_terminals(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            os.symlink(self.path, os.path.join(tmp, "7"))
+            with open(os.path.join(tmp, "ptmx"), "w"):   # /dev/pts has one; it is nobody's terminal
+                pass
+            probe = terminal_probe((tmp, re.compile(r"\d+$")))
+            self.mode(on=termios.ECHO | termios.ICANON)
+            self.assertFalse(probe())
+            self.mode(off=termios.ECHO)
+            self.assertTrue(probe())
+        self.assertIsNone(terminal_probe(("/no/such/dir", re.compile(r"\d+$"))))   # nowhere to look
 
 
 class FakeSocket:

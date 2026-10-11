@@ -8,7 +8,8 @@
 #
 # hidapi and PyObjC are macOS only: Linux reads /dev/hidrawN itself, and the hidapi wheel there
 # bundles the libusb backend, which wants an access no udev rule grants and detaches the kernel HID
-# driver. The macOS panel and menubar are PyObjC.
+# driver. The macOS panel and menubar are PyObjC. jeepney is Linux only: pure-Python D-Bus, for the
+# accessibility bus, where a password field with focus is seen (host/a11y.py); macOS has secure input.
 pyserial==3.5
 keymap-drawer==0.23.0
 websockets==17.1
@@ -16,3 +17,4 @@ bleak==3.0.2
 hidapi==0.15.0 ; sys_platform == "darwin"
 pyobjc-framework-Cocoa==12.2.2 ; sys_platform == "darwin"
 pyobjc-framework-WebKit==12.2.2 ; sys_platform == "darwin"
+jeepney==0.9.0 ; sys_platform == "linux"

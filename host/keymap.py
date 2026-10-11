@@ -116,7 +116,8 @@ FEED_DEFAULTS = {
     "sessions": 1,             # keep the typing counts in session files (0: none, the HUD forgets them on exit)
     "session_flush_s": 5,      # how often what was counted is written to the session's file
     "session_poll_s": 1,       # how often the session files are looked at for `zmk-layer-hud session` changes
-    "secure_input": 1,         # (macOS) while a password field has focus, pass on nothing typed (0: pass it all)
+    "secure_input": 1,         # while a password field has focus or a terminal asks for a password, pass on nothing typed (0: pass it all)
+    "accessibility": 1,        # (Linux) tell the apps assistive technology is wanted, so a password field with focus is seen (0: leave that setting alone)
     "altgr": 0,                # 1: the right Alt is AltGr, a Linux host's US-International (ç is AltGr+,); 0: it is macOS's Option
 }
 

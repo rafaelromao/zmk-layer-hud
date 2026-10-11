@@ -1548,6 +1548,27 @@ def check_python(results):
                                   "macOS: brew install python\nArch:  sudo pacman -S python"))
 
 
+def check_accessibility(results):
+    """Linux: whether the apps expose their widgets to assistive technology, which is how a password
+    field with focus is seen (host/a11y.py). The feed turns it on when it starts; this is where it
+    stands now, asked through systemd's busctl, since doctor runs without the venv."""
+    if platform.system() != "Linux" or not shutil.which("busctl"):
+        return
+    try:
+        got = subprocess.run(["busctl", "--user", "--timeout=5", "get-property", "org.a11y.Bus", "/org/a11y/bus",
+                              "org.a11y.Status", "IsEnabled"], capture_output=True, text=True, timeout=10)
+    except (OSError, subprocess.SubprocessError):
+        return
+    if got.returncode != 0:
+        results.append(report(WARN, "accessibility", "no accessibility bus on the session bus (at-spi2-core)",
+                              "a password field in a window is not seen; a terminal's password prompt still is"))
+    elif got.stdout.strip().endswith("true"):
+        results.append(report(OK, "accessibility", "on: a password field with focus is seen"))
+    else:
+        results.append(report(WARN, "accessibility", "off: the feed turns it on when it starts (feed.accessibility)",
+                              "until then a password field in a window is not seen; a terminal's password prompt still is"))
+
+
 def check_platform(results):
     system = platform.system()
     if system == "Darwin":
@@ -1648,6 +1669,7 @@ def cmd_doctor(args):
     check_platform(results)
     check_config(results)
     check_udev(results)
+    check_accessibility(results)
     check_path(results)
     print()
     cmd_status(args)

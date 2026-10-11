@@ -91,7 +91,7 @@
     heatTimer: null,
     heatMode: "live",         // what the keys glow with: live | session | physical | speed | off
     prefs: {},                // what the viewer chose (setPref): theme light | dark, side shown | hidden
-    secure: false,            // macOS secure input: a secret is being typed, and nothing of it shows
+    secure: false,            // secure input: a secret is being typed, and nothing of it shows
     demo: false,              // a GIF still (&demo=N): drawn as it always was, no heat, no counts
     ledger: [],               // keystrokes drawn and not counted yet (see "ledger")
     ledgerTimer: null,
@@ -403,7 +403,7 @@
     $("board").className = a.cls;
   }
 
-  /* macOS's secure input (host/hudfeed.py SecureInput): a secret is being typed, and the feed has
+  /* Secure input (host/hudfeed.py SecureInput): a secret is being typed, and the feed has
    * stopped passing on keys. What is still on screen of the typing before it goes too -- the
    * strip, the keys lit, their glow, the macro memory -- and the banner says why the board has
    * stopped following. Anything that arrives anyway (sent in) is drawn nowhere until it ends. */

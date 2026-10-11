@@ -66,10 +66,12 @@ many presses were timed; `sfb` and `bigrams` count same-finger bigrams and all b
 README's [stats bar](../README.md#how-it-works)). `gen` goes up when the session is reset.
 `acks` says, for each page that reports to it, the last batch the counts include (below).
 
-On macOS, `{"kind":"secure","on":true}` says a password field has focus. From then on the feed
-sends no `key`, `press` or `release` until `{"kind":"secure","on":false}`, and a page clears what
-is on screen of the typing. It is cached like the rest, so a page that connects in the middle is
-told.
+`{"kind":"secure","on":true}` says a secret is being typed: on macOS a password field has focus
+(the system's secure input is on), on Linux a password field has focus on the accessibility bus
+(host/a11y.py), or on either system a terminal is asking for a password (echo off, a line at a
+time). From then on the feed sends no `key`, `press` or `release` until
+`{"kind":"secure","on":false}`, and a page clears what is on screen of the typing. It is cached
+like the rest, so a page that connects in the middle is told.
 
 ## Inbound messages
 

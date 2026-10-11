@@ -51,8 +51,10 @@ permission with it. BLE needs the keyboard bonded to this host, because the char
 encryption.
 Dependencies: pyserial (`make venv`); bleak for BLE; python-websockets for the WebSocket; hidapi on
 macOS only -- Linux reads /dev/hidrawN itself (HidrawReader), because the wheel's Linux backend is
-libusb, which wants /dev/bus/usb and detaches the kernel HID driver; PyYAML (or yq) for the config.
-Not keymap-drawer: the drawing comes ready in the definitions `zmk-layer-hud import` wrote.
+libusb, which wants /dev/bus/usb and detaches the kernel HID driver; PyYAML (or yq) for the config;
+jeepney on Linux only, for the accessibility bus, where a password field with focus is seen
+(host/a11y.py). Not keymap-drawer: the drawing comes ready in the definitions `zmk-layer-hud
+import` wrote.
 """
 
 from __future__ import annotations
@@ -67,10 +69,12 @@ import os
 import re
 import secrets
 import sys
+import termios
 import threading
 import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import a11y  # noqa: E402  (host/a11y.py)
 import keymap as keymap_mod  # noqa: E402  (host/keymap.py)
 import panelstate  # noqa: E402  (host/panelstate.py)
 import session as session_mod  # noqa: E402  (host/session.py)
@@ -1005,17 +1009,63 @@ def carbon_probe():
     return fn
 
 
+# Where this user's terminals are, by platform: the slave end of each pty, which is what a program
+# at a prompt reads from.
+PTY_DIRS = {"darwin": ("/dev", re.compile(r"ttys\d+$")), "linux": ("/dev/pts", re.compile(r"\d+$"))}
+
+
+def asks_secret(path):
+    """Whether the terminal at `path` is reading a secret: echo off, and still a line at a time.
+    That is how sudo, ssh, su, passwd and getpass take a password. A shell's line editor and every
+    full-screen program turn echo off too, but take the keys raw, one at a time (ICANON off), and a
+    terminal with nothing asked of it echoes. O_NOCTTY, because the feed is a session leader on
+    Linux, and opening a terminal without it would make that terminal the feed's own."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOCTTY | os.O_NONBLOCK)
+    except OSError:          # another user's, or gone
+        return False
+    try:
+        lflag = termios.tcgetattr(fd)[3]
+    except (termios.error, OSError):
+        return False
+    finally:
+        os.close(fd)
+    return not lflag & termios.ECHO and bool(lflag & termios.ICANON)
+
+
+def terminal_probe(where=None):
+    """-> whether one of this user's terminals is asking for a secret (asks_secret), or None where
+    the terminals cannot be found. Linux has no switch like macOS's, and a terminal's prompt is
+    where a password is typed on it that the feed can tell: sudo's, ssh's, su's. On macOS it stands
+    beside the switch, for a terminal that does not throw it at a password prompt. A password field
+    in a window -- a browser's, a password manager's -- shows nothing this way."""
+    where = where or PTY_DIRS.get(sys.platform)
+    if where is None or not os.path.isdir(where[0]):
+        return None
+    directory, pattern = where
+
+    def probe():
+        try:
+            names = os.listdir(directory)
+        except OSError:
+            return False
+        return any(asks_secret(os.path.join(directory, n)) for n in names if pattern.match(n))
+    return probe
+
+
 class SecureInput:
-    """macOS says when what is being typed is a secret: while a password field has focus, or a
-    terminal's Secure Keyboard Entry is on, secure event input is enabled and every app is asked
-    not to look. The feed cannot help seeing -- it reads the keyboard's own channel and its HID
-    reports, which that switch does not reach -- so for as long as it is on it passes on nothing
-    that could spell the secret: no character typed and no key pressed. Layers still go through,
-    and the page is told (`{"kind": "secure", "on": true}`), clears what is on screen and says why.
+    """When what is being typed is a secret, nothing of it goes on. macOS says so: while a password
+    field has focus, or a terminal's Secure Keyboard Entry is on, secure event input is enabled and
+    every app is asked not to look (carbon_probe). A terminal says so by its mode: at a password
+    prompt it reads a line with echo off (terminal_probe), on Linux as on macOS. The feed cannot
+    help seeing -- it reads the keyboard's own channel and its HID reports, which neither reaches
+    -- so for as long as either says so it passes on nothing that could spell the secret: no
+    character typed and no key pressed. Layers still go through, and the page is told
+    (`{"kind": "secure", "on": true}`), clears what is on screen and says why.
 
     Asked at every keystroke, not only by the poll: the first key typed into a password field must
     not slip through in the moment before a poll would have noticed. The poll is what tells the
-    page when nothing is being typed. Linux has no such switch."""
+    page when nothing is being typed."""
 
     def __init__(self, emit, probe, poll_s=0.25, log=print):
         self.emit, self.probe, self.poll_s, self.log = emit, probe, poll_s, log
@@ -1132,11 +1182,17 @@ class Feed:
                                               poll_s=feed_cfg["session_poll_s"], log=log)
             if self.source is not None and self.source.message:
                 self.sessions.set_keymap(self.source.message)
-        # While macOS says a secret is being typed, nothing typed goes on (SecureInput).
+        # While a secret is being typed -- macOS says so, a terminal is asking for one, or on Linux a
+        # password field has focus on the accessibility bus -- nothing typed goes on (SecureInput).
         self.secure = None
-        probe = carbon_probe() if int(feed_cfg.get("secure_input", 1)) else None
-        if probe is not None:
-            self.secure = SecureInput(emit, probe, log=log)
+        self.focus = None
+        if int(feed_cfg.get("secure_input", 1)):
+            probes = [p for p in (carbon_probe(), terminal_probe()) if p is not None]
+            if a11y.available():
+                self.focus = a11y.PasswordFocus(log=log, enable=bool(int(feed_cfg.get("accessibility", 1))))
+                probes.append(self.focus.probe)
+            if probes:
+                self.secure = SecureInput(emit, lambda: any(p() for p in probes), log=log)
 
     def _emit(self, msg):
         if not self.keys and msg["kind"] == "key":
@@ -1168,6 +1224,8 @@ class Feed:
             except (OSError, session_mod.SessionError) as e:
                 self.log(f"hudfeed: no sessions this run: {e}")
                 self.sessions = None
+        if self.focus:
+            self.focus.start()
         if self.secure:
             self.secure.start()
         if self.watcher:
@@ -1195,6 +1253,8 @@ class Feed:
             self.hid.stop()
         if self.secure:
             self.secure.stop()
+        if self.focus:
+            self.focus.stop()
         if self.sessions:
             self.sessions.stop()   # writes what is still only counted in memory
 
