@@ -10,6 +10,7 @@ Every verb of `zmk-layer-hud`, as its own `--help` prints it. Written by `make c
 - [`hide`](#hide) — take the HUD off screen; it goes on running and counting
 - [`toggle`](#toggle) — show the HUD if it is hidden, hide it if it is shown
 - [`status`](#status) — is it running, and what is it reading
+- [`typing`](#typing) — the touch keyboard's leave to type: whether it has it, and getting it
 - [`session`](#session) — the typing sessions: the active one, naming it, starting or loading another
 - [`heatmap`](#heatmap) — what the keys glow with: the live heatmap, the session's, or none
 - [`log`](#log) — follow the panel and feed logs
@@ -121,6 +122,22 @@ is it running, and what is it reading
 
 options:
   -h, --help  show this help message and exit
+```
+
+## typing
+
+```text
+usage: zmk-layer-hud typing [-h] [-y] [{status,setup}]
+
+the touch keyboard's leave to type: whether it has it, and getting it
+
+positional arguments:
+  {status,setup}  status (default), or setup: on Linux the uinput rule (asks before each sudo
+                  step), on macOS the running HUD asks for Accessibility
+
+options:
+  -h, --help      show this help message and exit
+  -y, --yes       run the privileged steps without asking
 ```
 
 ## session

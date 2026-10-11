@@ -280,6 +280,72 @@ def cmd_toggle(args):
     return ask_panel(not st["shown"], st)
 
 
+# ---------- typing: the touch keyboard's leave to type ----------
+
+TYPING_RULE = os.path.join(ROOT, "contrib", "udev", "61-zmk-layer-hud-uinput.rules")
+TYPING_MODULE = os.path.join(ROOT, "contrib", "modules-load.d", "zmk-layer-hud-uinput.conf")
+TYPING_SAID = {
+    "ok": "can type",
+    "off": "not typing (dock the HUD to type with it: `zmk-layer-hud dock`)",
+    "denied": "not allowed to type yet",
+    "missing": "nothing to type with",
+    "error": "cannot type (zmk-layer-hud log says why)",
+}
+
+
+def uinput_probe():
+    sys.path.insert(0, os.path.join(ROOT, "host", "linux"))
+    import uinput
+    return uinput.probe()
+
+
+def typing_line():
+    """One line on whether the touch keyboard can type: the running panel's word when there is
+    one, else what this machine allows."""
+    st = panelstate.read(STATE)
+    if st and st.get("typing"):
+        return TYPING_SAID[st["typing"]] + ("" if st["typing"] in ("ok", "off") else " -- zmk-layer-hud typing setup")
+    if platform.system() == "Linux":
+        probe = uinput_probe()
+        return {"ok": "this user may make a virtual keyboard (/dev/uinput)",
+                "denied": "/dev/uinput is not this user's -- zmk-layer-hud typing setup",
+                "missing": "no /dev/uinput (the uinput module is not loaded) -- zmk-layer-hud typing setup"}[probe]
+    if platform.system() == "Darwin":
+        return "asked of macOS when the HUD first types (Accessibility); zmk-layer-hud typing setup asks now"
+    return "the touch keyboard types on macOS and Linux only"
+
+
+def cmd_typing(args):
+    if args.action == "status":
+        print("typing: " + typing_line())
+        return 0
+    if platform.system() == "Linux":
+        print("==> the touch keyboard types through a virtual keyboard (/dev/uinput)")
+        print(f"    the rule lets the user at the seat make one: {os.path.relpath(TYPING_RULE, ROOT)}")
+        steps = [["cp", TYPING_RULE, "/etc/udev/rules.d/"], ["cp", TYPING_MODULE, "/etc/modules-load.d/"],
+                 ["modprobe", "uinput"], ["udevadm", "control", "--reload-rules"],
+                 ["udevadm", "trigger", "--subsystem-match=misc", "--sysname-match=uinput"]]
+        for step in steps:
+            if not privileged(step, args):
+                return 1
+        print("    done: a running HUD notices within seconds and types")
+        print("typing: " + typing_line())
+        return 0
+    if platform.system() == "Darwin":
+        print("==> the touch keyboard types by posting key events, which macOS asks you to allow")
+        print("    System Settings > Privacy & Security > Accessibility: ZMK Layer HUD (or the terminal it runs from)")
+        pids = panel_pids()
+        st = panelstate.read(STATE)
+        if not (st and st["pid"] in pids):
+            print("    the HUD is not running: `zmk-layer-hud start`, and it asks when it first types")
+            return 0
+        panelstate.request(STATE, "typing", "request")
+        os.kill(st["pid"], panelstate.SIGNAL)
+        print("    asked the running HUD to ask macOS: allow it there, and it types within seconds")
+        return 0
+    raise Fail("the touch keyboard types on macOS and Linux only")
+
+
 def feed_log_text():
     """Both logs, because where the feed writes depends on the host: the Linux panel starts it as
     a subprocess with its own hudfeed.log, the macOS one runs it in-process and it lands in
@@ -368,6 +434,7 @@ def cmd_status(args):
                          else "none yet (the HUD starts one)"))
     if platform.system() in ("Darwin", "Linux"):
         print("login: " + login_line())
+        print("typing: " + typing_line())
     if platform.system() == "Linux":
         hypr_surfaces()
     return 0
@@ -1700,6 +1767,18 @@ def check_udev(results):
                               "zmk-layer-hud setup   (the tty and hidraw grants come from it)"))
 
 
+def check_typing(results):
+    """The touch keyboard's grant: a warning at most, since the HUD does everything else without it."""
+    if platform.system() != "Linux":
+        return
+    probe = uinput_probe()
+    if probe == "ok":
+        results.append(report(OK, "typing", "this user may make a virtual keyboard (/dev/uinput)"))
+    else:
+        results.append(report(WARN, "typing", "/dev/uinput is " + ("not this user's" if probe == "denied" else "missing"),
+                              "zmk-layer-hud typing setup   (only for the touch keyboard)"))
+
+
 def check_path(results):
     if shutil.which("zmk-layer-hud"):
         results.append(report(OK, "path", f"{shutil.which('zmk-layer-hud')}"))
@@ -1718,6 +1797,7 @@ def cmd_doctor(args):
     check_config(results)
     check_udev(results)
     check_secure(results)
+    check_typing(results)
     check_path(results)
     print()
     cmd_status(args)
@@ -2000,6 +2080,13 @@ def build_parser():
     add("toggle", "show the HUD if it is hidden, hide it if it is shown").set_defaults(func=cmd_toggle)
 
     add("status", "is it running, and what is it reading").set_defaults(func=cmd_status)
+
+    s = add("typing", "the touch keyboard's leave to type: whether it has it, and getting it")
+    s.add_argument("action", nargs="?", default="status", choices=("status", "setup"),
+                   help="status (default), or setup: on Linux the uinput rule (asks before each sudo step), "
+                        "on macOS the running HUD asks for Accessibility")
+    s.add_argument("-y", "--yes", action="store_true", help="run the privileged steps without asking")
+    s.set_defaults(func=cmd_typing)
 
     s = add("session", "the typing sessions: the active one, naming it, starting or loading another")
     s.add_argument("action", nargs="?", default="status",

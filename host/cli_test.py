@@ -48,7 +48,8 @@ class Parser(unittest.TestCase):
     def test_the_documented_verbs_are_all_there(self):
         expected = {"start", "stop", "restart", "status", "log", "doctor", "setup", "update",
                     "uninstall", "import", "sync", "keymap", "config", "demo", "poke", "feed",
-                    "version", "session", "heatmap", "show", "hide", "toggle", "menubar", "autostart", "power"}
+                    "version", "session", "heatmap", "show", "hide", "toggle", "menubar", "autostart", "power",
+                    "typing"}
         self.assertEqual(expected, set(self.verbs))
 
     def test_the_session_verbs_need_no_venv(self):

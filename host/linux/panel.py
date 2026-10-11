@@ -36,7 +36,9 @@ gi.require_foreign("cairo")
 import cairo  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import inject  # noqa: E402  (host/inject.py)
 import panelstate  # noqa: E402  (host/panelstate.py)
+import uinput  # noqa: E402  (host/linux/uinput.py)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 PAGES = ROOT / "hud"
@@ -166,6 +168,20 @@ def reload_page(view, reason):
     GLib.timeout_add_seconds(delay, lambda: view.reload() or False)
 
 
+def keep_to_pages(_view, decision, kind):
+    """Only the HUD's own pages load in its views, and nothing opens a window. The page can type
+    (the touch keyboard, through the handler below), so whatever is shown there must be it."""
+    if kind == WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION:
+        decision.ignore()
+        return True
+    if kind == WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
+        uri = decision.get_navigation_action().get_request().get_uri() or ""
+        if not uri.startswith(PAGES.as_uri() + "/"):
+            decision.ignore()
+            return True
+    return False
+
+
 def surface(monitor, page, namespace, width, height, query="", on_size=None):
     """A layer surface with the page on it, and the page's UserContentManager, which is where the
     hide sheet goes."""
@@ -206,6 +222,7 @@ def surface(monitor, page, namespace, width, height, query="", on_size=None):
     view = WebKit2.WebView.new_with_user_content_manager(manager)
     view.set_background_color(Gdk.RGBA(0, 0, 0, 0))
     view.connect("web-process-terminated", reload_page)
+    view.connect("decide-policy", keep_to_pages)
     view.set_size_request(width, height)
     view.load_uri((PAGES / page).as_uri() +
                   f"?ws=ws://127.0.0.1:{os.environ.get('ZMKHUD_PORT', '8766')}/{SOCKET_TOKEN}" + query)
@@ -282,6 +299,47 @@ def main():
     wpm = [0]           # the page's live WPM, for the bar icon (host/linux/omarchy)
     stats = [None]      # ...and its stats column, for the icon's menu and its hover panel
 
+    # What the panel itself tells its page (the feed tells it everything else, on the socket):
+    # whether it may type, and docked or not. The latest of each is said again to a page loaded
+    # afresh.
+    told = {}
+    extra = {}          # the touch keyboard's state, for panel.json (`zmk-layer-hud status`, the bar icon)
+    page_view = hud.get_child()
+
+    def run_js(script):
+        try:
+            page_view.evaluate_javascript(script, -1, None, None, None, None, None)
+        except (AttributeError, TypeError):
+            page_view.run_javascript(script, None, None, None)
+
+    def tell_page(msg):
+        told[msg["kind"]] = msg
+        run_js(f"window.hud && hud.receive({json.dumps(msg)})")
+        if msg["kind"] == "typing" and extra.get("typing") != msg["state"]:
+            extra["typing"] = msg["state"]
+            panelstate.write(RUN, shown[0], wpm=wpm[0], stats=stats[0], extra=extra)
+
+    def page_loaded(_view, event):
+        if event == WebKit2.LoadEvent.STARTED:
+            typing.release()            # a page going away lets its keys go
+        elif event == WebKit2.LoadEvent.FINISHED:
+            for msg in list(told.values()):
+                run_js(f"window.hud && hud.receive({json.dumps(msg)})")
+
+    def make_keyboard():
+        try:
+            return uinput.Uinput().open()
+        except OSError as e:
+            raise inject.Unavailable(uinput.state_of(e), str(e)) from None
+
+    # The touch keyboard's keys (host/inject.py): a virtual keyboard, made the first time the page
+    # may type, its keys pressed from what the page sends ({"kind":"hid"}).
+    typing = inject.Typing(make_keyboard, tell_page,
+                           lambda seconds, fn: GLib.timeout_add(int(seconds * 1000), lambda: fn() or False),
+                           log=lambda msg: print("panel:", msg, file=sys.stderr, flush=True))
+    page_view.connect("load-changed", page_loaded)
+    page_view.connect("web-process-terminated", lambda *_: typing.release())
+
     def take_input(window):
         # None is the whole surface again, a layer surface's own.
         window.input_shape_combine_region(None if shown[0] else cairo.Region())
@@ -293,6 +351,8 @@ def main():
             remap("asked to show the HUD, and Hyprland had no surface of it")
         if want != shown[0]:
             shown[0] = want
+            if not want:
+                typing.release()        # a hidden HUD holds no key down
             for window, css in ((hud, hud_css), (keys, keys_css)):
                 if want:
                     css.remove_style_sheet(HIDE_SHEET)
@@ -302,7 +362,7 @@ def main():
                 window.queue_draw()
             if rail is not None:
                 rail.show_all() if want else rail.hide()
-        panelstate.write(RUN, want, wpm=wpm[0], stats=stats[0])
+        panelstate.write(RUN, want, wpm=wpm[0], stats=stats[0], extra=extra)
 
     no_drag = []
 
@@ -312,7 +372,9 @@ def main():
             kind = msg.get("kind")
         except (ValueError, AttributeError):
             return
-        if kind == "hide":
+        if kind == "hid":       # the touch keyboard: keys to press (docs/touch.md)
+            typing.hid(msg)
+        elif kind == "hide":
             set_shown(False)
         elif kind == "site":    # the stats column's heading: the landing page, in the browser
             try:
@@ -322,12 +384,12 @@ def main():
         elif kind == "wpm":
             if isinstance(msg.get("wpm"), int) and msg["wpm"] != wpm[0]:
                 wpm[0] = msg["wpm"]
-                panelstate.write(RUN, shown[0], wpm=wpm[0], stats=stats[0])
+                panelstate.write(RUN, shown[0], wpm=wpm[0], stats=stats[0], extra=extra)
         elif kind == "stats":
             said = panelstate.stats_of(msg)
             if said is not None and said != stats[0]:
                 stats[0] = said
-                panelstate.write(RUN, shown[0], wpm=wpm[0], stats=said)
+                panelstate.write(RUN, shown[0], wpm=wpm[0], stats=said, extra=extra)
         elif kind == "nodrag":
             rects = msg.get("rects")
             if isinstance(rects, list):
@@ -498,7 +560,7 @@ def main():
         return GLib.SOURCE_CONTINUE
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, panelstate.SIGNAL, asked)
     # Only now, with the handler in: the CLI signals whatever pid this file names.
-    panelstate.write(RUN, shown[0])
+    panelstate.write(RUN, shown[0], extra=extra)
     RUN.mkdir(mode=0o700, exist_ok=True)
     RUN.chmod(0o700)
     # The feed's log is this user's alone, like the rest of $STATE: O_CREAT leaves the mode of a
@@ -521,6 +583,7 @@ def main():
     try:
         Gtk.main()
     finally:
+        typing.stop()                   # keys up, the virtual keyboard gone
         panelstate.remove(RUN)
         for window in WINDOWS:
             window.destroy()

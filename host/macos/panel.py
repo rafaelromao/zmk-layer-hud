@@ -40,7 +40,9 @@ except ImportError:
     sys.exit("panel: pyobjc is required: make venv (installs pyobjc-framework-Cocoa and -WebKit)")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import cgevent  # noqa: E402  (host/macos/cgevent.py)
 import hudfeed  # noqa: E402
+import inject  # noqa: E402  (host/inject.py)
 import session as session_mod  # noqa: E402  (host/session.py)
 import panelstate  # noqa: E402  (host/panelstate.py)
 
@@ -125,6 +127,11 @@ class DragWebView(WKWebView):
     def mouseDownCanMoveWindow(self):
         return False
 
+    def acceptsFirstMouse_(self, event):
+        # The panel is never the key window: every click on it is a first click, and a key
+        # touched on the board has to reach the page on that one.
+        return True
+
     @objc.python_method
     def track_pointer(self):
         """Mouse moves over the page, key window or not (mouseMoved_, mouseExited_). The rect is
@@ -200,7 +207,12 @@ class Bridge(NSObject):
         except ValueError:
             return
         kind = msg.get("kind") if isinstance(msg, dict) else None
-        if kind == "size":
+        if kind == "hid":           # the touch keyboard: keys to press (docs/touch.md)
+            # From the page itself only: its main frame, loaded from disk.
+            frame = message.frameInfo()
+            if frame.isMainFrame() and str(frame.securityOrigin().protocol()) == "file":
+                Host.instance.typing.hid(msg)
+        elif kind == "size":
             Host.instance.resize(msg.get("width"), msg.get("height"))
         elif kind == "hide":        # the page's hide button
             Host.instance.set_shown(False)
@@ -268,6 +280,13 @@ class Bridge(NSObject):
         if Host.instance:
             Host.instance.stop()
 
+    def webView_decidePolicyForNavigationAction_decisionHandler_(self, webview, action, handler):
+        """Only the HUD's own pages load in the panel. The page can type (the touch keyboard), so
+        whatever is shown there must be it."""
+        url = action.request().URL()
+        path = str(url.path() or "") if url is not None and url.isFileURL() else ""
+        handler(1 if path.startswith(str(PAGES) + "/") else 0)   # WKNavigationActionPolicyAllow : Cancel
+
     def webView_didStartProvisionalNavigation_(self, webview, navigation):
         Host.instance.page_leaving()
 
@@ -308,7 +327,13 @@ class Host:
         self.loaded = False             # the first page has loaded (page_ready): a later one is a reload
         self.queue = []
         self.standing = {}              # kind -> the latest of it, for a reloaded page
+        self.extra = {}                 # the touch keyboard's state, for panel.json
         self.bridge = Bridge.alloc().init()
+        # The touch keyboard's keys (host/inject.py): CoreGraphics events, once macOS allows them,
+        # repeated at the user's own key-repeat settings while held. Before the page, whose
+        # navigation lets its keys go.
+        self.typing = inject.Typing(self.make_typist_backend, self.tell_page, AppHelper.callLater,
+                                    pages=[inject.KEY_PAGE], log=log)
 
         frame = initial_frame()
         panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -377,13 +402,49 @@ class Host:
         if width:
             self.resize(int(width), None)
         # main() put the signal's handler in first: the CLI signals whatever pid this file names.
-        panelstate.write(RUN, self.shown)
+        self.write_state()
         panelstate.write_token(RUN, self.token)
+
+    def write_state(self):
+        panelstate.write(RUN, self.shown, wpm=self.wpm, stats=self.stats, extra=self.extra)
+
+    def tell_page(self, msg):
+        """What the panel itself tells its page (the touch keyboard's), kept for a reload."""
+        self.deliver(msg)
+        if msg["kind"] == "typing" and self.extra.get("typing") != msg["state"]:
+            self.extra["typing"] = msg["state"]
+            self.write_state()
+
+    def request_typing(self):
+        """`zmk-layer-hud typing setup`: macOS's prompt, and its Accessibility pane, where the
+        switch is. Typing that is waiting for it notices within seconds (inject.Typing)."""
+        if cgevent.request_access():
+            log("typing: macOS allows this app to post key events")
+            return
+        NSWorkspace.sharedWorkspace().openURL_(NSURL.URLWithString_(
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"))
+
+    @staticmethod
+    def make_typist_backend():
+        if not cgevent.access():
+            raise inject.Unavailable("denied", "macOS has not allowed this app to post key events (Accessibility)")
+
+        def schedule(seconds, fn):
+            handle = {"live": True}
+            AppHelper.callLater(seconds, lambda: handle["live"] and fn())
+            return handle
+
+        def cancel(handle):
+            handle["live"] = False
+        return cgevent.CGBackend(schedule=schedule, cancel=cancel,
+                                 delay=float(NSEvent.keyRepeatDelay()), interval=float(NSEvent.keyRepeatInterval()))
 
     def set_shown(self, shown):
         """On screen or off it; the page goes on as before either way."""
         if shown != self.shown:
             self.shown = shown
+            if not shown:
+                self.typing.release()       # a hidden HUD holds no key down
             self.panel.setAlphaValue_(1.0 if shown else 0.0)
             if self.ready:          # otherwise page_ready puts the style in, with the page
                 self.web.evaluateJavaScript_completionHandler_(SHOW_JS if shown else HIDE_JS, None)
@@ -391,20 +452,20 @@ class Host:
                 AppHelper.callLater(3.0, self.say_visibility)
         if shown:
             self.panel.orderFrontRegardless()
-        panelstate.write(RUN, shown, wpm=self.wpm, stats=self.stats)
+        self.write_state()
 
     def set_wpm(self, wpm):
         """The page's live WPM, for the menubar icon (host/macos/menubar.py) to show beside it."""
         if isinstance(wpm, int) and wpm != self.wpm:
             self.wpm = wpm
-            panelstate.write(RUN, self.shown, wpm=wpm, stats=self.stats)
+            self.write_state()
 
     def set_stats(self, msg):
         """The page's average and top WPM and the rows of its stats column, for the menubar's menu."""
         stats = panelstate.stats_of(msg)
         if stats is not None and stats != self.stats:
             self.stats = stats
-            panelstate.write(RUN, self.shown, wpm=self.wpm, stats=stats)
+            self.write_state()
 
     def say_visibility(self):
         """ZMKHUD_DEBUG: what WebKit makes of the hidden HUD. `visible` is the point of hiding it
@@ -426,7 +487,7 @@ class Host:
 
     # What a page loaded afresh (a reload from the page's menu) has to be told again: the latest of
     # each, since the feed says them once, when they change. Keys come and go and are not kept.
-    STANDING = ("keymap", "layers", "device", "session", "secure")
+    STANDING = ("keymap", "layers", "device", "session", "secure", "touch", "typing", "dock")
 
     def mouse_down(self, event):
         if event.window() is None or event.window() != self.panel:
@@ -449,8 +510,10 @@ class Host:
         self.queue = []
 
     def page_leaving(self):
-        """A reload has begun: until the new page is ready, messages wait for it."""
+        """A reload has begun: until the new page is ready, messages wait for it, and the keys it
+        held go up."""
         self.ready = False
+        self.typing.release()
 
     def deliver(self, msg):
         data = json.dumps(msg, ensure_ascii=False)
@@ -485,6 +548,7 @@ class Host:
         if self.stopped:
             return
         self.stopped = True
+        self.typing.stop()              # keys up before the panel goes
         panelstate.remove(RUN)
         panelstate.remove_token(RUN, self.token)
         self.feed.stop()
@@ -506,6 +570,8 @@ def main():
         want = panelstate.wanted(RUN)
         if want is not None and Host.instance:
             Host.instance.set_shown(want)
+        if panelstate.take_want(RUN, "typing") == "request" and Host.instance:
+            Host.instance.request_typing()
     MachSignals.signal(panelstate.SIGNAL, asked)
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)  # no Dock icon, no menu bar
