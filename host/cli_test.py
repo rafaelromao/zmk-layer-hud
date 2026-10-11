@@ -386,6 +386,9 @@ class Remote(unittest.TestCase):
         self.assertIsNone(self.r.load_key(self.tmp.name))
         self.run_cli("remote", "on", pids=[panel.pid])
         self.assertNotEqual(key, self.r.load_key(self.tmp.name))  # paired again: a new link
+        code, said = self.run_cli("remote", "on", "--app", pids=[panel.pid])
+        self.assertIn(f"zmkhud://import?from=192.168.1.5:8768#k={self.r.load_key(self.tmp.name)}", said)
+        self.assertEqual("zmkhud://import?from=%5Bfe80::1%5D:8768#k=K", cli.app_link("http://[fe80::1]:8768/", "K"))
 
     def test_a_refusal_is_said(self):
         panel = self.panel()

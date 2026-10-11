@@ -276,6 +276,12 @@ The socket, `ws://<address>:<port>/ws`, opens only for the page's own `Origin`. 
 - A tablet has 10 s to pair, and at most four connections may wait to pair at once. A tablet
   that goes away has its keys let go.
 
+**The iPad app's link.** `remote on --app` prints the same pairing as a link for the ZMK Layer HUD
+app instead, `zmkhud://import?from=192.168.1.5:8768#k=<key>`. Opened on the iPad, the app pairs as
+the page does, keeps the keymap the computer sends, and goes (apps/ios `RemoteImport`). The Android
+keyboard has no such link: it would need the INTERNET permission for the whole app, the keyboard
+with it, so a keymap reaches it as a file instead.
+
 `hud/tests/fixtures/remote_vectors.json` holds these texts and MACs for a test key, and both
 `host/remote_test.py` and `hud/tests/remote_test.js` are held to it.
 

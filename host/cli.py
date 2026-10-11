@@ -421,6 +421,14 @@ def remote_answer(r, req, timeout=4.0):
     return {}
 
 
+def app_link(url, key):
+    """The iPad app's link to the same pairing (apps/ios RemoteImport): the computer's address and
+    port, and the key in the fragment, as the browser's link has it."""
+    import urllib.parse
+    host = urllib.parse.urlsplit(url).netloc
+    return "zmkhud://import?from=" + urllib.parse.quote(host, safe=":") + "#k=" + key
+
+
 def print_qr(link):
     """The link as a code for the tablet's camera, when qrencode is there to draw one. Handed over on
     its standard input: an argument would show the key to anyone listing this machine's processes."""
@@ -478,9 +486,14 @@ def remote_verb(args):
         raise Fail("the HUD did not answer; `zmk-layer-hud log` says what it is doing")
     if not live.get("serving"):
         raise Fail(live["why"])
-    link = live["url"] + "#k=" + key
     until = time.strftime("%H:%M", time.localtime(live["until"]))
-    print("Open this on the tablet, on the same network as this computer:")
+    if args.app:
+        link = app_link(live["url"], key)
+        print("Open this on the iPad with the ZMK Layer HUD app, on the same network as this computer:")
+        print("the app takes this computer's keymap for its keyboard.")
+    else:
+        link = live["url"] + "#k=" + key
+        print("Open this on the tablet, on the same network as this computer:")
     print()
     print("  " + link)
     print_qr(link)
@@ -2259,6 +2272,8 @@ def build_parser():
     s.add_argument("--port", type=int, help="the port to serve on (default: config remote.port, else 8768)")
     s.add_argument("--bind", metavar="ADDR", help="the address to serve on, a Tailscale one say (default: this "
                                                   "computer's on its local network; config remote.bind)")
+    s.add_argument("--app", action="store_true", help="on: the link for the iPad app instead, which takes this "
+                                                      "computer's keymap for its keyboard")
     s.add_argument("--wait", action="store_true", help="wait for Enter before going: for a terminal opened only "
                                                        "to show the link")
     s.set_defaults(func=cmd_remote)

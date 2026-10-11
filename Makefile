@@ -72,6 +72,7 @@ test-site: ## the landing page: what it is built from, its demo on the HUD page,
 # The tablets' keyboards (apps/, docs/tablets.md): what runs without their SDKs. The Android sink's own
 # tests need Gradle and a JDK: test-android.
 test-apps: ## the tablets' keyboards: the pages they boot, without the Android SDK or Xcode
+	$(PYTHON) -m unittest discover -s apps -p '*_test.py'
 	@if [ -z "$(NODE)" ]; then \
 	  echo "test-apps: node not found, skipping (brew install node)"; \
 	else \

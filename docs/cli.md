@@ -163,7 +163,7 @@ options:
 ## remote
 
 ```text
-usage: zmk-layer-hud remote [-h] [--minutes MINUTES] [--port PORT] [--bind ADDR] [--wait]
+usage: zmk-layer-hud remote [-h] [--minutes MINUTES] [--port PORT] [--bind ADDR] [--app] [--wait]
                             [{status,on,off,unpair}]
 
 a tablet's browser as the touch keyboard, typing here over the local network
@@ -180,6 +180,8 @@ options:
   --port PORT           the port to serve on (default: config remote.port, else 8768)
   --bind ADDR           the address to serve on, a Tailscale one say (default: this computer's on
                         its local network; config remote.bind)
+  --app                 on: the link for the iPad app instead, which takes this computer's keymap
+                        for its keyboard
   --wait                wait for Enter before going: for a terminal opened only to show the link
 ```
 

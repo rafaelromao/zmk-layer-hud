@@ -24,6 +24,26 @@
 	<string>$(ZMKHUD_APP_GROUP)</string>
 	<key>UILaunchScreen</key>
 	<dict/>
+	<!-- zmkhud://import?from=HOST:PORT#k=KEY: a computer in remote mode (zmk-layer-hud remote on --app), on the
+	     local network, sends the keymap. -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>ZMK Layer HUD keymap link</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>zmkhud</string>
+			</array>
+		</dict>
+	</array>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>To fetch your keymap from your computer when you open the link zmk-layer-hud remote on --app printed.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<!-- A keymap file opened with the app (AirDrop, Files, "Open in"): copied in, never edited in place. -->
 	<key>CFBundleDocumentTypes</key>
 	<array>

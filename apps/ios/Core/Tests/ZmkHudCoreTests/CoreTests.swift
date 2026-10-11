@@ -132,6 +132,89 @@ final class Field: TextProxy {
     }
 }
 
+/// A computer in remote mode, as the app's side of the socket meets it: the challenge, the welcome
+/// once the key is proved, then what it sends a paired tablet.
+final class FakeComputer: MessageChannel {
+    let key: Data
+    var welcome: (String) -> String
+    var after: [String]
+    private var queue: [String] = []
+    var closed = false
+
+    init(key: Data, after: [String]) {
+        self.key = key
+        self.after = after
+        let nonce = "ab" + String(repeating: "0", count: 30)
+        queue = [#"{"kind":"challenge","v":1,"kid":"\#(RemotePairing.kid(key))","nonce":"\#(nonce)"}"#]
+        welcome = { cnonce in
+            let sk = RemotePairing.sessionKey(key, nonce: nonce, cnonce: cnonce)
+            return #"{"kind":"welcome","v":1,"mac":"\#(RemotePairing.mac(sk, RemotePairing.welcomeText))"}"#
+        }
+    }
+
+    func send(_ text: String) async throws {
+        let m = try JSONSerialization.jsonObject(with: Data(text.utf8)) as! [String: Any]
+        let cnonce = m["cnonce"] as! String
+        let expected = RemotePairing.mac(key, RemotePairing.authText(nonce: "ab" + String(repeating: "0", count: 30), cnonce: cnonce))
+        if m["mac"] as? String == expected { queue.append(welcome(cnonce)); queue += after }
+    }
+
+    func receive() async throws -> String {
+        guard !queue.isEmpty else { throw RemoteImport.Failure.noKeymap }
+        return queue.removeFirst()
+    }
+
+    func close() { closed = true }
+}
+
+@Suite struct Remote_import {
+    let link = RemoteImport.link(URL(string: "zmkhud://import?from=192.168.1.5:8768#k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8")!)!
+
+    /// hud/tests/fixtures/remote_vectors.json: host/remote.py's texts and MACs, which the page and
+    /// the app must make the same.
+    @Test func thePairingIsTheServersAndThePages() throws {
+        let v = try JSONSerialization.jsonObject(with: Data(text("hud/tests/fixtures/remote_vectors.json").utf8)) as! [String: Any]
+        let key = try #require(RemotePairing.key(v["key"] as! String))
+        let (nonce, cnonce) = (v["nonce"] as! String, v["cnonce"] as! String)
+        #expect(RemotePairing.kid(key) == v["kid"] as! String)
+        #expect(RemotePairing.authText(nonce: nonce, cnonce: cnonce) == v["auth_text"] as! String)
+        #expect(RemotePairing.mac(key, v["auth_text"] as! String) == v["auth_mac"] as! String)
+        let sk = RemotePairing.sessionKey(key, nonce: nonce, cnonce: cnonce)
+        #expect(RemotePairing.hex(sk) == v["session_key"] as! String)
+        #expect(RemotePairing.mac(sk, RemotePairing.welcomeText) == v["welcome_mac"] as! String)
+    }
+
+    @Test func theLinkTheCommandLinePrints() {
+        #expect(link.host == "192.168.1.5:8768" && link.key == Data(0..<32))
+        for bad in ["zmkhud://import?from=192.168.1.5:8768", "zmkhud://import#k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+                    "http://import?from=192.168.1.5:8768#k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+                    "zmkhud://import?from=evil.example/x:80#k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+                    "zmkhud://import?from=192.168.1.5:8768#k=short"] {
+            #expect(RemoteImport.link(URL(string: bad)!) == nil, "\(bad)")
+        }
+        #expect(RemoteImport.link(URL(string: "zmkhud://import?from=%5Bfe80::1%5D:8768#k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8")!)?.host == "[fe80::1]:8768")
+    }
+
+    @Test func pairedTheKeymapComesAndTheSocketGoes() async throws {
+        let computer = FakeComputer(key: link.key, after: [#"{"kind":"secure","on":false}"#, #"{"kind":"keymap","title":"Diamond"}"#])
+        let keymap = try await RemoteImport.fetch(link, over: computer)
+        #expect(keymap == #"{"kind":"keymap","title":"Diamond"}"#)
+        #expect(computer.closed)
+    }
+
+    @Test func anotherCodeOrAnotherComputerIsSaid() async {
+        await #expect(throws: RemoteImport.Failure.anotherCode) {
+            try await RemoteImport.fetch(link, over: FakeComputer(key: Data(repeating: 7, count: 32), after: []))
+        }
+        let impostor = FakeComputer(key: link.key, after: [#"{"kind":"keymap"}"#])
+        impostor.welcome = { _ in #"{"kind":"welcome","v":1,"mac":"00"}"# }
+        await #expect(throws: RemoteImport.Failure.notThatComputer) { try await RemoteImport.fetch(link, over: impostor) }
+        await #expect(throws: RemoteImport.Failure.noKeymap) {
+            try await RemoteImport.fetch(link, over: FakeComputer(key: link.key, after: []))
+        }
+    }
+}
+
 @Suite struct Hit_test {
     let g = Geometry(scale: 1, gap: 6, height: 100, rects: [
         KeyRect(x: 3, y: 3, w: 94, h: 94, r: 0), KeyRect(x: 103, y: 3, w: 94, h: 94, r: 0),

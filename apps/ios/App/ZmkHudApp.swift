@@ -2,8 +2,9 @@ import SwiftUI
 import UniformTypeIdentifiers
 import ZmkHudCore
 
-/// The app the keyboard comes in: how to turn it on, the keymap it draws -- imported from Files, or
-/// a file opened with the app (AirDrop, "Open in") -- and a field to try it in.
+/// The app the keyboard comes in: how to turn it on, the keymap it draws -- imported from Files, a
+/// file opened with the app (AirDrop, "Open in"), or fetched from a computer in remote mode through
+/// the link `zmk-layer-hud remote on --app` prints -- and a field to try it in.
 @main
 struct ZmkHudApp: App {
     var body: some Scene {
@@ -31,7 +32,8 @@ struct ContentView: View {
                     Text(status)
                     if !said.isEmpty { Text(said).foregroundStyle(.secondary) }
                     Button("Import a keymap…") { importing = true }
-                    Text("On the computer: zmk-layer-hud keymap -o board.json, then AirDrop it here or save it to Files.")
+                    Text("On the computer: zmk-layer-hud remote on --app, and open its link here; or "
+                         + "zmk-layer-hud keymap -o board.json, then AirDrop it here or save it to Files.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Section("Try it") {
@@ -48,7 +50,17 @@ struct ContentView: View {
         .fileImporter(isPresented: $importing, allowedContentTypes: [.json, .data]) { result in
             if case let .success(url) = result { take(url) }
         }
-        .onOpenURL { take($0) }
+        .onOpenURL { url in
+            if let link = RemoteImport.link(url) {
+                said = "Fetching the keymap from \(link.host)…"
+                Task { @MainActor in
+                    said = await Keymaps.fetch(link)
+                    status = Keymaps.current()
+                }
+            } else {
+                take(url)
+            }
+        }
     }
 
     private func take(_ url: URL) {
@@ -75,6 +87,23 @@ enum Keymaps {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
         guard let data = try? Data(contentsOf: url) else { return "That file could not be read." }
+        return keep(data)
+    }
+
+    /// The keymap a computer in remote mode sends once paired (ZmkHudCore.RemoteImport).
+    static func fetch(_ link: RemoteImport.Link) async -> String {
+        do {
+            return keep(Data(try await RemoteImport.fetch(link, over: RemoteImport.open(link)).utf8))
+        } catch RemoteImport.Failure.anotherCode {
+            return "That computer has paired again since this link: run zmk-layer-hud remote on --app there for a new one."
+        } catch RemoteImport.Failure.notThatComputer {
+            return "The computer at \(link.host) is not the one that link is from."
+        } catch {
+            return "Could not reach \(link.host): is remote mode on there, and this iPad on the same network?"
+        }
+    }
+
+    static func keep(_ data: Data) -> String {
         switch KeymapFile.check(data) {
         case let .refused(why):
             return why
