@@ -21,7 +21,7 @@ import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from hudfeed import (ALT_CHARS, CHARS, DEAD_KEY_SPECIAL, DEAD_KEYS, NAMED,  # noqa: E402
+from hudfeed import (ALT_CHARS, ALTGR_CHARS, CHARS, DEAD_KEY_SPECIAL, DEAD_KEYS, NAMED, RALT,  # noqa: E402
                      SignalDecoder)
 
 MOD_SHIFT, MOD_ALT = 0x02, 0x04
@@ -37,6 +37,7 @@ ALT_USAGE_FOR = {}
 for (_usage, _shift), _ch in sorted(ALT_CHARS.items(), reverse=True):
     if _ch:
         ALT_USAGE_FOR[_ch] = (_usage, _shift, True)
+ALTGR_USAGE_FOR = {_ch: (_usage, _shift) for (_usage, _shift), _ch in ALTGR_CHARS.items()}
 
 # name -> usage, for the named keys. Lowest usage wins (Return is 0x28, not the keypad's 0x58).
 USAGE_FOR_NAME = {}
@@ -75,13 +76,18 @@ def _tap(usage, shift=False, alt=False):
     return [snapshot(usage, m), snapshot(0, m)]
 
 
-def keystrokes_for(legend):
+def keystrokes_for(legend, altgr=False):
     """The snapshots a US-layout keyboard sends to type `legend`, or None if it cannot.
 
     Order matters: a plain or shifted key first, then the dead-key pair an accent is really typed
     as (the US-International layout, which is how the keymap's accent macros type on the host),
-    then the Option layer.
+    then the Option layer. With `altgr` (a Linux host, hudfeed ALTGR_CHARS), what the keymap types
+    with AltGr there comes first: ç is AltGr+, rather than ' then c.
     """
+    if altgr and legend in ALTGR_USAGE_FOR:
+        usage, shift = ALTGR_USAGE_FOR[legend]
+        m = RALT | (MOD_SHIFT if shift else 0)
+        return [snapshot(usage, m), snapshot(0, m), snapshot(0)]
     name = NAME_FOR_LEGEND.get(legend)
     if name and name in USAGE_FOR_NAME:
         return _tap(USAGE_FOR_NAME[name])
@@ -116,16 +122,16 @@ def _dead_key_pair(ch):
     return None
 
 
-def events_for(legend):
+def events_for(legend, altgr=False):
     """The keyDown events the decoder emits for `legend`, dead keys composed as the reader would.
 
     Snapshots go in 5 ms apart, well inside DEAD_KEY_MS, so a dead key and its letter compose into
     the one accented character the legend asks for.
     """
-    snapshots = keystrokes_for(legend)
+    snapshots = keystrokes_for(legend, altgr)
     if snapshots is None:
         return None
-    decoder = SignalDecoder()
+    decoder = SignalDecoder(altgr=altgr)
     out, now = [], 0
     for snap in snapshots:
         out += decoder.feed(snap, now)

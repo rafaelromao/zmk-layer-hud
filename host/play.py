@@ -216,6 +216,16 @@ def shift_key(data, km):
     return None
 
 
+def altgr_spelled(evs):
+    """The reports as a host whose right Alt is AltGr decodes them (keymap `altgr`, hudfeed
+    ALTGR_CHARS): ç is AltGr+, there, not ' then c."""
+    out = []
+    for e in evs:
+        alt = uskeys.events_for(e["chars"], altgr=True) if e.get("chars") in uskeys.ALTGR_USAGE_FOR else None
+        out += alt or [e]
+    return out
+
+
 def repeats(km, idx, live, evs):
     """Whether the repeat key types these reports again with these layers up: it is the repeat key
     on the layer that is up (or seen through it), and what it repeats is a single plain keycode."""
@@ -341,6 +351,7 @@ def compile(script, keymap, speed=1.0, combos=None):
     chained = chained_layers(data)
     chained_ids = {i for layer in chained.values() for i in km.ids_of.get(layer, [])}
     speller = Speller(km, ways.cases(km), one_shot_shift is not None, chained)
+    altgr = bool(data.get("altgr"))
     shift_idx = shift_key(data, km)
     held_timeout = hud.get("held_timeout_ms", 5000)
 
@@ -397,6 +408,8 @@ def compile(script, keymap, speed=1.0, combos=None):
                 strike = [km.zmk(i) for i in way["keys"]]
                 held = [km.zmk(i) for i in way["held"]]
                 evs = events if events is not None else way["events"]
+                if altgr:
+                    evs = altgr_spelled(evs)
                 chained_before = bool(set(board.layers) & chained_ids)
                 if (repeat_idx is not None and prev is not None and prev[0] == utext and not one_shot
                         and not prev[2] and repeats(km, repeat_idx, board.layers, evs)):

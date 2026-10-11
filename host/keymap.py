@@ -117,6 +117,7 @@ FEED_DEFAULTS = {
     "session_flush_s": 5,      # how often what was counted is written to the session's file
     "session_poll_s": 1,       # how often the session files are looked at for `zmk-layer-hud session` changes
     "secure_input": 1,         # (macOS) while a password field has focus, pass on nothing typed (0: pass it all)
+    "altgr": 0,                # 1: the right Alt is AltGr, a Linux host's US-International (ç is AltGr+,); 0: it is macOS's Option
 }
 
 # keymap-drawer glyph names -> text the HUD can show. The glyph id is kept too.
@@ -916,6 +917,8 @@ def build_message(cfg, drawing, source=""):
         # How long the keyboard must be idle before a combo (ZMK require-prior-idle-ms): a chord
         # struck sooner after another key is its keys. 0: no such rule.
         "combo_idle": int(cfg.get("combo_idle_ms") or 0),
+        # The right Alt is AltGr on this host (feed.altgr): how a demo played on it types ç.
+        "altgr": bool(int((cfg.get("feed") or {}).get("altgr", FEED_DEFAULTS["altgr"]))),
         # Checked again here, for definitions written before the check existed or by hand: the
         # page draws what this says as markup.
         "glyphs": {name: svg for name, svg in (drawing.get("glyphs") or {}).items() if glyph_problem(svg) is None},

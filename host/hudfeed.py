@@ -130,6 +130,14 @@ ALT_CHARS = {
 }
 
 
+# The right Alt as AltGr, on a Linux host with the US-International layout: what a keymap that
+# morphs by OS sends there instead of macOS's Option (rafaelromao/keyboards, the Linux side of its
+# OS_MORPHs: ç is &kp RA(COMMA)). Only those, and only with `feed.altgr` on: without it the right Alt
+# is Option, as on a Mac.
+RALT = 0x40
+ALTGR_CHARS = {(0x36, False): "ç", (0x36, True): "Ç", (0x33, True): "°", (0x22, False): "€"}
+
+
 def flags_of(mods):
     f = {"cmd": False, "ctrl": False, "alt": False, "shift": False, "fn": False}
     for bit, name in MOD_BITS.items():
@@ -138,8 +146,13 @@ def flags_of(mods):
     return f
 
 
-def key_message(usage, down, flags):
-    """A key press/release -> the HUD's key event."""
+def key_message(usage, down, flags, altgr=False):
+    """A key press/release -> the HUD's key event. `altgr`: the right Alt is down and is AltGr."""
+    if altgr and (usage, flags["shift"]) in ALTGR_CHARS:
+        chars = ALTGR_CHARS[(usage, flags["shift"])]
+        # AltGr picks a level of the key, as Shift does: what it typed is a character, not a chord.
+        return {"kind": "key", "type": "keyDown" if down else "keyUp", "name": chars, "chars": chars,
+                "code": usage, "flags": dict(flags, alt=False), "repeat": False}
     chars = ""
     if flags["alt"] and not flags["cmd"] and not flags["ctrl"] and (usage, flags["shift"]) in ALT_CHARS:
         chars = ALT_CHARS[(usage, flags["shift"])]
@@ -174,8 +187,9 @@ class SignalDecoder:
     with the composed character (á, ç, ñ…) is emitted instead of two, which is what the
     keymap-drawer legend says and what the host displays."""
 
-    def __init__(self, compose=True, dead_key_ms=DEAD_KEY_MS):
+    def __init__(self, compose=True, dead_key_ms=DEAD_KEY_MS, altgr=False):
         self.compose = compose
+        self.altgr = altgr   # the right Alt is AltGr (ALTGR_CHARS), not Option
         self.dead_key_ms = dead_key_ms
         self.layers = None
         self.mods = 0
@@ -227,12 +241,13 @@ class SignalDecoder:
             out.append({"kind": "key", "type": "flagsChanged", "name": "", "chars": "", "code": 0,
                         "flags": flags_of(mods), "repeat": False})
         flags = flags_of(mods)
+        altgr = self.altgr and bool(mods & RALT)
         for k in self.held:
             if k not in held:
-                out.extend(self._up(key_message(k, False, flags)))
+                out.extend(self._up(key_message(k, False, flags, altgr)))
         for k in held:
             if k not in self.held:
-                out.extend(self._down(key_message(k, True, flags), now_ms))
+                out.extend(self._down(key_message(k, True, flags, altgr), now_ms))
         self.held = held
         return out
 
@@ -257,10 +272,10 @@ class Stream:
     """One open connection: the bytes a carrier delivers in, the pages' messages out. Both readers
     share it, because a BLE notification and a run of serial bytes decode the same way."""
 
-    def __init__(self, emit, device, dead_key_ms=DEAD_KEY_MS, raw=False, log=print):
+    def __init__(self, emit, device, dead_key_ms=DEAD_KEY_MS, raw=False, log=print, altgr=False):
         self.emit, self.device, self.log, self.raw = emit, device, log, raw
         self.frames = signal_frame.Decoder()
-        self.decoder = SignalDecoder(dead_key_ms=dead_key_ms)
+        self.decoder = SignalDecoder(dead_key_ms=dead_key_ms, altgr=altgr)
         self.frames_seen = 0  # a port that never produces one is not ours
 
     def feed(self, chunk, now_ms):
@@ -329,10 +344,10 @@ class SerialReader:
     that long is decisive."""
 
     def __init__(self, emit, vid=ZMK_VID, pid=ZMK_PID, name=None, port=None, rescan=2.0, log=print,
-                 raw=False, dead_key_ms=DEAD_KEY_MS, probe_s=8.0):
+                 raw=False, dead_key_ms=DEAD_KEY_MS, probe_s=8.0, altgr=False):
         self.emit, self.vid, self.pid, self.name, self.port = emit, vid, pid, name, port
         self.rescan, self.log, self.raw = rescan, log, raw
-        self.dead_key_ms, self.probe_s = dead_key_ms, probe_s
+        self.dead_key_ms, self.probe_s, self.altgr = dead_key_ms, probe_s, altgr
         self._open = {}   # device path -> serial.Serial
         self._streams = set()  # live Streams, for resync()
         self._quiet = {}  # device path -> why we stopped reading it
@@ -406,7 +421,7 @@ class SerialReader:
 
     def _read_loop(self, path, dev, product):
         import time
-        stream = Stream(self.emit, product, self.dead_key_ms, self.raw, self.log)
+        stream = Stream(self.emit, product, self.dead_key_ms, self.raw, self.log, self.altgr)
         self._streams.add(stream)
         announced = False
         started = time.monotonic()
@@ -459,9 +474,10 @@ class BleReader:
     (_connected_macos); on Linux give `ble: {address: ...}`, its MAC address."""
 
     def __init__(self, emit, address=None, name=None, rescan=2.0, log=print, raw=False,
-                 dead_key_ms=DEAD_KEY_MS):
+                 dead_key_ms=DEAD_KEY_MS, altgr=False):
         self.emit, self.address, self.name = emit, address, name
         self.rescan, self.log, self.raw, self.dead_key_ms = rescan, log, raw, dead_key_ms
+        self.altgr = altgr
         self._streams = set()  # live Streams, for resync()
         self._stop = threading.Event()
 
@@ -579,7 +595,7 @@ class BleReader:
         """Reads one connection until it drops. -> None once it has been read, else why not."""
         name = device.name or str(device.address)
         reading = False
-        stream = Stream(self.emit, name, self.dead_key_ms, self.raw, self.log)
+        stream = Stream(self.emit, name, self.dead_key_ms, self.raw, self.log, self.altgr)
         self._streams.add(stream)
         gone = asyncio.Event()
         try:
@@ -672,11 +688,11 @@ class HidrawReader:
     than hidapi asks for and exactly what contrib/udev/60-zmk-layer-hud.rules grants."""
 
     def __init__(self, emit, vid=ZMK_VID, pid=ZMK_PID, name=None, report_id=KEYBOARD_REPORT_ID,
-                 rescan=2.0, log=print, raw=False, dead_key_ms=DEAD_KEY_MS, sysfs=HIDRAW_SYSFS):
+                 rescan=2.0, log=print, raw=False, dead_key_ms=DEAD_KEY_MS, sysfs=HIDRAW_SYSFS, altgr=False):
         self.emit, self.vid, self.pid, self.name = emit, vid, pid, name
         self.report_id, self.rescan, self.log = report_id, rescan, log
         self.raw = raw  # debug only: dumps every report, i.e. also what you type
-        self.dead_key_ms, self.sysfs = dead_key_ms, sysfs
+        self.dead_key_ms, self.sysfs, self.altgr = dead_key_ms, sysfs, altgr
         self._open = {}
         self._streams = set()
         self._stop = threading.Event()
@@ -741,7 +757,7 @@ class HidrawReader:
     def _read_loop(self, path, fd, product):
         import select
         import time
-        stream = Stream(self.emit, product, self.dead_key_ms, self.raw, self.log)
+        stream = Stream(self.emit, product, self.dead_key_ms, self.raw, self.log, self.altgr)
         self._streams.add(stream)
         try:
             while not self._stop.is_set():
@@ -816,11 +832,11 @@ class HidKeysReader:
     keyboard Karabiner-Elements modifies is seized by it and gives us no reports."""
 
     def __init__(self, emit, vid=ZMK_VID, pid=ZMK_PID, name=None, report_id=KEYBOARD_REPORT_ID,
-                 rescan=2.0, log=print, raw=False, dead_key_ms=DEAD_KEY_MS):
+                 rescan=2.0, log=print, raw=False, dead_key_ms=DEAD_KEY_MS, altgr=False):
         self.emit, self.vid, self.pid, self.name = emit, vid, pid, name
         self.report_id, self.rescan, self.log = report_id, rescan, log
         self.raw = raw  # debug only: dumps every report, i.e. also what you type
-        self.dead_key_ms = dead_key_ms
+        self.dead_key_ms, self.altgr = dead_key_ms, altgr
         self._open = {}
         self._streams = set()
         self._stop = threading.Event()
@@ -912,7 +928,7 @@ class HidKeysReader:
 
     def _read_loop(self, path, dev, product):
         import time
-        stream = Stream(self.emit, product, self.dead_key_ms, self.raw, self.log)
+        stream = Stream(self.emit, product, self.dead_key_ms, self.raw, self.log, self.altgr)
         self._streams.add(stream)
         try:
             while not self._stop.is_set():
@@ -1081,16 +1097,17 @@ class Feed:
         self.keymap = keymap
         self.keys = keys
         rescan, dead_key_ms = float(feed_cfg["rescan_s"]), int(feed_cfg["dead_key_ms"])
+        altgr = bool(int(feed_cfg["altgr"]))
         kb_name = name if name is not None else kb.get("name")
         self.reader = SerialReader(
-            self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms,
+            self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
             vid=vid if vid is not None else int(kb.get("vid", ZMK_VID)),
             pid=pid if pid is not None else int(kb.get("pid", ZMK_PID)),
             name=kb_name, port=port if port is not None else ser.get("port"),
             probe_s=float(ser.get("probe_s", 8.0)))
         self.ble = None
         if ble and bt.get("enabled", True):
-            self.ble = BleReader(self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms,
+            self.ble = BleReader(self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
                                  address=ble_address if ble_address is not None else bt.get("address"),
                                  name=kb_name)
         # What is typed comes from the keyboard's HID reports, not from the signal channel: one
@@ -1102,7 +1119,7 @@ class Feed:
             # here grants and detaches the kernel driver from the keyboard it opens.
             reader = HidrawReader if sys.platform.startswith("linux") else HidKeysReader
             self.hid = reader(
-                self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms,
+                self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
                 vid=vid if vid is not None else int(kb.get('vid', ZMK_VID)),
                 pid=pid if pid is not None else int(kb.get('pid', ZMK_PID)),
                 name=kb_name)

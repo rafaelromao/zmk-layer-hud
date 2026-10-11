@@ -19,7 +19,7 @@ what step 7 puts back.
 | `make-script.py` | writes the script, `text.txt` and `chapters.txt` from one list of parts; edit the text there |
 | `chapters.txt` | each part's time in the recording, for the video's description |
 | `../demo-romak.json` | the script `make-script.py` writes: a pace per part, slow motion (`speed`) where it shows a one-shot |
-| `../../config/romak-34.yaml` | the HUD config; the layout is `../../examples/romak-34.yaml` |
+| `../../config/romak-34.yaml` | the HUD config, pinned to Omarchy (`feed.altgr`: ç is AltGr+,); the layout is `../../examples/romak-34.yaml` |
 
 ## 1. Prepare
 

@@ -10,6 +10,12 @@ keymap: ../examples/romak-34.yaml
 title: Romak 34
 combo_term_ms: 30
 
+# Pinned to Omarchy, where the demo is recorded: the right Alt is AltGr of the US-International
+# layout, and ç is AltGr+, (the Linux side of the author's keymap; on a Mac it is ' then c). The
+# drawing has no layer per OS, and needs none.
+feed:
+  altgr: 1
+
 # The layers' names as LayerBench gives them.
 layers:
   map:

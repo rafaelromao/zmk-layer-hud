@@ -186,6 +186,13 @@ class OneShots(unittest.TestCase):
             self.assertAlmostEqual(wait, e - alpha2, delta=2)
             self.assertLessEqual(at(c, "release", 18)[0] - e, play.SLOW_HOLD_MS)
 
+    def test_c_cedilla_is_altgr_comma_on_a_host_whose_right_alt_is_altgr(self):
+        self.assertTrue(ROMAK["altgr"])
+        down = [m for m in of(self.romak("ação"), "key") if m["type"] == "keyDown" and m["chars"] == "ç"]
+        self.assertEqual([0x36], [m["code"] for m in down])
+        self.assertFalse(down[0]["flags"]["alt"])
+        self.assertNotIn("composed", down[0])
+
     def test_the_romak_demo_plays_clean(self):
         c = play.compile(script("docs/demo-romak.json"), ROMAK)
         self.assertEqual([], c.problems)

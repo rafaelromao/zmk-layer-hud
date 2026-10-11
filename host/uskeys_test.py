@@ -12,7 +12,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import uskeys  # noqa: E402
-from hudfeed import ALT_CHARS, CHARS, NAMED  # noqa: E402
+from hudfeed import ALT_CHARS, ALTGR_CHARS, CHARS, NAMED, RALT, SignalDecoder  # noqa: E402
 
 
 def typed(legend):
@@ -48,6 +48,20 @@ class Accents(unittest.TestCase):
         self.assertEqual(uskeys._dead_key_pair("ç"), ("'", "c"))
         self.assertEqual(typed("ç"), [("ç", "ç")])
         self.assertEqual(typed("Ç"), [("Ç", "Ç")])
+
+    def test_on_a_host_whose_right_alt_is_altgr_cedilla_is_altgr_comma(self):
+        # Omarchy (feed.altgr): the keymap sends RA(COMMA) for ç, and that is what it decodes to.
+        for ch in ALTGR_CHARS.values():
+            snaps = uskeys.keystrokes_for(ch, altgr=True)
+            self.assertTrue(snaps[0]["mods"] & RALT, ch)
+            self.assertEqual([ch], [m["chars"] for m in uskeys.events_for(ch, altgr=True)])
+        self.assertEqual(0x36, uskeys.keystrokes_for("ç", altgr=True)[0]["keys"][0])
+
+    def test_without_it_the_right_alt_is_option(self):
+        # A Mac: the same report is Option+, -- what a keymap pinned to the other OS shows there.
+        decoder = SignalDecoder()
+        out = decoder.feed({"kind": "keys", "mods": RALT, "keys": [0x36]}, 0)
+        self.assertEqual(["≤"], [m["chars"] for m in out if m["type"] == "keyDown"])
 
     def test_a_dead_key_alone_is_still_the_key_it_was(self):
         self.assertEqual(typed("'"), [("'", "'")])
