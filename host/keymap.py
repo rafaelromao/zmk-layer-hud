@@ -172,6 +172,32 @@ def expand(path, base_dir=None):
     return p
 
 
+def layout_files(layout, yaml_path):
+    """A drawer YAML's `layout` with its qmk_info_json / dts_layout file found. keymap-drawer reads
+    a relative one from the directory it runs in, which for a drawer repo is its root; the HUD runs
+    anywhere, so it looks from the YAML's directory up through its parents and takes the first that
+    has the file. A file found nowhere is left as written, for keymap-drawer's error to name."""
+    if not isinstance(layout, dict):
+        return layout
+    out = dict(layout)
+    for key in ("qmk_info_json", "dts_layout"):
+        p = expand(out.get(key))
+        if not isinstance(p, str):
+            continue
+        out[key] = p
+        if os.path.isabs(p):
+            continue
+        d = os.path.dirname(os.path.abspath(yaml_path))
+        while True:
+            if os.path.exists(os.path.join(d, p)):
+                out[key] = os.path.normpath(os.path.join(d, p))
+                break
+            if os.path.dirname(d) == d:
+                break
+            d = os.path.dirname(d)
+    return out
+
+
 def legend(value):
     """A legend is text or a $$glyph$$; return (text, glyph_id)."""
     if value is None:

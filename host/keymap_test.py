@@ -283,6 +283,21 @@ class Settings(unittest.TestCase):
         self.assertEqual(km.expand("/abs/x.yaml", "/a/b/config"), "/abs/x.yaml")
         self.assertTrue(km.expand("~/x.yaml", "/a").startswith(os.path.expanduser("~")))
 
+    def test_layout_files_are_found_from_the_yaml_up(self):
+        # keymap-drawer reads them from where it runs, a drawer repo's root; the HUD runs anywhere.
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "docs", "d"))
+            yaml_path = os.path.join(root, "docs", "d", "keymap.yaml")
+            json_path = os.path.join(root, "docs", "d", "layout.json")
+            with open(json_path, "w", encoding="utf-8") as f:
+                f.write("{}")
+            self.assertEqual(km.layout_files({"qmk_info_json": "docs/d/layout.json", "layout_name": "L"}, yaml_path),
+                             {"qmk_info_json": json_path, "layout_name": "L"})
+            self.assertEqual(km.layout_files({"qmk_info_json": "layout.json"}, yaml_path), {"qmk_info_json": json_path})
+            self.assertEqual(km.layout_files({"dts_layout": "missing.dtsi"}, yaml_path), {"dts_layout": "missing.dtsi"})
+            self.assertEqual(km.layout_files({"cols_thumbs_notation": "33+2 2+33"}, yaml_path),
+                             {"cols_thumbs_notation": "33+2 2+33"})
+
     def test_glyph_url_templates(self):
         urls = km.GLYPH_URLS
         self.assertTrue(km.glyph_url("mdi:cog", urls).endswith("/svg/cog.svg"))
