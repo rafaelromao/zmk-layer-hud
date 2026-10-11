@@ -99,8 +99,10 @@ class Speller:
     and on a board that draws its letters as capitals, a lowercase letter is typed on its capital's
     key -- the legend is the keycap, not the character."""
 
-    def __init__(self, km, cases):
+    def __init__(self, km, cases, one_shot_shift=False, chained=None):
         self.km = km
+        self.one_shot_shift = one_shot_shift
+        self.chained = chained or {}
         self.literal, self.named = {}, {}
         for c in cases:
             n = name_of(c["legend"])
@@ -114,23 +116,40 @@ class Speller:
         """-> ([(text, ways, events or None)], [(offset, char, why)])."""
         units, missing, i = [], [], 0
         while i < len(text):
-            hit = next((l for l in self.longest if text.startswith(l, i)), None)
+            hit = next((l for l in self.longest if text.startswith(l, i) and self.reachable(l, units)), None)
             if hit:
-                units.append((hit, self.literal[hit], None))
+                units.append((hit, self.literal[hit], None, False))
                 i += len(hit)
                 continue
             ch = text[i]
             name = TEXT_NAMES.get(ch) or uskeys.NAME_FOR_LEGEND.get(ch)
             if name and name in self.named and name in GLYPH_FOR_NAME:
-                units.append((ch, self.named[name], uskeys.events_for(GLYPH_FOR_NAME[name])))
+                units.append((ch, self.named[name], uskeys.events_for(GLYPH_FOR_NAME[name]), False))
             elif self.capitals and ch.islower() and ch.upper() in self.literal and uskeys.events_for(ch):
-                units.append((ch, self.literal[ch.upper()], uskeys.events_for(ch)))
+                units.append((ch, self.literal[ch.upper()], uskeys.events_for(ch), False))
+            elif self.one_shot_shift and ch.isupper() and ch.lower() in self.literal and uskeys.events_for(ch):
+                # A capital on a board of lowercase keys: the one-shot Shift, then the letter's key.
+                units.append((ch, self.literal[ch.lower()], uskeys.events_for(ch), True))
             else:
                 why = "no key on this keymap types it" if uskeys.keystrokes_for(ch) is not None \
                     else "a US layout cannot type it"
                 missing.append((i, ch, why))
             i += 1
         return units, missing
+
+    def reachable(self, legend, units):
+        """A legend only a chained layer has (ão on the ç extension) is typed there only right after
+        the key that leaves that layer on; anywhere else (João) its characters are typed one by one."""
+        ways_ = [w for w in self.literal[legend] if not w["combo"]]
+        if not ways_ or not all(self.chained_layer(w) for w in ways_):
+            return True
+        prev = units[-1][1] if units else []
+        return any(self.chained.get((w["layer"], w["keys"][0])) == self.chained_layer(ways_[0])
+                   for w in prev if not w["combo"] and len(w["keys"]) == 1)
+
+    def chained_layer(self, way):
+        layers = set(self.chained.values())
+        return way["layer"] if way["layer"] in layers else None
 
 
 def choose(options, current, combos, base):
@@ -166,12 +185,47 @@ def activator(data, km, way):
     return None
 
 
+def marked_key(data, km, tap, mark):
+    """The base layer's key drawn with this legend and this mark (the Diamond's convention): the
+    one-shot Shift is `⇧` marked `sticky`, the repeat key `↻` marked `repeat`."""
+    for idx, k in enumerate(data["layers"][km.base]):
+        if k.get("tap") == tap and k.get("shifted") == mark:
+            return idx
+    return None
+
+
+def chained_layers(data):
+    """(layer, key) -> the one-shot layer that key leaves on after typing (an `auto-sticky` key: ç,
+    then the ç extension for the next key)."""
+    out = {}
+    for a in data.get("activators") or []:
+        if a.get("kind") != "auto-sticky":
+            continue
+        for name, keys in data["layers"].items():
+            if a["idx"] < len(keys) and keys[a["idx"]].get("hold") == a["layer"]:
+                out[(name, a["idx"])] = a["layer"]
+    return out
+
+
 def shift_key(data, km):
     """The base layer's Shift, held for a capital on a board whose letters are capitals already."""
     for idx, k in enumerate(data["layers"][km.base]):
         if isinstance(k.get("hold"), str) and k["hold"].strip().lower() in ("⇧", "shift", "lshift", "rshift"):
             return idx
     return None
+
+
+def repeats(km, idx, live, evs):
+    """Whether the repeat key types these reports again with these layers up: it is the repeat key
+    on the layer that is up (or seen through it), and what it repeats is a single plain keycode."""
+    top = None
+    for lid in sorted(live, reverse=True):
+        z = (km.data.get("zmk_layers") or {}).get(str(lid))
+        if z and z.get("drawer"):
+            top = z["drawer"]
+            break
+    _, key = km.binding(idx, km.stack(top or km.base))
+    return bool(key and key.get("shifted") == "repeat" and len(evs) == 1 and not evs[0].get("composed"))
 
 
 # ---------- the timeline ----------
@@ -281,7 +335,11 @@ def compile(script, keymap, speed=1.0, combos=None):
     pace = lambda ms: max(floor, ms / speed)            # noqa: E731  (between keystrokes)
     span = lambda ms: max(20.0, ms / speed)             # noqa: E731  (a hold, a frame, a pause)
     use_combos = bool(script.get("combos")) if combos is None else bool(combos)
-    speller = Speller(km, ways.cases(km))
+    one_shot_shift = marked_key(data, km, "⇧", "sticky")
+    repeat_idx = marked_key(data, km, "↻", "repeat") if script.get("repeat") else None
+    chained = chained_layers(data)
+    chained_ids = {i for layer in chained.values() for i in km.ids_of.get(layer, [])}
+    speller = Speller(km, ways.cases(km), one_shot_shift is not None, chained)
     shift_idx = shift_key(data, km)
     held_timeout = hud.get("held_timeout_ms", 5000)
 
@@ -318,16 +376,31 @@ def compile(script, keymap, speed=1.0, combos=None):
                 problems.append({"level": "skip", "step": n + 1, "at": off, "char": ch, "message": why})
             holding = None                     # (pos, layer ids) of a layer key held down
             chips, frames = [], []
-            for utext, options, events in units:
+            prev = None                        # (text, way, shifted) of the last unit typed
+            for utext, options, events, one_shot in units:
+                # A layer only a chained key leaves on is typed on only while it is on.
+                options = [w for w in options if not set(w["live"]) & chained_ids
+                           or set(w["live"]) <= set(board.layers)] or options
                 way = choose(options, board.layers, entry_combos, km.base)
                 target = sorted(set(background) | set(way["live"]))
                 strike = [km.zmk(i) for i in way["keys"]]
                 held = [km.zmk(i) for i in way["held"]]
+                evs = events if events is not None else way["events"]
+                chained_before = bool(set(board.layers) & chained_ids)
+                if (repeat_idx is not None and prev is not None and prev[0] == utext and not one_shot
+                        and not prev[2] and repeats(km, repeat_idx, board.layers, evs)):
+                    # The same key again is the repeat key, on whatever layer is up (ZMK's key-repeat
+                    # sends the last keycode again: one report, no dead key, no macro).
+                    way, target, strike, held = dict(prev[1], combo=False), list(board.layers), [km.zmk(repeat_idx)], []
                 if speller.capitals and not held and utext.isupper() and shift_idx is not None and shift_idx not in way["keys"]:
                     held = [km.zmk(shift_idx)]   # a capital is Shift and its key, whatever the keycap says
-                evs = events if events is not None else way["events"]
                 b = t
                 sticky = False
+                if one_shot:
+                    board.press(b, km.zmk(one_shot_shift))
+                    board.shift(b, True)
+                    board.release(b + TAP_MS, km.zmk(one_shot_shift))
+                    b += max(LAYER_LEAD_MS, floor)
                 if target != board.layers:
                     if holding is not None:
                         board.release(b, holding)
@@ -375,8 +448,15 @@ def compile(script, keymap, speed=1.0, combos=None):
                         board.release(end + SETTLE_MS, p)
                     board.shift(end + SETTLE_MS, False)
                     end += SETTLE_MS
-                if sticky:
+                if one_shot:
+                    board.shift(end + SETTLE_MS, False)
+                chain = chained.get((way["layer"], way["keys"][0])) if not way["combo"] and len(way["keys"]) == 1 else None
+                if chain and km.ids_of.get(chain):
+                    # The key typed and left its layer on for the next one (ç, then the ç extension).
+                    board.set_layers(end + SETTLE_MS, sorted(set(background) | {km.ids_of[chain][0]}))
+                elif sticky or chained_before:
                     board.set_layers(end + SETTLE_MS, background)   # a one-shot layer serves one key
+                prev = (utext, way, one_shot)
                 t = max(b + gap, end + SETTLE_MS)
             if holding is not None:
                 board.release(t, holding)

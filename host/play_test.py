@@ -27,6 +27,7 @@ def fixture(name):
 
 DIAMOND = fixture("diamond.json")
 SMALL = fixture("example-3x5.json")      # config/example-3x5.yaml: capitals drawn, words for keys
+ROMAK = fixture("romak-34.json")         # config/romak-34.yaml: lowercase, one-shot Shift, repeat, ç extension
 
 
 def script(path):
@@ -119,6 +120,66 @@ class Spelling(unittest.TestCase):
         # The drawer's word for a key is the key, not the letters of the word.
         word = compiled([{"type": "Space"}], SMALL)
         self.assertEqual(["S", "p", "a", "c", "e"], [s["text"] for s in word.strokes])
+
+
+class OneShots(unittest.TestCase):
+    """Romak 34 types the way its keymap does: a capital is the one-shot Shift tapped, a letter
+    struck twice the repeat key, and ç leaves the ç extension on for ão."""
+
+    def layer_names(self, c):
+        names = {int(i): z["drawer"] for i, z in ROMAK["zmk_layers"].items()}
+        return [[names[i] for i in m["ids"]] for m in of(c, "layers")][1:]
+
+    def romak(self, text, **top):
+        c = compiled([{"type": text}], ROMAK, **top)
+        self.assertEqual([], c.problems)
+        self.assertEqual(text.replace("\n", "\r"), typed(c))
+        return c
+
+    def test_a_capital_is_the_one_shot_shift_tapped_then_its_letter(self):
+        c = self.romak("Este")
+        self.assertEqual([33, 18, 12, 13, 18], [m["pos"] for m in of(c, "press")])
+        shifts = [m["flags"]["shift"] for m in of(c, "key") if m["type"] == "flagsChanged"]
+        self.assertEqual([True, False], shifts)
+
+    def test_a_capital_on_a_one_shot_layer_is_shift_then_the_layer_then_its_combo(self):
+        c = self.romak("Às")
+        presses = [m["pos"] for m in of(c, "press")]
+        self.assertEqual([33, 32, 17, 18, 12], presses)
+        self.assertEqual([["alpha2"], []], self.layer_names(c))
+
+    def test_c_cedilla_leaves_its_extension_on_for_ao(self):
+        c = self.romak("ção")
+        self.assertEqual([[22], [13]], [s["strike"] for s in c.strokes])
+        self.assertEqual([["alpha2"], ["ç-extension"], []], self.layer_names(c))
+
+    def test_ao_without_c_cedilla_is_its_letters(self):
+        c = self.romak("João")
+        self.assertEqual(["J", "o", "ã", "o"], [s["text"] for s in c.strokes])
+        self.assertNotIn(["ç-extension"], self.layer_names(c))
+
+    def test_a_letter_struck_twice_is_the_repeat_key_when_asked_for(self):
+        self.assertEqual([[12], [12]], [s["strike"] for s in self.romak("ss").strokes])
+        self.assertEqual([[12], [30]], [s["strike"] for s in self.romak("ss", repeat=True).strokes])
+
+    def test_the_repeat_key_repeats_on_a_held_layer_too(self):
+        c = self.romak("100", repeat=True)
+        self.assertEqual([[26], [33], [30]], [s["strike"] for s in c.strokes])
+        self.assertEqual([["numbers"], []], self.layer_names(c))
+
+    def test_an_accent_is_never_repeated(self):
+        self.assertEqual([[18], [18]], [s["strike"] for s in self.romak("éé", repeat=True).strokes])
+
+    def test_a_newline_is_enter_on_the_nav_layer(self):
+        c = self.romak("a\nb")
+        self.assertEqual([[17], [7], [1]], [s["strike"] for s in c.strokes])
+        self.assertEqual([["nav"], []], self.layer_names(c))
+
+    def test_the_romak_demo_plays_clean(self):
+        c = play.compile(script("docs/demo-romak.json"), ROMAK)
+        self.assertEqual([], c.problems)
+        with open(os.path.join(ROOT, "docs", "romak-demo", "text.txt"), encoding="utf-8") as f:
+            self.assertEqual(f.read().rstrip("\n").replace("\n", "\r"), typed(c))
 
 
 class Timing(unittest.TestCase):

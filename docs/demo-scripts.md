@@ -43,6 +43,7 @@ At the top, all optional but `steps`:
 | `opacity` | the panel's opacity for the demo and the GIF (`poke` cannot change it) |
 | `wpm` | how fast text is typed (default: about 70 wpm, the pace the tests replay at) |
 | `combos` | type text with the keymap's combos where it has them (default: `false`, as `poke`) |
+| `repeat` | type a letter struck twice with the keymap's repeat key, the base key drawn `↻` marked `s: repeat` (default: `false`) |
 | `step_ms`, `hold_ms` | how long a frame stays, played, and how long its keys stay down (1000, 250) |
 | `loop` | play it again and again (as `--loop`) |
 
@@ -54,7 +55,10 @@ already up, else the base, the base with Shift held, another layer with the key 
 up. A combo is used only with `"combos": true`, or where nothing else types the character. A
 space, a newline, a tab and the named-key glyphs (`⎋ ⌫ ⌦ ↵ ⇥ ← → ↑ ↓ ⇱ ⇲ ⇞ ⇟`) type those keys,
 whatever the drawing calls them (`␣`, `Space`). On a board drawn in capitals, a lowercase letter
-is typed on its capital's key. A character the keymap cannot type is named and skipped
+is typed on its capital's key; on a board drawn in lowercase with a one-shot Shift (a base key
+drawn `⇧` marked `s: sticky`), a capital is that Shift tapped, then its letter, on whatever layer
+has it. A key marked `s: auto-sticky` leaves the layer its hold names on for the next key (ç,
+then `ão` on the ç extension), and what only that layer types is typed there only right after it. A character the keymap cannot type is named and skipped
 (`--strict` refuses the script instead). Optional:
 - `combos` and `wpm`, for this text alone;
 - `layers`, the layers it is typed over (vim's insert mode, say);
