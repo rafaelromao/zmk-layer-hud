@@ -130,6 +130,8 @@ class SinkTest {
         assertEquals(PageMessage.Ops(listOf(Op.Text("a", 4, 0), Op.Key("backspace", 42, 0), Op.Chord("c", null, 6, 1))), ops)
         assertEquals(PageMessage.Size(212), PageMessage.parse("""{"kind":"size","height":212}"""))
         assertIs<PageMessage.Switch>(PageMessage.parse("""{"kind":"switch"}"""))
+        assertEquals(PageMessage.Feedback("delete"), PageMessage.parse("""{"kind":"feedback","key":"delete"}"""))
+        assertEquals(PageMessage.Feedback("standard"), PageMessage.parse("""{"kind":"feedback","key":"loud"}"""))
         for (junk in listOf("", "[]", "{", """{"kind":"size","height":-1}""", """{"kind":"hid","keys":[4]}""", "x".repeat(70_000))) {
             assertIs<PageMessage.Unknown>(PageMessage.parse(junk), junk.take(20))
         }

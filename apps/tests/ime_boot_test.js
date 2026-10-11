@@ -64,6 +64,10 @@ function keyboard(conf) {
         `a letter is text and backspace a key, each with its usage: ${JSON.stringify(ops)}`);
   check(p.posted.filter((m) => m.kind === "ops").every((m) => m.v === 1 && Number.isInteger(m.seq)), "every message versioned and numbered");
   check(!p.posted.some((m) => m.kind === "hid"), "and no report snapshots: the keyboard types text");
+  const said = p.posted.filter((m) => m.kind === "feedback").map((m) => m.key);
+  check(eq(said, ["standard", "delete"]), `each press asks the keyboard for its buzz and click: ${JSON.stringify(said)}`);
+  check(p.posted.findIndex((m) => m.kind === "feedback") < p.posted.findIndex((m) => m.kind === "ops"),
+        "before the text it types: on the press");
 })();
 
 (function itSaysHowTallItCameOut() {

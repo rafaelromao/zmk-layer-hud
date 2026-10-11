@@ -136,6 +136,8 @@ TOUCH_DEFAULTS = {
     "combos": "chips",         # chips: a tappable chip per combo; chords: two fingers at once; both; off
     "heat": 1,                 # touch typing warms the live heat (0: it does not)
     "strip": 1,                # touch typing shows in the typed-keys strip (0: it does not)
+    "sound": 30,               # a key's click, as loud as this in 0-100 (0: silent), the moment a finger lands
+    "haptics": 1,              # ...and a buzz where the device has one (an Android tablet's browser; 0: none)
 }
 TOUCH_CHOICES = {"flavor": ("balanced", "firmware"), "combos": ("chips", "chords", "both", "off")}
 # `dock:` section: the HUD docked along the bottom of a screen (zmk-layer-hud dock, docs/touch.md).
@@ -919,6 +921,8 @@ def touch_settings(value):
         if isinstance(v, bool) or not isinstance(v, (int, float)) or v != int(v) or v < 0:
             raise KeymapError(f"touch.{k} must be a whole number, 0 or more (it is {v!r}); the default is "
                               f"{TOUCH_DEFAULTS[k]}")
+        if k == "sound" and v > 100:
+            raise KeymapError(f"touch.sound is a volume, 0 to 100 (it is {v!r})")
         out[k] = int(v)
     return out
 

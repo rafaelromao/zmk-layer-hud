@@ -379,7 +379,8 @@ html.dock #stats, html.dock #status, html.dock #keys, html.dock #side { display:
    still when it was hidden (the chevron's choice, stats_bar: 0). */
 html.stats-middle #frame { position: relative; }
 html.dock.stats-middle body:not(.side-hidden) #stats:not(.off) { display: grid; position: absolute; margin: 0;
-  overflow-y: auto; overscroll-behavior: contain; }
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+html.stats-middle #stats::-webkit-scrollbar { display: none; }   /* scrolled by a finger or a wheel, no bar */
 
 /* The remote page (host/remote.py, remote.js): a tablet's browser, the whole window the keyboard.
    The board sits at the bottom, where the thumbs are; the page never scrolls, bounces or selects,

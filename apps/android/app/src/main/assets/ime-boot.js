@@ -13,7 +13,9 @@
   window.zmkhudBooted = true;
   const post = (m) => { try { window.zmkhudIme.postMessage(JSON.stringify(m)); } catch (e) { /* not in the keyboard */ } };
 
-  hud.setTouch({ output: "text", repeat: "synthetic", shortcuts: true, pages: [7], send: post });
+  // The press's feedback is the keyboard's (HudIme.kt): the system's buzz and clicks, as its settings say.
+  hud.setTouch({ output: "text", repeat: "synthetic", shortcuts: true, pages: [7], send: post,
+                 feedback: (key) => post({ kind: "feedback", key }) });
   hud.setDock({ on: true, max_height: conf.maxHeight || window.innerHeight, split: true });
 
   // The next keyboard, where Android says this one should offer it.

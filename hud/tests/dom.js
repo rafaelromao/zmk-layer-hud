@@ -342,7 +342,9 @@ function loadPage(opts = {}) {
     localStorage: { getItem: (k) => (stored.has(k) ? stored.get(k) : null), setItem: (k, v) => stored.set(k, String(v)) },
     history: { replaceState: (s, t, url) => { replaced.push(url); sandbox.location.hash = ""; } },
     crypto: { getRandomValues: (a) => require("node:crypto").webcrypto.getRandomValues(a) },
-    navigator: { userAgent: "node" },
+    // A test's own navigator.vibrate and AudioContext, for the touch keyboard's feedback.
+    navigator: Object.assign({ userAgent: "node" }, opts.navigator || {}),
+    AudioContext: opts.AudioContext,
     console: opts.quiet ? { ...console, warn: () => {} } : console,   // a test that expects the page's warning
     URLSearchParams,
     setTimeout: (fn, ms) => clock.setTimeout(fn, ms),

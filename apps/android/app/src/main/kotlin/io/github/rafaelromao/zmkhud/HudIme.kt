@@ -27,7 +27,6 @@ import androidx.webkit.WebViewFeature
 import io.github.rafaelromao.zmkhud.sink.Editor
 import io.github.rafaelromao.zmkhud.sink.Field
 import io.github.rafaelromao.zmkhud.sink.ImeSink
-import io.github.rafaelromao.zmkhud.sink.Op
 import io.github.rafaelromao.zmkhud.sink.PageMessage
 import java.io.ByteArrayInputStream
 import kotlin.math.roundToInt
@@ -191,10 +190,8 @@ class HudIme : InputMethodService() {
 
     private fun fromPage(text: String) {
         when (val m = PageMessage.parse(text)) {
-            is PageMessage.Ops -> {
-                sink.type(m.ops)
-                feedback(m.ops)
-            }
+            is PageMessage.Ops -> sink.type(m.ops)
+            is PageMessage.Feedback -> feedback(m.key)
             is PageMessage.Size -> resize(m.height)
             PageMessage.Switch -> if (!switchToNextInputMethod(false)) {
                 (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
@@ -219,16 +216,16 @@ class HudIme : InputMethodService() {
         w.layoutParams = w.layoutParams.apply { height = px }
     }
 
-    private fun feedback(ops: List<Op>) {
-        if (ops.isEmpty()) return
+    /** A finger landed on a key (the page says which kind): the press's buzz and click, as the app's
+     *  switches and the system's own settings allow, on the press rather than when the text arrives. */
+    private fun feedback(key: String) {
         val prefs = Prefs(this)
         if (prefs.haptics) web?.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
         if (prefs.sound) {
-            val last = ops.last()
-            val fx = when {
-                last is Op.Key && last.key == "backspace" -> AudioManager.FX_KEYPRESS_DELETE
-                last is Op.Key && last.key == "enter" -> AudioManager.FX_KEYPRESS_RETURN
-                last is Op.Text && last.text == " " -> AudioManager.FX_KEYPRESS_SPACEBAR
+            val fx = when (key) {
+                "delete" -> AudioManager.FX_KEYPRESS_DELETE
+                "return" -> AudioManager.FX_KEYPRESS_RETURN
+                "space" -> AudioManager.FX_KEYPRESS_SPACEBAR
                 else -> AudioManager.FX_KEYPRESS_STANDARD
             }
             (getSystemService(AUDIO_SERVICE) as AudioManager).playSoundEffect(fx)

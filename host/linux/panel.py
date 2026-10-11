@@ -274,6 +274,7 @@ def surface(monitor, page, namespace, width, height, query="", on_size=None):
                         lambda _manager, result: on_size(result.get_js_value().to_string()))
     view = WebKit2.WebView.new_with_user_content_manager(manager)
     view.set_background_color(Gdk.RGBA(0, 0, 0, 0))
+    view.get_settings().set_enable_webaudio(True)      # the touch keyboard's key clicks (hud/touch.js)
     view.connect("web-process-terminated", reload_page)
     view.connect("decide-policy", keep_to_pages)
     view.set_size_request(width, height)

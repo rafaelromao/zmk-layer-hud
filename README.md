@@ -244,7 +244,8 @@ The HUD can type. Tap a drawn key and it does what that key does on your keyboar
 your keymap as the firmware would ([docs/touch.md](docs/touch.md)), from the bindings `import`
 and `sync` capture from your ZMK repo, or from the legends of a drawing without one. A long press is
 a hold, a hold let go alone latches (a one-shot, locked on a second tap), two fingers chord, and
-each combo of the layer up is a chip between its keys.
+each combo of the layer up is a chip between its keys. Each press clicks, and buzzes where the device
+can (`touch.sound`, `touch.haptics`).
 
 - **Docked** (`zmk-layer-hud dock`, `start --dock`, or `dock: {start: 1}`), the HUD is a strip
   along the bottom of the touch screen as wide as it, a split board's halves at its sides, and it

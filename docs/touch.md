@@ -80,7 +80,7 @@ without an import. The keymap message gains three fields:
                 "why": { "zmk,behavior-adaptive-key": 11 } } },
 "touch": { "enabled": 1, "hold_ms": 280, "flavor": "balanced", "latch": 1, "lock_ms": 350,
            "sticky_ms": 0, "repeat_delay_ms": 450, "repeat_ms": 60, "combos": "chips",
-           "heat": 1, "strip": 1 }
+           "heat": 1, "strip": 1, "sound": 30, "haptics": 1 }
 ```
 
 - `table` holds each distinct action once; `layers[id]` lists, for every ZMK position, the index
@@ -178,6 +178,14 @@ set, glass changes a few things:
   lands and kept until it lifts, as a switch would be.
 - The engine's layers are drawn over the physical keyboard's. Latched and locked keys show it
   (`.latched`, `.locked`), and the banner says *touch · one shot* or *touch · locked*.
+- **Feedback.** The moment a finger lands on a key -- on the press, as phone keyboards give it, and
+  never while a key repeats -- the page plays a click and, where the device can, buzzes. Four
+  clicks, as Android's keyboard has them: a key, space, delete and return, made in the page with Web
+  Audio (no sound file). `touch.sound` is the volume, 0 to 100 (30; 0 is silent), `touch.haptics`
+  the buzz, which a browser gives on Android alone (`navigator.vibrate`): the remote page on an
+  Android tablet buzzes, a desktop does not. A sink with `feedback(kind)` of its own is asked
+  instead: the Android keyboard buzzes and clicks natively, as its switches and the system's
+  settings say. An iPad keyboard without Full Access can do neither.
 - Touch typing counts nowhere: not in the session, the WPM, or the tallies. It warms the live heat
   and shows in the typed-keys strip, except while a secret is being typed.
 - In **dock** mode (`<html class="dock">`) the board fills the width it is given and the height

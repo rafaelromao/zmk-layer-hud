@@ -31,11 +31,15 @@ sealed class Op {
 sealed class PageMessage {
     data class Ops(val ops: List<Op>) : PageMessage()
     data class Size(val height: Int) : PageMessage()
+
+    /** A finger landed on a key: standard, space, delete or return (touch.js kindOf). */
+    data class Feedback(val key: String) : PageMessage()
     object Switch : PageMessage()
     object Unknown : PageMessage()
 
     companion object {
         const val MAX_LENGTH = 64 * 1024
+        val FEEDBACK = setOf("standard", "space", "delete", "return")
 
         fun parse(text: String): PageMessage {
             if (text.length > MAX_LENGTH) return Unknown
@@ -53,6 +57,7 @@ sealed class PageMessage {
                 } })
                 "size" -> m.int("height")?.takeIf { it in 1..10_000 }?.let { Size(it) } ?: Unknown
                 "switch" -> Switch
+                "feedback" -> Feedback(m.string("key")?.takeIf { it in FEEDBACK } ?: "standard")
                 else -> Unknown
             }
         }

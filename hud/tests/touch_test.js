@@ -238,6 +238,55 @@ function page(opts) {
   check(nl(2) - nl(1) >= 300 * narrow.hud.state.scale - 1e-6, "on a narrow screen the halves keep the gap the layout draws");
 })();
 
+// The feedback: a stand-in AudioContext that says which click each source played, and how loud.
+function audioPage(touch, sinkExtra) {
+  const played = [], buzzed = [];
+  class Audio {
+    constructor() { this.sampleRate = 8000; this.state = "suspended"; this.destination = {}; }
+    resume() { this.state = "running"; }
+    createBuffer(ch, n) { const d = new Float32Array(n); return { length: n, getChannelData: () => d }; }
+    createGain() { return { gain: { value: 1 }, connect() {} }; }
+    createBufferSource() {
+      const src = { buffer: null, connect: (g) => { src.gain = g; }, start: () => played.push(src) };
+      return src;
+    }
+  }
+  const m = JSON.parse(JSON.stringify(MSG));
+  m.layers.base[1] = K("⌫");
+  m.actions.table.push(kp(0x2A));
+  m.actions.layers[0][1] = m.actions.table.length - 1;
+  Object.assign(m.touch, { sound: 30, haptics: 1 }, touch || {});     // host/keymap.py's defaults, then the test's
+  const p = loadPage({ AudioContext: Audio, navigator: { vibrate: (ms) => buzzed.push(ms) } });
+  p.hud.load(m);
+  p.hud.setLayers([]);
+  p.hud.setTouch(Object.assign({ output: "hid", repeat: "os", send: () => {} }, sinkExtra || {}));
+  p.tap = (idx) => { p.hud.state.keyEls[idx].fire("pointerdown", { pointerId: idx + 1 }); p.clock.advance(30);
+                     p.board.fire("pointerup", { pointerId: idx + 1 }); };
+  return Object.assign(p, { played, buzzed });
+}
+
+(function aTapClicksAndBuzzesTheMomentAFingerLands() {
+  const p = audioPage();
+  p.hud.state.keyEls[0].fire("pointerdown", { pointerId: 1 });
+  check(p.played.length === 1 && p.buzzed.length === 1, "on the press, not the release: a click and a buzz");
+  p.board.fire("pointerup", { pointerId: 1 });
+  check(p.played.length === 1, "and nothing more when the finger lifts");
+  p.tap(1);
+  const [a, del] = p.played;
+  check(a.buffer !== del.buffer, "Backspace has a click of its own");
+  check(Math.abs(a.gain.gain.value - 0.3 * 0.6) < 1e-9, `as loud as touch.sound says: ${a.gain.gain.value}`);
+  check(eq(p.buzzed, [8, 12]), `a short buzz, a little longer for the special keys: ${JSON.stringify(p.buzzed)}`);
+  const quiet = audioPage({ sound: 0, haptics: 0 });
+  quiet.tap(0);
+  check(quiet.played.length === 0 && quiet.buzzed.length === 0, "touch.sound 0 and touch.haptics 0: neither");
+  const said = [];
+  const native = audioPage({}, { feedback: (kind) => said.push(kind) });
+  native.tap(0);
+  native.tap(1);
+  check(eq(said, ["standard", "delete"]) && native.played.length === 0 && native.buzzed.length === 0,
+        `a sink with feedback of its own is asked instead: ${JSON.stringify(said)}`);
+})();
+
 (function theStatsSitBetweenTheHalvesWhenTheyFit() {
   const split = JSON.parse(JSON.stringify(MSG));
   split.layout = { width: 600, height: 100, keys: [50, 150, 450, 550].map((x) => ({ x, y: 50, w: 100, h: 100, r: 0 })) };

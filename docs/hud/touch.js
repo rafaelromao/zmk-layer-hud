@@ -194,6 +194,7 @@
     const h = hit(e);
     if (!h) return;
     e.preventDefault();
+    feedback(kindOf(h.input));
     try { board.setPointerCapture(e.pointerId); } catch (x) { /* a pointer the board cannot hold */ }
     pointers.set(e.pointerId, h);
     if (data.touch.heat && h.idx != null) hud.warmKey(h.idx);
@@ -211,6 +212,77 @@
   // A long press is a hold, not a menu or a selection.
   board.addEventListener("contextmenu", (e) => { if (typing()) e.preventDefault(); });
   for (const type of ["gesturestart", "dblclick"]) document.addEventListener(type, (e) => { if (typing()) e.preventDefault(); });
+
+  // ---------- feedback ----------
+
+  /* A click, and a buzz where the device has one, the moment a finger lands on a key: on the
+   * press, as phone keyboards give it, not the release, and none while a key repeats. Four clicks,
+   * as Android's keyboard sounds: a key, space, delete and return. touch.sound is the click's volume
+   * (0: silent), touch.haptics the buzz, which a browser gives on Android alone (navigator.vibrate).
+   * A sink with feedback of its own -- the Android keyboard's, which buzzes and clicks as the
+   * system and its settings say -- is asked instead. The clicks are made here, a few milliseconds of
+   * tone and noise each, so there is no sound file to fetch; the audio starts on the first touch,
+   * which is what lets a page make sound at all. */
+  const CLICKS = { standard: [3200, 0.012], space: [1500, 0.02], delete: [2200, 0.016], "return": [1300, 0.022] };
+  let audio = null, clicks = null;
+
+  function kindOf(input) {
+    const acts = data.actions;
+    let a = null;
+    if (input.combo != null) {
+      const c = (acts.combos || [])[input.combo];
+      a = c ? acts.table[c.action] : null;
+    } else {
+      for (const id of (view.ids && view.ids.length ? view.ids : [acts.default || 0])) {
+        const slots = acts.layers[String(id)];
+        const x = slots ? acts.table[slots[input.pos]] : null;
+        if (x && x.op !== "trans") { a = x; break; }
+      }
+    }
+    if (a && a.op === "ht") a = a.tap;
+    const id = a && a.op === "kp" && a.key && a.key.page === 7 ? a.key.id : null;
+    return id === 0x2A || id === 0x4C ? "delete" : id === 0x2C ? "space" : id === 0x28 || id === 0x58 ? "return" : "standard";
+  }
+
+  function feedback(kind) {
+    if (sink.feedback) { try { sink.feedback(kind); } catch (x) { /* the shell's own */ } return; }
+    const volume = Math.min(100, Number(data.touch.sound) || 0) / 100;
+    if (volume > 0) click(kind, volume);
+    if (data.touch.haptics && window.navigator && typeof window.navigator.vibrate === "function") {
+      try { window.navigator.vibrate(kind === "standard" ? 8 : 12); } catch (x) { /* none here */ }
+    }
+  }
+
+  function click(kind, volume) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    try {
+      if (!audio) { audio = new AC(); clicks = makeClicks(audio); }
+      if (audio.state === "suspended") audio.resume();
+      const src = audio.createBufferSource(), gain = audio.createGain();
+      src.buffer = clicks[kind] || clicks.standard;
+      gain.gain.value = volume * 0.6;
+      src.connect(gain);
+      gain.connect(audio.destination);
+      src.start();
+    } catch (x) { /* a page that may make no sound */ }
+  }
+
+  // Each click: a tone at its pitch and a little noise, dying away in a quarter of its length.
+  function makeClicks(ctx) {
+    const out = {};
+    for (const [kind, [freq, dur]] of Object.entries(CLICKS)) {
+      const n = Math.ceil(ctx.sampleRate * (dur + 0.01)), b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0);
+      let seed = 1;
+      for (let i = 0; i < n; i++) {
+        const t = i / ctx.sampleRate;
+        seed = (seed * 16807) % 2147483647;
+        d[i] = Math.exp(-t / (dur / 4)) * (0.6 * Math.sin(2 * Math.PI * freq * t) + 0.4 * (seed / 1073741823.5 - 1));
+      }
+      out[kind] = b;
+    }
+    return out;
+  }
 
   // A page going away (a reload, the panel hidden, a tablet locked) lets everything go.
   function releaseAll() {
