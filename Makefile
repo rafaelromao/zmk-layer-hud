@@ -23,7 +23,7 @@ NODE ?= $(shell command -v node)
 # The audit reads the keyboard's keymap with keymap-drawer, which lives in the venv.
 VENV_PYTHON := $(wildcard .venv/bin/python3)
 
-.PHONY: all install venv test test-firmware test-host test-hud test-site site cli-docs samples audit fixture zmk-tables hidtables zmk-vectors clean help
+.PHONY: all install venv test test-firmware test-host test-hud test-site test-apps test-android site cli-docs samples audit fixture zmk-tables hidtables zmk-vectors clean help
 
 all: test
 
@@ -33,7 +33,7 @@ install: ## set this machine up and put zmk-layer-hud on your PATH, pointing at 
 venv: ## just the virtualenv the feed and the tests run under
 	bin/zmk-layer-hud setup --venv-only
 
-test: test-firmware test-host test-hud test-site ## run every test suite
+test: test-firmware test-host test-hud test-site test-apps ## run every test suite
 
 test-firmware: ## host-side tests for the module's pure encode/decode policy
 	@mkdir -p build
@@ -67,6 +67,25 @@ test-site: ## the landing page: what it is built from, its demo on the HUD page,
 	  PYTHON="$(PYTHON)" $(NODE) site/tests/demo_test.js; \
 	fi
 	@$(PYTHON) site/build.py --check
+
+# The tablets' keyboards (apps/, docs/tablets.md): what runs without their SDKs. The Android sink's own
+# tests need Gradle and a JDK: test-android.
+test-apps: ## the tablets' keyboards: the pages they boot, without the Android SDK or Xcode
+	@if [ -z "$(NODE)" ]; then \
+	  echo "test-apps: node not found, skipping (brew install node)"; \
+	else \
+	  $(NODE) apps/tests/ime_boot_test.js; \
+	fi
+
+GRADLE ?= $(shell command -v gradle)
+ANDROID_JAVA_HOME ?= $(firstword $(wildcard /opt/homebrew/opt/openjdk@21 /usr/lib/jvm/java-21-openjdk))
+
+test-android: ## the Android keyboard's sink (apps/android/sink): Gradle and a JDK 17+, no Android SDK
+	@if [ -z "$(GRADLE)" ]; then \
+	  echo "test-android: gradle not found, skipping (brew install gradle openjdk@21)"; \
+	else \
+	  cd apps/android && $(if $(ANDROID_JAVA_HOME),JAVA_HOME=$(ANDROID_JAVA_HOME)) $(GRADLE) --console=plain :sink:test; \
+	fi
 
 site: ## build the landing page into docs/, which GitHub Pages serves; commit what it writes (STRICT=1: every board, or fail)
 	$(or $(VENV_PYTHON),$(PYTHON)) site/build.py $(if $(STRICT),--strict)

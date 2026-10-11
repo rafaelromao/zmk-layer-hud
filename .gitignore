@@ -27,3 +27,8 @@ hud/timeline.json
 .venv/
 
 hud/keymap-*.json
+
+# the Android keyboard (apps/android): Gradle's and Kotlin's own state, and where the SDK is on this machine
+apps/android/.gradle/
+apps/android/.kotlin/
+apps/android/local.properties
