@@ -348,6 +348,8 @@ def cmd_typing(args):
     if platform.system() == "Linux":
         print("==> the touch keyboard types through a virtual keyboard (/dev/uinput)")
         print(f"    the rule lets the user at the seat make one: {os.path.relpath(TYPING_RULE, ROOT)}")
+        print("    with it, any program you run can type into any window, as the HUD will; deleting")
+        print("    /etc/udev/rules.d/" + os.path.basename(TYPING_RULE) + " takes that back")
         steps = [["cp", TYPING_RULE, "/etc/udev/rules.d/"], ["cp", TYPING_MODULE, "/etc/modules-load.d/"],
                  ["modprobe", "uinput"], ["udevadm", "control", "--reload-rules"],
                  ["udevadm", "trigger", "--subsystem-match=misc", "--sysname-match=uinput"]]

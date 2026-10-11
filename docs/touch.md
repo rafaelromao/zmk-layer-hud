@@ -185,6 +185,13 @@ set, glass changes a few things:
   the banner is one thin line. A split board's halves go to the two sides of the screen, where the
   thumbs are on a tablet held in two hands (`"split": false` keeps it in one piece); a board in one
   piece is centred. The page reports the height it took.
+- **Combo chips** (`touch.combos: "chips"`, the default; `"off"` draws none). A finger cannot
+  press two keys within a combo's timeout the way a hand does, so each combo that fires on the
+  layer up, whose keys are all drawn and that the drawing gives a legend, is a chip between its
+  keys (`view.js chips`): at the middle of its keys' centres, moved off a key to the nearest point
+  between keys within half a key, left out when there is no room there beside the others; 0.38 of
+  a key, 18 to 34 px. A tap on a chip is the combo itself (`engine.down({combo: i})`); held, the
+  chip and its keys light.
 
 ### Messages
 
@@ -219,6 +226,33 @@ For a text sink, `ZmkHidText.textEvents` turns reports into `{kind:"text", text}
 `{kind:"key", key, mods}` (backspace, delete, enter, tab, escape, arrows, home, end, page up and
 down, F-keys) or `{kind:"chord", chars, name, usage, mods}` (a ⌘ or Ctrl shortcut). Every event
 keeps the `usage` and `mods` it came from.
+
+## Native shells: `kbd.js` and `view.js`
+
+A tablet's keyboard may have no DOM to run the page in (an iOS keyboard extension draws its own
+board), so the touch keyboard is also two DOM-free scripts:
+
+- `hud/view.js` is what the board looks like, as pure functions of the keymap message: where the
+  keys go (`geometry`, docked and split as above), which legend each key shows through the layers
+  and how it is marked (`board`: `{banner, keys: [{tap, hold, shifted, glyph, cls}]}`), and the
+  combo chips (`chips`). `hud.js` draws the page with the same functions.
+- `hud/kbd.js` is the touch keyboard for a shell with its own clock and its own drawing:
+
+  ```js
+  const kbd = ZmkKbd.create(keymapMessage, {shortcuts: false})
+  kbd.down(idx, t) / kbd.up(idx, t) / kbd.chord(combo, isDown, t) / kbd.tick(t) / kbd.releaseAll(t)
+    // -> {ops, refused, changed, next}
+  kbd.board()  kbd.geometry(width, maxHeight, split)  kbd.chips(width, maxHeight, split)
+  ```
+
+  `ops` are the text ops above, `refused` the keys that cannot type there (to flash), `changed`
+  whether `board()` would say something else, and `next` the time to call `tick()` at. Its methods
+  take no `this`, so a shell may call them detached.
+
+`apps/fixtures/kbd-golden.json` is what `kbd.js` answers a script of fingers with -- a letter,
+Shift, a held layer, a dead key composed and alone, a refused key, a repeat, a chip -- written by
+`make golden`. The iPad's `JSKbd` replays it in JavaScriptCore and must answer the same, step by
+step, and the Android sink reads every op in it. [docs/tablets.md](tablets.md) has the tablets.
 
 ## Remote mode
 

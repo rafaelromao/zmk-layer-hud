@@ -23,6 +23,9 @@ between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`
 - **Live**: under `sync --watch`, edit the keymap or its drawing and the HUD redraws; every size
   and timing lives in one config file.
 - **Native panels**: a macOS overlay panel, a Hyprland layer-shell panel on Linux.
+- **A keyboard to type on**: tap a drawn key and it does what it does on your keyboard, hold-taps,
+  layers and combos included. Docked along the bottom of a touch screen, on a tablet's browser, or
+  as an iPad's or Android tablet's own keyboard ([the touch keyboard](#the-touch-keyboard)).
 
 ## Requirements
 
@@ -210,6 +213,9 @@ flags of any one of them, and [docs/cli.md](docs/cli.md) has every verb's in one
 | `show`, `hide`, `toggle` | bring the HUD on screen; take it off, still running and counting; whichever it is not |
 | `status` | is it running, and which of the keyboard's two channels is live |
 | `log` | follow the panel and feed logs |
+| `dock [toggle\|on\|off\|status]` | the touch keyboard: the HUD docked along the bottom of the screen, typing, or floating again |
+| `typing [status\|setup]` | whether the touch keyboard may type, and getting it the leave to (a uinput rule on Linux, Accessibility on macOS) |
+| `remote [on\|off\|status\|unpair]` | a tablet's browser as the touch keyboard, over the local network: the link to open on it (`--app` for the iPad app's) |
 | `session [list\|new\|save\|load\|reset\|delete\|rename-layer\|export\|history\|compare]` | the typing sessions: the active one, naming it, starting or loading another, drawing its heatmap as an SVG, its days, two side by side |
 | `heatmap [live\|session\|physical\|speed\|off]` | what the keys glow with: what was just typed, every press this session on the layer on screen or on all of them, each key's time, or nothing |
 | `doctor` | check this machine and say what is missing |
@@ -231,6 +237,36 @@ privileged step and asks before running it, and `setup --no-sudo` prints them wi
 Two flags on `feed` read alike and are not: `--no-keys` sends layers only, neither the keys typed
 nor the positions pressed, while `--no-hid-keys` drops just the HID half — the typed-keys strip
 and the shift flag — and keeps positions.
+
+## The touch keyboard
+
+The HUD can type. Tap a drawn key and it does what that key does on your keyboard: the HUD runs
+your keymap as the firmware would ([docs/touch.md](docs/touch.md)), from the bindings `import`
+and `sync` capture from your ZMK repo, or from the legends of a drawing without one. A long press is
+a hold, a hold let go alone latches (a one-shot, locked on a second tap), two fingers chord, and
+each combo of the layer up is a chip between its keys.
+
+- **Docked** (`zmk-layer-hud dock`, `start --dock`, or `dock: {start: 1}`), the HUD is a strip
+  along the bottom of the touch screen as wide as it, a split board's halves at its sides, and it
+  never takes the keyboard from the app you type into. On Hyprland it reserves its height, so
+  windows tile above it; on macOS it lies over the bottom of the screen, as macOS's own
+  Accessibility Keyboard does. The menubar and the Omarchy bar have Dock and Float.
+- **Typing needs leave once**: `zmk-layer-hud typing setup`. On Linux the HUD types through a
+  virtual keyboard, and the setup installs a udev rule that lets the user at the seat make one
+  (asking before each sudo step); on macOS it asks for Accessibility. Either way your layout
+  applies, as it does to your keyboard.
+- **A tablet's browser** (`zmk-layer-hud remote on`): the HUD is served on the local network and
+  the command prints a link, and a code to scan with `qrencode`, for the tablet. The link pairs it;
+  the tablet's taps are typed here. Read [what plain HTTP leaves
+  open](docs/touch.md#remote-mode) before using it on a network you do not trust.
+- **A tablet's own keyboard**: an iPad keyboard and an Android input method, built from `apps/`
+  ([docs/tablets.md](docs/tablets.md)). They take your keymap as a file from
+  `zmk-layer-hud keymap -o board.json`, or on the iPad from `remote on --app`.
+
+The config's `touch:`, `dock:` and `remote:` sections tune it: how long a press is a hold, the
+screen to dock on and its share, the port and how long pairing stays open
+([config/example.yaml](config/example.yaml)). Touch typing counts nowhere: not the session, the
+WPM or the tallies.
 
 ## Configuration
 
@@ -570,6 +606,11 @@ beside anything that is wrong. What it cannot see:
   misses, a session keeps the keys as counts per key and layer, never their order (`feed.sessions:
   0` keeps none), and a keyboard cabled to one machine while typing over BLE to another sends its
   positions to the cabled one's port too.
+- The touch keyboard emulates ZMK's core behaviours -- keys, mod-taps and layer-taps, layers,
+  sticky keys, mod-morph, tap dance, macros, key repeat, caps word, conditional layers -- and
+  types a key's legend for the rest (module behaviours: adaptive keys, leader, OS detection).
+  `sync` says how much of a keymap is emulated. Mods held on the physical keyboard and keys
+  tapped on glass do not combine.
 - The HUD's socket takes one port (`ZMKHUD_PORT`, 8766). If something else holds it when the macOS
   panel starts (a `zmk-layer-hud feed` of its own, say), the panel runs without a socket and
   `zmk-layer-hud poke` cannot reach it. Its log says so. The socket takes a token in its URL path,

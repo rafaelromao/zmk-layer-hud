@@ -207,3 +207,25 @@ decoder would have emitted.
 This exercises the page — layout, legends, strip, combo grouping — and nothing below it. The
 keyboard, the firmware and the wire format are never involved, so a HUD that looks right under
 `poke` can still be fed wrong by a real keyboard.
+
+## The touch keyboard
+
+The HUD types when its keys are touched ([docs/touch.md](touch.md) is the contract). What changes
+here:
+
+- The `keymap` message carries `schema` (its own version: a tablet app refuses one newer than it
+  knows), `actions` (what every key does, compiled from the bindings `import` captured) and `touch`
+  (the config's `touch:` settings).
+- The page sends typing to its panel as report snapshots, `{"kind":"hid","v":1,"seq":n,"mods":b,
+  "keys":[...]}`, **through the panel's native bridge only**. This socket never takes `hid`: a
+  client may send in the kinds above, which draw, and none of them types. The token in the socket's
+  URL sits in every page that connects, which is why it is not enough to type with.
+- A panel tells its page `{"kind":"touch","on":true,"sink":{...}}` when it may type,
+  `{"kind":"typing","state":"ok|off|denied|missing|error","fix":...}` when it cannot and why, and
+  `{"kind":"dock","on":true,"max_height":N,"split":true}` when it is docked. These go through the
+  bridge too, and are not on this socket.
+- **Remote mode** is a second server, off until `zmk-layer-hud remote on`: the page and a socket of
+  its own on port 8768, on the local network, for a paired tablet. It shares nothing with this
+  socket -- not the token, not the stream: a tablet is sent the keymap, whether a secret is being
+  typed and whether the computer can type, never what the keyboard types. Its pairing and messages
+  are in [docs/touch.md](touch.md#remote-mode).
