@@ -132,27 +132,35 @@ bindings, how many from their legends, and which behaviours it could not run.
 ## The engine
 
 ```js
-const eng = ZmkEngine.create(actions, { touch, sink, comboTerm });
+const eng = ZmkEngine.create(actions, { touch, sink, trace });
 eng.down({pos: n} | {combo: i}, t)  -> events      // t: milliseconds, any monotonic clock
 eng.up({pos: n} | {combo: i}, t)    -> events
 eng.tick(t)                         -> events      // what fell due by t
 eng.nextDeadline()                  -> ms | null   // when tick next has something to do
 eng.adopt(ids, t)                   -> events      // while idle: take the physical keyboard's layers
 eng.releaseAll(t)                   -> events      // everything up: a reload, a hidden page
-eng.state()                         -> { layers, locks, mods, capsWord, inputs, idle }
+eng.state()                         -> { layers, locks, top, mods, capsWord, down, latches, idle }
 ZmkEngine.drive(eng, { now, setTimeout, clearTimeout, emit })   // arms one timer for a page
 ```
+
+`touch` is the message's `touch` settings, or null; `sink` is `{repeat, pages, mouse}` from the
+host's sink; `trace` adds the keycode events ZMK's tests compare.
 
 Events:
 
 ```js
 { kind: "report", t, seq, mods, keys: [usage], consumer: [usage], mouse: { buttons } }  // on change
 { kind: "layers", t, ids: [top first], locks: [...] }
+{ kind: "latches", t, latches: [{ pos, kind: "mod" | "layer", state: "oneshot" | "locked" }] }
 { kind: "unsupported", t, input, raw, why }
+{ kind: "keycode", t, state, page, id, implicit, explicit }   // with trace
 ```
 
-With `touch: null` it is the firmware: ZMK's layer rules, hold-tap decisions, sticky keys and
-macros, held to vectors taken from ZMK's own tests. With `touch` set, glass changes a few things:
+With `touch: null` it is the firmware: ZMK's event order, layer rules, hold-tap decisions and
+captured events, sticky keys, mod-morphs, tap dances, the macro queue, key repeat and caps word,
+ported from ZMK's sources and held to 182 of ZMK's own behaviour tests
+(`hud/tests/fixtures/zmk_vectors.json`, written by `make zmk-vectors ZMK_DIR=...`). With `touch`
+set, glass changes a few things:
 
 | Gesture | What it does |
 |---|---|

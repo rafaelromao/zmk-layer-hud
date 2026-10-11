@@ -23,7 +23,7 @@ NODE ?= $(shell command -v node)
 # The audit reads the keyboard's keymap with keymap-drawer, which lives in the venv.
 VENV_PYTHON := $(wildcard .venv/bin/python3)
 
-.PHONY: all install venv test test-firmware test-host test-hud test-site site cli-docs samples audit fixture zmk-tables hidtables clean help
+.PHONY: all install venv test test-firmware test-host test-hud test-site site cli-docs samples audit fixture zmk-tables hidtables zmk-vectors clean help
 
 all: test
 
@@ -51,7 +51,10 @@ test-hud: ## the HUD page: every key and combo, the heatmap, the strip, and ever
 	  $(NODE) hud/tests/stats_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/strip_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/words_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
-	  PYTHON="$(PYTHON)" $(NODE) hud/tests/play_test.js; \
+	  PYTHON="$(PYTHON)" $(NODE) hud/tests/play_test.js && \
+	  $(NODE) hud/tests/engine_test.js && \
+	  PYTHON="$(PYTHON)" $(NODE) hud/tests/hidtext_test.js && \
+	  PYTHON="$(PYTHON)" $(NODE) hud/tests/engine_legends_test.js; \
 	fi
 
 test-site: ## the landing page: what it is built from, its demo on the HUD page, and whether docs/ is behind
@@ -74,6 +77,9 @@ zmk-tables: ## write host/zmk_tables.py, ZMK's names and built-in behaviours, fr
 
 hidtables: ## write hud/hidtables.js, hudfeed's report tables for the page (the host tests fail when it is behind)
 	$(PYTHON) host/hidtables_gen.py --write
+
+zmk-vectors: ## write hud/tests/fixtures/zmk_vectors.json, ZMK's behaviour tests for the touch keyboard's engine (ZMK_DIR=..., the venv)
+	$(or $(VENV_PYTHON),$(PYTHON)) host/zmk_vectors_gen.py --write $(if $(ZMK_DIR),--zmk $(ZMK_DIR))
 
 audit: ## the drawing against the keyboard's own keymap (SOURCE=<working copy>, else the one import recorded)
 	$(or $(VENV_PYTHON),$(PYTHON)) host/ways.py --audit $(if $(CONFIG),--config $(CONFIG)) $(if $(SOURCE),--source $(SOURCE))

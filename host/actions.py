@@ -23,6 +23,7 @@ Stdlib only: build_message runs wherever the HUD does.
 
 import json
 import re
+import sys
 from collections import Counter
 
 import uskeys
@@ -212,7 +213,8 @@ class Compiler:
                     "retro_tap": prop("retro-tap", "bool", False),
                     "trigger_positions": trigger or None,
                     "trigger_on_release": prop("hold-trigger-on-release", "bool", False),
-                    "hold_while_undecided": prop("hold-while-undecided", "bool", False)}
+                    "hold_while_undecided": prop("hold-while-undecided", "bool", False),
+                    "hold_while_undecided_linger": prop("hold-while-undecided-linger", "bool", False)}
         if c == "zmk,behavior-sticky-key":
             phandles = prop("bindings", "phandles") or []
             if not phandles:
@@ -380,9 +382,12 @@ class Legends:
         """The action for drawer key `key` on drawer layer `layer`, never None."""
         typing = layer in self.typing if typing is None else typing
         kind = key.get("type") or "key"
-        if kind == "trans" or kind.startswith("held"):
+        # The key holding the layer falls through to what holds it; a "held alternate" one types its
+        # own legend on the layer (the Diamond's nav thumb is ⎀ there).
+        if kind == "trans" or kind == "held" or (kind.startswith("held") and not key.get("tap")):
             return {"op": "trans"}
-        if kind in ("blank", "ghost"):
+        # A ghost key is drawn faint, not absent: the Diamond's caps-word layer draws its capitals so.
+        if kind == "blank":
             return {"op": "none"}
         tap, hold, shifted = key.get("tap") or "", key.get("hold") or "", key.get("shifted") or ""
         tapped = self.tap(tap, hold, shifted, typing)
@@ -419,7 +424,9 @@ class Legends:
             if hold == self.toggle_label:
                 return {"op": "tog", "layer": layer, "mode": "flip", "locking": False}
             return {"op": "mo", "layer": layer, "locking": False}
-        if shifted == "repeat":
+        # The repeat mark on a key whose legend is no character (↻); a "." marked so on a vim layer
+        # is Vim's repeat, and types a dot.
+        if shifted == "repeat" and not self.keys(tap, typing):
             return {"op": "repeat", "pages": [KEY_PAGE]}
         mod = modifier_key(tap)
         if mod:
@@ -562,7 +569,9 @@ def build(drawing_layers, zmk_layers, pos_to_idx, base, extras, raw=None, combos
                     action = dict(action, raw=text)
                     count["keymap"] += 1
             else:
-                action = legend_of(zid, pos) or {"op": "none"}
+                # A layer drawn as nothing (the Diamond's ALT OS) is see-through, as the board draws it.
+                drawn = (zmk_layers.get(str(zid)) or {}).get("drawer")
+                action = legend_of(zid, pos) or ({"op": "none"} if drawn else {"op": "trans"})
                 count["legend"] += 1
             slots.append(table.add(action))
         layers[str(zid)] = slots
@@ -608,15 +617,36 @@ def _combos(keymap, compiler, legends, drawn, zmk_layers, pos_to_idx, combo_term
                         "term": int(c.get("timeout-ms") or combo_term), "idle": int(c.get("require-prior-idle-ms") or 0),
                         "slow_release": bool(c.get("slow-release")), "drawn": hits[0] if hits else None})
         return out
+    # A combo works through a layer drawn as nothing, as its keys do.
+    undrawn = [int(zid) for zid, z in (zmk_layers or {}).items() if not (z or {}).get("drawer")]
     for i, c in enumerate(drawn or []):
         positions = [idx_to_pos.get(int(p)) for p in c.get("positions") or []]
         if None in positions:
             continue
         layer_ids = sorted({zid for name in c.get("layers") or [] for zid in ids_of.get(name, [])})
+        if layer_ids:
+            layer_ids = sorted(set(layer_ids) | set(undrawn))
         out.append({"positions": sorted(positions), "layers": layer_ids or None,
                     "action": table.add(legends.action(c["key"], None, typing=False)), "term": int(combo_term),
                     "idle": 0, "slow_release": False, "drawn": i})
     return out
+
+
+def from_message(m):
+    """The actions of a keymap message that has none -- a fixture made before them -- built from its
+    legends, as build_message would for a drawing with no keymap behind it."""
+    return build(m["layers"], m["zmk_layers"], m["positions"], m["base"], m.get("extras") or {}, None,
+                 m.get("combos") or [], m.get("combo_term", 50), "sticky", bool(m.get("altgr")))
+
+
+def main(argv):
+    if len(argv) == 2 and argv[0] == "--message":
+        with open(argv[1], encoding="utf-8") as f:
+            json.dump(from_message(json.load(f)), sys.stdout, ensure_ascii=False)
+        print()
+        return 0
+    sys.stderr.write("usage: python3 host/actions.py --message KEYMAP.json   the actions its legends give\n")
+    return 2
 
 
 def summary(actions):
@@ -635,3 +665,7 @@ def summary(actions):
         top = ", ".join(f"{w} ({n})" for w, n in list(c["why"].items())[:4])
         line += f"; not run: {top}"
     return line
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

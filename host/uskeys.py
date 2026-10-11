@@ -172,16 +172,20 @@ def main(argv):
                 print(legend)
         return 0
     if "--events" in argv:
+        altgr = "--altgr" in argv   # a Linux host's AltGr (hudfeed ALTGR_CHARS), not macOS's Option
         for line in sys.stdin:
             legend = line.rstrip("\n")
             if not legend:
                 continue
-            events = events_for(legend)
+            events = events_for(legend, altgr)
             # Another spelling of the same named key is not a wrong chip: the strip draws one
             # glyph per key, and a keymap may spell it ↹ where the strip says ⇥.
             name = NAME_FOR_LEGEND.get(legend)
             accepts = sorted({l for l, n in NAME_FOR_LEGEND.items() if name and n == name} | {legend})
-            print(json.dumps({"legend": legend, "events": events, "accepts": accepts}, ensure_ascii=False))
+            # The snapshots too: hud/tests/hidtext_test.js decodes them with the page's port of the
+            # decoder and holds it to these events.
+            print(json.dumps({"legend": legend, "events": events, "accepts": accepts,
+                              "snapshots": keystrokes_for(legend, altgr)}, ensure_ascii=False))
         return 0
     sys.stderr.write(__doc__)
     return 2

@@ -283,8 +283,13 @@ def layer_nodes(dts, keeps):
     firmware that keeps reserved layers in place (`keeps`, see studio()); elsewhere it has none,
     and the ids after it move up. The layer list and the captured bindings both come from here, so
     they cannot number the layers differently."""
-    out = []
+    # Two keymap nodes are one node in devicetree, and a layer node a second one names again is the
+    # same layer, written over: it keeps its place and takes the later node's properties.
+    by_name = {}
     for node in [n for p in dts.get_compatible_nodes("zmk,keymap") for n in p.children]:
+        by_name[node.name] = node
+    out = []
+    for node in by_name.values():
         name = node.get_string("label|display-name") or node.name.removeprefix("layer_").removesuffix("_layer")
         reserved = node.get_string("status") == "reserved"
         if reserved and not keeps:
