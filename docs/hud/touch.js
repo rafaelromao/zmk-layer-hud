@@ -170,7 +170,7 @@
     let best = null, bestD = Infinity;
     g.keys.forEach((k, idx) => {
       const a = -(k.r || 0) * Math.PI / 180;
-      const dx = x - (g.offsetX + k.x * g.scale), dy = y - k.y * g.scale;
+      const dx = x - g.centers[idx].x, dy = y - g.centers[idx].y;
       const lx = dx * Math.cos(a) - dy * Math.sin(a), ly = dx * Math.sin(a) + dy * Math.cos(a);
       const d = Math.hypot(Math.max(0, Math.abs(lx) - (k.w * g.scale - g.gap) / 2),
                            Math.max(0, Math.abs(ly) - (k.h * g.scale - g.gap) / 2));

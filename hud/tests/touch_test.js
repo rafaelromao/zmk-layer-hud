@@ -210,6 +210,34 @@ function page(opts) {
   check(!tall.document.documentElement.classList.contains("dock") && tall.hud.state.offsetX === 0, "undocked, as before");
 })();
 
+(function aSplitBoardsHalvesGoToTheSides() {
+  // Two keys a side, a gap of two keys between the halves.
+  const split = JSON.parse(JSON.stringify(MSG));
+  split.layout = { width: 600, height: 100, keys: [50, 150, 450, 550].map((x) => ({ x, y: 50, w: 100, h: 100, r: 0 })) };
+  const p = loadPage();
+  p.hud.load(split);
+  p.board.style.width = "1600px";
+  p.hud.setDock({ on: true, max_height: 240 });
+  const st = p.hud.state, left = (i) => parseFloat(st.keyEls[i].style.left), w = parseFloat(st.keyEls[0].style.width);
+  check(Math.abs(left(0) - (st.gap + st.gap / 2)) < 1e-6, `the left half against the left side: ${left(0)}`);
+  check(Math.abs(left(3) + w - (1600 - st.gap - st.gap / 2)) < 1e-6, `the right half against the right side: ${left(3) + w}`);
+  check(Math.abs(left(1) - left(0) - 100 * st.scale) < 1e-6, "each half keeps its own spacing");
+  check(Math.abs(st.scale - 2) < 1e-9, `as tall as the host allows: scale ${st.scale}`);
+  p.sent = [];
+  p.hud.setTouch({ output: "hid", repeat: "os", send: (m) => p.sent.push(m) });
+  const c = st.centers[3];
+  p.board.fire("pointerdown", { pointerId: 1, clientX: c.x + 100 * st.scale / 2 + 1, clientY: c.y });
+  check(p.sent.some((m) => m.kind === "hid" && m.mods === 2), "a touch at the right half's edge is its key (Shift)");
+  p.hud.setDock({ on: true, max_height: 240, split: false });
+  check(Math.abs(left(1) + w + st.gap - left(2) - 2 * 100 * st.scale) < 1e-6 || st.offsetX > 0, "split: false keeps the board in one piece, centred");
+  const narrow = loadPage();
+  narrow.hud.load(split);
+  narrow.board.style.width = "600px";
+  narrow.hud.setDock({ on: true, max_height: 600 });
+  const nl = (i) => parseFloat(narrow.hud.state.keyEls[i].style.left);
+  check(nl(2) - nl(1) >= 300 * narrow.hud.state.scale - 1e-6, "on a narrow screen the halves keep the gap the layout draws");
+})();
+
 for (const f of fail) console.log("FAIL " + f);
 console.log(`the touch keyboard on the page: ${checks} checks, ${fail.length} failures`);
 process.exit(fail.length ? 1 : 0);

@@ -162,15 +162,36 @@
     state.keyEls = [];
     const width = board.clientWidth || 570;
     let scale = width / lay.width, gap = GAP, offsetX = 0;
+    let offsetOf = () => offsetX;
     if (state.dock) {
-      // Docked: as wide as the screen allows and no taller than the host lets the strip be, centred.
-      // The gap grows with the keys, so a board scaled up for glass is not all key.
+      // Docked: as wide as the screen allows and no taller than the host lets the strip be. A split
+      // board's halves go to the sides, where the thumbs are on a tablet held in two hands; a board
+      // in one piece is centred. The gap grows with the keys, so a board scaled up for glass is not
+      // all key.
       const room = Math.max(40, (state.dock.maxHeight || window.innerHeight || 360) - DOCK_CHROME);
-      scale = Math.min(scale, room / lay.height);
-      offsetX = Math.max(0, (width - lay.width * scale) / 2);
-      gap = Math.max(2, Math.min(8, Math.round(Math.min(...lay.keys.map(k => k.h)) * scale * 0.1)));
+      const split = state.dock.split !== false ? halves(lay) : null;
+      if (split) {
+        const ext = (keys, side) => keys.map(k => k.x + side * k.w / 2);
+        const left = lay.keys.filter((k, i) => split.left.has(i)), right = lay.keys.filter((k, i) => !split.left.has(i));
+        const lMin = Math.min(...ext(left, -1)), lMax = Math.max(...ext(left, 1));
+        const rMin = Math.min(...ext(right, -1)), rMax = Math.max(...ext(right, 1));
+        // The halves never come closer than the layout draws them, a gap's margin at either side.
+        const span = (lMax - lMin) + (rMax - rMin) + split.gap;
+        const gapAt = s => Math.max(2, Math.min(8, Math.round(Math.min(...lay.keys.map(k => k.h)) * s * 0.1)));
+        scale = Math.min(width / span, room / lay.height);
+        gap = gapAt(scale);
+        scale = Math.min((width - 2 * gap) / span, room / lay.height);
+        const toLeft = gap - lMin * scale, toRight = width - gap - rMax * scale;
+        offsetOf = idx => (split.left.has(idx) ? toLeft : toRight);
+      } else {
+        scale = Math.min(scale, room / lay.height);
+        offsetX = Math.max(0, (width - lay.width * scale) / 2);
+        gap = Math.max(2, Math.min(8, Math.round(Math.min(...lay.keys.map(k => k.h)) * scale * 0.1)));
+      }
     }
     state.scale = scale; state.offsetX = offsetX; state.gap = gap;
+    // Each key's centre on the board, in px: what a touch between keys is measured from (touch.js).
+    state.centers = lay.keys.map((k, idx) => ({ x: offsetOf(idx) + k.x * scale, y: k.y * scale }));
     board.style.height = Math.ceil(lay.height * scale) + "px";
     // Legends scale with the typical key height (see --kh in hud.css).
     const kh = Math.min(...lay.keys.map(k => k.h)) * scale - gap;
@@ -186,11 +207,11 @@
       e.dataset.idx = idx;
       e.title = `#${idx}`;
       const w = k.w * scale - gap, h = k.h * scale - gap;
-      const a = (k.r || 0) * Math.PI / 180, cx = offsetX + k.x * scale, cy = k.y * scale;
+      const a = (k.r || 0) * Math.PI / 180, cx = state.centers[idx].x, cy = state.centers[idx].y;
       const hw = (Math.abs(w * Math.cos(a)) + Math.abs(h * Math.sin(a))) / 2;
       const hh = (Math.abs(w * Math.sin(a)) + Math.abs(h * Math.cos(a))) / 2;
       state.keyBoxes[idx] = { l: cx - hw, t: cy - hh, r: cx + hw, b: cy + hh };
-      e.style.left = (offsetX + k.x * scale - w / 2) + "px";
+      e.style.left = (state.centers[idx].x - w / 2) + "px";
       e.style.top = (k.y * scale - h / 2) + "px";
       e.style.width = w + "px";
       e.style.height = h + "px";
@@ -203,6 +224,21 @@
       state.keyEls[idx] = e;
     });
     paintHeat();   // the glow lives by index, not on the elements just replaced
+  }
+
+  // The two halves of a split board as its layout draws them: the keys left of the widest gap
+  // between columns, and the rest. null for a board in one piece (a gap narrower than half a key).
+  function halves(lay) {
+    const spans = lay.keys.map(k => ({ l: k.x - k.w / 2, r: k.x + k.w / 2 })).sort((a, b) => a.l - b.l);
+    let reach = -Infinity, best = null;
+    for (const s of spans) {
+      if (reach > -Infinity && s.l - reach > (best ? best.gap : 0)) best = { gap: s.l - reach, at: s.l };
+      reach = Math.max(reach, s.r);
+    }
+    if (!best || best.gap < Math.min(...lay.keys.map(k => k.w)) / 2) return null;
+    const left = new Set();
+    lay.keys.forEach((k, idx) => { if (k.x < best.at) left.add(idx); });
+    return { left, gap: best.gap };
   }
 
   // ZMK layer id → keymap entry ({name, drawer, label, cls}); falls back to the YAML order.
@@ -2155,9 +2191,10 @@
     },
     // Docked along the bottom of a screen ({"kind":"dock","on":true,"max_height":N}): the board as
     // wide as the window and no taller than the host allows, and nothing around it but the banner.
+    // A split board's halves go to the sides unless it says "split": false.
     setDock(d) {
       const on = !!(d && d.on);
-      state.dock = on ? { maxHeight: Number(d.max_height) || null } : null;
+      state.dock = on ? { maxHeight: Number(d.max_height) || null, split: d.split !== false } : null;
       document.documentElement.classList.toggle("dock", on);
       if (state.data) { buildBoard(); render(); }
       postSize();
@@ -2178,8 +2215,8 @@
     relayout() { postSize(); },
     // Where the keys are drawn, for hit-testing a touch between them (touch.js).
     geometry() {
-      return state.data ? { scale: state.scale, offsetX: state.offsetX || 0, gap: state.gap || GAP,
-                            keys: state.data.layout.keys, posOf: state.posOf } : null;
+      return state.data ? { scale: state.scale, gap: state.gap || GAP, keys: state.data.layout.keys,
+                            centers: state.centers, posOf: state.posOf } : null;
     },
     // What the keys glow with: "live" (what was just typed), "session" (every press counted) or
     // "off". The bar's last chip cycles it too.

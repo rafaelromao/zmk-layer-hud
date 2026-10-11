@@ -181,8 +181,10 @@ set, glass changes a few things:
 - Touch typing counts nowhere: not in the session, the WPM, or the tallies. It warms the live heat
   and shows in the typed-keys strip, except while a secret is being typed.
 - In **dock** mode (`<html class="dock">`) the board fills the width it is given and the height
-  the host allows (`max_height`), centred; the stats column, the status line and the strip are
-  hidden, and the banner is one thin line. The page reports the height it took.
+  the host allows (`max_height`); the stats column, the status line and the strip are hidden, and
+  the banner is one thin line. A split board's halves go to the two sides of the screen, where the
+  thumbs are on a tablet held in two hands (`"split": false` keeps it in one piece); a board in one
+  piece is centred. The page reports the height it took.
 
 ### Messages
 
@@ -202,7 +204,7 @@ Host → page:
 
 ```json
 {"kind":"touch","on":true,"sink":{"output":"hid","repeat":"os","pages":[7],"shortcuts":true}}
-{"kind":"dock","on":true,"max_height":360}
+{"kind":"dock","on":true,"max_height":360,"split":true}
 {"kind":"typing","state":"denied","fix":"zmk-layer-hud typing setup"}
 ```
 
