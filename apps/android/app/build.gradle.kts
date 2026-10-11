@@ -28,12 +28,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-
-    sourceSets {
-        getByName("main") {
-            assets.srcDir(layout.buildDirectory.dir("generated/hud-assets"))
-        }
-    }
 }
 
 dependencies {
@@ -44,15 +38,31 @@ dependencies {
 
 val hudFiles = (JsonSlurper().parse(rootDir.resolve("../hud-files.json")) as Map<*, *>)["android"] as List<*>
 
-val syncHud by tasks.registering(Sync::class) {
-    description = "Copies the HUD's page (hud-files.json) into the app's assets."
-    from(rootDir.resolve("../../hud")) {
-        include(hudFiles.map { it as String })
-        into("hud")
+// The HUD's page into the app's assets, under hud/: a generated directory the Variant API wires into
+// every variant (AGP 9 takes no provider through the old source-set API).
+abstract class SyncHud : DefaultTask() {
+    @get:InputFiles
+    abstract val pages: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @TaskAction
+    fun copy() {
+        val out = outputDir.get().asFile
+        out.deleteRecursively()
+        val hud = out.resolve("hud").apply { mkdirs() }
+        pages.forEach { it.copyTo(hud.resolve(it.name), overwrite = true) }
     }
-    into(layout.buildDirectory.dir("generated/hud-assets"))
 }
 
-tasks.named("preBuild") {
-    dependsOn(syncHud)
+val syncHud = tasks.register<SyncHud>("syncHud") {
+    description = "Copies the HUD's page (hud-files.json) into the app's assets."
+    pages.from(hudFiles.map { rootDir.resolve("../../hud/$it") })
+}
+
+androidComponents {
+    onVariants { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(syncHud, SyncHud::outputDir)
+    }
 }
