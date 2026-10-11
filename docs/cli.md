@@ -471,8 +471,8 @@ Host feed for the zmk-layer-hud pages. One source: the keyboard's own signal cha
 
 options:
   -h, --help            show this help message and exit
-  --config CONFIG       zmk-layer-hud config (default: $ZMKHUD_CONFIG or
-                        ~/.config/zmk-layer-hud/config.yaml)
+  --config CONFIG       zmk-layer-hud config (default: $ZMKHUD_CONFIG or ~/.config/zmk-layer-
+                        hud/config.yaml)
   --stdout              print messages as JSON lines (macOS host)
   --no-ws               do not serve the WebSocket
   --port PORT

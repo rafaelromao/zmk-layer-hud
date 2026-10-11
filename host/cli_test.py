@@ -185,8 +185,11 @@ class HostScript(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        # start and restart go into the venv first (NEEDS_VENV), which a checkout without one --
+        # CI's -- does not have: what is tested here is what comes after.
         patches = [mock.patch.object(cli, "STATE", self.tmp.name),
-                   mock.patch.object(cli, "definitions_missing", lambda: None)]
+                   mock.patch.object(cli, "definitions_missing", lambda: None),
+                   mock.patch.object(cli, "reexec_into_venv", lambda: None)]
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
