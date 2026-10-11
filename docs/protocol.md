@@ -100,7 +100,10 @@ stranger.
 
 The page's hide button sends nothing here: it posts `{"kind":"hide"}` to its own panel (the macOS
 bridge, or the Linux panel's `zmkhudsize` handler), and the panel goes off screen while the page
-goes on counting. `zmk-layer-hud show` brings it back. The page posts the live WPM the same way,
+goes on counting. `zmk-layer-hud show` brings it back. The stats column's heading, the HUD's name,
+posts `{"kind":"site"}` the same way, and the panel opens the landing page in the default browser.
+The message names no address: the panel opens only the one it knows. In a plain browser the
+heading is an ordinary link and posts nothing. The page posts the live WPM the same way,
 `{"kind":"wpm","wpm":N}` each time it changes, for the panel to pass to the menubar icon. And it
 posts what its stats column shows, at most once a second and only when that changed, for the
 icons' menus and Omarchy's hover panel:

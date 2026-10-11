@@ -473,7 +473,7 @@
     // panel. The slider's whole box, not just its track, so a press a little off the thumb works.
     let rects = [];
     try {
-      const controls = [$("side"), $("hide"), $("close"), bar.layer && bar.layer.pick]
+      const controls = [$("side"), $("hide"), $("close"), $("statsHead"), bar.layer && bar.layer.pick]
         .concat(["heatmap", "theme", "opacity"].map(n => bar[n] && bar[n].chip));
       rects = controls.filter(Boolean).map(e => e.getBoundingClientRect())
         .filter(r => r.width > 0 && r.height > 0)
@@ -2023,6 +2023,17 @@
     if (h) h.postMessage(JSON.stringify({ kind: "hide" }));
   });
 
+  // The stats block's heading, the HUD's name, links to the landing page. A panel's web view opens
+  // no link of its own, so there the panel is asked to open it in the browser; it knows the one
+  // address, and the page names none. A browser follows the link into a tab of its own.
+  const siteLink = $("statsHead");
+  if (siteLink) siteLink.addEventListener("click", e => {
+    const h = panelHandler();
+    if (!h) return;
+    e.preventDefault();
+    h.postMessage(JSON.stringify({ kind: "site" }));
+  });
+
   // ✕: tell the host to close. Hammerspoon listens on a user-content controller; a
   // WebSocket host receives {"kind":"close"}.
   const closeBtn = $("close");
@@ -2056,9 +2067,13 @@
   // Framed by another page (the landing page's demo): that page has the keyboard, and sends what
   // is typed through hud.receive. So the dev keydown listener below stays off -- it swallows every
   // key but F5 and ⌘ chords, Tab included, and Tab is the way out of the frame -- and the ✕, which
-  // has no host to close, goes (hud.css html.embed).
+  // has no host to close, goes (hud.css html.embed). The heading is no link there: the page around
+  // the frame is the one it opens.
   const embedded = params.get("embed") !== null;
-  if (embedded) document.documentElement.classList.add("embed");
+  if (embedded) {
+    document.documentElement.classList.add("embed");
+    if (siteLink) siteLink.removeAttribute("href");
+  }
   const wsUrl = local ? params.get("ws") : null;
   if (wsUrl) {
     const connect = () => {

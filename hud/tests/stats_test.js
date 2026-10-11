@@ -744,6 +744,48 @@ function main() {
     p.document.getElementById("hide").click();     // and a press there does nothing, and throws nothing
   }
 
+  // ---------- the heading: the landing page ----------
+  {
+    // The stats column is headed by the HUD's name, a link to the landing page, at the address the
+    // panels open (host/panelstate.py SITE): the page and the panels name the same one.
+    const html = fs.readFileSync(path.join(__dirname, "..", "index.html"), "utf8");
+    const head = /<a id="statsHead"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/.exec(html);
+    const site = /^SITE = "([^"]*)"/m.exec(fs.readFileSync(path.join(__dirname, "..", "..", "host", "panelstate.py"), "utf8"));
+    check("the stats column is headed ZMK Layer HUD", head && head[2] === "ZMK Layer HUD", head && head[2]);
+    check("and links to the landing page the panels open", head && site && head[1] === site[1],
+          JSON.stringify([head && head[1], site && site[1]]));
+    // A panel's web view opens no link: the page asks the panel, and the link's own action is kept
+    // from happening, or the panel's page would be replaced by the landing page.
+    for (const name of ["zmkhud", "zmkhudsize"]) {
+      const p = loadPage();
+      const posted = [];
+      p.window.webkit = { messageHandlers: { [name]: { postMessage: s => posted.push(JSON.parse(s)) } } };
+      p.hud.load(data);
+      p.hud.setLayers([]);
+      const ev = p.document.getElementById("statsHead").click();
+      const asked = posted.filter(m => m.kind === "site");
+      check(`with ${name}, a click on the heading asks the panel to open the landing page`,
+            asked.length === 1 && Object.keys(asked[0]).length === 1, JSON.stringify(posted.map(m => m.kind)));
+      check("and the link itself does nothing there", ev.defaultPrevented);
+    }
+    {
+      // In a browser it is a link like any other, followed into a tab of its own.
+      const p = loadPage({ protocol: "http:" });
+      p.hud.load(data);
+      p.hud.setLayers([]);
+      const ev = p.document.getElementById("statsHead").click();
+      check("in a browser the heading is left to be the link it is", !ev.defaultPrevented);
+    }
+    {
+      // Framed by the landing page, it would open the page it is on: it is no link there.
+      const p = loadPage({ search: "?embed" });
+      check("framed by the landing page, the heading is no link",
+            p.document.getElementById("statsHead").getAttribute("href") === null);
+      const q = loadPage();
+      check("anywhere else it is", q.document.getElementById("statsHead").getAttribute("href") !== null);
+    }
+  }
+
   // ---------- a session the host keeps ----------
   {
     const TALLY_MS = 2000;

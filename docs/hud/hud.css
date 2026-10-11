@@ -118,7 +118,9 @@ body.demo .key::before, body.demo #stats { display: none; }
    (body.side-hidden). Its width and gap are added to the panel's (hud.js STATS_COLUMN, which has to
    agree with the numbers here), so the keys keep the size hud.width gives them. */
 /* As tall as the panel beside it (stretch), with a heading on the banner's box, so its rule and its
-   first box line up with the banner's rule and the board. */
+   first box line up with the banner's rule and the board. The heading is the HUD's name, a link to
+   the landing page: a panel opens it in the browser (hud.js), and framed by the landing page itself
+   it is no link at all. */
 #frame { display: flex; align-items: stretch; }
 #frame > #hud { flex: 1 1 auto; min-width: 0; }
 #stats {
@@ -132,8 +134,10 @@ body.demo .key::before, body.demo #stats { display: none; }
   display: flex; align-items: center; min-height: 30px; padding: 2px 4px 5px; margin-bottom: 6px;
   border-bottom: 3px solid var(--chip); color: #c0caf5;
   font-size: 13px; font-weight: 800; letter-spacing: 0.06em; text-transform: uppercase; line-height: 28px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-decoration: none;
+  transition: color 120ms ease;
 }
+#statsHead[href]:hover { color: #7aa2f7; }
 #stats.off, #stats .stat.off, body.side-hidden #stats { display: none; }
 /* The boxes: a faint lift off the panel rather than a grey slab, labels in a soft blue-grey and the
    values bright, in the panel's own palette (Tokyo Night's, like the banner's layer colours). */

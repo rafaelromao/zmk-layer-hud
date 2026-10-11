@@ -38,6 +38,9 @@ TOKEN_FILE = "token"
 WPM_CHOICES = ("current", "average", "top")
 ROWS_MAX = 24           # rows of the stats column, and each one's label and value at most this long:
 TEXT_MAX = 64           # a page says what its column shows, and nothing like a page of it
+# The landing page, which a panel opens in the browser when the stats column's heading is clicked
+# ({"kind":"site"}). The page names no address, so this is the one a panel opens.
+SITE = "https://rafaelromao.github.io/zmk-layer-hud/"
 
 
 def default_dir():

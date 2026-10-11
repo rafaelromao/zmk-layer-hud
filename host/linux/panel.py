@@ -314,6 +314,11 @@ def main():
             return
         if kind == "hide":
             set_shown(False)
+        elif kind == "site":    # the stats column's heading: the landing page, in the browser
+            try:
+                Gtk.show_uri_on_window(None, panelstate.SITE, Gdk.CURRENT_TIME)
+            except GLib.Error as e:
+                print(f"panel: cannot open {panelstate.SITE}: {e.message}", file=sys.stderr, flush=True)
         elif kind == "wpm":
             if isinstance(msg.get("wpm"), int) and msg["wpm"] != wpm[0]:
                 wpm[0] = msg["wpm"]

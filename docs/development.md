@@ -115,7 +115,8 @@ files are behind `hud/` or `site/`: a change to the HUD reaches the page only on
 been run and its output committed.
 
 The page runs the HUD in a frame, `hud/index.html?embed`. With `?embed` the HUD installs no keydown
-listener of its own and hides the ✕, because the page around it owns the keyboard. `site/demo.js`
+listener of its own and hides the ✕, because the page around it owns the keyboard. Its stats
+column's heading is no link there either, because the page around it is the page it links to. `site/demo.js`
 turns the browser's key and input events into the feed's own key messages (typing sent in: `sent`,
 and `synthetic`, since no firmware position stands behind them) and plays a compiled demo on a
 clock of its own; `site/site.js` hands both to the frame through `hud.receive`. The frame never gets

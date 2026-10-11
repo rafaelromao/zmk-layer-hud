@@ -129,6 +129,7 @@ class El {
     if (name === "class") this.className = value;    // the combo links are built this way (hud.js showCombo)
   }
   getAttribute(name) { return this.attributes.has(name) ? this.attributes.get(name) : null; }
+  removeAttribute(name) { this.attributes.delete(name); }
 
   appendChild(child) {
     if (child.parentNode) child.parentNode.removeChild(child);
@@ -152,8 +153,13 @@ class El {
     const fns = (this.listeners && this.listeners.get(type)) || [];
     if (fns.indexOf(fn) >= 0) fns.splice(fns.indexOf(fn), 1);
   }
-  // What a press on a button does: its click listeners, in the order added.
-  click() { for (const fn of ((this.listeners && this.listeners.get("click")) || []).slice()) fn({ type: "click", target: this }); }
+  // What a press on a button does: its click listeners, in the order added. The event is returned,
+  // so a test can tell whether a link's own action was kept from happening.
+  click() {
+    const ev = { type: "click", target: this, defaultPrevented: false, preventDefault() { ev.defaultPrevented = true; } };
+    for (const fn of ((this.listeners && this.listeners.get("click")) || []).slice()) fn(ev);
+    return ev;
+  }
 
   matches(sel) {
     const m = SIMPLE.exec(sel.trim());
@@ -213,6 +219,12 @@ function makeStyle() {
 // The ids index.html defines. Everything hud.js looks up with $() has to be here, or it silently
 // renders into nothing and every assertion passes for the wrong reason.
 const PAGE_IDS = ["frame", "hud", "layer", "layerName", "layerSub", "side", "hide", "close", "board", "stats", "statsHead", "status", "feed", "title", "keys"];
+// ...each with the attributes index.html gives it: the heading's href, which ?embed takes away.
+const PAGE_HTML = fs.readFileSync(path.join(HUD_DIR, "index.html"), "utf8");
+function pageAttributes(id) {
+  const tag = new RegExp(`<\\w+\\s[^>]*\\bid="${id}"[^>]*>`).exec(PAGE_HTML);
+  return tag ? [...tag[0].matchAll(/([\w-]+)="([^"]*)"/g)].map(m => [m[1], m[2]]) : [["id", id]];
+}
 
 function makeDocument() {
   const doc = {};
@@ -229,7 +241,7 @@ function makeDocument() {
   doc.body.scrollHeight = 0;          // postSize reads it outside its own try/catch (hud.js postSize)
   for (const id of PAGE_IDS) {
     const e = make("div");
-    e.attributes.set("id", id);
+    for (const [name, value] of pageAttributes(id)) e.setAttribute(name, value);
     doc.body.appendChild(e);
     byId.set(id, e);
   }

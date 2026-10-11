@@ -29,7 +29,7 @@ try:
                         NSColor, NSEvent, NSEventMaskLeftMouseDown, NSMakeRect, NSMenu, NSMenuItem, NSOnState,
                         NSPanel, NSTextField, NSScreen, NSStatusWindowLevel, NSWindowCollectionBehaviorCanJoinAllSpaces,
                         NSWindowCollectionBehaviorFullScreenAuxiliary, NSWindowCollectionBehaviorStationary,
-                        NSWindowStyleMaskBorderless, NSWindowStyleMaskNonactivatingPanel)
+                        NSWindowStyleMaskBorderless, NSWindowStyleMaskNonactivatingPanel, NSWorkspace)
     from Foundation import (NSActivityUserInitiatedAllowingIdleSystemSleep, NSNotificationCenter, NSObject,
                             NSProcessInfo, NSURL)
     from WebKit import WKUserContentController, WKWebView, WKWebViewConfiguration
@@ -160,9 +160,10 @@ class DragWebView(WKWebView):
 
 
 class Bridge(NSObject):
-    """Page → host messages (the ✕ posts "close", its hide button {"kind": "hide"}; the page's counts and the heatmap it switched
-    to go to the session) and window events. Only this panel's own page can post here, so it needs
-    no token the way a WebSocket client does."""
+    """Page → host messages (the ✕ posts "close", its hide button {"kind": "hide"}, the stats column's
+    heading {"kind": "site"}; the page's counts and the heatmap it switched to go to the session) and
+    window events. Only this panel's own page can post here, so it needs no token the way a WebSocket
+    client does."""
 
     def userContentController_didReceiveScriptMessage_(self, controller, message):
         body = str(message.body())
@@ -179,6 +180,8 @@ class Bridge(NSObject):
             Host.instance.resize(msg.get("width"), msg.get("height"))
         elif kind == "hide":        # the page's hide button
             Host.instance.set_shown(False)
+        elif kind == "site":        # the stats column's heading: the landing page, in the browser
+            NSWorkspace.sharedWorkspace().openURL_(NSURL.URLWithString_(panelstate.SITE))
         elif kind == "wpm":
             Host.instance.set_wpm(msg.get("wpm"))
         elif kind == "stats":       # what its stats column shows, for the menubar's menu

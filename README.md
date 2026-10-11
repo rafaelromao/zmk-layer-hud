@@ -421,7 +421,9 @@ a one-shot layer on screen through its key's flash, and shows typed characters i
 A key also glows once it is pressed, and cools over `hud.heatmap_ms` (3 s; `0` turns it off): a
 live heatmap of what was just typed, where a key struck again and again stays warm longest.
 
-Beside the panel, a block of its own says how the typing goes:
+Beside the panel, a block of its own, headed by the HUD's name, says how the typing goes. A click
+on the heading opens [the landing page](https://rafaelromao.github.io/zmk-layer-hud/) in the
+browser. The block shows:
 - words per minute, live, over the last `hud.wpm_window_ms` (10 s);
 - the session's average over its typing time, not counting pauses longer than `hud.wpm_idle_ms`
   (3 s), and its peak;
