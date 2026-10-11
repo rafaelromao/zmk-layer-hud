@@ -210,7 +210,11 @@ class Icon(NSObject):
     def hotkey(self, name):
         if name == "power":
             self.run("power")
-        elif self.st is not None:       # nothing to show or hide
+        elif self.st is None:           # nothing to show, hide or dock
+            return
+        elif name == "dock":
+            self.run("dock")
+        else:
             self.run("toggle")
 
     def refresh_(self, timer):
@@ -266,7 +270,10 @@ class Icon(NSObject):
         # The third of each is the shortcut that does the same, drawn beside it by the menu.
         items = [("Start HUD", "start", "power")] if self.st is None else \
             [("Hide HUD" if self.st["shown"] else "Show HUD", "hide" if self.st["shown"] else "show", "toggle"),
-             ("Quit HUD", "stop", "power")]
+             # The touch keyboard: docked along the bottom of the screen, typing where it is clicked.
+             ("Float HUD" if self.st.get("dock") else "Dock HUD to Type on It", "dock", "dock")] + \
+            ([("Allow Typing…", "typing setup", None)] if self.st.get("typing") == "denied" else []) + \
+            [("Quit HUD", "stop", "power")]
         for title, verb, shortcut in items:
             sc = self.shortcuts.get(shortcut)
             item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, "verb:", sc[1] if sc else "")
@@ -285,7 +292,7 @@ class Icon(NSObject):
         self.item.setMenu_(None)
 
     def verb_(self, sender):
-        self.run(str(sender.representedObject()))
+        self.run(*str(sender.representedObject()).split())
 
     def wpm_(self, sender):
         # Through the command line like the rest; the button follows on its next look (refresh_).

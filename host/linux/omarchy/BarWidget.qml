@@ -47,6 +47,8 @@ BarWidget {
   property var rows: []               // the HUD's stats column: [[label, value], ...]
   property string rowsText: ""        // ...as it was read, so the same rows are not taken again
   property string wpmChoice: "current"    // which WPM the bar shows: current | average | top
+  property bool docked: false         // the touch keyboard: docked along the bottom, typing
+  property string typing: ""          // ok | off | denied | missing | error, as the HUD says it
   property bool menuOpen: false
   property bool hoverOpen: false
 
@@ -62,6 +64,8 @@ BarWidget {
       root.topWpm = typeof st.top_wpm === "number" ? st.top_wpm : null
       root.session = typeof st.session === "string" ? st.session : ""
       root.takeRows(Array.isArray(st.stats) ? st.stats : [])
+      root.docked = st.dock === true
+      root.typing = typeof st.typing === "string" ? st.typing : ""
       root.hud = st.shown ? "shown" : "hidden"
     } catch (e) {
       root.stopped()
@@ -86,6 +90,11 @@ BarWidget {
   function run(verb, more) {
     const env = ["env", "ZMKHUD_STATE=" + root.stateDir, root.command]
     Quickshell.execDetached((verb === "start" ? root.startWith : []).concat(env, [verb], more || []))
+  }
+  // In a terminal: what asks before each sudo step needs one to ask in.
+  function runInTerminal(verb, more) {
+    Quickshell.execDetached(["xdg-terminal-exec", "env", "ZMKHUD_STATE=" + root.stateDir, root.command, verb]
+      .concat(more || []))
   }
 
   // The bar keeps one popout open at a time: it asks the one open to close when another opens.
@@ -250,7 +259,11 @@ BarWidget {
        { kind: "separator" },
        { kind: "item", text: root.hud === "shown" ? "Hide HUD" : "Show HUD",
          verb: root.hud === "shown" ? "hide" : "show", shortcut: "toggle" },
-       { kind: "item", text: "Quit HUD", verb: "stop", shortcut: "power" }]
+       // The touch keyboard: docked along the bottom of the touch screen, typing where it is touched.
+       { kind: "item", text: root.docked ? "Float HUD" : "Dock HUD to type on it", verb: "dock", shortcut: "dock" }]
+      .concat(root.typing === "denied" || root.typing === "missing"
+        ? [{ kind: "item", text: "Allow typing…", verb: "typing", more: ["setup"], terminal: true }] : [])
+      .concat([{ kind: "item", text: "Quit HUD", verb: "stop", shortcut: "power" }])
 
   PopupCard {
     id: menu
@@ -355,8 +368,10 @@ BarWidget {
               if (row.kind === "wpm") {
                 root.wpmChoice = row.choice          // at once; the file says so too, a moment later
                 root.run("menubar", ["wpm", row.choice])
+              } else if (row.terminal) {
+                root.runInTerminal(row.verb, row.more)
               } else {
-                root.run(row.verb)
+                root.run(row.verb, row.more)
               }
             }
           }

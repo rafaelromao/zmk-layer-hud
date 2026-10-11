@@ -52,8 +52,16 @@
 # feed: { dead_key_ms: 60 }
 
 # Optional: the global shortcuts, the same on macOS and Omarchy (null turns one off). toggle shows or
-# hides the HUD, power starts or stops it. Modifiers: ctrl, alt, shift, gui; the key a letter or digit.
-# shortcuts: { toggle: ctrl+alt+l, power: ctrl+alt+gui+l }
+# hides the HUD, power starts or stops it, dock (none unless given) docks it to type on it.
+# Modifiers: ctrl, alt, shift, gui; the key a letter or digit.
+# shortcuts: { toggle: ctrl+alt+l, power: ctrl+alt+gui+l, dock: ctrl+alt+k }
+
+# Optional: the touch keyboard (docs/touch.md). `zmk-layer-hud dock` docks the HUD along the bottom of
+# the touch screen, where it types what each key does on the keyboard. hold_ms is how long a touch is a
+# hold; a hold let go alone latches (one-shot, locked on a second tap). The dock takes at most
+# height_pct of the screen, a split board's halves at its sides; start: 1 starts it docked.
+# touch: { hold_ms: 280, lock_ms: 350, floating: 0 }
+# dock: { screen: eDP-1, height_pct: 40, split: 1, start: 0 }
 
 # Optional: the stats bar's chips (see config/diamond.yaml for all of them), and the finger that
 # strikes each key when the HUD cannot tell from a split board's columns.

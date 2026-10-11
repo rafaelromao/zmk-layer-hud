@@ -97,10 +97,11 @@ def in_clone():
     return os.path.isdir(os.path.join(ROOT, ".git"))
 
 
-def env_for_host(reserve=False, hidden=False):
+def env_for_host(reserve=False, hidden=False, dock=False):
     env = dict(os.environ)
     env["ZMKHUD_RESERVE"] = "1" if reserve else "0"
     env["ZMKHUD_HIDDEN"] = "1" if hidden else "0"
+    env["ZMKHUD_DOCK"] = "1" if dock else "0"
     env["ZMKHUD_STATE"] = STATE
     env["ZMKHUD_ROOT"] = ROOT
     # The host scripts prefer $ZMKHUD_PYTHON over their own search, so pointing them at the venv
@@ -110,9 +111,9 @@ def env_for_host(reserve=False, hidden=False):
     return env
 
 
-def run_host(verb, reserve=False, hidden=False, foreground=False):
+def run_host(verb, reserve=False, hidden=False, foreground=False, dock=False):
     os.makedirs(STATE, exist_ok=True)
-    env = env_for_host(reserve, hidden)
+    env = env_for_host(reserve, hidden, dock)
     if foreground:
         # The host script's `run` execs the panel, so this process becomes the HUD: a login item's
         # child is then the HUD itself, alive as long as it is, and launchd or systemd end with it.
@@ -189,7 +190,7 @@ def cmd_start(args):
     missing = definitions_missing()
     if missing:
         raise Fail(missing)
-    return run_host("start", args.reserve, args.hidden, args.foreground)
+    return run_host("start", args.reserve, args.hidden, args.foreground, getattr(args, "dock", False))
 
 
 def cmd_stop(args):
@@ -201,7 +202,32 @@ def cmd_restart(args):
     if missing:
         raise Fail(missing)
     run_host("stop")
-    return run_host("start", args.reserve, args.hidden)
+    return run_host("start", args.reserve, args.hidden, dock=getattr(args, "dock", False))
+
+
+def cmd_dock(args):
+    """The HUD docked along the bottom of the screen, typing, or floating again: asked of the running
+    panel (dock.want and the signal), and its panel.json says when it has."""
+    st = running_panel()
+    if args.action == "status":
+        print("dock: " + ("docked, " + TYPING_SAID.get(st.get("typing") or "off", "") if st.get("dock")
+                          else "floating (zmk-layer-hud dock docks it)"))
+        return 0
+    want = {"on": True, "off": False}.get(args.action, not st.get("dock"))
+    panelstate.request(STATE, "dock", want)
+    try:
+        os.kill(st["pid"], panelstate.SIGNAL)
+    except ProcessLookupError:
+        raise Fail("the HUD went away just now: `zmk-layer-hud start`")
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
+        now = panelstate.read(STATE)
+        if now and now.get("dock") == want:
+            print("HUD docked: it types where you tap" if want else "HUD floating again")
+            return 0
+        time.sleep(0.05)
+    raise Fail("the HUD did not dock; `zmk-layer-hud log` says why" if want else
+               "the HUD did not undock; `zmk-layer-hud log` says why")
 
 
 def cmd_power(args):
@@ -370,7 +396,7 @@ def hypr_surfaces():
     entirely transparent: "mapped with nothing on it" and "never mapped" look the same on screen.
     Only the compositor can tell them apart, so ask it."""
     import json
-    want = ("zmkhud-layer", "zmkhud-reserved", "zmkhud-keys")
+    want = ("zmkhud-layer", "zmkhud-dock", "zmkhud-reserved", "zmkhud-keys")
     try:
         out = subprocess.check_output(["hyprctl", "layers", "-j"], text=True,
                                       stderr=subprocess.DEVNULL)
@@ -391,6 +417,11 @@ def hypr_surfaces():
         elif ns == "zmkhud-reserved":
             # Absent is the normal state: the HUD only takes room from other windows when asked.
             print("  %-16s overlay, nothing reserved (start with --reserve to tile beside it)" % ns)
+        elif ns == "zmkhud-dock":
+            # One surface, floating or docked: the dock is the HUD's own, set up the other way.
+            print("  %-16s not docked (zmk-layer-hud dock docks it, to type on it)" % ns)
+        elif "zmkhud-dock" in found and ns in ("zmkhud-layer", "zmkhud-keys"):
+            print("  %-16s put away while docked" % ns)
         else:
             print("  %-16s missing" % ns)
 
@@ -2064,6 +2095,8 @@ def build_parser():
     s.add_argument("--foreground", action="store_true",
                    help="stay until the HUD stops, as the HUD itself (its output still goes to the log); "
                         "what a login item runs")
+    s.add_argument("--dock", action="store_true",
+                   help="start it docked along the bottom of the screen, where it types (the touch keyboard)")
     s.set_defaults(func=cmd_start)
 
     add("stop", "stop the HUD").set_defaults(func=cmd_stop)
@@ -2071,7 +2104,13 @@ def build_parser():
     s = add("restart", "stop the HUD, then start it")
     s.add_argument("--reserve", action="store_true", help="as for `start`")
     s.add_argument("--hidden", action="store_true", help="as for `start`")
+    s.add_argument("--dock", action="store_true", help="as for `start`")
     s.set_defaults(func=cmd_restart)
+
+    s = add("dock", "the touch keyboard: the HUD docked along the bottom of the screen, typing, or floating")
+    s.add_argument("action", nargs="?", default="toggle", choices=("toggle", "on", "off", "status"),
+                   help="toggle (default), on, off, or status")
+    s.set_defaults(func=cmd_dock)
 
     add("power", "start the HUD if it is not running, stop it if it is").set_defaults(func=cmd_power)
 

@@ -138,6 +138,19 @@ TOUCH_DEFAULTS = {
     "strip": 1,                # touch typing shows in the typed-keys strip (0: it does not)
 }
 TOUCH_CHOICES = {"flavor": ("balanced", "firmware"), "combos": ("chips", "chords", "both", "off")}
+# `dock:` section: the HUD docked along the bottom of a screen (zmk-layer-hud dock, docs/touch.md).
+DOCK_DEFAULTS = {
+    "screen": "",              # the screen to dock on, by name or a word of its description ("" picks one)
+    "height_pct": 40,          # the strip is at most this share of the screen's height
+    "start": 0,                # 1: the HUD starts docked
+    "split": 1,                # a split board's halves go to the sides of the screen (0: in one piece, centred)
+}
+# `remote:` section: a tablet's browser typing into this computer (zmk-layer-hud remote).
+REMOTE_DEFAULTS = {
+    "port": 8768,              # where the page and its socket are served on the local network
+    "minutes": 30,             # how long a tablet may pair, and how long an idle one stays paired
+    "bind": "",                # the address to serve on ("" picks this machine's private one)
+}
 
 # keymap-drawer glyph names -> text the HUD can show. The glyph id is kept too.
 GLYPHS = {
@@ -910,6 +923,50 @@ def touch_settings(value):
     return out
 
 
+def _section(name, value, defaults, check):
+    """A settings section checked against its defaults: known names only, each value as `check`
+    says (a message, or None when it is fine)."""
+    if value is None:
+        value = {}
+    if not isinstance(value, dict):
+        raise KeymapError(f"{name}: expected settings, one per line")
+    unknown = sorted(set(value) - set(defaults))
+    if unknown:
+        raise KeymapError(f"{name}: unknown settings {unknown}; known: {sorted(defaults)}")
+    out = dict(defaults)
+    for k, v in value.items():
+        problem = check(k, v)
+        if problem:
+            raise KeymapError(f"{name}.{k} {problem} (it is {v!r}); the default is {defaults[k]!r}")
+        out[k] = v if isinstance(defaults[k], str) else int(v)
+    return out
+
+
+def _whole(v, lo, hi):
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or v != int(v) or not lo <= v <= hi:
+        return f"must be a whole number from {lo} to {hi}"
+    return None
+
+
+def dock_settings(value):
+    return _section("dock", value, DOCK_DEFAULTS, lambda k, v: (
+        (None if isinstance(v, str) and len(v) <= 64 else "must be a screen's name") if k == "screen" else
+        _whole(v, 15, 70) if k == "height_pct" else _whole(v, 0, 1)))
+
+
+def remote_settings(value):
+    return _section("remote", value, REMOTE_DEFAULTS, lambda k, v: (
+        (None if isinstance(v, str) and len(v) <= 64 else "must be an address") if k == "bind" else
+        _whole(v, 1024, 65535) if k == "port" else _whole(v, 1, 24 * 60)))
+
+
+def host_settings(cfg):
+    """What the hosts read of the config for the touch keyboard: `touch:`, `dock:` and `remote:`,
+    checked. keymap.py --host-settings prints it for the Linux panel, whose interpreter reads no YAML."""
+    return {"touch": touch_settings(cfg.get("touch")), "dock": dock_settings(cfg.get("dock")),
+            "remote": remote_settings(cfg.get("remote"))}
+
+
 def touch_actions(cfg, drawing, layers, zmk_layers, pos_to_idx, base, extras, combos):
     """What every key does when tapped (host/actions.py). A keymap the touch keyboard cannot read
     still draws: the HUD shows it, and only typing is off, with the reason."""
@@ -983,7 +1040,7 @@ def build_message(cfg, drawing, source=""):
             raise KeymapError(f"positions: {len(positions)} entries for {n} drawer keys")
         pos_to_idx = {str(int(p)): i for i, p in enumerate(positions)}
     fingers = configured_fingers(cfg["fingers"], n) if cfg.get("fingers") is not None else infer_fingers(layout)
-    touch = touch_settings(cfg.get("touch"))
+    touch = host_settings(cfg)["touch"]     # dock: and remote: are the hosts', checked here all the same
     return {
         "kind": "keymap",
         # The message's own version, for a tablet app that keeps one (docs/touch.md).
@@ -1175,7 +1232,19 @@ def main(argv=None):
     p.add_argument("--dump", action="store_true", help="print the full JSON message (default: a summary)")
     p.add_argument("-o", "--output", metavar="FILE",
                    help="write the full JSON message to FILE: what a tablet's touch keyboard imports")
+    p.add_argument("--host-settings", action="store_true",
+                   help="print the config's touch:, dock: and remote: settings as JSON (for the Linux panel)")
     args = p.parse_args(argv)
+    if args.host_settings:
+        # The config alone: a panel that is docking needs no definitions to say where.
+        try:
+            cfg = load_yaml(find_config(args.config))
+            json.dump(host_settings(cfg if isinstance(cfg, dict) else {}), sys.stdout)
+            print()
+            return 0
+        except (KeymapError, OSError) as e:
+            print(f"keymap: {e}", file=sys.stderr)
+            return 1
     try:
         src = KeymapSource(args.config)
         msg = src.load()

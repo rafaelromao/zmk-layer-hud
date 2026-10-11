@@ -41,6 +41,7 @@ except ImportError:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import cgevent  # noqa: E402  (host/macos/cgevent.py)
+import dock as dock_mod  # noqa: E402  (host/dock.py)
 import hudfeed  # noqa: E402
 import inject  # noqa: E402  (host/inject.py)
 import session as session_mod  # noqa: E402  (host/session.py)
@@ -77,10 +78,15 @@ def load_state():
         return {}
 
 
-def save_state(state):
+def save_state(changes):
+    """Merged into what is there: the frame and whether it was docked are kept side by side (and the
+    Linux panel's own, should one config be shared)."""
+    state = load_state()
+    state = state if isinstance(state, dict) else {}
+    state.update(changes)
     try:
         STATE.parent.mkdir(parents=True, exist_ok=True)
-        STATE.write_text(json.dumps(state))
+        panelstate._write(str(STATE), state)     # whole or not at all
     except OSError as e:
         log(f"could not save {STATE}: {e}")
 
@@ -270,8 +276,15 @@ class Bridge(NSObject):
         self._sessions(session_mod.new)
 
     def windowDidMove_(self, notification):
+        if Host.instance and Host.instance.docked:
+            return                  # the dock's place is not where the floating HUD goes back to
         f = notification.object().frame()
         save_state({"frame": [f.origin.x, f.origin.y, f.size.width, f.size.height]})
+
+    def screensChanged_(self, notification):
+        """A screen came, went or changed (the Dock moved, the resolution): docked, it docks again."""
+        if Host.instance and Host.instance.docked:
+            Host.instance.redock()
 
     def applicationWillTerminate_(self, notification):
         """The one way out that still runs Python: stopEventLoop (✕, a signal) ends in
@@ -328,6 +341,9 @@ class Host:
         self.queue = []
         self.standing = {}              # kind -> the latest of it, for a reloaded page
         self.extra = {}                 # the touch keyboard's state, for panel.json
+        self.docked = False             # along the bottom of a screen, typing (set_dock)
+        self.dock_screen = None
+        self.page_h = 0                 # how tall the page last said it is
         self.bridge = Bridge.alloc().init()
         # The touch keyboard's keys (host/inject.py): CoreGraphics events, once macOS allows them,
         # repeated at the user's own key-repeat settings while held. Before the page, whose
@@ -352,6 +368,8 @@ class Host:
             self.bridge, "windowDidMove:", "NSWindowDidMoveNotification", panel)
         NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
             self.bridge, "applicationWillTerminate:", "NSApplicationWillTerminateNotification", None)
+        NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
+            self.bridge, "screensChanged:", "NSApplicationDidChangeScreenParametersNotification", None)
 
         config = WKWebViewConfiguration.alloc().init()
         ucc = WKUserContentController.alloc().init()
@@ -401,9 +419,87 @@ class Host:
         width = (self.feed.cfg.get("hud") or {}).get("width")
         if width:
             self.resize(int(width), None)
+        # Docked from the start when asked (`start --dock`, dock.start), or when it was left docked;
+        # else typing in the floating HUD only when the config says so (touch.floating).
+        settings = self.settings()
+        if os.environ.get("ZMKHUD_DOCK") == "1" or settings["dock"]["start"] or load_state().get("dock"):
+            AppHelper.callAfter(self.set_dock, True)
+        elif settings["touch"]["enabled"] and settings["touch"]["floating"]:
+            self.typing.start()
         # main() put the signal's handler in first: the CLI signals whatever pid this file names.
         self.write_state()
         panelstate.write_token(RUN, self.token)
+
+    def settings(self):
+        """The config's touch:, dock: and remote: (host/keymap.py host_settings), its defaults when
+        the config does not load."""
+        km = hudfeed.keymap_mod
+        try:
+            return km.host_settings(self.feed.cfg or {})
+        except km.KeymapError as e:
+            log(f"touch keyboard: {e}; its defaults instead")
+            return km.host_settings({})
+
+    def target_screen(self):
+        """The screen to dock on: the one dock.screen names, else the one under the pointer (the HUD
+        is never the key window, so the focused screen is not its to know), else the main one."""
+        wanted = self.settings()["dock"]["screen"].lower()
+        screens = list(NSScreen.screens())
+        if wanted:
+            for s in screens:
+                if wanted in str(s.localizedName()).lower():
+                    return s
+        at = NSEvent.mouseLocation()
+        for s in screens:
+            f = s.frame()
+            if f.origin.x <= at.x < f.origin.x + f.size.width and f.origin.y <= at.y < f.origin.y + f.size.height:
+                return s
+        return focused_screen()
+
+    def dock_frame(self):
+        """Along the bottom of the dock's screen, above the Dock (visibleFrame leaves it and the menu
+        bar out), as wide as the screen and as tall as the page within its share."""
+        vf = self.dock_screen.visibleFrame()
+        h = dock_mod.height(self.page_h, vf.size.height, self.settings()["dock"]["height_pct"])
+        return NSMakeRect(vf.origin.x, vf.origin.y, vf.size.width, h), vf
+
+    def set_dock(self, on):
+        """Docked or floating, at runtime. Docked, the panel is a strip over the bottom of a screen
+        -- an overlay: macOS has no room for an app to reserve -- every click on it is the page's,
+        and the board types; floating, it goes back where it was."""
+        if on == self.docked:
+            return
+        self.typing.release()
+        settings = self.settings()
+        if on:
+            self.dock_screen = self.target_screen()
+            self.docked = True
+            frame, vf = self.dock_frame()
+            self.place(frame)
+            self.deliver({"kind": "dock", "on": True, "split": bool(settings["dock"]["split"]),
+                          "max_height": dock_mod.max_height(vf.size.height, settings["dock"]["height_pct"])})
+            if settings["touch"]["enabled"]:
+                self.typing.start()
+            log(f"docked on {self.dock_screen.localizedName()}")
+        else:
+            self.docked = False
+            self.place(initial_frame())
+            self.deliver({"kind": "dock", "on": False})
+            if not (settings["touch"]["enabled"] and settings["touch"]["floating"]):
+                self.typing.stop()
+        self.extra["dock"] = self.docked
+        self.write_state()
+        save_state({"dock": self.docked})
+
+    def redock(self):
+        screens = list(NSScreen.screens())
+        if self.dock_screen not in screens:
+            self.dock_screen = self.target_screen()
+        self.place(self.dock_frame()[0])
+
+    def place(self, frame):
+        self.panel.setFrame_display_(frame, True)
+        self.web.setFrame_(((0, 0), (frame.size.width, frame.size.height)))
 
     def write_state(self):
         panelstate.write(RUN, self.shown, wpm=self.wpm, stats=self.stats, extra=self.extra)
@@ -475,7 +571,13 @@ class Host:
         self.web.evaluateJavaScript_completionHandler_("document.visibilityState", said)
 
     def resize(self, width, height):
-        """The page knows how tall the layout is; keep the top-left corner where the user put it."""
+        """The page knows how tall the layout is; keep the top-left corner where the user put it.
+        Docked, the bottom edge stays on the screen's and the width is the screen's."""
+        if self.docked:
+            if height:
+                self.page_h = float(height)
+                self.place(self.dock_frame()[0])
+            return
         f = self.panel.frame()
         w = float(width or f.size.width)
         h = float(height or f.size.height)
@@ -492,6 +594,8 @@ class Host:
     def mouse_down(self, event):
         if event.window() is None or event.window() != self.panel:
             return event
+        if self.docked:
+            return event            # docked, nothing moves it: every press is the page's
         if self.web.on_control(event):
             if DEBUG:
                 log("mouse down on a control: the page has it")
@@ -572,6 +676,9 @@ def main():
             Host.instance.set_shown(want)
         if panelstate.take_want(RUN, "typing") == "request" and Host.instance:
             Host.instance.request_typing()
+        dock = panelstate.take_want(RUN, "dock")
+        if dock is not None and Host.instance:
+            Host.instance.set_dock(bool(dock))
     MachSignals.signal(panelstate.SIGNAL, asked)
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)  # no Dock icon, no menu bar

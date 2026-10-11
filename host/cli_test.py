@@ -49,7 +49,7 @@ class Parser(unittest.TestCase):
         expected = {"start", "stop", "restart", "status", "log", "doctor", "setup", "update",
                     "uninstall", "import", "sync", "keymap", "config", "demo", "poke", "feed",
                     "version", "session", "heatmap", "show", "hide", "toggle", "menubar", "autostart", "power",
-                    "typing"}
+                    "typing", "dock"}
         self.assertEqual(expected, set(self.verbs))
 
     def test_the_session_verbs_need_no_venv(self):
@@ -225,7 +225,15 @@ FAKE_PANEL = textwrap.dedent('''
     sys.path.insert(0, sys.argv[1])
     import panelstate
     d = sys.argv[2]
-    signal.signal(panelstate.SIGNAL, lambda *_: panelstate.write(d, panelstate.wanted(d)))
+    docked = [False]
+    def asked(*_):
+        shown = panelstate.wanted(d)
+        dock = panelstate.take_want(d, "dock")
+        if dock is not None:
+            docked[0] = bool(dock)
+        panelstate.write(d, True if shown is None else shown,
+                         extra={"dock": docked[0], "typing": "ok" if docked[0] else "off"})
+    signal.signal(panelstate.SIGNAL, asked)
     panelstate.write(d, True)
     time.sleep(30)
 ''')
@@ -265,6 +273,18 @@ class ShowHide(unittest.TestCase):
         code, said = self.run_cli("show", pids=[proc.pid])
         self.assertEqual(0, code)
         self.assertIn("HUD shown", said)
+
+    def test_dock_toggles_and_is_said(self):
+        proc = self.start_panel()
+        code, said = self.run_cli("dock", pids=[proc.pid])
+        self.assertEqual((0, True), (code, cli.panelstate.read(self.tmp.name)["dock"]), said)
+        self.assertIn("docked", said)
+        code, said = self.run_cli("dock", "status", pids=[proc.pid])
+        self.assertIn("can type", said)
+        self.assertEqual(0, self.run_cli("dock", "off", pids=[proc.pid])[0])
+        self.assertFalse(cli.panelstate.read(self.tmp.name)["dock"])
+        self.assertEqual(0, self.run_cli("dock", "off", pids=[proc.pid])[0])     # said again: still off
+        self.assertTrue(cli.panelstate.read(self.tmp.name)["shown"])              # and still shown
 
     def test_power_stops_a_running_hud_and_starts_one_that_is_not(self):
         with mock.patch.object(cli, "reexec_into_venv"), mock.patch.object(cli, "cmd_stop", return_value=0) as stop, \

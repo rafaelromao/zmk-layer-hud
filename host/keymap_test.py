@@ -474,6 +474,16 @@ class Touch(unittest.TestCase):
             with self.assertRaises(km.KeymapError, msg=repr(bad)):
                 message({"touch": bad}, DOC)
 
+    def test_the_hosts_sections_are_checked_too(self):
+        got = km.host_settings({"dock": {"screen": "eDP-1", "height_pct": 35, "split": 0}, "remote": {"port": 9000}})
+        self.assertEqual(("eDP-1", 35, 0, 0), (got["dock"]["screen"], got["dock"]["height_pct"], got["dock"]["split"],
+                                               got["dock"]["start"]))
+        self.assertEqual((9000, 30, ""), (got["remote"]["port"], got["remote"]["minutes"], got["remote"]["bind"]))
+        for bad in ({"dock": {"height_pct": 90}}, {"dock": {"start": 2}}, {"dock": {"where": 1}}, {"dock": "bottom"},
+                    {"remote": {"port": 80}}, {"remote": {"minutes": 0}}, {"remote": {"bind": 5}}):
+            with self.assertRaises(km.KeymapError, msg=repr(bad)):
+                message(bad, DOC)
+
     def test_a_drawing_alone_types_from_its_legends(self):
         a = message({}, DOC)["actions"]
         self.assertEqual("legends", a["source"])

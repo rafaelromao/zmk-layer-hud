@@ -5,6 +5,7 @@ Every verb of `zmk-layer-hud`, as its own `--help` prints it. Written by `make c
 - [`start`](#start) — start the HUD
 - [`stop`](#stop) — stop the HUD
 - [`restart`](#restart) — stop the HUD, then start it
+- [`dock`](#dock) — the touch keyboard: the HUD docked along the bottom of the screen, typing, or floating
 - [`power`](#power) — start the HUD if it is not running, stop it if it is
 - [`show`](#show) — bring the HUD back on screen
 - [`hide`](#hide) — take the HUD off screen; it goes on running and counting
@@ -32,7 +33,7 @@ Every verb of `zmk-layer-hud`, as its own `--help` prints it. Written by `make c
 ## start
 
 ```text
-usage: zmk-layer-hud start [-h] [--reserve] [--hidden] [--foreground]
+usage: zmk-layer-hud start [-h] [--reserve] [--hidden] [--foreground] [--dock]
 
 start the HUD
 
@@ -43,6 +44,8 @@ options:
   --hidden      start it off screen, counting; `zmk-layer-hud show` or its icon brings it up
   --foreground  stay until the HUD stops, as the HUD itself (its output still goes to the log);
                 what a login item runs
+  --dock        start it docked along the bottom of the screen, where it types (the touch
+                keyboard)
 ```
 
 ## stop
@@ -59,7 +62,7 @@ options:
 ## restart
 
 ```text
-usage: zmk-layer-hud restart [-h] [--reserve] [--hidden]
+usage: zmk-layer-hud restart [-h] [--reserve] [--hidden] [--dock]
 
 stop the HUD, then start it
 
@@ -67,6 +70,22 @@ options:
   -h, --help  show this help message and exit
   --reserve   as for `start`
   --hidden    as for `start`
+  --dock      as for `start`
+```
+
+## dock
+
+```text
+usage: zmk-layer-hud dock [-h] [{toggle,on,off,status}]
+
+the touch keyboard: the HUD docked along the bottom of the screen, typing, or floating
+
+positional arguments:
+  {toggle,on,off,status}
+                        toggle (default), on, off, or status
+
+options:
+  -h, --help            show this help message and exit
 ```
 
 ## power
