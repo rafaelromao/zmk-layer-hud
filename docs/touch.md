@@ -223,7 +223,63 @@ keeps the `usage` and `mods` it came from.
 ## Remote mode
 
 A tablet's browser types into the computer: `zmk-layer-hud remote on` serves the page on the
-local network and prints a URL to open on the tablet. The URL carries a key in its fragment, which
-a browser never sends over the network; the tablet proves it holds the key, and every message it
-sends is signed with it. Anyone on the same Wi-Fi can see which keys are tapped -- the page and its
-messages travel as plain HTTP -- but cannot type. See `docs/security-review.md`.
+local network and prints a URL to open on the tablet, with a code to scan when `qrencode` is
+installed. The menubar's Pair a Tablet… shows the link to copy, and the Omarchy bar's opens a
+terminal with it. `remote off` closes it, `remote status` says what it is doing, and `remote unpair`
+makes every link given so far useless.
+
+```
+http://192.168.1.5:8768/#k=<43 base64url characters: 32 random bytes>
+```
+
+- **Where it runs.** The macOS panel serves it, typing through CoreGraphics like its own page. On
+  Linux the feed serves it (the panel's system Python has no websockets), with a virtual keyboard
+  of its own beside the panel's. Either way it serves nothing until asked. The CLI writes what it
+  wants in `$STATE/remote.json`, and the server, reading that every second, says what it is doing
+  in `remote.live.json`.
+- **The address** is this computer's on its default route, when that is a private, link-local or
+  100.64/10 (Tailscale) one; never every interface. `--bind ADDR` serves on another; `0.0.0.0`
+  listens everywhere and still names the default route's address in the link. The port is 8768
+  (`--port`, config `remote.port`).
+- **How long.** Open for `--minutes` (config `remote.minutes`, 30 by default), and for as long as
+  a tablet is connected. A second tablet that pairs takes over from the first.
+- **The page.** `GET /` is `hud/index.html` marked `html.remote`, with `remote.js` after the
+  other scripts and a web manifest. Only the files it loads are served, and only to a `Host` header
+  naming this address and port exactly (no DNS rebinding). Every answer carries a
+  Content-Security-Policy that runs the page's own scripts alone and lets nothing frame it, plus
+  `no-store`, `nosniff` and `no-referrer`.
+- **The key** is in the link's fragment, which a browser never sends. The page keeps it in
+  `localStorage` and takes it out of the address bar; the computer keeps it in
+  `$STATE/remote.key` (0600) until `remote unpair`.
+
+The socket, `ws://<address>:<port>/ws`, opens only for the page's own `Origin`. Its messages:
+
+```json
+{"kind":"challenge","v":1,"kid":"630dcd2966c43366","nonce":"<32 hex>"}
+{"kind":"auth","v":1,"cnonce":"<32 hex>","mac":"<64 hex>"}
+{"kind":"welcome","v":1,"mac":"<64 hex>"}
+{"kind":"hid","v":1,"seq":12,"mods":2,"keys":[4],"mac":"<64 hex>"}
+```
+
+- `kid` is the first 16 hex digits of SHA-256(key). A tablet holding another key says so and
+  never tries it.
+- `auth.mac` is HMAC-SHA256(key, `zmkhud-remote/1 auth <nonce> <cnonce>`). The connection's key
+  is HMAC-SHA256(key, `zmkhud-remote/1 session <nonce> <cnonce>`), and `welcome.mac`,
+  HMAC(connection key, `zmkhud-remote/1 welcome`), is the server's proof back.
+- After that, the server sends the keymap, whether a secret is being typed on the computer, and
+  whether it can type (`typing`). It sends nothing of what the physical keyboard types.
+- Each report's `mac` is HMAC(connection key,
+  `zmkhud-remote/1 hid <seq> <mods> <keys, comma-separated> <consumer, comma-separated>`).
+  `seq` only goes up. A wrong MAC or a report out of turn ends the connection, and five of those
+  (or of wrong pairings) turn remote mode off until it is asked for again. More than 60 reports a
+  second are dropped.
+- A tablet has 10 s to pair, and at most four connections may wait to pair at once. A tablet
+  that goes away has its keys let go.
+
+`hud/tests/fixtures/remote_vectors.json` holds these texts and MACs for a test key, and both
+`host/remote_test.py` and `hud/tests/remote_test.js` are held to it.
+
+**What it does not protect.** The page and its messages travel as plain HTTP. Anyone on the same
+Wi-Fi can see which keys are tapped, but cannot type. Someone who can change what the tablet loads
+while it loads the page can take the key. Tailscale (`--bind` with its address) closes both. See
+`docs/security-review.md`.

@@ -1,0 +1,49 @@
+{
+ "_": "host/remote.py's protocol, for hud/remote.js to agree with (host/remote_test.py checks this file)",
+ "key": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+ "kid": "630dcd2966c43366",
+ "nonce": "00112233445566778899aabbccddeeff",
+ "cnonce": "ffeeddccbbaa99887766554433221100",
+ "auth_text": "zmkhud-remote/1 auth 00112233445566778899aabbccddeeff ffeeddccbbaa99887766554433221100",
+ "auth_mac": "2b654bd75eb771025fc48726e08996cd16eafe73b93162df13599dd5626ae09f",
+ "session_key": "e6427749696eabebdec8c867f6f05db4bdb39669d55d91010c248c19d20149df",
+ "welcome_mac": "0ccf1d986ff7628c7324685ae3f3054fdf15b9dcafbcf53d946db4544f91a7f0",
+ "reports": [
+  {
+   "seq": 1,
+   "mods": 0,
+   "keys": [
+    4
+   ],
+   "text": "zmkhud-remote/1 hid 1 0 4 ",
+   "mac": "38948b14588ab391ebd672def0a65bced7a72a95998203a5bf86de30da2a315f"
+  },
+  {
+   "seq": 2,
+   "mods": 2,
+   "keys": [
+    4,
+    5
+   ],
+   "text": "zmkhud-remote/1 hid 2 2 4,5 ",
+   "mac": "f5d58a72a3e26c6aa65742e06cd3141791cb1c48958b0797e911ff73bf8f5af2"
+  },
+  {
+   "seq": 7,
+   "mods": 0,
+   "keys": [],
+   "consumer": [
+    233
+   ],
+   "text": "zmkhud-remote/1 hid 7 0  233",
+   "mac": "f5d29a25ca35a79f1b55f6e4f6a8ed901929e57f27e6beac9492e732979b63b6"
+  },
+  {
+   "seq": 8,
+   "mods": 0,
+   "keys": [],
+   "text": "zmkhud-remote/1 hid 8 0  ",
+   "mac": "310b7b71e546a38454913598f72c4478615f8e9cb4cd94a512bf573161c907dd"
+  }
+ ]
+}

@@ -367,3 +367,13 @@ html.dock #layer { min-height: 20px; padding: 0 4px 2px; border-bottom-width: 2p
 html.dock #layerName { font-size: 15px; line-height: 20px; }
 html.dock #layerSub { padding-top: 0; }
 html.dock #stats, html.dock #status, html.dock #keys, html.dock #side { display: none; }
+
+/* The remote page (host/remote.py, remote.js): a tablet's browser, the whole window the keyboard.
+   The board sits at the bottom, where the thumbs are; the page never scrolls, bounces or selects,
+   and there is no panel for ✕ or – to close or hide. Until the keymap comes the status line says
+   what the page is waiting for. */
+html.remote, html.remote body { height: 100%; background: #1a1b26; overscroll-behavior: none; }
+html.remote body { display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden;
+                   -webkit-user-select: none; -webkit-text-size-adjust: 100%; }
+html.remote #close, html.remote #hide { display: none; }
+html.remote:not(.touch) #status { display: flex; }

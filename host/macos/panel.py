@@ -13,11 +13,13 @@ pyobjc-framework-WebKit in the venv (make venv installs them on macOS). The firs
 Input Monitoring for the app that launched this (your terminal).
 """
 
+import asyncio
 import json
 import os
 import secrets
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -46,6 +48,7 @@ import hudfeed  # noqa: E402
 import inject  # noqa: E402  (host/inject.py)
 import session as session_mod  # noqa: E402  (host/session.py)
 import panelstate  # noqa: E402  (host/panelstate.py)
+import remote as remote_mod  # noqa: E402  (host/remote.py)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 PAGES = ROOT / "hud"
@@ -325,6 +328,18 @@ def ask_name(message, default):
     return field.stringValue().strip() if field is not None and ok else None
 
 
+class OnMain:
+    """An object's methods called on the main thread, whoever calls them: remote mode's typing,
+    asked for on the remote server's loop and pressed where the panel's own keys are."""
+
+    def __init__(self, obj):
+        self.obj = obj
+
+    def __getattr__(self, name):
+        fn = getattr(self.obj, name)
+        return lambda *a: AppHelper.callAfter(fn, *a)
+
+
 class Host:
     """Owns the window, the page and the in-process feed; marshals feed messages to the page."""
 
@@ -408,9 +423,21 @@ class Host:
         hub = hudfeed.Hub(on_sent_in=lambda msg: AppHelper.callAfter(self.deliver, msg), token=self.token)
         self.socket = hudfeed.HubThread(hub, int(os.environ.get("ZMKHUD_PORT", "8766")), log=log)
 
+        # Remote mode (host/remote.py): a paired tablet's browser typing here, through keys of its
+        # own pressed on the main thread like the page's; its server runs on a loop of its own, and
+        # serves nothing until `zmk-layer-hud remote on` asks.
+        self.remote_typing = inject.Typing(self.make_typist_backend, lambda msg: self.remote.tell(msg),
+                                           AppHelper.callLater, pages=[inject.KEY_PAGE], log=log)
+        loop = asyncio.new_event_loop()
+        self.remote = remote_mod.Controller(RUN, OnMain(self.remote_typing), log=log, loop=loop)
+        self.remote_thread = threading.Thread(target=lambda: loop.run_until_complete(self.remote.run()),
+                                              name="remote", daemon=True)
+        self.remote_thread.start()
+
         def emit(msg):
             AppHelper.callAfter(self.deliver, msg)
             self.socket.send(msg)
+            self.remote.hub_said(msg)
         self.feed = hudfeed.Feed(emit, log=log).start()
         hub.on_inject, hub.sessions = self.feed.resync, self.feed.sessions
         self.socket.start()
@@ -653,6 +680,9 @@ class Host:
             return
         self.stopped = True
         self.typing.stop()              # keys up before the panel goes
+        self.remote.stop()              # no tablet's keys after this
+        self.remote_thread.join(timeout=2)
+        self.remote_typing.stop()
         panelstate.remove(RUN)
         panelstate.remove_token(RUN, self.token)
         self.feed.stop()

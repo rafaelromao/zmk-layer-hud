@@ -49,7 +49,7 @@ class Parser(unittest.TestCase):
         expected = {"start", "stop", "restart", "status", "log", "doctor", "setup", "update",
                     "uninstall", "import", "sync", "keymap", "config", "demo", "poke", "feed",
                     "version", "session", "heatmap", "show", "hide", "toggle", "menubar", "autostart", "power",
-                    "typing", "dock"}
+                    "typing", "dock", "remote"}
         self.assertEqual(expected, set(self.verbs))
 
     def test_the_session_verbs_need_no_venv(self):
@@ -313,6 +313,98 @@ class ShowHide(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertIn("restart", said)
         kill.assert_not_called()
+
+
+# A stand-in for what serves remote mode (host/remote.py): answers each request in remote.json the way
+# the controller does, in remote.live.json -- serving at a made-up address, or refusing with argv[3].
+FAKE_REMOTE = textwrap.dedent('''
+    import os, sys, time
+    sys.path.insert(0, sys.argv[1])
+    import remote
+    d, refusal = sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else ""
+    seen = None
+    while True:
+        req = remote.read_request(d)
+        if req.get("id") != seen:
+            seen = req.get("id")
+            on = bool(req.get("on")) and not refusal
+            live = {"pid": os.getpid(), "id": seen, "serving": on, "client": False,
+                    "until": req.get("until") if on else None, "typing": "ok", "why": refusal}
+            if on:
+                live["url"] = "http://192.168.1.5:%d/" % req["port"]
+            remote._write(os.path.join(d, remote.LIVE_FILE), live)
+        time.sleep(0.02)
+''')
+
+
+class Remote(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        for name, value in (("STATE", self.tmp.name), ("reexec_into_venv", lambda: None),
+                            ("remote_config", lambda: {"port": 8768, "minutes": 30, "bind": ""})):
+            p = mock.patch.object(cli, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        self.r = cli.remote_mod()
+
+    def start(self, script, *more):
+        proc = subprocess.Popen([sys.executable, "-c", script, os.path.join(ROOT, "host"), self.tmp.name, *more])
+        self.addCleanup(proc.wait)
+        self.addCleanup(proc.kill)
+        return proc
+
+    def run_cli(self, *argv, pids=()):
+        with mock.patch.object(cli, "panel_pids", lambda: list(pids)), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            code = cli.main(list(argv))
+        return code, out.getvalue() + err.getvalue()
+
+    def panel(self):
+        proc = self.start(FAKE_PANEL)
+        deadline = time.monotonic() + 10
+        while not os.path.exists(os.path.join(self.tmp.name, "panel.json")):
+            self.assertLess(time.monotonic(), deadline, "the stand-in never said it was there")
+            time.sleep(0.02)
+        return proc
+
+    def test_on_prints_the_link_and_off_and_unpair_close_it(self):
+        panel = self.panel()
+        self.start(FAKE_REMOTE)
+        code, said = self.run_cli("remote", "on", "--minutes", "5", pids=[panel.pid])
+        key = self.r.load_key(self.tmp.name)
+        self.assertEqual(0, code, said)
+        self.assertIn(f"http://192.168.1.5:8768/#k={key}", said)
+        self.assertIn("remote off", said)
+        self.assertEqual((True, 5), (self.r.read_request(self.tmp.name)["on"], self.r.read_request(self.tmp.name)["minutes"]))
+        code, said = self.run_cli("remote", pids=[panel.pid])
+        self.assertIn("remote: serving http://192.168.1.5:8768/ until", said)
+        self.assertNotIn(key, said)                               # only `on` shows the link
+        self.assertEqual("remote: off\n", self.run_cli("remote", "off", pids=[panel.pid])[1])
+        self.assertIn("remote: off (", self.run_cli("remote", "status", pids=[panel.pid])[1])
+        self.assertIn("unpaired", self.run_cli("remote", "unpair", pids=[panel.pid])[1])
+        self.assertIsNone(self.r.load_key(self.tmp.name))
+        self.run_cli("remote", "on", pids=[panel.pid])
+        self.assertNotEqual(key, self.r.load_key(self.tmp.name))  # paired again: a new link
+
+    def test_a_refusal_is_said(self):
+        panel = self.panel()
+        self.start(FAKE_REMOTE, "this computer's address (8.8.8.8) is a public one")
+        code, said = self.run_cli("remote", "on", pids=[panel.pid])
+        self.assertEqual(1, code)
+        self.assertIn("is a public one", said)
+        self.assertIn("off: this computer's address", self.run_cli("remote", pids=[panel.pid])[1])
+
+    def test_on_needs_a_running_hud_and_a_dead_servers_word_is_not_taken(self):
+        code, said = self.run_cli("remote", "on")
+        self.assertEqual(1, code)
+        self.assertIn("not running", said)
+        self.assertIsNone(self.r.load_key(self.tmp.name))         # nothing made for a HUD not there
+        gone = subprocess.Popen([sys.executable, "-c", "pass"])
+        gone.wait()
+        self.r._write(os.path.join(self.tmp.name, self.r.LIVE_FILE),
+                      {"pid": gone.pid, "serving": True, "url": "http://192.168.1.5:8768/", "until": 1})
+        self.assertIn("remote: off", self.run_cli("remote")[1])
 
 
 class SyncArgv(unittest.TestCase):

@@ -62,6 +62,9 @@
 # height_pct of the screen, a split board's halves at its sides; start: 1 starts it docked.
 # touch: { hold_ms: 280, lock_ms: 350, floating: 0 }
 # dock: { screen: eDP-1, height_pct: 40, split: 1, start: 0 }
+# `zmk-layer-hud remote on` lets a tablet's browser type here over the local network: open for
+# `minutes` with no tablet connected, and `bind` serves on an address of your choosing (a Tailscale one).
+# remote: { port: 8768, minutes: 30, bind: "" }
 
 # Optional: the stats bar's chips (see config/diamond.yaml for all of them), and the finger that
 # strikes each key when the HUD cannot tell from a split board's columns.

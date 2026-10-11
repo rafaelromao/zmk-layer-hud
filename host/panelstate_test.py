@@ -100,7 +100,7 @@ class PanelState(unittest.TestCase):
     def test_what_a_live_panel_says_is_read_back(self):
         panelstate.write(self.d, False)
         self.assertEqual({"pid": os.getpid(), "shown": False, "wpm": 0, "avg_wpm": None, "top_wpm": None, "session": None,
-                          "stats": [], "typing": None, "dock": False, "remote": None}, panelstate.read(self.d))
+                          "stats": [], "typing": None, "dock": False}, panelstate.read(self.d))
         panelstate.write(self.d, True, wpm=63)
         self.assertEqual(63, panelstate.read(self.d)["wpm"])
         self.assertEqual(["panel.json"], os.listdir(self.d))       # no temporary file left beside it
@@ -169,9 +169,9 @@ class PanelState(unittest.TestCase):
         self.assertIs(True, panelstate.wanted(self.d))
 
     def test_the_touch_keyboards_state_is_kept_checked(self):
-        panelstate.write(self.d, True, extra={"typing": "denied", "dock": True, "remote": {"until": 5}, "other": 1})
+        panelstate.write(self.d, True, extra={"typing": "denied", "dock": True, "other": 1})
         st = panelstate.read(self.d)
-        self.assertEqual(("denied", True, {"until": 5}), (st["typing"], st["dock"], st["remote"]))
+        self.assertEqual(("denied", True), (st["typing"], st["dock"]))
         self.assertNotIn("other", st)
         panelstate.write(self.d, True, extra={"typing": "sideways", "dock": "yes"})
         st = panelstate.read(self.d)

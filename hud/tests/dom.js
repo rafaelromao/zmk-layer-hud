@@ -316,7 +316,9 @@ function makeDocument() {
  * asked for is in `fetched`; a `?ws=` opens a WebSocket, which here only records its URL in
  * `sockets`. `protocol` is "file:" unless given: "http:" is a page in a browser, which installs the
  * dev keydown listener. `hostname` is "" for file: and "localhost" otherwise, unless given: a
- * published copy on some other host honours no URL parameter. */
+ * published copy on some other host honours no URL parameter. `remote` loads the page as a tablet
+ * gets it from host/remote.py, at `host` with the link's `hash`, its socket the test's `WebSocket`;
+ * what it keeps is in `stored`, and the addresses it put in the bar in `replaced`. */
 function loadPage(opts = {}) {
   const clock = new Clock();
   const document = makeDocument();
@@ -325,14 +327,21 @@ function loadPage(opts = {}) {
   const protocol = opts.protocol || "file:";
   const hostname = opts.hostname !== undefined ? opts.hostname : (protocol === "file:" ? "" : "localhost");
   const listeners = new Map();   // window's, by event type
-  const fetched = [], sockets = [];
+  const fetched = [], sockets = [], replaced = [];
+  // The remote page (host/remote.py): index.html marked remote, with remote.js after the rest.
+  if (opts.remote) document.documentElement.classList.add("remote");
+  const stored = new Map();
 
   const sandbox = {
     document,
-    location: { search: opts.search || "", protocol, hostname,
+    location: { search: opts.search || "", protocol, hostname, hash: opts.hash || "", pathname: "/",
+                host: opts.host || hostname,
                 href: (protocol === "file:" ? "file:///" : protocol + "//" + hostname + "/") + "hud/index.html" + (opts.search || "") },
     fetch: url => { fetched.push(String(url)); return new Promise(() => {}); },
-    WebSocket: class { constructor(url) { sockets.push(String(url)); } },
+    WebSocket: opts.WebSocket || class { constructor(url) { sockets.push(String(url)); } },
+    localStorage: { getItem: (k) => (stored.has(k) ? stored.get(k) : null), setItem: (k, v) => stored.set(k, String(v)) },
+    history: { replaceState: (s, t, url) => { replaced.push(url); sandbox.location.hash = ""; } },
+    crypto: { getRandomValues: (a) => require("node:crypto").webcrypto.getRandomValues(a) },
     navigator: { userAgent: "node" },
     console: opts.quiet ? { ...console, warn: () => {} } : console,   // a test that expects the page's warning
     URLSearchParams,
@@ -359,11 +368,12 @@ function loadPage(opts = {}) {
 
   vm.createContext(sandbox);
   // Every script index.html loads, in its order, as site/build.py reads them (hud_files).
-  for (const file of SCRIPTS) {
+  for (const file of opts.remote ? SCRIPTS.concat(["remote.js"]) : SCRIPTS) {
     const src = fs.readFileSync(path.join(HUD_DIR, file), "utf8");
     vm.runInContext(src, sandbox, { filename: path.join(HUD_DIR, file) });
   }
-  return { hud: sandbox.hud, keys: sandbox.keys, document, board, clock, window: sandbox, dispatch, fetched, sockets };
+  return { hud: sandbox.hud, keys: sandbox.keys, document, board, clock, window: sandbox, dispatch, fetched, sockets,
+           stored, replaced };
 }
 
 // Date with a movable now(). hud.js only ever calls Date.now(), but keep the rest of the class

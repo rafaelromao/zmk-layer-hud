@@ -143,25 +143,24 @@ def alive(pid):
 def write(d, shown, pid=None, wpm=0, stats=None, extra=None):
     """The panel's word: which process it is, whether it is on screen, how fast it is being typed
     on, `stats` (from stats_of) once the page has said them, and `extra` -- the touch keyboard's:
-    "typing" (ok, off, denied, missing, error), "dock" (true when docked), "remote" (its address
-    and until when, while a tablet may pair)."""
+    "typing" (ok, off, denied, missing, error) and "dock" (true when docked). Remote mode says
+    what it is doing in a file of its own (host/remote.py), from whichever process serves it."""
     obj = {"pid": pid or os.getpid(), "shown": bool(shown), "wpm": int(wpm or 0)}
     obj.update(stats or {})
     obj.update({k: v for k, v in (extra or {}).items() if k in EXTRA})
     _write(os.path.join(d, STATE_FILE), obj)
 
 
-EXTRA = ("typing", "dock", "remote")
+EXTRA = ("typing", "dock")
 TYPING_STATES = ("ok", "off", "denied", "missing", "error")
 # What the command line may ask a running panel for besides showing and hiding, each in a file of
 # its own (`dock.want`, ...) taken once, so one request never stands in for a later one.
-WANTS = ("dock", "typing", "remote")
+WANTS = ("dock", "typing")
 
 
 def request(d, name, value):
     """The command line's request of the touch keyboard's kind (WANTS), written before it sends
-    SIGNAL: `dock` true or false, `typing` "request" (ask the system for leave to type), `remote`
-    {"on": bool, ...}."""
+    SIGNAL: `dock` true or false, `typing` "request" (ask the system for leave to type)."""
     if name not in WANTS:
         raise ValueError(name)
     _write(os.path.join(d, f"{name}.want"), {"value": value})
@@ -212,7 +211,6 @@ def read(d):
     # The touch keyboard's, from a panel that says them; checked, as the rest is.
     st["typing"] = st.get("typing") if st.get("typing") in TYPING_STATES else None
     st["dock"] = st.get("dock") is True
-    st["remote"] = st.get("remote") if isinstance(st.get("remote"), dict) else None
     return st if alive(st["pid"]) else None
 
 

@@ -12,6 +12,7 @@ Every verb of `zmk-layer-hud`, as its own `--help` prints it. Written by `make c
 - [`toggle`](#toggle) — show the HUD if it is hidden, hide it if it is shown
 - [`status`](#status) — is it running, and what is it reading
 - [`typing`](#typing) — the touch keyboard's leave to type: whether it has it, and getting it
+- [`remote`](#remote) — a tablet's browser as the touch keyboard, typing here over the local network
 - [`session`](#session) — the typing sessions: the active one, naming it, starting or loading another
 - [`heatmap`](#heatmap) — what the keys glow with: the live heatmap, the session's, or none
 - [`log`](#log) — follow the panel and feed logs
@@ -157,6 +158,29 @@ positional arguments:
 options:
   -h, --help      show this help message and exit
   -y, --yes       run the privileged steps without asking
+```
+
+## remote
+
+```text
+usage: zmk-layer-hud remote [-h] [--minutes MINUTES] [--port PORT] [--bind ADDR] [--wait]
+                            [{status,on,off,unpair}]
+
+a tablet's browser as the touch keyboard, typing here over the local network
+
+positional arguments:
+  {status,on,off,unpair}
+                        status (default); on prints the link to open on the tablet; off; unpair
+                        makes every link given so far useless
+
+options:
+  -h, --help            show this help message and exit
+  --minutes MINUTES     how long it stays open with no tablet connected (default: config
+                        remote.minutes, else 30)
+  --port PORT           the port to serve on (default: config remote.port, else 8768)
+  --bind ADDR           the address to serve on, a Tailscale one say (default: this computer's on
+                        its local network; config remote.bind)
+  --wait                wait for Enter before going: for a terminal opened only to show the link
 ```
 
 ## session
@@ -439,7 +463,7 @@ options:
 usage: zmk-layer-hud feed [-h] [--config CONFIG] [--stdout] [--no-ws] [--port PORT] [--no-keymap]
                           [--no-keys] [--vid VID] [--pid PID] [--name NAME] [--serial DEV]
                           [--no-ble] [--ble-address BLE_ADDRESS] [--no-hid-keys] [--no-inject]
-                          [--no-sessions] [--debug] [--probes] [--raw]
+                          [--no-remote] [--no-sessions] [--debug] [--probes] [--raw]
 
 Host feed for the zmk-layer-hud pages. One source: the keyboard's own signal channel.
 
@@ -468,6 +492,8 @@ options:
   --no-inject           refuse messages sent in by a WebSocket client (layers, press, release,
                         key, device, heat), which host/hudpoke.py uses to drive the page without a
                         keyboard
+  --no-remote           never serve a tablet, whatever `zmk-layer-hud remote on` asks (Linux;
+                        host/remote.py)
   --no-sessions         keep no session files (config `feed.sessions: 0`): the counts last as long
                         as the page
   --debug               log layer messages to stderr

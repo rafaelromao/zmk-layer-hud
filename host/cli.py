@@ -68,7 +68,7 @@ REQUIREMENTS = os.path.join(ROOT, "host", "requirements.txt")
 
 # Verbs that need keymap-drawer, pyserial, websockets or pyobjc. Everything else must keep
 # working on a half-installed machine.
-NEEDS_VENV = {"start", "restart", "power", "keymap", "import", "sync", "poke", "feed", "demo"}
+NEEDS_VENV = {"start", "restart", "power", "keymap", "import", "sync", "poke", "feed", "demo", "remote"}
 
 
 class Fail(Exception):
@@ -372,6 +372,128 @@ def cmd_typing(args):
     raise Fail("the touch keyboard types on macOS and Linux only")
 
 
+# ---------- remote: a tablet's browser types here ----------
+
+def remote_mod():
+    sys.path.insert(0, os.path.join(ROOT, "host"))
+    import remote
+    return remote
+
+
+def remote_config():
+    """The config's remote: (port, minutes, bind), checked; its defaults without a config."""
+    import keymap as keymap_mod
+    try:
+        cfg = keymap_mod.load_yaml(keymap_mod.find_config())
+    except (keymap_mod.KeymapError, OSError):
+        return dict(keymap_mod.REMOTE_DEFAULTS)
+    try:
+        return keymap_mod.host_settings(cfg if isinstance(cfg, dict) else {})["remote"]
+    except keymap_mod.KeymapError as e:
+        raise Fail(str(e))
+
+
+def remote_live(r):
+    return r.live_now(STATE)
+
+
+def remote_line(r=None):
+    r = r or remote_mod()
+    live = remote_live(r)
+    if live.get("serving"):
+        until = time.strftime("%H:%M", time.localtime(live["until"])) if live.get("until") else "?"
+        typing = live.get("typing")
+        return (f"serving {live['url']} until {until}" + (", a tablet connected" if live.get("client") else "")
+                + ("" if typing in (None, "ok") else f"; {TYPING_SAID.get(typing, typing)} -- zmk-layer-hud typing setup"))
+    if live.get("why"):
+        return "off: " + live["why"]
+    return "off (`zmk-layer-hud remote on` pairs a tablet)"
+
+
+def remote_answer(r, req, timeout=4.0):
+    """The serving process's word on this request (remote.live.json naming its id), or {}."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        live = remote_live(r)
+        if live.get("id") == req["id"] and (live.get("serving") == req["on"] or live.get("why")):
+            return live
+        time.sleep(0.1)
+    return {}
+
+
+def print_qr(link):
+    """The link as a code for the tablet's camera, when qrencode is there to draw one. Handed over on
+    its standard input: an argument would show the key to anyone listing this machine's processes."""
+    if not shutil.which("qrencode"):
+        print("  (with qrencode installed, a code to scan is drawn here: brew or pacman install qrencode)")
+        return
+    print()
+    subprocess.run(["qrencode", "-t", "ANSIUTF8", "-m", "2"], input=link, text=True, check=False)
+
+
+def cmd_remote(args):
+    if not args.wait:
+        return remote_verb(args)
+    # A terminal opened only to show the link (the Omarchy bar's): what it says, failure too, stays
+    # until it is read.
+    try:
+        code = remote_verb(args)
+    except Fail as e:
+        warn(f"zmk-layer-hud remote: {e}")
+        code = 1
+    sys.stdout.flush()
+    try:
+        input("\n(Enter closes this window; remote mode stays as it is.)")
+    except (EOFError, KeyboardInterrupt):
+        pass
+    return code
+
+
+def remote_verb(args):
+    r = remote_mod()
+    if args.action == "status":
+        print("remote: " + remote_line(r))
+        return 0
+    if args.action in ("off", "unpair"):
+        req = r.write_request(STATE, False)
+        if remote_live(r).get("serving"):
+            remote_answer(r, req)
+        if args.action == "unpair":
+            print("remote: unpaired -- the tablets paired so far can no longer connect; `zmk-layer-hud remote on` "
+                  "pairs again with a new link" if r.unpair(STATE) else "remote: off, and nothing was paired")
+        else:
+            print("remote: off")
+        return 0
+    conf = remote_config()
+    minutes = args.minutes if args.minutes is not None else conf["minutes"]
+    port = args.port if args.port is not None else conf["port"]
+    bind = args.bind if args.bind is not None else conf["bind"]
+    if not 1 <= minutes <= 24 * 60:
+        raise Fail("--minutes takes 1 to 1440")
+    running_panel()                 # the HUD serves it: say so now rather than wait for nothing
+    key = r.load_key(STATE, create=True)
+    req = r.write_request(STATE, True, minutes=minutes, port=port, bind=bind)
+    live = remote_answer(r, req)
+    if not live:
+        raise Fail("the HUD did not answer; `zmk-layer-hud log` says what it is doing")
+    if not live.get("serving"):
+        raise Fail(live["why"])
+    link = live["url"] + "#k=" + key
+    until = time.strftime("%H:%M", time.localtime(live["until"]))
+    print("Open this on the tablet, on the same network as this computer:")
+    print()
+    print("  " + link)
+    print_qr(link)
+    print()
+    print(f"It is open until {until}, and for as long as a tablet is connected; `zmk-layer-hud remote off` closes it.")
+    print("The link is the pairing: whoever has it can type here while remote mode is on, and `remote unpair`")
+    print("makes it useless. Anyone on this Wi-Fi can see which keys the tablet presses, though not type: on a")
+    print("network you do not trust, --bind a Tailscale address instead.")
+    if live.get("typing") not in (None, "ok"):
+        print(f"Typing: {TYPING_SAID.get(live['typing'], live['typing'])} -- zmk-layer-hud typing setup")
+    return 0
+
+
 def feed_log_text():
     """Both logs, because where the feed writes depends on the host: the Linux panel starts it as
     a subprocess with its own hudfeed.log, the macOS one runs it in-process and it lands in
@@ -466,6 +588,7 @@ def cmd_status(args):
     if platform.system() in ("Darwin", "Linux"):
         print("login: " + login_line())
         print("typing: " + typing_line())
+        print("remote: " + remote_line())
     if platform.system() == "Linux":
         hypr_surfaces()
     return 0
@@ -2126,6 +2249,19 @@ def build_parser():
                         "on macOS the running HUD asks for Accessibility")
     s.add_argument("-y", "--yes", action="store_true", help="run the privileged steps without asking")
     s.set_defaults(func=cmd_typing)
+
+    s = add("remote", "a tablet's browser as the touch keyboard, typing here over the local network")
+    s.add_argument("action", nargs="?", default="status", choices=("status", "on", "off", "unpair"),
+                   help="status (default); on prints the link to open on the tablet; off; unpair makes every "
+                        "link given so far useless")
+    s.add_argument("--minutes", type=int, help="how long it stays open with no tablet connected "
+                                               "(default: config remote.minutes, else 30)")
+    s.add_argument("--port", type=int, help="the port to serve on (default: config remote.port, else 8768)")
+    s.add_argument("--bind", metavar="ADDR", help="the address to serve on, a Tailscale one say (default: this "
+                                                  "computer's on its local network; config remote.bind)")
+    s.add_argument("--wait", action="store_true", help="wait for Enter before going: for a terminal opened only "
+                                                       "to show the link")
+    s.set_defaults(func=cmd_remote)
 
     s = add("session", "the typing sessions: the active one, naming it, starting or loading another")
     s.add_argument("action", nargs="?", default="status",

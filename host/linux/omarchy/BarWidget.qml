@@ -49,6 +49,7 @@ BarWidget {
   property string wpmChoice: "current"    // which WPM the bar shows: current | average | top
   property bool docked: false         // the touch keyboard: docked along the bottom, typing
   property string typing: ""          // ok | off | denied | missing | error, as the HUD says it
+  property bool remoteOn: false       // remote mode: a paired tablet may type here (remote.live.json)
   property bool menuOpen: false
   property bool hoverOpen: false
 
@@ -134,6 +135,16 @@ BarWidget {
     onFileChanged: reload()
     onLoaded: root.read(text())
     onLoadFailed: root.stopped()
+  }
+
+  // Remote mode says what it is doing in a file of its own, gone when it stops.
+  FileView {
+    id: remoteFile
+    path: root.stateDir + "/remote.live.json"
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: { try { root.remoteOn = JSON.parse(text()).serving === true } catch (e) { root.remoteOn = false } }
+    onLoadFailed: root.remoteOn = false
   }
 
   FileView {
@@ -263,6 +274,10 @@ BarWidget {
        { kind: "item", text: root.docked ? "Float HUD" : "Dock HUD to type on it", verb: "dock", shortcut: "dock" }]
       .concat(root.typing === "denied" || root.typing === "missing"
         ? [{ kind: "item", text: "Allow typing…", verb: "typing", more: ["setup"], terminal: true }] : [])
+      // A tablet's browser as the touch keyboard: the link to open on it is shown in a terminal.
+      .concat(root.remoteOn
+        ? [{ kind: "item", text: "Stop remote typing", verb: "remote", more: ["off"] }]
+        : [{ kind: "item", text: "Pair a tablet…", verb: "remote", more: ["on", "--wait"], terminal: true }])
       .concat([{ kind: "item", text: "Quit HUD", verb: "stop", shortcut: "power" }])
 
   PopupCard {

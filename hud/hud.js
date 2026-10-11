@@ -2442,7 +2442,10 @@
       })
       .catch(e => console.error(e));
   }
-  if (location.protocol.startsWith("http") && !embedded) window.addEventListener("keydown", e => {
+  // Not on the remote page (host/remote.py): a tablet's own keyboard types into the computer there
+  // only through the board.
+  const remote = document.documentElement.classList.contains("remote");
+  if (location.protocol.startsWith("http") && !embedded && !remote) window.addEventListener("keydown", e => {
     const name = e.key.length === 1 ? null : e.key.toLowerCase().replace("arrow", "").replace("backspace", "delete").replace("enter", "return");
     hud.key({ type: "keyDown", chars: e.key.length === 1 ? e.key : "", name, flags: {} });
     if (e.key !== "F5" && !e.metaKey) e.preventDefault();
