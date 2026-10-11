@@ -62,6 +62,7 @@ wins over it. `<config>.imported.yaml` is the same facts written to be read, and
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -120,6 +121,23 @@ FEED_DEFAULTS = {
     "accessibility": 1,        # (Linux) tell the apps assistive technology is wanted, so a password field with focus is seen (0: leave that setting alone)
     "altgr": 0,                # 1: the right Alt is AltGr, a Linux host's US-International (ç is AltGr+,); 0: it is macOS's Option
 }
+
+# `touch:` section: the touch keyboard, the HUD typing when its keys are tapped (docs/touch.md).
+TOUCH_DEFAULTS = {
+    "enabled": 1,              # 0: the HUD never types, docked or not
+    "floating": 0,             # 1: the floating HUD types too, not only the docked one
+    "hold_ms": 280,            # a key held this long is held (a hold-tap's hold): glass is slower than a switch
+    "flavor": "balanced",      # how a hold-tap decides on glass: balanced, or firmware (as the keymap says)
+    "latch": 1,                # a hold let go with nothing else touched latches: one-shot, then locked
+    "lock_ms": 350,            # a latched key let go again within this locks
+    "sticky_ms": 0,            # a one-shot lapses after this (0: it waits for the next key)
+    "repeat_delay_ms": 450,    # a held key repeats after this, where the host does not repeat it itself
+    "repeat_ms": 60,           # ...and then every this
+    "combos": "chips",         # chips: a tappable chip per combo; chords: two fingers at once; both; off
+    "heat": 1,                 # touch typing warms the live heat (0: it does not)
+    "strip": 1,                # touch typing shows in the typed-keys strip (0: it does not)
+}
+TOUCH_CHOICES = {"flavor": ("balanced", "firmware"), "combos": ("chips", "chords", "both", "off")}
 
 # keymap-drawer glyph names -> text the HUD can show. The glyph id is kept too.
 GLYPHS = {
@@ -869,6 +887,41 @@ def draw(doc, drawer_cfg=None, stagger=True, fetch=True, previous=None, log=None
 
 # ---------- the message: built at runtime ----------
 
+def touch_settings(value):
+    """The `touch:` section checked: whole numbers, and the words TOUCH_CHOICES allows."""
+    if value is None:
+        value = {}
+    if not isinstance(value, dict):
+        raise KeymapError("touch: expected settings, one per line (`hold_ms: 300`)")
+    unknown = sorted(set(value) - set(TOUCH_DEFAULTS))
+    if unknown:
+        raise KeymapError(f"touch: unknown settings {unknown}; known: {sorted(TOUCH_DEFAULTS)}")
+    out = dict(TOUCH_DEFAULTS)
+    for k, v in value.items():
+        if k in TOUCH_CHOICES:
+            if v not in TOUCH_CHOICES[k]:
+                raise KeymapError(f"touch.{k} must be one of {', '.join(TOUCH_CHOICES[k])} (it is {v!r})")
+            out[k] = v
+            continue
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != int(v) or v < 0:
+            raise KeymapError(f"touch.{k} must be a whole number, 0 or more (it is {v!r}); the default is "
+                              f"{TOUCH_DEFAULTS[k]}")
+        out[k] = int(v)
+    return out
+
+
+def touch_actions(cfg, drawing, layers, zmk_layers, pos_to_idx, base, extras, combos):
+    """What every key does when tapped (host/actions.py). A keymap the touch keyboard cannot read
+    still draws: the HUD shows it, and only typing is off, with the reason."""
+    import actions as actions_mod   # here, not above: hudfeed imports this module, and actions it
+    try:
+        return actions_mod.build(layers, zmk_layers, pos_to_idx, base, extras, cfg.get("_imported_keymap"),
+                                 combos, int(cfg.get("combo_term_ms", 50)), drawing.get("sticky_label") or "sticky",
+                                 bool(int((cfg.get("feed") or {}).get("altgr", FEED_DEFAULTS["altgr"]))))
+    except Exception as e:  # noqa: BLE001 -- a bug here must not cost the user the HUD
+        return {"v": actions_mod.ACTIONS_VERSION, "error": f"{type(e).__name__}: {e}"}
+
+
 def build_message(cfg, drawing, source=""):
     """Everything the page needs, from the parsed config -- with what was imported folded in
     (merge_imported) -- and the definitions' drawing. Pure: no file, no keymap-drawer, no network."""
@@ -930,8 +983,11 @@ def build_message(cfg, drawing, source=""):
             raise KeymapError(f"positions: {len(positions)} entries for {n} drawer keys")
         pos_to_idx = {str(int(p)): i for i, p in enumerate(positions)}
     fingers = configured_fingers(cfg["fingers"], n) if cfg.get("fingers") is not None else infer_fingers(layout)
+    touch = touch_settings(cfg.get("touch"))
     return {
         "kind": "keymap",
+        # The message's own version, for a tablet app that keeps one (docs/touch.md).
+        "schema": 1,
         "source": source,
         "title": cfg.get("title") or "",
         "hud": hud_cfg,
@@ -958,6 +1014,9 @@ def build_message(cfg, drawing, source=""):
         "zmk_layers": zmk_layers,
         "base": base,
         "extras": extras,
+        # The touch keyboard: what each ZMK position does on each ZMK layer, and how glass is read.
+        "actions": touch_actions(cfg, drawing, layers, zmk_layers, pos_to_idx, base, extras, combos),
+        "touch": touch,
     }
 
 
@@ -1033,6 +1092,8 @@ def merge_imported(cfg, imported):
         cfg["combo_term_ms"] = int(imported["combo_term_ms"])
     if imported.get("combo_idle_ms") and "combo_idle_ms" not in cfg:
         cfg["combo_idle_ms"] = int(imported["combo_idle_ms"])
+    if isinstance(imported.get("keymap"), dict):
+        cfg["_imported_keymap"] = imported["keymap"]
     named = {tuple(sorted(c.get("positions") or [])) for c in (cfg.get("combos") or [])}
     inherited = [c for c in (imported.get("combos") or [])
                  if tuple(sorted(c.get("positions") or [])) not in named]
@@ -1112,6 +1173,8 @@ def main(argv=None):
                                             "`zmk-layer-hud import` wrote beside it.")
     p.add_argument("--config", help=f"config file (default: $ZMKHUD_CONFIG or {DEFAULT_CONFIG})")
     p.add_argument("--dump", action="store_true", help="print the full JSON message (default: a summary)")
+    p.add_argument("-o", "--output", metavar="FILE",
+                   help="write the full JSON message to FILE: what a tablet's touch keyboard imports")
     args = p.parse_args(argv)
     try:
         src = KeymapSource(args.config)
@@ -1119,6 +1182,21 @@ def main(argv=None):
     except (KeymapError, OSError) as e:
         print(f"keymap: {e}", file=sys.stderr)
         return 1
+    if args.output:
+        path = os.path.abspath(os.path.expanduser(args.output))
+        tmp = f"{path}.tmp-{os.getpid()}"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(msg, f, ensure_ascii=False)
+                f.write("\n")
+            os.replace(tmp, path)   # whole or not at all: a half-written file is not a keymap
+        except OSError as e:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            print(f"keymap: cannot write {args.output}: {e}", file=sys.stderr)
+            return 1
+        print(f"wrote {args.output}: open it with the ZMK Layer HUD app on the tablet (AirDrop, Files, or a share)")
+        return 0
     if args.dump:
         json.dump(msg, sys.stdout, ensure_ascii=False)
         print()
@@ -1127,6 +1205,9 @@ def main(argv=None):
               f"{len(msg['glyphs'])} glyphs, "
               f"{len(msg['zmk_layers'])} ZMK layers, {len(msg['combos'])} combos, {len(msg['activators'])} activators, "
               f"base {msg['base']!r}")
+        import actions as actions_mod
+        acts = msg.get("actions") or {}
+        print(f"touch keyboard error: {acts['error']}" if acts.get("error") else actions_mod.summary(acts))
     return 0
 
 

@@ -47,7 +47,7 @@ the layer list and the combo timings, and keeps the bindings themselves in the d
                             "props": { "bindings": ["&kp", "&kp"], "flavor": "balanced",
                                        "tapping-term-ms": ["280"] } } },
     "overrides": { "mt": { "flavor": "balanced" } },
-    "combos":    [ { "positions": [0, 1], "binding": "&kp ESC", "layers": [0, 2],
+    "combos":    [ { "name": "esc", "positions": [0, 1], "binding": "&kp ESC", "layers": [0, 2],
                      "timeout-ms": 30, "require-prior-idle-ms": null, "slow-release": false } ],
     "conditional": [ { "if": [1, 2], "then": 3 } ] } }
 ```
@@ -57,6 +57,8 @@ the layer list and the combo timings, and keeps the bindings themselves in the d
 - A behaviour's properties come in the shapes keymap-drawer's `DTNode` returns them: a phandle
   array as binding strings, any other array as its cells split at whitespace, a string, or `true`.
 - `overrides` are a keymap's `&mt { flavor = "balanced"; };` edits of a built-in behaviour.
+- Only the behaviours a key or a combo reaches are kept, through the bindings of the behaviours
+  they name in turn.
 - The file's `version` stays 1, so a HUD older than the touch keyboard still reads it; `keymap.v`
   is versioned on its own. A file without `keymap` -- an older import, a drawing with no repo --
   types from its legends.

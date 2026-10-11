@@ -393,6 +393,8 @@ def cmd_keymap(args):
         argv += ["--config", args.config]
     if args.dump:
         argv.append("--dump")
+    if args.output:
+        argv += ["--output", args.output]
     return keymap_mod.main(argv)
 
 
@@ -2098,6 +2100,8 @@ def build_parser():
     s = add("keymap", "check the HUD's own files load: the config and the definitions import wrote")
     s.add_argument("--config", help="config file")
     s.add_argument("--dump", action="store_true", help="print the full JSON message")
+    s.add_argument("-o", "--output", metavar="FILE",
+                   help="write the full JSON message to FILE, for a tablet's touch keyboard to import")
     s.set_defaults(func=cmd_keymap)
 
     s = add("config", "where the config is, and what is in it")

@@ -461,6 +461,42 @@ class Message(unittest.TestCase):
         self.assertIn(("Nav", 8, "sticky"), kinds)
 
 
+class Touch(unittest.TestCase):
+    """The touch keyboard's part of the message: its settings, and what each key does."""
+
+    def test_settings_are_filled_in_and_checked(self):
+        msg = message({}, DOC)
+        self.assertEqual(km.TOUCH_DEFAULTS, msg["touch"])
+        self.assertEqual(1, msg["schema"])
+        got = message({"touch": {"hold_ms": 320, "combos": "both", "flavor": "firmware"}}, DOC)["touch"]
+        self.assertEqual((320, "both", "firmware"), (got["hold_ms"], got["combos"], got["flavor"]))
+        for bad in ({"nope": 1}, {"hold_ms": "slow"}, {"hold_ms": -5}, {"latch": True}, {"combos": "some"}, "yes"):
+            with self.assertRaises(km.KeymapError, msg=repr(bad)):
+                message({"touch": bad}, DOC)
+
+    def test_a_drawing_alone_types_from_its_legends(self):
+        a = message({}, DOC)["actions"]
+        self.assertEqual("legends", a["source"])
+        base = [a["table"][i] for i in a["layers"]["0"]]
+        self.assertEqual("kp", base[0]["op"])
+        self.assertEqual(("ht", "mo", 1), (base[5]["op"], base[5]["hold"]["op"], base[5]["hold"]["layer"]))
+        self.assertEqual(("sl", 2), (base[8]["op"], base[8]["layer"]))
+
+    def test_the_imported_bindings_are_what_it_types(self):
+        cfg = {}
+        km.merge_imported(cfg, {"keymap": {"v": 1, "positions": 10, "layers": {
+            "0": ["&kp Q"] + ["&none"] * 9, "1": ["&trans"] * 10, "2": ["&trans"] * 10}}})
+        a = message(cfg, DOC)["actions"]
+        self.assertEqual(("keymap", "&kp Q"), (a["source"], a["table"][a["layers"]["0"][0]]["raw"]))
+
+    def test_a_broken_compiler_costs_typing_not_the_hud(self):
+        import actions
+        with unittest.mock.patch.object(actions, "build", side_effect=RuntimeError("boom")):
+            msg = message({}, DOC)
+        self.assertEqual("RuntimeError: boom", msg["actions"]["error"])
+        self.assertEqual("Base", msg["base"])
+
+
 class Drawing(unittest.TestCase):
     """What import writes: made once, from the drawer files, and then all the runtime has."""
 
@@ -531,6 +567,20 @@ class Runtime(unittest.TestCase):
             for name in ("example-3x5", "example-4x12", "diamond"):
                 msg = km.KeymapSource(os.path.join(REPO, "config", f"{name}.yaml"), log=lambda *a: None).load()
                 self.assertTrue(msg["layout"]["keys"], name)
+
+    def test_the_message_is_written_whole_for_a_tablet(self):
+        self.write_definitions()
+        out = os.path.join(self.tmp, "board.json")
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()) as said:
+            self.assertEqual(0, km.main(["--config", self.config, "-o", out]))
+        with open(out, encoding="utf-8") as f:
+            msg = json.load(f)
+        self.assertEqual(("keymap", 1, "legends"), (msg["kind"], msg["schema"], msg["actions"]["source"]))
+        self.assertIn("tablet", said.getvalue())
+        # No half-written file left beside it.
+        self.assertEqual(["board.json", "config.definitions.json", "config.yaml"], sorted(os.listdir(self.tmp)))
 
     def test_without_definitions_it_says_what_to_run_and_keeps_the_config(self):
         src = km.KeymapSource(self.config, log=lambda *a: None)

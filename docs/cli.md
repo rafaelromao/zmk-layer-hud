@@ -317,14 +317,15 @@ options:
 ## keymap
 
 ```text
-usage: zmk-layer-hud keymap [-h] [--config CONFIG] [--dump]
+usage: zmk-layer-hud keymap [-h] [--config CONFIG] [--dump] [-o FILE]
 
 check the HUD's own files load: the config and the definitions import wrote
 
 options:
-  -h, --help       show this help message and exit
-  --config CONFIG  config file
-  --dump           print the full JSON message
+  -h, --help         show this help message and exit
+  --config CONFIG    config file
+  --dump             print the full JSON message
+  -o, --output FILE  write the full JSON message to FILE, for a tablet's touch keyboard to import
 ```
 
 ## config
