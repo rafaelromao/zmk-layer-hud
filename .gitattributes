@@ -1,0 +1,5 @@
+# What installs and `update` leave out of the tree they fetch: GitHub's tarballs (codeload) are
+# made with git archive, which honours export-ignore. The demo's media stay in the repository, and
+# GitHub Pages serves them from docs/ as before; nothing the HUD runs reads them.
+*.mp4 export-ignore
+docs/romak-demo.gif export-ignore
