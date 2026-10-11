@@ -61,6 +61,9 @@ has it. A key marked `s: auto-sticky` leaves the layer its hold names on for the
 then `ão` on the ç extension), and what only that layer types is typed there only right after it. A character the keymap cannot type is named and skipped
 (`--strict` refuses the script instead). Optional:
 - `combos` and `wpm`, for this text alone;
+- `speed`: slow motion (or fast), this text alone at that many times the pace (`0.2`, a fifth): its
+  gaps, and how long a layer is up before its key, so a one-shot is seen waiting. A key stays down
+  no longer than 200 ms, as a tap does, so a hold-tap still taps;
 - `layers`, the layers it is typed over (vim's insert mode, say);
 - `stills`: its frames in a GIF, `each` keystroke (the default), the `last` one, or `none`.
 

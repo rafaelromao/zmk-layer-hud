@@ -38,6 +38,7 @@ HOLD_MS = 90          # how long a typed key stays down
 HELD_LEAD_MS = 120    # a Shift held for a capital goes down this long before the letter
 LAYER_LEAD_MS = 100   # a layer comes up this long before the key typed on it
 TAP_MS = 40           # how long a sticky layer's key is tapped
+SLOW_HOLD_MS = 200    # the longest a key stays down in slow motion: under a hold-tap's tapping term
 SETTLE_MS = 5
 STEP_MS = 1000        # how long a frame stays, played
 STEP_HOLD_MS = 250    # how long a frame's keys stay down, played
@@ -369,6 +370,16 @@ def compile(script, keymap, speed=1.0, combos=None):
             entry_combos = bool(step.get("combos", use_combos))
             wpm = step.get("wpm") or script.get("wpm")
             gap = pace(12000.0 / float(wpm) if wpm else ways.KEY_GAP_MS)   # a word is five characters
+            # Slow motion: this text alone at `speed` times the pace -- its gaps, and how long a
+            # layer is up before its key, so a one-shot is seen waiting. A key stays down no
+            # longer than a tap would, or a hold-tap would turn into its hold.
+            slow = float(step.get("speed") or 1.0)
+            slow = slow if slow > 0 else 1.0
+            gap = max(floor, gap / slow)
+            lead = lambda ms: max(floor, ms / min(1.0, slow))      # noqa: E731
+            hold = max(20.0, span(HOLD_MS) / slow)
+            if slow < 1:
+                hold = min(hold, max(span(HOLD_MS), SLOW_HOLD_MS))
             background = sorted(int(i) for i in step.get("layers", board.layers))
             board.set_layers(t, background)
             units, missing = speller.spell(text)
@@ -400,7 +411,7 @@ def compile(script, keymap, speed=1.0, combos=None):
                     board.press(b, km.zmk(one_shot_shift))
                     board.shift(b, True)
                     board.release(b + TAP_MS, km.zmk(one_shot_shift))
-                    b += max(LAYER_LEAD_MS, floor)
+                    b += lead(LAYER_LEAD_MS)
                 if target != board.layers:
                     if holding is not None:
                         board.release(b, holding)
@@ -414,12 +425,12 @@ def compile(script, keymap, speed=1.0, combos=None):
                             sticky = True
                             board.release(b + TAP_MS, act["pos"])
                     board.set_layers(b + SETTLE_MS, target)
-                    b += max(LAYER_LEAD_MS, floor)
+                    b += lead(LAYER_LEAD_MS)
                 if held:
                     for p in held:
                         board.press(b, p)
                     board.shift(b, True)
-                    b += max(HELD_LEAD_MS, floor)
+                    b += lead(HELD_LEAD_MS)
                 if way["combo"]:
                     b = after_idle(b)
                 for i, p in enumerate(strike):
@@ -429,7 +440,7 @@ def compile(script, keymap, speed=1.0, combos=None):
                 for i, ev in enumerate(evs):
                     board.send(last + REPORT_MS * (i + 1), key_event(ev, entry_combos))
                 reported = last + REPORT_MS * len(evs)
-                up = max(b + span(HOLD_MS), reported + SETTLE_MS)
+                up = max(b + hold, reported + SETTLE_MS)
                 strokes.append({"at_ms": int(round(b)), "check_ms": int(round(reported + 1)), "step": n + 1,
                                 "text": utext, "layers": board.layers,
                                 "down": sorted(board.down), "strike": strike, "combo": bool(way["combo"])})

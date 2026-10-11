@@ -175,6 +175,17 @@ class OneShots(unittest.TestCase):
         self.assertEqual([[17], [7], [1]], [s["strike"] for s in c.strokes])
         self.assertEqual([["nav"], []], self.layer_names(c))
 
+    def test_slow_motion_stretches_the_gaps_and_the_one_shot_wait_but_not_a_tap(self):
+        def at(c, kind, pos):
+            return [t for t, m in absolute(c) if m["kind"] == kind and m.get("pos") == pos]
+        for speed, wait, gap in ((1, play.LAYER_LEAD_MS, 12000 / 70), (0.2, play.LAYER_LEAD_MS / 0.2, 12000 / 70 / 0.2)):
+            c = compiled([{"type": "aé", "wpm": 70, "speed": speed}], ROMAK)
+            self.assertEqual("aé", typed(c))
+            a, alpha2, e = at(c, "press", 17)[0], at(c, "press", 32)[0], at(c, "press", 18)[0]
+            self.assertAlmostEqual(gap, alpha2 - a, delta=2)
+            self.assertAlmostEqual(wait, e - alpha2, delta=2)
+            self.assertLessEqual(at(c, "release", 18)[0] - e, play.SLOW_HOLD_MS)
+
     def test_the_romak_demo_plays_clean(self):
         c = play.compile(script("docs/demo-romak.json"), ROMAK)
         self.assertEqual([], c.problems)
