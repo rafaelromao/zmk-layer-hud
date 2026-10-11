@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """The Romak 34 demo, narrated in Brazilian Portuguese, and the same take as a GIF.
 
-    PY=~/.cache/zmk-showcase/tts-kokoro/bin/python
+    PY=~/.cache/zmk-showcase/tts/bin/python
     $PY docs/romak-demo/dub.py anchor    where the script's clock sits in the take
-    $PY docs/romak-demo/dub.py render    one clip per line, kokoro pm_alex (pt-br)
+    $PY docs/romak-demo/dub.py render    one clip per line, Piper pt_BR-faber-medium
     $PY docs/romak-demo/dub.py master    lay the clips, normalise, mux onto the take
     $PY docs/romak-demo/dub.py gif       the take, silent, as a GIF
     $PY docs/romak-demo/dub.py all       the four, in order
@@ -11,8 +11,10 @@
 The take is docs/romak-demo.mp4, recorded on Omarchy (REPORT.md). What this makes sits beside it,
 docs/romak-demo-pt-br.mp4 and docs/romak-demo.gif; the clips, the beds and the cues it measures go to
 docs/romak-demo/run/, which git ignores. It runs where the showcase's dub did (zmk-vim-mode's
-showcase/README.md, "Voice"): the Mac, with kokoro-onnx in ~/.cache/zmk-showcase -- the same
-engine and the same delivery, -16 LUFS with a -1.5 dBTP ceiling, 48 kHz stereo, the picture copied.
+showcase/README.md, "Voice"), from the same ~/.cache/zmk-showcase, with the showcase's delivery:
+-16 LUFS with a -1.5 dBTP ceiling, 48 kHz stereo, the picture copied. The voice is Piper's
+pt_BR-faber-medium (huggingface.co/rhasspy/piper-voices, into ~/.cache/zmk-showcase/voices): the
+author chose it over kokoro's pt-BR voices, which hurry a line and run its words together.
 
 Every line is spoken as the take starts typing it. When is the script's own: host/play.py compiles
 docs/demo-romak.json on config/romak-34.yaml exactly as drive.py did when it was recorded, so each
@@ -40,32 +42,43 @@ OUT = os.path.join(ROOT, "docs", "romak-demo-pt-br.mp4")
 GIF = os.path.join(ROOT, "docs", "romak-demo.gif")
 sys.path.insert(0, os.path.join(ROOT, "host"))
 
-VOICE = os.environ.get("ROMAK_DUB_VOICE", "pm_alex")
-SPEED = os.environ.get("ROMAK_DUB_SPEED", "1.0")
+VOICE = os.environ.get("ROMAK_DUB_VOICE", "pt_BR-faber-medium")
+LENGTH = os.environ.get("ROMAK_DUB_LENGTH", "")            # Piper's length_scale; empty: the voice's own
 LEAD_S = float(os.environ.get("ROMAK_DUB_LEAD", "0.3"))   # a line starts this far ahead of its typing
-KOKORO = os.path.expanduser(os.environ.get("ZMK_KOKORO_VENV", "~/.cache/zmk-showcase/tts-kokoro"))
+PIPER = os.path.expanduser(os.environ.get("ZMK_PIPER_VENV", "~/.cache/zmk-showcase/tts"))
 VOICES = os.path.expanduser("~/.cache/zmk-showcase/voices")
 LUFS, TRUE_PEAK = -16, -1.5
 
-# make-script.py's PARTS, as spoken: a line, or for a slow-motion part the words it shows.
+# make-script.py's PARTS, as spoken: a line, or for a slow-motion part the words it shows. A line
+# is read a piece at a time and the pieces joined with the pauses below: a clause, and `{...}`, a
+# letter or a macro read out, which has a pause either side. `[...]` is IPA, said as written: an
+# accented vowel or an "e" on its own is otherwise read as the letter's name.
 SPOKEN = [
     "Este é um exemplo de uso do layout Romak, de setenta a cento e vinte palavras por minuto.",
-    "À direita, o agá u dê mostra cada tecla, a camada ativa e o calor das teclas.",
-    "Os acentos ficam na Alfa dois, a um toque do polegar. Em câmera lenta:",
-    ["é", "ã", "ô"],
-    "O quê-u sai de uma tecla só da Alfa dois:",
-    ["quando"],
-    "Depois do cê-cedilha, a camada de extensão dá ão numa tecla:",
-    ["ação"],
-    "Maiúsculas usam o shift de um toque:",
-    ["Às", "João"],
-    "Letras dobradas usam a tecla de repetição:",
-    ["carro", "cem"],
+    "À direita, o painel mostra cada tecla, a camada ativa e o calor das teclas.",
+    "Os acentos ficam na Alfa dois, a um toque do polegar. Em câmera lenta.",
+    ["[ˈɛ]", "[ˈɐ̃]", "[ˈo]"],
+    "As letras {quê} [i] {u} saem de uma tecla só da Alfa dois.",
+    ["quando."],
+    "Depois do {cê-cedilha}, a camada de extensão dá {ão} numa tecla.",
+    ["ação."],
+    "Maiúsculas usam o shift de um toque.",
+    ["Às.", "João."],
+    "Letras dobradas usam a tecla de repetição.",
+    ["carro.", "cem."],
     "Sem câmera lenta, o ritmo sobe até cento e vinte palavras por minuto. Repare no calor:",
     "a fileira do meio trabalha mais, e os polegares cuidam do espaço, dos acentos e das camadas.",
-    "O layout Romak está disponível em rafael romão ponto guit rãb ponto i ó, barra romak.",
+    "O layout Romak está disponível no endereço que aparece na tela.",
 ]
+CLAUSE_PAUSE_S = 0.32      # after a comma, a semicolon, a colon
+SENTENCE_PAUSE_S = 0.6     # after a full stop
+LETTER_PAUSE_S = 0.25      # before and after a letter or a macro read out
 WORD = re.compile(r"[^\W_]+")
+CLAUSE = re.compile(r"(?<=[,;:.!?])\s+")
+PIECE = re.compile(r"\{([^}]+)\}|\[([^\]]+)\]")
+# The voice says ʎ (lh) as a bare glide, "cedía"; a held l before the glide is the lh the author
+# hears in cedilha and trabalha.
+LH = ["l", "ː", "j"]
 
 
 def fail(msg):
@@ -183,29 +196,82 @@ def offset():
 
 # ---------- render ----------
 
+def pieces(text):
+    """A line as the pieces it is rendered in: {text, ipa, pause after}. Clauses end on their
+    punctuation's pause; a {letter} has a pause either side; [ipa] is said as written."""
+    out = []
+    clauses = CLAUSE.split(text.strip())
+    for n, clause in enumerate(clauses):
+        at = 0
+        for m in PIECE.finditer(clause):
+            before = clause[at:m.start()].strip()
+            if before:
+                out.append({"text": before, "ipa": False, "pause": 0.0})
+            if m.group(1) and out:
+                out[-1]["pause"] = max(out[-1]["pause"], LETTER_PAUSE_S)
+            out.append({"text": m.group(1) or m.group(2), "ipa": m.group(2) is not None,
+                        "pause": LETTER_PAUSE_S if m.group(1) else 0.0})
+            at = m.end()
+        rest = clause[at:].strip()
+        if rest and rest not in ",;:.!?":
+            out.append({"text": rest, "ipa": False, "pause": 0.0})
+        elif rest and out:
+            out[-1]["text"] += rest   # the clause's own mark, after a piece
+        if n < len(clauses) - 1:
+            mark = clause.rstrip()[-1]
+            out[-1]["pause"] = max(out[-1]["pause"], SENTENCE_PAUSE_S if mark in ".!?" else CLAUSE_PAUSE_S)
+        else:
+            out[-1]["pause"] = 0.0
+    return out
+
+
 def render():
-    """One wav per cue, kokoro at 24 kHz; says when a line would still be speaking at the next."""
-    py = os.path.join(KOKORO, "bin", "python")
-    model, voices = os.path.join(VOICES, "kokoro-v1.0.onnx"), os.path.join(VOICES, "voices-v1.0.bin")
-    for p in (py, model, voices):
+    """One wav per cue, Piper at the voice's own rate; says when a line would still be speaking at
+    the next."""
+    py = os.path.join(PIPER, "bin", "python")
+    model = os.path.join(VOICES, f"{VOICE}.onnx")
+    for p in (py, model, model + ".json"):
         if not os.path.exists(p):
-            fail(f"no {p}: kokoro-onnx as zmk-vim-mode's showcase/README.md sets it up")
+            fail(f"no {p}: Piper as zmk-vim-mode's showcase/README.md sets it up, and the voice beside it")
     c, at, parts = compiled()
     lines = cues(c, at, parts)
     shutil.rmtree(CLIPS, ignore_errors=True)
     os.makedirs(CLIPS)
-    prog = ("import sys, soundfile as sf\nfrom kokoro_onnx import Kokoro\n"
-            "k = Kokoro(sys.argv[1], sys.argv[2])\n"
-            "for i, text in enumerate(sys.stdin.read().split('\\n')):\n"
-            "    s, sr = k.create(text, voice=sys.argv[3], speed=float(sys.argv[4]), lang='pt-br')\n"
-            "    sf.write(f'{sys.argv[5]}/{i:02d}.wav', s, sr)\n")
-    run([py, "-c", prog, model, voices, VOICE, SPEED, CLIPS], input="\n".join(t for _, t in lines), text=True,
-        stderr=subprocess.DEVNULL)
-    import soundfile
+    jobs = [pieces(text) for _, text in lines]
+    prog = r"""
+import sys, json, wave, numpy as np
+from piper import PiperVoice
+from piper.config import SynthesisConfig
+v = PiperVoice.load(sys.argv[1])
+sr, out, lh = v.config.sample_rate, sys.argv[2], json.loads(sys.argv[4])
+syn = SynthesisConfig(length_scale=float(sys.argv[3])) if sys.argv[3] else None
+
+def trim(a):
+    loud = np.flatnonzero(np.abs(a) > np.abs(a).max() * 10 ** (-45 / 20))
+    return a[loud[0]:loud[-1] + 1] if len(loud) else a[:0]
+
+for i, line in enumerate(json.load(sys.stdin)):
+    parts = []
+    for p in line:
+        sentences = [list(p["text"].replace(" ", ""))] if p["ipa"] else v.phonemize(p["text"])
+        for ph in sentences:
+            ph = [q for c in ph for q in (lh if c == "ʎ" else [c])]
+            parts.append(trim(v.phoneme_ids_to_audio(v.phonemes_to_ids(ph), syn)))
+        parts.append(np.zeros(int(p["pause"] * sr), dtype=np.float32))
+    a = np.concatenate(parts)
+    a = a * min(1.0, 0.99 / max(1e-9, float(np.abs(a).max())))
+    with wave.open(f"{out}/{i:02d}.wav", "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(sr)
+        w.writeframes((a * 32767).astype(np.int16).tobytes())
+"""
+    run([py, "-c", prog, model, CLIPS, LENGTH, json.dumps(LH)], input=json.dumps(jobs, ensure_ascii=False),
+        text=True, stderr=subprocess.DEVNULL)
+    import wave
     made, late = [], 0
     for i, (at_s, text) in enumerate(lines):
-        info = soundfile.info(os.path.join(CLIPS, f"{i:02d}.wav"))
-        made.append({"at_s": round(at_s, 3), "dur_s": round(info.duration, 3), "text": text})
+        with wave.open(os.path.join(CLIPS, f"{i:02d}.wav")) as w:
+            dur = w.getnframes() / w.getframerate()
+        made.append({"at_s": round(at_s, 3), "dur_s": round(dur, 3), "text": text})
     for a, b in zip(made, made[1:]):
         if a["at_s"] + a["dur_s"] > b["at_s"] - 0.1:
             late += 1
@@ -213,7 +279,7 @@ def render():
                   f"{b['text'][:30]!r}", file=sys.stderr)
     with open(os.path.join(RUN, "cues.json"), "w", encoding="utf-8") as f:
         json.dump(made, f, ensure_ascii=False, indent=1)
-    print(f"render: {len(made)} clips, {VOICE} at {SPEED}, {sum(m['dur_s'] for m in made):.1f} s of voice")
+    print(f"render: {len(made)} clips, {VOICE}, {sum(m['dur_s'] for m in made):.1f} s of voice")
     if late:
         fail(f"{late} line(s) run into the next: shorten them, or slow the part they narrate")
 
@@ -238,10 +304,12 @@ def master():
     bed = os.path.join(RUN, "narration.wav")
     graph = ";".join(chains) + f";{mix}amix=inputs={len(made)}:normalize=0,apad,atrim=0:{dur:.3f},aformat=channel_layouts=stereo[out]"
     run(["ffmpeg", "-v", "error", "-y", *inputs, "-filter_complex", graph, "-map", "[out]", "-ar", "48000", bed])
-    meas = run(["ffmpeg", "-hide_banner", "-i", bed, "-af", f"loudnorm=I={LUFS}:TP={TRUE_PEAK}:LRA=11:print_format=json",
+    # The peak is aimed half a dB under the ceiling: the AAC encode overshoots it by about a tenth.
+    tp = TRUE_PEAK - 0.5
+    meas = run(["ffmpeg", "-hide_banner", "-i", bed, "-af", f"loudnorm=I={LUFS}:TP={tp}:LRA=11:print_format=json",
                 "-f", "null", "-"], capture_output=True, text=True).stderr
     m = json.loads(meas[meas.rindex("{"):meas.rindex("}") + 1])
-    norm = (f"loudnorm=I={LUFS}:TP={TRUE_PEAK}:LRA=11:measured_I={m['input_i']}:measured_TP={m['input_tp']}:"
+    norm = (f"loudnorm=I={LUFS}:TP={tp}:LRA=11:measured_I={m['input_i']}:measured_TP={m['input_tp']}:"
             f"measured_LRA={m['input_lra']}:measured_thresh={m['input_thresh']}:offset={m['target_offset']}:linear=true")
     normed = os.path.join(RUN, "narration-normed.wav")
     run(["ffmpeg", "-v", "error", "-y", "-i", bed, "-af", norm, "-ar", "48000", normed])
@@ -258,7 +326,7 @@ def check():
     lufs = float(re.findall(r"I:\s+(-?[\d.]+) LUFS", ebu)[-1])
     peak = float(re.findall(r"Peak:\s+(-?[\d.]+) dBFS", ebu)[-1])
     print(f"master: {os.path.relpath(OUT, ROOT)} -- {', '.join(streams)}; {lufs:.1f} LUFS, true peak {peak:.1f} dBTP")
-    if abs(lufs - LUFS) > 1 or peak > TRUE_PEAK + 0.2:
+    if abs(lufs - LUFS) > 1 or peak > TRUE_PEAK:
         fail(f"loudness off: {lufs:.1f} LUFS (want {LUFS}), {peak:.1f} dBTP (want <= {TRUE_PEAK})")
 
 

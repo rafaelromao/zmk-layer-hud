@@ -18,7 +18,7 @@ what step 7 puts back.
 | `drive.py` | plays the script into the HUD and types it with wtype |
 | `make-script.py` | writes the script, `text.txt` and `chapters.txt` from one list of parts; edit the text there |
 | `chapters.txt` | each part's time in the recording, for the video's description |
-| `dub.py` | after the take, on the Mac (kokoro): the pt-BR narration and the GIF, `../romak-demo-pt-br.mp4` and `../romak-demo.gif` |
+| `dub.py` | after the take, on the Mac (Piper, pt_BR-faber-medium): the pt-BR narration and the GIF, `../romak-demo-pt-br.mp4` and `../romak-demo.gif` |
 | `../demo-romak.json` | the script `make-script.py` writes: a pace per part, slow motion (`speed`) where it shows a one-shot |
 | `../../config/romak-34.yaml` | the HUD config, pinned to Omarchy (`feed.altgr`: ç is AltGr+,); the layout is `../../examples/romak-34.yaml` |
 
