@@ -26,12 +26,14 @@ DEBUG = os.environ.get("ZMKHUD_DEBUG") == "1"  # log every layer message with a 
 try:
     import objc
     from AppKit import (NSAlert, NSApplication, NSApplicationActivationPolicyAccessory, NSBackingStoreBuffered,
-                        NSColor, NSEvent, NSEventMaskLeftMouseDown, NSMakeRect, NSMenu, NSMenuItem, NSOnState,
-                        NSPanel, NSTextField, NSScreen, NSStatusWindowLevel, NSWindowCollectionBehaviorCanJoinAllSpaces,
+                        NSColor, NSCursor, NSEvent, NSEventMaskLeftMouseDown, NSMakeRect, NSMenu, NSMenuItem, NSOnState,
+                        NSPanel, NSTextField, NSScreen, NSStatusWindowLevel, NSTrackingActiveAlways, NSTrackingArea,
+                        NSTrackingInVisibleRect, NSTrackingMouseEnteredAndExited, NSTrackingMouseMoved,
+                        NSWindowCollectionBehaviorCanJoinAllSpaces,
                         NSWindowCollectionBehaviorFullScreenAuxiliary, NSWindowCollectionBehaviorStationary,
                         NSWindowStyleMaskBorderless, NSWindowStyleMaskNonactivatingPanel, NSWorkspace)
     from Foundation import (NSActivityUserInitiatedAllowingIdleSystemSleep, NSNotificationCenter, NSObject,
-                            NSProcessInfo, NSURL)
+                            NSProcessInfo, NSURL, NSZeroRect)
     from WebKit import WKUserContentController, WKWebView, WKWebViewConfiguration
     from PyObjCTools import AppHelper, MachSignals
 except ImportError:
@@ -109,12 +111,34 @@ class DragWebView(WKWebView):
     WebKit's own views whether a press may move the window, never this one, so it moved the window
     from under the slider too. The page says where its controls are ({"kind": "nodrag", "rects":
     [[x, y, w, h], ...]}, page points from the top left); a press anywhere else starts a window drag
-    (Host.mouse_down)."""
+    (Host.mouse_down).
+
+    The pointer is the panel's to set as well. WebKit sets it only for the key window, and a panel
+    that never takes the keyboard is never that: so over a control the panel shows the hand the
+    page asks for (every control does), and the arrow elsewhere. The page's hover styles want the
+    mouse's moves, which WebKit too tracks only in the key window: the panel tracks them always
+    (track_pointer) and passes them on."""
 
     no_drag = []
+    POINTER = NSTrackingMouseMoved | NSTrackingMouseEnteredAndExited | NSTrackingInVisibleRect | NSTrackingActiveAlways
 
     def mouseDownCanMoveWindow(self):
         return False
+
+    @objc.python_method
+    def track_pointer(self):
+        """Mouse moves over the page, key window or not (mouseMoved_, mouseExited_). The rect is
+        the visible one, kept up by AppKit, so this is done once."""
+        self.addTrackingArea_(NSTrackingArea.alloc().initWithRect_options_owner_userInfo_(NSZeroRect, self.POINTER, self, None))
+
+    def mouseMoved_(self, event):
+        if Host.instance and Host.instance.shown:
+            (NSCursor.pointingHandCursor() if self.on_control(event) else NSCursor.arrowCursor()).set()
+        objc.super(DragWebView, self).mouseMoved_(event)      # the page's :hover
+
+    def mouseExited_(self, event):
+        NSCursor.arrowCursor().set()     # or the hand would stay over whatever is next
+        objc.super(DragWebView, self).mouseExited_(event)
 
     @objc.python_method
     def on_control(self, event):
@@ -322,6 +346,7 @@ class Host:
         web.loadFileURL_allowingReadAccessToURL_(NSURL.fileURLWithPath_(str(PAGES / "index.html")),
                                                  NSURL.fileURLWithPath_(str(PAGES)))
         panel.setContentView_(web)
+        web.track_pointer()              # the hand over a control, and the page's hover styles
         # Every press in the panel is looked at first: on a control it goes to the page as it is,
         # anywhere else it moves the window and the page never sees it (nothing there takes a click).
         self.monitor = NSEvent.addLocalMonitorForEventsMatchingMask_handler_(NSEventMaskLeftMouseDown, self.mouse_down)

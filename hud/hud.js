@@ -470,7 +470,8 @@
     const handler = panelHandler();
     if (!handler) return;
     // Everything that takes a click: a press there goes to the page, anywhere else it moves the
-    // panel. The slider's whole box, not just its track, so a press a little off the thumb works.
+    // panel, and the macOS panel shows the hand there (host/macos/panel.py DragWebView). The
+    // slider's whole box, not just its track, so a press a little off the thumb works.
     let rects = [];
     try {
       const controls = [$("side"), $("hide"), $("close"), $("statsHead"), bar.layer && bar.layer.pick]
