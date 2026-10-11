@@ -624,7 +624,9 @@ From a clone, `make install` sets the machine up and puts `zmk-layer-hud` on you
 that clone; `make test` runs every suite — the firmware's wire policy in C, the host decoder and
 keymap conversion in Python, and the page under node.
 [docs/development.md](docs/development.md) covers what each suite sweeps and how the command line
-is put together.
+is put together. Commit messages start with a Conventional Commits type (`feat:`, `fix:`, `docs:`...):
+releases are made from them by release-please, and CI runs every platform's suites on each pull
+request ([Commits, CI and releases](docs/development.md#commits-ci-and-releases)).
 
 ## License
 

@@ -7,6 +7,11 @@ plugins {
     id("com.android.application")
 }
 
+// The app's version, which release-please sets with each release (release-please-config.json); the
+// version code follows from it, so each release installs over the one before.
+val appVersion = "1.2.0" // x-release-please-version
+val (major, minor, patch) = appVersion.split(".").map { it.toInt() }
+
 android {
     namespace = "io.github.rafaelromao.zmkhud"
     compileSdk = 36
@@ -15,8 +20,8 @@ android {
         applicationId = "io.github.rafaelromao.zmkhud"
         minSdk = 28
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.2.0"
+        versionCode = major * 10000 + minor * 100 + patch
+        versionName = appVersion
     }
 
     compileOptions {

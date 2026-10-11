@@ -2207,7 +2207,16 @@ def describe_version():
         except subprocess.SubprocessError:
             pass
     v = installed_version()
-    return f"{describe_installed(v)} (installed)" if v else "(installed tree)"
+    if v:
+        return f"{describe_installed(v)} (installed)"
+    # A tree with neither git nor an install record (an unpacked tarball): the version release-please
+    # keeps in version.txt.
+    try:
+        with open(os.path.join(ROOT, "version.txt"), encoding="utf-8") as f:
+            tree = f.read().strip()
+    except OSError:
+        tree = ""
+    return f"v{tree} (installed tree)" if re.fullmatch(r"\d+\.\d+\.\d+", tree) else "(installed tree)"
 
 
 # ---------- the parser ----------

@@ -903,6 +903,19 @@ class Update(unittest.TestCase):
             self.assertEqual("main 06846f5 (installed)", cli.describe_version())
             self.assertEqual("main", cli.ref_to_follow(cli.installed_version()))    # a branch: that branch again
 
+    def test_a_tree_with_no_record_says_the_version_release_please_keeps(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with mock.patch.object(cli, "ROOT", tmp.name), mock.patch.object(cli, "in_clone", lambda: False):
+            with open(os.path.join(tmp.name, "version.txt"), "w") as f:
+                f.write("1.2.0\n")
+            self.assertEqual("v1.2.0 (installed tree)", cli.describe_version())
+            with open(os.path.join(tmp.name, "version.txt"), "w") as f:
+                f.write("not a version\n")
+            self.assertEqual("(installed tree)", cli.describe_version())
+        with open(os.path.join(ROOT, "version.txt")) as f:
+            self.assertRegex(f.read().strip(), r"^\d+\.\d+\.\d+$")           # the tree's own, as release-please writes it
+
     def test_update_leaves_a_tree_already_at_the_commit_alone_and_swaps_one_that_is_not(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

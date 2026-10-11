@@ -22,9 +22,15 @@ settings:
   base:
     DEVELOPMENT_TEAM: $(ZMKHUD_TEAM)
     SWIFT_VERSION: "5.0"
-    MARKETING_VERSION: "1.2.0"
+    MARKETING_VERSION: "1.2.0" # x-release-please-version
     CURRENT_PROJECT_VERSION: "1"
     TARGETED_DEVICE_FAMILY: "1,2"
+schemes:
+  ZmkHud:
+    build:
+      targets:
+        ZmkHud: all
+        Keyboard: all
 targets:
   ZmkHud:
     type: application
