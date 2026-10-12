@@ -135,6 +135,7 @@
   // What other scripts on the page hook into (hud.on): touch.js follows the keymap and the layers.
   const hooks = {};
   let attachOwn = null;      // a page's own attach and detach (hud.setAttach), else the panel's
+  let widthDue = null;       // the board's width checked again soon (followWidth)
   function fire(name, arg) {
     for (const fn of hooks[name] || []) {
       try { fn(arg); } catch (e) { console.error(e); }
@@ -184,6 +185,7 @@
     state.chipsEl = null;   // went with the keys
     board.style.height = g.height + "px";
     state.boardHeight = g.height;
+    state.builtWidth = width;
     // Legends scale with the typical key height (see --kh in hud.css).
     board.style.setProperty("--kh", Math.max(20, g.kh) + "px");
     // What a combo's pill is placed around (pillSpot): the board's extent, each key's box as drawn
@@ -839,7 +841,10 @@
       body.classList.toggle("dark", theme() === "dark");
       paintHeat();                  // light keys glow, dark keys take the ramp's steps (paintKeyHeat)
     }
-    if (body.classList.contains("side-hidden") === sideShown()) body.classList.toggle("side-hidden", !sideShown());
+    if (body.classList.contains("side-hidden") === sideShown()) {
+      body.classList.toggle("side-hidden", !sideShown());
+      followWidth();                // the board beside it is narrower or wider now, unless a panel grows
+    }
     const side = $("side");
     if (side) {
       const say = sideShown() ? "hide the stats" : "show the stats";
@@ -2390,6 +2395,21 @@
   // and the combo pill with it. Headless browsers fire a resize after the first layout, which is
   // why a screenshot could come back with the board drawn but nothing on it.
   window.addEventListener("resize", () => { if (state.data && !state.demoShown) { buildBoard(); render(); postSize(); } });
+  // ...and when the board's own width changes while the window's does not: the stats column shown or
+  // hidden in a browser, which no panel resizes, would leave the keys drawn over it. A moment later,
+  // so a panel that grows the window for the column has done so, and the board is drawn once, at its
+  // width; asked by the column's chevron itself as well as by an observer, which a page that is not
+  // being painted (a hidden tab) never hears from. Put away (a minimized keyboard), the board has no
+  // width to follow.
+  function followWidth() {
+    clearTimeout(widthDue);
+    widthDue = setTimeout(() => {
+      widthDue = null;
+      const w = $("board").clientWidth;
+      if (state.data && !state.demoShown && w > 0 && Math.abs(w - (state.builtWidth || 0)) >= 1) { buildBoard(); render(); postSize(); }
+    }, 150);
+  }
+  if (window.ResizeObserver) new window.ResizeObserver(followWidth).observe($("board"));
 
   // Generic host: index.html?ws=ws://127.0.0.1:8766 — messages are
   //   {"kind":"keymap",…}  {"kind":"key", ...event}  {"kind":"layers","ids":[…]}   (host/hudfeed.py speaks this).

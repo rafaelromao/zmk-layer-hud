@@ -324,6 +324,21 @@ function page(opts) {
   check(!html(bare).classList.contains("attachable"), "no panel, no attach");
 })();
 
+(function theStatsShownOrHiddenTheBoardIsDrawnToItsWidth() {
+  // A browser's window stays as it is when the column comes or goes, so the board, narrower or wider
+  // beside it, is drawn again at its own width: never under the column.
+  const p = page();
+  const right = () => Math.max(...p.hud.state.keyEls.map((e) => parseFloat(e.style.left) + parseFloat(e.style.width)));
+  p.board.style.width = "800px";
+  p.hud.setPref("side", "hidden");
+  p.clock.advance(200);
+  check(right() > 700, `the column hidden, the board as wide as it is: ${right()}`);
+  p.board.style.width = "400px";
+  p.hud.setPref("side", "shown");
+  p.clock.advance(200);
+  check(right() <= 400, `the column shown, no key reaches under it: ${right()}`);
+})();
+
 (function aTouchKeyboardWaitsForNoKeyboard() {
   const p = page();
   check(!/waiting for the keyboard/.test(p.document.getElementById("feed").textContent),

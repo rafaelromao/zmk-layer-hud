@@ -355,6 +355,7 @@ function loadPage(opts = {}) {
     Date: makeDate(clock),
     innerHeight: opts.innerHeight || 800,
     innerWidth: opts.innerWidth || 1280,
+    ResizeObserver: opts.ResizeObserver,
   };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;

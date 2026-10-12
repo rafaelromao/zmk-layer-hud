@@ -402,7 +402,10 @@ html.dock #hud { padding: 4px 10px 6px; gap: 4px; border-radius: 0; }
 html.dock #layer { min-height: 20px; padding: 0 4px 2px; border-bottom-width: 2px; gap: 8px; }
 html.dock #layerName { font-size: 15px; line-height: 20px; }
 html.dock #layerSub { padding-top: 0; }
-html.dock #stats, html.dock #status, html.dock #keys, html.dock #side { display: none; }
+html.dock #stats, html.dock #status, html.dock #keys { display: none; }
+/* The chevron shows and hides the column between a split board's halves too; with no room there,
+   there is nothing for it to show. */
+html.dock:not(.stats-middle) #side, html.dock.mini #side { display: none; }
 /* A browser window docked (touch.js, `&touch` in development): the keyboard along its bottom, as
    along a screen's. */
 html.dock.bottom #frame { position: fixed; left: 0; right: 0; bottom: 0; }   /* over html.stats-middle #frame: fixed holds the column as well */
