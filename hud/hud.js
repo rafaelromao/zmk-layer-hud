@@ -174,6 +174,7 @@
     state.rects = g.rects;
     state.chipsEl = null;   // went with the keys
     board.style.height = g.height + "px";
+    state.boardHeight = g.height;
     // Legends scale with the typical key height (see --kh in hud.css).
     board.style.setProperty("--kh", Math.max(20, g.kh) + "px");
     // What a combo's pill is placed around (pillSpot): the board's extent, each key's box as drawn
@@ -223,7 +224,20 @@
     const b = board.getBoundingClientRect(), f = frame.getBoundingClientRect();
     host.style.left = (b.left - f.left + g.middle.x + (g.middle.w - STATS_WIDTH) / 2) + "px";
     host.style.top = (b.top - f.top) + "px";
-    host.style.maxHeight = g.height + "px";
+    fitMiddle();
+  }
+
+  // The column in the middle as tall as its stats: the strip grows to hold it, within the room the
+  // host allows, and only past that does it scroll. The keys stay where they are.
+  function fitMiddle() {
+    if (!document.documentElement.classList.contains("stats-middle") || !state.dock) return;
+    const host = $("stats"), board = $("board");
+    host.style.maxHeight = "";
+    const need = Math.ceil(host.scrollHeight || 0);
+    const room = Math.max(40, (state.dock.maxHeight || window.innerHeight || 360) - DOCK_CHROME);
+    const h = Math.max(state.boardHeight || 0, Math.min(need, room));
+    if (board.style.height !== h + "px") board.style.height = h + "px";
+    host.style.maxHeight = h + "px";
   }
 
   // ZMK layer id → keymap entry ({name, drawer, label, cls}); falls back to the YAML order.
@@ -1395,6 +1409,7 @@
   // A column taller than the board makes the page taller, and one shown or hidden changes the
   // panel's width (postSize): the panel sizes itself from what the page says.
   function followBar() {
+    fitMiddle();          // stats shown or hidden change how tall the column in the middle is
     const shape = bar.host.offsetHeight + (bar.host.classList.contains("off") ? "/off" : "") + (sideShown() ? "" : "/hidden");
     if (shape !== bar.shape) { bar.shape = shape; postSize(); } else postNoDrag();
   }

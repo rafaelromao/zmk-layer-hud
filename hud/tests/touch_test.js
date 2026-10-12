@@ -338,6 +338,18 @@ function audioPage(touch, sinkExtra, floating) {
   check(sl > leftHalfEnd && sl + 188 < rightHalfStart, `between them: ${leftHalfEnd.toFixed(0)} < ${sl.toFixed(0)}..${(sl + 188).toFixed(0)} < ${rightHalfStart.toFixed(0)}`);
   check(Math.abs((sl + 94) - (leftHalfEnd + rightHalfStart) / 2) < st.gap, "in the middle");
   check(stats.style.maxHeight === Math.ceil(100 * st.scale) + "px", `no taller than the board: ${stats.style.maxHeight}`);
+  // A column taller than the board: the strip grows to hold it, within the room the host allows.
+  const tall = loadPage();
+  tall.hud.load(split);
+  tall.board.style.width = "1600px";
+  const tallStats = tall.document.getElementById("stats");
+  tallStats.scrollHeight = 330;
+  tall.hud.setDock({ on: true, max_height: 600 });
+  check(tall.board.style.height === "330px" && tallStats.style.maxHeight === "330px",
+        `the column whole, the strip as tall as it: ${tall.board.style.height}, ${tallStats.style.maxHeight}`);
+  tallStats.scrollHeight = 900;
+  tall.hud.setDock({ on: true, max_height: 600 });
+  check(tall.board.style.height === "560px", `and no taller than the host allows: ${tall.board.style.height}`);
   p.hud.setDock({ on: false });
   check(!root(p).classList.contains("stats-middle") && stats.style.left === "", "floating again, the column goes back to the side");
 

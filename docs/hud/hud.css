@@ -389,12 +389,17 @@ html.dock #layerName { font-size: 15px; line-height: 20px; }
 html.dock #layerSub { padding-top: 0; }
 html.dock #stats, html.dock #status, html.dock #keys, html.dock #side { display: none; }
 /* ...but a split board's halves at the sides leave room between them, and there the stats column
-   sits when it fits (hud.js placeStats): as tall as the board, scrolling when it is taller. Hidden
-   still when it was hidden (the chevron's choice, stats_bar: 0). */
+   sits when it fits (hud.js placeStats): whole, the strip growing to hold it (fitMiddle), scrolling
+   only past the room the host allows. Hidden still when it was hidden (the chevron's choice,
+   stats_bar: 0). */
 html.stats-middle #frame { position: relative; }
 html.dock.stats-middle body:not(.side-hidden) #stats:not(.off) { display: grid; position: absolute; margin: 0;
   overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
 html.stats-middle #stats::-webkit-scrollbar { display: none; }   /* scrolled by a finger or a wheel, no bar */
+/* A keyboard's strip has no use for the column's heading, the landing page's link: the stats fit in
+   a shorter strip without it. */
+html.stats-middle #statsHead { display: none; }
+html.dock.stats-middle body:not(.side-hidden) #stats:not(.off) { padding-top: 10px; }
 
 /* The remote page (host/remote.py, remote.js): a tablet's browser, the whole window the keyboard.
    The board sits at the bottom, where the thumbs are; the page never scrolls, bounces or selects,
