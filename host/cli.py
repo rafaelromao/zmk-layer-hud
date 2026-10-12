@@ -205,26 +205,41 @@ def cmd_restart(args):
     return run_host("start", args.reserve, args.hidden, dock=getattr(args, "dock", False))
 
 
+# Docked, the page measures the board at its real size against the screen (hud/hud.js dockFit) and
+# says so within moments; `dock` waits this long for that word before it says the HUD is docked.
+DOCK_SETTLE = 1.0
+
+
 def cmd_dock(args):
     """The HUD docked along the bottom of the screen, typing, or floating again: asked of the running
-    panel (dock.want and the signal), and its panel.json says when it has."""
+    panel (dock.want and the signal), and its panel.json says when it has -- or that it would not,
+    the board too big for the screen at its real size (dock_note, from a panel that changed its
+    dock after it was asked: dock_at)."""
     st = running_panel()
     if args.action == "status":
-        print("dock: " + ("docked, " + TYPING_SAID.get(st.get("typing") or "off", "") if st.get("dock")
-                          else "floating (zmk-layer-hud dock docks it)"))
+        print("dock: " + ("docked, " + TYPING_SAID.get(st.get("typing") or "off", "") if st.get("dock") else
+                          f"floating, a HUD only: {st['dock_note']}" if st.get("dock_note") else
+                          "floating (zmk-layer-hud dock docks it)"))
         return 0
     want = {"on": True, "off": False}.get(args.action, not st.get("dock"))
+    asked = time.time()
     panelstate.request(STATE, "dock", want)
     try:
         os.kill(st["pid"], panelstate.SIGNAL)
     except ProcessLookupError:
         raise Fail("the HUD went away just now: `zmk-layer-hud start`")
-    deadline = time.monotonic() + 3.0
+    deadline, settled = time.monotonic() + 3.0, None
     while time.monotonic() < deadline:
-        now = panelstate.read(STATE)
-        if now and now.get("dock") == want:
-            print("HUD docked: it types where you tap" if want else "HUD floating again")
-            return 0
+        now = panelstate.read(STATE) or {}
+        if want and not now.get("dock") and now.get("dock_note") and (now.get("dock_at") or 0) >= asked:
+            raise Fail(f"the HUD did not dock, and is a HUD only: {now['dock_note']}")
+        if now.get("dock") == want:
+            settled = settled or time.monotonic() + (DOCK_SETTLE if want else 0)
+            if time.monotonic() >= settled:
+                print("HUD docked: it types where you tap" if want else "HUD floating again")
+                return 0
+        else:
+            settled = None
         time.sleep(0.05)
     raise Fail("the HUD did not dock; `zmk-layer-hud log` says why" if want else
                "the HUD did not undock; `zmk-layer-hud log` says why")

@@ -1,10 +1,12 @@
 /* zmk-layer-hud on Android: the HUD's page as the system keyboard (apps/android, HudIme.kt).
  *
- * Run by the keyboard once the page has loaded, after window.ZMKHUD_IME = {maxHeight, canSwitch} and
- * before the keymap. The board types text into the field (a "text" sink: hud/touch.js turns the
- * virtual firmware's reports into text, keys and shortcuts), the engine repeats a held key, and it
- * is docked as tall as the keyboard's share of the screen allows. What it types and how tall it came
- * out go to the keyboard through its bridge, zmkhudIme.
+ * Run by the keyboard once the page has loaded, after window.ZMKHUD_IME = {maxHeight, canSwitch,
+ * pxPerMm, width} and before the keymap. The board types text into the field (a "text" sink:
+ * hud/touch.js turns the virtual firmware's reports into text, keys and shortcuts), the engine repeats
+ * a held key, and it is docked with its keys their real size (hud.js dockFit) -- or, too big for the
+ * screen turned this way, it is a HUD only, typing nothing, until the tablet is turned or another
+ * keyboard is picked. What it types and how tall it came out go to the keyboard through its bridge,
+ * zmkhudIme.
  */
 (function () {
   "use strict";
@@ -16,7 +18,8 @@
   // The press's feedback is the keyboard's (HudIme.kt): the system's buzz and clicks, as its settings say.
   hud.setTouch({ output: "text", repeat: "synthetic", shortcuts: true, pages: [7], send: post,
                  feedback: (key) => post({ kind: "feedback", key }) });
-  hud.setDock({ on: true, max_height: conf.maxHeight || window.innerHeight, split: true });
+  hud.setDock({ on: true, max_height: conf.maxHeight || window.innerHeight, split: true,
+                px_per_mm: conf.pxPerMm, width: conf.width });
 
   // The next keyboard, where Android says this one should offer it.
   const bar = document.getElementById("layer");

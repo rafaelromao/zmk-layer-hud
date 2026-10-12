@@ -224,7 +224,7 @@ class HostScript(unittest.TestCase):
 
 # A stand-in for a panel: says it is shown, and does what panel.want says each time SIGUSR2 comes.
 FAKE_PANEL = textwrap.dedent('''
-    import signal, sys, time
+    import os, signal, sys, time
     sys.path.insert(0, sys.argv[1])
     import panelstate
     d = sys.argv[2]
@@ -234,8 +234,14 @@ FAKE_PANEL = textwrap.dedent('''
         dock = panelstate.take_want(d, "dock")
         if dock is not None:
             docked[0] = bool(dock)
-        panelstate.write(d, True if shown is None else shown,
-                         extra={"dock": docked[0], "typing": "ok" if docked[0] else "off"})
+        extra = {"dock": docked[0], "dock_at": time.time(), "typing": "ok" if docked[0] else "off"}
+        panelstate.write(d, True if shown is None else shown, extra=extra)
+        # A board too big for the screen at its real size: the page says so a moment after it docks.
+        if docked[0] and os.path.exists(os.path.join(d, "too-big")):
+            time.sleep(0.2)
+            docked[0] = False
+            extra.update(dock=False, dock_at=time.time(), typing="off", dock_note="the board is 191 x 115 mm")
+            panelstate.write(d, True if shown is None else shown, extra=extra)
     signal.signal(panelstate.SIGNAL, asked)
     panelstate.write(d, True)
     time.sleep(30)
@@ -288,6 +294,19 @@ class ShowHide(unittest.TestCase):
         self.assertFalse(cli.panelstate.read(self.tmp.name)["dock"])
         self.assertEqual(0, self.run_cli("dock", "off", pids=[proc.pid])[0])     # said again: still off
         self.assertTrue(cli.panelstate.read(self.tmp.name)["shown"])              # and still shown
+
+    def test_a_board_too_big_to_dock_is_said_and_stays_a_hud(self):
+        proc = self.start_panel()
+        open(os.path.join(self.tmp.name, "too-big"), "w").close()
+        code, said = self.run_cli("dock", "on", pids=[proc.pid])
+        self.assertEqual(1, code, said)
+        self.assertIn("did not dock, and is a HUD only: the board is 191 x 115 mm", said)
+        self.assertFalse(cli.panelstate.read(self.tmp.name)["dock"])
+        code, said = self.run_cli("dock", "status", pids=[proc.pid])
+        self.assertIn("floating, a HUD only: the board is 191 x 115 mm", said)
+        # The note of a refusal before is not this one's: a board that fits now docks.
+        os.remove(os.path.join(self.tmp.name, "too-big"))
+        self.assertEqual(0, self.run_cli("dock", "on", pids=[proc.pid])[0])
 
     def test_power_stops_a_running_hud_and_starts_one_that_is_not(self):
         with mock.patch.object(cli, "reexec_into_venv"), mock.patch.object(cli, "cmd_stop", return_value=0) as stop, \

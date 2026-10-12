@@ -473,8 +473,11 @@ class Touch(unittest.TestCase):
         self.assertEqual("chords", message({}, DOC)["touch"]["combos"])       # no chips unless asked
         quiet = message({"touch": {"sound": 0, "haptics": 0}}, DOC)["touch"]
         self.assertEqual((0, 0), (quiet["sound"], quiet["haptics"]))
+        # A key's spacing: Choc's 18 mm unless said, MX's 19.05 kept to the hundredth.
+        self.assertEqual(18, msg["touch"]["key_mm"])
+        self.assertEqual(19.05, message({"touch": {"key_mm": 19.05}}, DOC)["touch"]["key_mm"])
         for bad in ({"nope": 1}, {"hold_ms": "slow"}, {"hold_ms": -5}, {"latch": True}, {"combos": "both"}, "yes",
-                    {"sound": 101}):
+                    {"sound": 101}, {"key_mm": 5}, {"key_mm": "19"}, {"key_mm": True}, {"floating": 1}):
             with self.assertRaises(km.KeymapError, msg=repr(bad)):
                 message({"touch": bad}, DOC)
 
@@ -483,7 +486,8 @@ class Touch(unittest.TestCase):
         self.assertEqual(("eDP-1", 35, 0, 0), (got["dock"]["screen"], got["dock"]["height_pct"], got["dock"]["split"],
                                                got["dock"]["start"]))
         self.assertEqual((9000, 30, ""), (got["remote"]["port"], got["remote"]["minutes"], got["remote"]["bind"]))
-        for bad in ({"dock": {"height_pct": 90}}, {"dock": {"start": 2}}, {"dock": {"where": 1}}, {"dock": "bottom"},
+        self.assertEqual(60, km.host_settings({})["dock"]["height_pct"])
+        for bad in ({"dock": {"height_pct": 95}}, {"dock": {"start": 2}}, {"dock": {"where": 1}}, {"dock": "bottom"},
                     {"remote": {"port": 80}}, {"remote": {"minutes": 0}}, {"remote": {"bind": 5}}):
             with self.assertRaises(km.KeymapError, msg=repr(bad)):
                 message(bad, DOC)

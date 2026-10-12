@@ -3,7 +3,8 @@
 The HUD can type. Tap a drawn key and it does what that key does on the real keyboard: `&kp A`
 types a, `&mt LSHIFT A` types a when tapped and holds Shift when held, `&lt 2 SPACE` is a space or
 layer 2, `&sk LSHIFT` shifts the next key. Docked, the HUD sits along the bottom of the screen at
-full width and never takes the keyboard focus, as an operating system's onboard keyboard does.
+full width and never takes the keyboard focus, as an operating system's onboard keyboard does, its
+keys as big as the keyboard's own. Floating, it is the HUD, and types nothing.
 
 This page is the contract between the pieces that make that work. Each piece can be built and
 tested against it alone.
@@ -78,7 +79,7 @@ without an import. The keymap message gains three fields:
   "conditional": [ { "if": [1, 2], "then": 3 } ],
   "coverage": { "keymap": 1010, "legend": 52, "unsupported": 18,
                 "why": { "zmk,behavior-adaptive-key": 11 } } },
-"touch": { "enabled": 1, "hold_ms": 280, "flavor": "balanced", "latch": 1, "lock_ms": 350,
+"touch": { "enabled": 1, "key_mm": 18, "hold_ms": 280, "flavor": "balanced", "latch": 1, "lock_ms": 350,
            "sticky_ms": 0, "repeat_delay_ms": 450, "repeat_ms": 60, "combos": "chords",
            "heat": 1, "sound": 30, "haptics": 1 }
 ```
@@ -188,12 +189,12 @@ set, glass changes a few things:
   settings say. An iPad keyboard without Full Access can do neither.
 
   On by default where the board is a touch screen's keyboard -- docked, the remote page, a
-  tablet's keyboard -- and off where it is the HUD that also types (floating). The side panel has a
+  tablet's keyboard -- and off elsewhere. The side panel has a
   switch for it while the board types; a choice made there holds in every mode and is remembered as
   the theme is (the `feedback` preference, `on` or `off`).
 - Touch typing counts nowhere: not in the session, the WPM, or the tallies. It warms the live heat,
-  except while a secret is being typed. The typed-keys strip is put away while the board types,
-  docked or floating: it is the HUD's, not the keyboard's.
+  except while a secret is being typed. The typed-keys strip is put away while the board types: it
+  is the HUD's, not the keyboard's.
 - In **dock** mode (`<html class="dock">`) the board fills the width it is given and the height
   the host allows (`max_height`); the stats column, the status line and the strip are hidden, and
   the banner is one thin line. A split board's halves go to the two sides of the screen, where the
@@ -201,6 +202,21 @@ set, glass changes a few things:
   piece is centred. The page reports the height it took. A board is split when its widest gap
   between key columns is a third of a key or more and lies in the middle half of the board (a split
   board's thumb clusters can come close; a unibody's nav cluster sits apart near one end).
+- **Its keys are their real size.** Docked as a touch keyboard, a key is as big as the keyboard's
+  own and never made smaller to fit: what is typed on is a keyboard, not a picture of one. Keys are
+  `touch.key_mm` apart (18 by default, Choc spacing; 19.05 for MX), 1u being the layout's typical
+  key (`view.js unitOf`, its median key width), and the host says how many CSS pixels a millimetre
+  is on the dock's screen (`px_per_mm`) and how wide the screen is (`width`): the panels from the
+  size the screen reports (GDK on Linux, CoreGraphics on macOS; 96 pixels to the inch for a screen
+  that does not say), the Android keyboard from the screen's dpi. A host that does not say (the
+  remote page, the iPad's keyboard) gets the board fitted to the room, as above.
+
+  **A board that does not fit** -- the screen narrower than it, or the dock's share of the screen
+  (`dock.height_pct`, 60% by default) shorter -- **is a HUD only**: drawn to fit, it types nothing,
+  and the banner says how big it is and how much room it has. The page tells the panel
+  (`{"kind":"dock","fits":false,...}`), which floats the HUD again; `zmk-layer-hud dock` says why it
+  did not dock, and `dock status` keeps saying it. The Android keyboard stays up, a HUD, until the
+  tablet is turned or the 🌐 key picks another keyboard.
 - When the room between the halves holds it, the **stats column** sits there (`html.stats-middle`):
   centred, from the board's top and no taller than it, scrolling when it is taller, and hidden still
   when it was hidden. Not on the remote page or a tablet's keyboard, where touch typing counts
@@ -232,7 +248,7 @@ Host → page:
 
 ```json
 {"kind":"touch","on":true,"sink":{"output":"hid","repeat":"os","pages":[7],"shortcuts":true}}
-{"kind":"dock","on":true,"max_height":360,"split":true}
+{"kind":"dock","on":true,"max_height":540,"split":true,"px_per_mm":4.85,"width":1470}
 {"kind":"typing","state":"denied","fix":"zmk-layer-hud typing setup"}
 ```
 
@@ -241,7 +257,20 @@ Host → page:
   host or its operating system does), `synthetic` (the engine sends it again), or `none`.
 - `typing.state` is `ok`, `off`, `denied` (the operating system's permission is missing),
   `missing` (no way to type at all, e.g. no `/dev/uinput`) or `error`; the page shows `fix`.
-- A native shell calls `hud.setTouch(sink)` and `hud.setDock({on, max_height})` directly.
+- `dock.px_per_mm` and `dock.width` are the dock's screen, in the page's CSS pixels; with them the
+  keys are their real size or the board is a HUD only. A host sends them when `touch.enabled` is on.
+- A native shell calls `hud.setTouch(sink)` and `hud.setDock({on, max_height, px_per_mm, width})`
+  directly.
+
+Page → host, the board too big to type on here at its real size, once for each dock:
+
+```json
+{"kind":"dock","fits":false,"key_mm":18,"need_mm":[191,115],"room_mm":[286,103]}
+```
+
+- `need_mm` is the board at its real size, the banner included; `room_mm` the screen's width and
+  the dock's height. The panel floats the HUD again and keeps the reason in `panel.json`
+  (`dock_note`), where `zmk-layer-hud dock` reads it.
 
 For a text sink, `ZmkHidText.textEvents` turns reports into `{kind:"text", text}`,
 `{kind:"key", key, mods}` (backspace, delete, enter, tab, escape, arrows, home, end, page up and

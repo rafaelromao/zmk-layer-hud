@@ -223,6 +223,8 @@ class Bridge(NSObject):
                 Host.instance.typing.hid(msg)
         elif kind == "size":
             Host.instance.resize(msg.get("width"), msg.get("height"))
+        elif kind == "dock":        # the board too big to type on here at its real size: a HUD, floating
+            Host.instance.refused_dock(msg)
         elif kind == "hide":        # the page's hide button
             Host.instance.set_shown(False)
         elif kind == "site":        # the stats column's heading: the landing page, in the browser
@@ -446,13 +448,10 @@ class Host:
         width = (self.feed.cfg.get("hud") or {}).get("width")
         if width:
             self.resize(int(width), None)
-        # Docked from the start when asked (`start --dock`, dock.start), or when it was left docked;
-        # else typing in the floating HUD only when the config says so (touch.floating).
+        # Docked from the start when asked (`start --dock`, dock.start), or when it was left docked.
         settings = self.settings()
         if os.environ.get("ZMKHUD_DOCK") == "1" or settings["dock"]["start"] or load_state().get("dock"):
             AppHelper.callAfter(self.set_dock, True)
-        elif settings["touch"]["enabled"] and settings["touch"]["floating"]:
-            self.typing.start()
         # main() put the signal's handler in first: the CLI signals whatever pid this file names.
         self.write_state()
         panelstate.write_token(RUN, self.token)
@@ -490,21 +489,45 @@ class Host:
         h = dock_mod.height(self.page_h, vf.size.height, self.settings()["dock"]["height_pct"])
         return NSMakeRect(vf.origin.x, vf.origin.y, vf.size.width, h), vf
 
-    def set_dock(self, on):
+    def dock_message(self, vf, settings):
+        msg = {"kind": "dock", "on": True, "split": bool(settings["dock"]["split"]),
+               "max_height": dock_mod.max_height(vf.size.height, settings["dock"]["height_pct"])}
+        if settings["touch"]["enabled"]:       # a keyboard: its keys their real size, or no keyboard
+            msg.update(px_per_mm=self.px_per_mm(self.dock_screen), width=vf.size.width)
+        return msg
+
+    @staticmethod
+    def px_per_mm(screen):
+        """How many of a screen's points -- the page's CSS pixels -- are a millimetre on it: its size
+        as its EDID tells macOS (CGDisplayScreenSize) over its frame, which a scaled screen has fewer
+        points in than its panel has pixels."""
+        f = screen.frame()
+        try:
+            wmm, hmm = cgevent.screen_mm(int(screen.deviceDescription()["NSScreenNumber"]))
+        except Exception as e:      # no CoreGraphics, no number: measured as CSS measures
+            log(f"dock: the screen's size: {type(e).__name__}: {e}")
+            wmm = hmm = 0
+        ppmm, measured = dock_mod.px_per_mm(f.size.width, f.size.height, wmm, hmm)
+        if not measured:
+            log(f"dock: {screen.localizedName()} does not say how big it is; its keys drawn at 96 points to the inch")
+        return ppmm
+
+    def set_dock(self, on, note=None):
         """Docked or floating, at runtime. Docked, the panel is a strip over the bottom of a screen
         -- an overlay: macOS has no room for an app to reserve -- every click on it is the page's,
-        and the board types; floating, it goes back where it was."""
+        and the board types; floating, it goes back where it was. `note`: why it floats again, when
+        it is not asked to (the board too big for the screen at its real size)."""
         if on == self.docked:
             return
         self.typing.release()
         settings = self.settings()
+        self.extra.pop("dock_note", None)
         if on:
             self.dock_screen = self.target_screen()
             self.docked = True
             frame, vf = self.dock_frame()
             self.place(frame)
-            self.deliver({"kind": "dock", "on": True, "split": bool(settings["dock"]["split"]),
-                          "max_height": dock_mod.max_height(vf.size.height, settings["dock"]["height_pct"])})
+            self.deliver(self.dock_message(vf, settings))
             if settings["touch"]["enabled"]:
                 self.typing.start()
             log(f"docked on {self.dock_screen.localizedName()}")
@@ -512,17 +535,28 @@ class Host:
             self.docked = False
             self.place(initial_frame())
             self.deliver({"kind": "dock", "on": False})
-            if not (settings["touch"]["enabled"] and settings["touch"]["floating"]):
-                self.typing.stop()
-        self.extra["dock"] = self.docked
+            self.typing.stop()
+            if note:
+                self.extra["dock_note"] = note
+        self.extra.update(dock=self.docked, dock_at=time.time())
         self.write_state()
         save_state({"dock": self.docked})
+
+    def refused_dock(self, msg):
+        """The page's word that its board, at its real size, does not fit the dock (hud.js dockFit):
+        the HUD floats again, a HUD and not a keyboard, and says why."""
+        note = dock_mod.refusal(msg, self.settings()["dock"]["height_pct"])
+        if note and self.docked:
+            log(f"not docked: {note}")
+            self.set_dock(False, note)
 
     def redock(self):
         screens = list(NSScreen.screens())
         if self.dock_screen not in screens:
             self.dock_screen = self.target_screen()
-        self.place(self.dock_frame()[0])
+        frame, vf = self.dock_frame()
+        self.place(frame)
+        self.deliver(self.dock_message(vf, self.settings()))     # another screen, or the same one at another size
 
     def place(self, frame):
         self.panel.setFrame_display_(frame, True)

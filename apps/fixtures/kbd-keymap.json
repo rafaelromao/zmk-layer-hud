@@ -284,7 +284,7 @@
  },
  "touch": {
   "enabled": 1,
-  "floating": 0,
+  "key_mm": 18,
   "hold_ms": 280,
   "flavor": "balanced",
   "latch": 1,
@@ -294,7 +294,8 @@
   "repeat_ms": 60,
   "combos": "chips",
   "heat": 1,
-  "strip": 1
+  "sound": 30,
+  "haptics": 1
  },
  "combos": [
   {

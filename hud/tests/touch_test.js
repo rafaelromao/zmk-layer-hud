@@ -40,7 +40,7 @@ const MSG = {
             kp(0xE1), kp(0x1E), { op: "trans" }],
     layers: { 0: [0, 1, 2, 3], 1: [4, 5, 5, 3] }, combos: [], conditional: [],
   },
-  touch: { enabled: 1, floating: 0, hold_ms: 280, flavor: "balanced", latch: 1, lock_ms: 350, sticky_ms: 0,
+  touch: { enabled: 1, key_mm: 18, hold_ms: 280, flavor: "balanced", latch: 1, lock_ms: 350, sticky_ms: 0,
            repeat_delay_ms: 450, repeat_ms: 60, combos: "chips", heat: 1 },
 };
 
@@ -239,6 +239,55 @@ function page(opts) {
   check(nl(2) - nl(1) >= 300 * narrow.hud.state.scale - 1e-6, "on a narrow screen the halves keep the gap the layout draws");
 })();
 
+(function aTouchKeyboardsKeysAreTheirRealSize() {
+  // 5 CSS pixels a millimetre and keys 18 mm apart: 1u, 100 in this layout, is 90 px, whatever the room.
+  const html = (p) => p.document.documentElement;
+  const sub = (p) => p.document.getElementById("layerSub").textContent;
+  const p = page();
+  const posted = [];
+  p.window.webkit = { messageHandlers: { zmkhud: { postMessage: (s) => posted.push(JSON.parse(s)) } } };
+  p.board.style.width = "1578px";
+  p.hud.receive({ kind: "dock", on: true, max_height: 600, px_per_mm: 5, width: 1600 });
+  const st = p.hud.state, left = (q, i) => parseFloat(q.hud.state.keyEls[i].style.left);
+  check(Math.abs(st.scale - 0.9) < 1e-9, `keys 18 mm apart at 5 px a mm, never stretched to the room: scale ${st.scale}`);
+  check(Math.abs(left(p, 1) - left(p, 0) - 90) < 1e-6, `90 px from key to key: ${left(p, 1) - left(p, 0)}`);
+  check(html(p).classList.contains("touch") && !posted.some((m) => m.kind === "dock"), "it fits, and types");
+  const mx = JSON.parse(JSON.stringify(MSG));
+  mx.touch.key_mm = 19.05;
+  p.hud.load(mx);
+  check(Math.abs(p.hud.state.scale - 19.05 * 5 / 100) < 1e-9, `MX's 19.05 mm: scale ${p.hud.state.scale}`);
+
+  // A screen too narrow for it: a HUD only, fitted, typing nothing, and the panel told.
+  const narrow = page();
+  const said = [];
+  narrow.window.webkit = { messageHandlers: { zmkhud: { postMessage: (s) => said.push(JSON.parse(s)) } } };
+  narrow.board.style.width = "278px";
+  narrow.hud.receive({ kind: "dock", on: true, max_height: 600, px_per_mm: 5, width: 300 });
+  check(!html(narrow).classList.contains("touch"), "too wide for the screen: no touch keyboard");
+  check(Math.abs(narrow.hud.state.scale - 278 / 400) < 1e-9, `the HUD, fitted to the screen: scale ${narrow.hud.state.scale}`);
+  narrow.sent.length = 0;          // what was let go as the keyboard stopped
+  narrow.tap(0);
+  check(narrow.reports().length === 0, `a tap types nothing: ${JSON.stringify(narrow.reports())}`);
+  const refused = said.filter((m) => m.kind === "dock");
+  check(refused.length === 1 && eq(refused[0], { kind: "dock", fits: false, key_mm: 18, need_mm: [72, 26], room_mm: [56, 120] }),
+        `the panel is told why, once: ${JSON.stringify(refused)}`);
+  check(/a HUD only/.test(sub(narrow)) && /72 × 26 mm/.test(sub(narrow)), `and the banner says it: ${sub(narrow)}`);
+  narrow.hud.receive({ kind: "dock", on: false });
+  check(html(narrow).classList.contains("touch") && !/HUD only/.test(sub(narrow)), "floating again, nothing is refused");
+
+  // Too tall for the dock's share of the screen: the same.
+  const short = page();
+  short.board.style.width = "1578px";
+  short.hud.receive({ kind: "dock", on: true, max_height: 120, px_per_mm: 5, width: 1600 });
+  check(!html(short).classList.contains("touch"), "taller than the dock may be: no touch keyboard");
+  // A keymap of a board that does fit, docked as it is: a keyboard again.
+  const small = JSON.parse(JSON.stringify(MSG));
+  small.layout = { width: 400, height: 50, keys: [0, 1, 2, 3].map((i) => ({ x: 50 + 100 * i, y: 25, w: 100, h: 50, r: 0 })) };
+  short.hud.load(small);
+  check(html(short).classList.contains("touch") && Math.abs(short.hud.state.scale - 0.9) < 1e-9,
+        `a board that fits docks at its real size: scale ${short.hud.state.scale}`);
+})();
+
 // The feedback: a stand-in AudioContext that says which click each source played, and how loud.
 function audioPage(touch, sinkExtra, floating) {
   const played = [], buzzed = [];
@@ -295,7 +344,7 @@ function audioPage(touch, sinkExtra, floating) {
   const tile = (p) => p.document.getElementById("stats").querySelector(".feedback");
   const floating = audioPage({}, null, true);
   floating.tap(0);
-  check(floating.played.length === 0 && floating.buzzed.length === 0, "the HUD that also types is quiet by default");
+  check(floating.played.length === 0 && floating.buzzed.length === 0, "undocked (a page typing for development: &touch) it is quiet by default");
   check(!tile(floating).classList.contains("off") && sw(floating).getAttribute("aria-checked") === "false",
         "and its side panel has the switch, off");
   sw(floating).click();

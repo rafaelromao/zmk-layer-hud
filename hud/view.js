@@ -32,23 +32,41 @@
 
   const gapFor = (lay, scale) => Math.max(2, Math.min(8, Math.round(Math.min(...lay.keys.map(k => k.h)) * scale * 0.1)));
 
+  // The layout's 1u, in the drawer's units: its typical key's width. Most keys of a board are 1u
+  // wide (a wide key is a few, and a tall thumb key is 1u wide), and keymap-drawer draws a physical
+  // layout's 1u key that wide.
+  function unitOf(lay) {
+    const ws = lay.keys.map(k => k.w).sort((a, b) => a - b);
+    return ws.length ? ws[Math.floor(ws.length / 2)] : 1;
+  }
+
+  // The scale at which a key is as big as on the board itself: 1u is keyMm apart on the keyboard
+  // (touch.key_mm), and pxPerMm CSS pixels are a millimetre on the screen (the host's measure).
+  function realScale(lay, keyMm, pxPerMm) {
+    return keyMm * pxPerMm / unitOf(lay);
+  }
+
   /* The keys placed: keymap-drawer's physical layout (centre x/y, width, height, rotation in the
    * drawer's units) scaled to `width`. Floating, the board spans the width with `gap` between keys.
    * Docked ({maxHeight, split}), it is as wide as the width allows and no taller than maxHeight less
    * `chrome` (what is not the board); a split board's halves go to the sides, where the thumbs are
    * on a tablet held in two hands, never closer than the layout draws them, and a board in one
    * piece is centred. The gap grows with the keys, so a board scaled up for glass is not all key.
+   * Docked at a given scale ({..., scale}: the touch keyboard's, keys as big as the board's own), the
+   * board is never made smaller to fit: `fits` says whether it does.
    *
-   * Returns {scale, gap, offsetX, centers: [{x, y}], rects: [{x, y, w, h, r}], height, kh, middle}: each
-   * key's centre (what a touch between keys is measured from), its box before rotation, the board's
-   * height, the typical key's height (what legends scale with), and for a split board docked the
-   * room between its halves, {x, w} (null otherwise). */
+   * Returns {scale, gap, offsetX, centers: [{x, y}], rects: [{x, y, w, h, r}], height, kh, middle,
+   * fits, need}: each key's centre (what a touch between keys is measured from), its box before
+   * rotation, the board's height, the typical key's height (what legends scale with), for a split
+   * board docked the room between its halves, {x, w} (null otherwise), and whether the board fits
+   * the width and the room at its scale, with what it needs, {w, h} in px, chrome included. */
   function geometry(lay, opts) {
     const width = opts.width;
-    let scale = width / lay.width, gap = opts.gap, offsetX = 0, middle = null;
+    let scale = width / lay.width, gap = opts.gap, offsetX = 0, middle = null, fits = true, need = null;
     let offsetOf = () => offsetX;
     if (opts.dock) {
       const room = Math.max(40, opts.dock.maxHeight - (opts.chrome || 0));
+      const fixed = opts.dock.scale > 0 ? opts.dock.scale : null;
       const split = opts.dock.split !== false ? halves(lay) : null;
       if (split) {
         const ext = (keys, side) => keys.map(k => k.x + side * k.w / 2);
@@ -57,17 +75,25 @@
         const rMin = Math.min(...ext(right, -1)), rMax = Math.max(...ext(right, 1));
         // The halves never come closer than the layout draws them, a gap's margin at either side.
         const span = (lMax - lMin) + (rMax - rMin) + split.gap;
-        scale = Math.min(width / span, room / lay.height);
-        gap = gapFor(lay, scale);
-        scale = Math.min((width - 2 * gap) / span, room / lay.height);
+        if (fixed) {
+          scale = fixed;
+          gap = gapFor(lay, scale);
+          need = { w: span * scale + 2 * gap, h: lay.height * scale + (opts.chrome || 0) };
+        } else {
+          scale = Math.min(width / span, room / lay.height);
+          gap = gapFor(lay, scale);
+          scale = Math.min((width - 2 * gap) / span, room / lay.height);
+        }
         const toLeft = gap - lMin * scale, toRight = width - gap - rMax * scale;
         offsetOf = idx => (split.left.has(idx) ? toLeft : toRight);
         middle = { x: toLeft + lMax * scale, w: (toRight + rMin * scale) - (toLeft + lMax * scale) };
       } else {
-        scale = Math.min(scale, room / lay.height);
+        scale = fixed || Math.min(scale, room / lay.height);
         offsetX = Math.max(0, (width - lay.width * scale) / 2);
         gap = gapFor(lay, scale);
+        if (fixed) need = { w: lay.width * scale, h: lay.height * scale + (opts.chrome || 0) };
       }
+      if (need) fits = need.w <= width + 0.5 && need.h <= Math.max(40, opts.dock.maxHeight) + 0.5;
     }
     const centers = lay.keys.map((k, idx) => ({ x: offsetOf(idx) + k.x * scale, y: k.y * scale }));
     const rects = lay.keys.map((k, idx) => {
@@ -75,7 +101,7 @@
       return { x: centers[idx].x - w / 2, y: k.y * scale - h / 2, w, h, r: k.r || 0 };
     });
     return { scale, gap, offsetX, centers, rects, height: Math.ceil(lay.height * scale),
-             kh: Math.min(...lay.keys.map(k => k.h)) * scale - gap, middle };
+             kh: Math.min(...lay.keys.map(k => k.h)) * scale - gap, middle, fits, need };
   }
 
   // ---------- which legend ----------
@@ -236,7 +262,7 @@
              keys: data.layout.keys.map((k, idx) => keyFace(data, idx, layers, touch)) };
   }
 
-  const ZmkView = { halves, geometry, zl, drawnStack, resolve, bindingClasses, touchClasses, shiftLegend, SHIFT_BITS,
+  const ZmkView = { halves, unitOf, realScale, geometry, zl, drawnStack, resolve, bindingClasses, touchClasses, shiftLegend, SHIFT_BITS,
                     keyFace, layerLabel, touchSummary, board, chips };
   if (typeof module === "object" && module.exports) module.exports = ZmkView;
   else root.ZmkView = ZmkView;

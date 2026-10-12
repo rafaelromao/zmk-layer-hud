@@ -9,7 +9,8 @@
  * A sink comes from the host ({"kind":"touch","on":true,"sink":{...}}, sent through hud.receive,
  * typing then going back through the panel's bridge), or from a native shell or the remote page
  * calling hud.setTouch({output, repeat, pages, shortcuts, mouse, send}). Without one the board is
- * the HUD it always was.
+ * the HUD it always was -- and with one too, while the board is docked too big for its screen at
+ * its real size (hud.js dockFit, the "fit" hook): a keyboard is typed on at its own size or not at all.
  *
  * Touch typing counts nowhere: not the session, the WPM, the tallies. It warms the live heat
  * (touch.heat), except while a secret is being typed, and the typed-keys strip is put away while the
@@ -27,6 +28,7 @@
   let data = null, sink = null, engine = null, driver = null, decoder = null;
   let view = { ids: null, down: [], latched: {}, mods: 0 };
   let problem = "";              // the host's word on why typing cannot happen (typing.state)
+  let fits = true;               // the board at its real size fits the dock (hud.js dockFit)
   const pointers = new Map();    // pointerId -> {input, idx}
   let last = null, seq = 0, beat = null, deadTimer = null;
 
@@ -36,7 +38,6 @@
     // Whatever is held goes up through the sink that pressed it, before another (or none) takes over.
     if (driver) { driver.releaseAll(); driver.stop(); engine = driver = null; }
     sink = s || null;
-    html.classList.toggle("touch", !!sink);
     rebuild();
     hud.relayout();
   }
@@ -47,8 +48,9 @@
     pointers.clear();
     clearInterval(beat); beat = null; last = null;
     view = { ids: null, down: [], latched: {}, mods: 0 };
+    html.classList.toggle("touch", !!sink && fits);
     const usable = data && data.actions && !data.actions.error && data.touch && data.touch.enabled;
-    if (!sink || !usable) { hud.setTouchView(null); return; }
+    if (!sink || !fits || !usable) { hud.setTouchView(null); return; }
     engine = Engine.create(data.actions, { touch: data.touch, sink: {
       repeat: sink.repeat || "os", pages: sink.pages || [7, 12], mouse: sink.mouse || "none" } });
     driver = Engine.drive(engine, { now: () => Date.now(), setTimeout: (f, ms) => setTimeout(f, ms),
@@ -211,8 +213,8 @@
 
   /* A click, and a buzz where the device has one, the moment a finger lands on a key: on the
    * press, as phone keyboards give it, not the release, and none while a key repeats. On by default
-   * where the board is a touch screen's keyboard (docked), off where it is the HUD that also types,
-   * and the side panel's switch decides once it is used (hud.feedbackOn). Four clicks,
+   * where the board is a touch screen's keyboard (docked), off elsewhere, and the side panel's
+   * switch decides once it is used (hud.feedbackOn). Four clicks,
    * as Android's keyboard sounds: a key, space, delete and return. touch.sound is the click's volume
    * (0: silent), touch.haptics the buzz, which a browser gives on Android alone (navigator.vibrate).
    * A sink with feedback of its own -- the Android keyboard's, which buzzes and clicks as the
@@ -295,6 +297,12 @@
 
   hud.on("load", (d) => { data = d; rebuild(); });
   hud.on("layers", (ids) => { if (engine && engine.idle()) driver.adopt(ids); });
+  hud.on("fit", (f) => {
+    if (f === fits) return;
+    fits = f;
+    rebuild();          // too big: whatever is held goes up, and the board types nothing
+    hud.relayout();
+  });
   hud.on("touch", (m) => {
     if (m.on === false) { setTouch(null); return; }
     // The panel's sink: typing goes back through its bridge.

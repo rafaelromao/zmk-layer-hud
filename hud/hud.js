@@ -127,7 +127,7 @@
     tallyTimer: null,
     viewCache: null,
     touch: null,              // the touch keyboard's view (touch.js, setTouchView): {ids, down, latched, mods, note}
-    dock: null,               // docked along the bottom of the screen (setDock): {on, maxHeight}
+    dock: null,               // docked along the bottom of the screen (setDock): {maxHeight, split, pxPerMm, width, fit}
     offsetX: 0,               // the board's left margin when docked: it is centred, not stretched
   };
   // What other scripts on the page hook into (hud.on): touch.js follows the keymap and the layers.
@@ -141,6 +141,9 @@
   // height of what is not the board (hud.css html.dock #hud and #layer), which the host's
   // max_height has to make room for.
   const DOCK_CHROME = 40;
+  // ...and the width of what is not the board either side (hud.css html.dock #hud: 10px of padding and
+  // a 1px border each): the screen's width less this is the board's.
+  const DOCK_SIDES = 22;
 
   const $ = id => document.getElementById(id);
   const base = () => state.data ? state.data.base : null;
@@ -165,8 +168,11 @@
     const width = board.clientWidth || 570;
     // Docked: as wide as the screen allows and no taller than the host lets the strip be, a split
     // board's halves at the sides (View.geometry).
+    // A touch keyboard's keys as big as the board's own, when they fit (dockFit).
+    const fit = state.dock && state.dock.fit;
     const g = View.geometry(lay, { width, gap: GAP, chrome: DOCK_CHROME, dock: state.dock &&
-      { maxHeight: state.dock.maxHeight || window.innerHeight || 360, split: state.dock.split } });
+      { maxHeight: state.dock.maxHeight || window.innerHeight || 360, split: state.dock.split,
+        scale: fit && fit.fits ? fit.scale : null } });
     state.scale = g.scale; state.offsetX = g.offsetX; state.gap = g.gap;
     // Each key's centre on the board, in px: what a touch between keys is measured from (touch.js),
     // and its box, which the combo chips keep off.
@@ -206,6 +212,53 @@
     });
     paintHeat();   // the glow lives by index, not on the elements just replaced
     placeStats(g);
+  }
+
+  /* Docked as a touch keyboard, its keys are as big as the keyboard's own -- touch.key_mm apart, 1u
+   * being the layout's typical key (View.unitOf) -- and never made smaller to fit: what is typed on
+   * is a keyboard, not a picture of one. The host says how many CSS pixels a millimetre is on the
+   * dock's screen and how wide that screen is ({"kind":"dock", "px_per_mm", "width"}); a host that
+   * does not say (the remote page, the iPad's keyboard) gets the board fitted, as before.
+   *
+   * A board that does not fit -- the screen too narrow for it, or the dock's share of the screen
+   * too short -- is the HUD and not a keyboard: drawn to fit, typing nothing (touch.js, the "fit"
+   * hook), the banner saying why. The panel is told ({"kind":"dock","fits":false}) and floats the
+   * HUD again; a tablet's keyboard stays, a HUD, until it is turned or another keyboard is picked.
+   * Decided from the host's numbers, not the window's, which may not have caught up yet. */
+  function dockFit() {
+    const d = state.dock;
+    if (!d || !(d.pxPerMm > 0) || !state.data) return null;
+    const lay = state.data.layout;
+    const keyMm = Number(state.data.touch && state.data.touch.key_mm) || 18;
+    const scale = View.realScale(lay, keyMm, d.pxPerMm);
+    const width = Math.max(0, (d.width || window.innerWidth || 0) - DOCK_SIDES);
+    const maxHeight = d.maxHeight || window.innerHeight || 360;
+    const g = View.geometry(lay, { width, gap: GAP, chrome: DOCK_CHROME, dock: { maxHeight, split: d.split, scale } });
+    const mm = (px) => Math.round(px / d.pxPerMm);
+    return { fits: g.fits, scale, keyMm, needMm: [mm(g.need.w), mm(g.need.h)], roomMm: [mm(width), mm(maxHeight)] };
+  }
+
+  // The fit measured again, before the board is built with it: true when the answer is news, which
+  // sayFit then gives touch.js and the panel, once the board is drawn.
+  function checkFit() {
+    if (!state.dock) return false;
+    const before = state.dock.fit;
+    const fit = state.dock.fit = dockFit();
+    return before === undefined || (!before || before.fits) !== (!fit || fit.fits);
+  }
+
+  function sayFit() {
+    const fit = state.dock && state.dock.fit;
+    fire("fit", !fit || fit.fits);
+    if (fit && !fit.fits) hud.post({ kind: "dock", fits: false, key_mm: fit.keyMm, need_mm: fit.needMm, room_mm: fit.roomMm });
+  }
+
+  // The banner's word on a board too big to type on here.
+  function fitNote() {
+    const fit = state.dock && state.dock.fit;
+    if (!fit || fit.fits) return "";
+    return `a HUD only · at ${fit.keyMm} mm a key the board is ${fit.needMm[0]} × ${fit.needMm[1]} mm, ` +
+      `the screen has ${fit.roomMm[0]} × ${fit.roomMm[1]} mm for it`;
   }
 
   // Docked with a split board's halves at the sides, the room between them holds the stats column
@@ -459,10 +512,12 @@
     $("layer").className = a.cls;
     $("layerName").textContent = a.name;
     // A feed that says nothing sees a secret being typed (watched: []) is said on the banner, so
-    // that nobody types a password in front of it trusting that it would hold back.
+    // that nobody types a password in front of it trusting that it would hold back. Before it, why a
+    // board asked to type cannot (fitNote).
     const unwatched = !state.secure && Array.isArray(state.watched) && state.watched.length === 0;
+    const sub = fitNote() || a.sub;
     $("layerSub").textContent = state.secure ? "secure input · typing hidden"
-      : unwatched ? (a.sub ? a.sub + " · typing not watched" : "typing not watched") : a.sub;
+      : unwatched ? (sub ? sub + " · typing not watched" : "typing not watched") : sub;
     document.body.classList.toggle("unwatched", unwatched);
     $("board").className = a.cls;
   }
@@ -762,7 +817,7 @@
   const sideShown = () => state.prefs.side !== "hidden";
   // The touch keyboard's click and buzz (touch.js): the viewer's choice once made, everywhere; until
   // then on where the board is a touch screen's keyboard (docked: the panels' dock, the remote page,
-  // a tablet's keyboard) and off where it is the HUD that also types (floating).
+  // a tablet's keyboard) and off elsewhere.
   const feedbackOn = () => (state.prefs.feedback ? state.prefs.feedback === "on" : !!state.dock);
   // The panels' background: the slider's, else the config's hud.opacity. A GIF still's script may
   // set its own (showDemo), which outranks both.
@@ -1933,7 +1988,9 @@
       if (!Object.keys(map).length) data.layout.keys.forEach((k, idx) => { state.posOf[idx] = idx; });
       // Heat outlives a reload (it fades in seconds anyway), but not on keys this layout lacks.
       for (const idx of [...state.heat.keys()]) if (idx >= data.layout.keys.length) state.heat.delete(idx);
+      const fitNews = checkFit();   // a keyboard of another size, docked: does it still fit?
       buildBoard();
+      if (fitNews) sayFit();
       renderTitle();
       postSize();
       render();
@@ -2184,12 +2241,17 @@
     },
     // Docked along the bottom of a screen ({"kind":"dock","on":true,"max_height":N}): the board as
     // wide as the window and no taller than the host allows, and nothing around it but the banner.
-    // A split board's halves go to the sides unless it says "split": false.
+    // A split board's halves go to the sides unless it says "split": false. With "px_per_mm" and
+    // "width" (the screen's), its keys are their real size, or it is a HUD only (dockFit).
     setDock(d) {
       const on = !!(d && d.on);
-      state.dock = on ? { maxHeight: Number(d.max_height) || null, split: d.split !== false } : null;
+      const was = state.dock;
+      state.dock = on ? { maxHeight: Number(d.max_height) || null, split: d.split !== false,
+                          pxPerMm: Number(d.px_per_mm) || null, width: Number(d.width) || null } : null;
       document.documentElement.classList.toggle("dock", on);
+      const fitNews = on ? checkFit() : !!(was && was.fit && !was.fit.fits);   // floating, there is no keyboard to refuse
       if (state.data) { buildBoard(); render(); }
+      if (fitNews) sayFit();
       postSize();
     },
     // A touched key's glow: never counted, never in a session (the keyboard's own counts are the

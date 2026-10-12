@@ -244,15 +244,20 @@ The HUD can type. Tap a drawn key and it does what that key does on your keyboar
 your keymap as the firmware would ([docs/touch.md](docs/touch.md)), from the bindings `import`
 and `sync` capture from your ZMK repo, or from the legends of a drawing without one. A long press is
 a hold, a hold let go alone latches (a one-shot, locked on a second tap), and two fingers on a
-combo's keys are the combo (`touch.combos: chips` adds a chip to tap for each). Docked, each press clicks, and buzzes where
-the device can (`touch.sound`, `touch.haptics`); the side panel's feedback switch turns that off,
-or on for the floating HUD, where it starts off.
+combo's keys are the combo (`touch.combos: chips` adds a chip to tap for each). Each press clicks,
+and buzzes where the device can (`touch.sound`, `touch.haptics`); the side panel's feedback switch
+turns that off.
 
 - **Docked** (`zmk-layer-hud dock`, `start --dock`, or `dock: {start: 1}`), the HUD is a strip
   along the bottom of the touch screen as wide as it, a split board's halves at its sides, and it
   never takes the keyboard from the app you type into. On Hyprland it reserves its height, so
   windows tile above it; on macOS it lies over the bottom of the screen, as macOS's own
-  Accessibility Keyboard does. The menubar and the Omarchy bar have Dock and Float.
+  Accessibility Keyboard does. The menubar and the Omarchy bar have Dock and Float. Floating, the
+  HUD types nothing.
+- **Its keys are their real size**: `touch.key_mm` apart (18 mm, Choc spacing; 19.05 for MX), from
+  the size the screen reports. A board that does not fit the screen at that size, or the dock's
+  share of it (`dock.height_pct`, 60%), is not docked: it stays a HUD, and `zmk-layer-hud dock` says
+  how big it is and how much room there was.
 - **Typing needs leave once**: `zmk-layer-hud typing setup`. On Linux the HUD types through a
   virtual keyboard, and the setup installs a udev rule that lets the user at the seat make one
   (asking before each sudo step); on macOS it asks for Accessibility. Either way your layout
@@ -265,8 +270,8 @@ or on for the floating HUD, where it starts off.
   ([docs/tablets.md](docs/tablets.md)). They take your keymap as a file from
   `zmk-layer-hud keymap -o board.json`, or on the iPad from `remote on --app`.
 
-The config's `touch:`, `dock:` and `remote:` sections tune it: how long a press is a hold, the
-screen to dock on and its share, the port and how long pairing stays open
+The config's `touch:`, `dock:` and `remote:` sections tune it: how long a press is a hold, how far
+apart the keys are, the screen to dock on and its share, the port and how long pairing stays open
 ([config/example.yaml](config/example.yaml)). Touch typing counts nowhere: not the session, the
 WPM or the tallies.
 

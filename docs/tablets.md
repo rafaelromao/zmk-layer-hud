@@ -68,8 +68,10 @@ sentence; one without what its keys do (a board from the landing page) is drawn 
   the rest, so its own key handling sees the keys.
 - In a password field the board's strip shows nothing.
 - The 🌐 key in the banner switches to the next keyboard, where Android offers one.
-- It takes at most 45% of the screen. Vibration and a click on each key are on until the app
-  turns them off, as the HUD's feedback is on a touch screen.
+- Its keys are their real size (`touch.key_mm` apart, from the screen's dpi), and it takes at most
+  60% of the screen. A board too big for the screen turned this way is a HUD only: it types nothing
+  and says why, until the tablet is turned or 🌐 picks another keyboard. Vibration and a click on
+  each key are on until the app turns them off, as the HUD's feedback is on a touch screen.
 
 **What it does not.** The keyboard has no network permission: the app imports keymaps from files
 only, so no keyboard of yours can reach the network. There are no key codes for F13 to F24, so those

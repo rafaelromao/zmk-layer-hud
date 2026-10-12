@@ -66,6 +66,10 @@ def cg_flags(mods):
     return out
 
 
+class CGSize(ctypes.Structure):
+    _fields_ = [("width", ctypes.c_double), ("height", ctypes.c_double)]
+
+
 class CoreGraphics:
     """The dozen CoreGraphics calls, typed, loaded on first use."""
 
@@ -80,7 +84,8 @@ class CoreGraphics:
                ("CGEventSetIntegerValueField", None, [p, ctypes.c_uint32, ctypes.c_int64]),
                ("CGEventPost", None, [ctypes.c_uint32, p]),
                ("CGPreflightPostEventAccess", b, []),
-               ("CGRequestPostEventAccess", b, [])]
+               ("CGRequestPostEventAccess", b, []),
+               ("CGDisplayScreenSize", CGSize, [ctypes.c_uint32])]
         for name, res, args in sig:
             fn = getattr(cg, name)
             fn.restype, fn.argtypes = res, args
@@ -97,6 +102,13 @@ def core_graphics():
     if _cg is None:
         _cg = CoreGraphics()
     return _cg
+
+
+def screen_mm(display, cg=None):
+    """A display's size in millimetres, (width, height), as its EDID tells macOS; (0, 0) for one
+    that does not say. The touch keyboard draws its keys their real size with it (host/dock.py)."""
+    size = (cg or core_graphics()).CGDisplayScreenSize(display)
+    return size.width, size.height
 
 
 def access(cg=None):

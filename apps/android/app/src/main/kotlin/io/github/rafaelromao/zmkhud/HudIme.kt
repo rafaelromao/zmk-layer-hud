@@ -28,6 +28,7 @@ import io.github.rafaelromao.zmkhud.sink.Editor
 import io.github.rafaelromao.zmkhud.sink.Field
 import io.github.rafaelromao.zmkhud.sink.ImeSink
 import io.github.rafaelromao.zmkhud.sink.PageMessage
+import io.github.rafaelromao.zmkhud.sink.Screen
 import java.io.ByteArrayInputStream
 import kotlin.math.roundToInt
 
@@ -171,7 +172,8 @@ class HudIme : InputMethodService() {
         val store = KeymapStore(this)
         stamp = store.stamp()
         val js = StringBuilder()
-        js.append("window.ZMKHUD_IME = {maxHeight: ${maxHeightDp()}, canSwitch: ${shouldOfferSwitchingToNextInputMethod()}};\n")
+        js.append("window.ZMKHUD_IME = {maxHeight: ${maxHeightDp()}, canSwitch: ${shouldOfferSwitchingToNextInputMethod()}, " +
+            "pxPerMm: ${dpPerMm()}, width: ${widthDp()}};\n")
         js.append(assets.open("ime-boot.js").bufferedReader().use { it.readText() })
         store.read()?.let { js.append("\nhud.receive(").append(it).append(");\n") }
         w.evaluateJavascript(js.toString(), null)
@@ -185,7 +187,8 @@ class HudIme : InputMethodService() {
     }
 
     private fun redock() {
-        web?.evaluateJavascript("hud.setDock({on: true, max_height: ${maxHeightDp()}, split: true});", null)
+        web?.evaluateJavascript("hud.setDock({on: true, max_height: ${maxHeightDp()}, split: true, " +
+            "px_per_mm: ${dpPerMm()}, width: ${widthDp()}});", null)
     }
 
     private fun fromPage(text: String) {
@@ -205,6 +208,12 @@ class HudIme : InputMethodService() {
     private fun maxHeightPx() = (resources.displayMetrics.heightPixels * MAX_SHARE).roundToInt()
 
     private fun maxHeightDp() = (maxHeightPx() / resources.displayMetrics.density).roundToInt()
+
+    private fun widthDp() = (resources.displayMetrics.widthPixels / resources.displayMetrics.density).roundToInt()
+
+    /** How many dp -- the page's CSS pixels -- are a millimetre on this screen: the board's keys are drawn
+     *  their real size with it, or, too big for the screen turned this way, the board is a HUD only. */
+    private fun dpPerMm() = resources.displayMetrics.let { Screen.dpPerMm(it.xdpi, it.density) }
 
     /** As tall as the board came out (CSS pixels are dp), within the keyboard's share of the screen. */
     private fun resize(dp: Int) {
@@ -236,7 +245,7 @@ class HudIme : InputMethodService() {
         const val ORIGIN = "https://appassets.androidplatform.net"
         const val PAGE = "$ORIGIN/assets/hud/index.html?embed"
         const val BRIDGE = "zmkhudIme"
-        const val MAX_SHARE = 0.45f
+        const val MAX_SHARE = 0.6f       // a keyboard of keys their real size is taller than the system's
         const val MIN_HEIGHT_DP = 120
 
         /** What the page gets for anything that is not one of its own files: nothing, from nowhere. */

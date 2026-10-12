@@ -18,6 +18,7 @@ import signal
 import socket
 import subprocess
 import sys
+import time
 
 # WebKit's DMA-BUF renderer triggers a Wayland protocol error on this NVIDIA host.
 # Software composition also preserves the transparent webview background reliably.
@@ -190,7 +191,7 @@ def host_settings():
                                       timeout=30, stderr=subprocess.DEVNULL)
         return json.loads(out)
     except (OSError, subprocess.SubprocessError, ValueError):
-        return {"touch": {"enabled": 1, "floating": 0}, "dock": {"screen": "", "height_pct": 40, "start": 0, "split": 1},
+        return {"touch": {"enabled": 1}, "dock": {"screen": "", "height_pct": dock_mod.DEFAULT_PCT, "start": 0, "split": 1},
                 "remote": {"port": 8768, "minutes": 30, "bind": ""}}
 
 
@@ -399,11 +400,11 @@ def main():
     pct = settings["dock"]["height_pct"]
 
     def strip_wanted():
-        """The typed-keys strip is the HUD's, not the touch keyboard's: away while the board types,
-        docked or floating (touch.floating)."""
-        return not docked[0] and not (settings["touch"]["enabled"] and settings["touch"]["floating"])
+        """The typed-keys strip is the HUD's, not the touch keyboard's: away while docked."""
+        return not docked[0]
     docked = [False]
     dock_geo = [None]       # the dock's screen, as GDK has it
+    dock_ppmm = [None]      # ...and how many of its pixels are a millimetre (dock.px_per_mm)
     dock_h = [0]            # the strip's height, and the room it reserves
 
     def dock_monitor():
@@ -426,6 +427,13 @@ def main():
             print("panel: no screen to dock on", file=sys.stderr, flush=True)
             return False
         dock_geo[0] = mon.get_geometry()
+        # The touch keyboard's keys are drawn their real size (hud.js dockFit): the screen's size, as
+        # its EDID tells the compositor, over the pixels the page is laid out in.
+        dock_ppmm[0], measured = dock_mod.px_per_mm(dock_geo[0].width, dock_geo[0].height,
+                                                    mon.get_width_mm(), mon.get_height_mm())
+        if not measured:
+            print(f"panel: {info_d['name']} does not say how big it is; its keys drawn at 96 pixels to the inch",
+                  file=sys.stderr, flush=True)
         # Named apart, so `hyprctl layers` and a layer rule can tell it from the floating HUD; on the
         # overlay layer, which a fullscreen window does not cover; and, as always, never the keyboard's.
         GtkLayerShell.set_namespace(hud, "zmkhud-dock")
@@ -454,14 +462,23 @@ def main():
         page_view.set_size_request(*size)
         hud.resize(*size)
 
-    def set_dock(on):
+    def dock_message():
+        msg = {"kind": "dock", "on": True, "max_height": dock_mod.max_height(dock_geo[0].height, pct),
+               "split": bool(settings["dock"]["split"])}
+        if settings["touch"]["enabled"]:       # a keyboard: its keys their real size, or no keyboard
+            msg.update(px_per_mm=dock_ppmm[0], width=dock_geo[0].width)
+        return msg
+
+    def set_dock(on, note=None):
         """Docked or floating, at runtime: the surface is taken down, set up the other way, and put
         back. Docked, the board types (the page is told it may), and the strip below and the
-        recording rail are put away."""
+        recording rail are put away. `note`: why it floats again, when it is not asked to (the
+        board too big for the screen at its real size)."""
         if on == docked[0]:
             return
         typing.release()
         hud.hide()
+        extra.pop("dock_note", None)
         if on:
             if not apply_dock():
                 hud.show_all()
@@ -470,23 +487,23 @@ def main():
             if rail is not None:
                 rail.hide()
             docked[0] = True
-            tell_page({"kind": "dock", "on": True, "max_height": dock_mod.max_height(dock_geo[0].height, pct),
-                       "split": bool(settings["dock"]["split"])})
+            tell_page(dock_message())
             if settings["touch"]["enabled"]:
                 typing.start()
         else:
             docked[0] = False
             apply_float()
             tell_page({"kind": "dock", "on": False})
-            if not (settings["touch"]["enabled"] and settings["touch"]["floating"]):
-                typing.stop()
+            typing.stop()
+            if note:
+                extra["dock_note"] = note
             if strip_wanted():
                 keys.show_all()
             if rail is not None and shown[0]:
                 rail.show_all()
         hud.show_all()
         take_input(hud)
-        extra["dock"] = docked[0]
+        extra.update(dock=docked[0], dock_at=time.time())
         panelstate.write(RUN, shown[0], wpm=wpm[0], stats=stats[0], extra=extra)
         save_dock(docked[0])
 
@@ -527,6 +544,11 @@ def main():
             return
         if kind == "hid":       # the touch keyboard: keys to press (docs/touch.md)
             typing.hid(msg)
+        elif kind == "dock":    # the board too big to type on here at its real size: a HUD, floating
+            note = dock_mod.refusal(msg, pct)
+            if note and docked[0]:
+                print(f"panel: not docked: {note}", file=sys.stderr, flush=True)
+                set_dock(False, note)
         elif kind == "hide":
             set_shown(False)
         elif kind == "site":    # the stats column's heading: the landing page, in the browser
@@ -681,6 +703,7 @@ def main():
         move_to(*pos)               # kept on it, should it be a smaller one
         if docked[0]:
             apply_dock()            # docked: on the screen the dock picks now, which may be another
+            tell_page(dock_message())
         else:
             if strip_wanted():
                 keys.show_all()
@@ -729,12 +752,9 @@ def main():
             set_dock(bool(dock_wanted))
         return GLib.SOURCE_CONTINUE
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, panelstate.SIGNAL, asked)
-    # Docked from the start when asked (`start --dock`, dock.start), or when it was left docked;
-    # else typing in the floating HUD only when the config says so (touch.floating).
+    # Docked from the start when asked (`start --dock`, dock.start), or when it was left docked.
     if os.environ.get("ZMKHUD_DOCK") == "1" or settings["dock"]["start"] or load_dock():
         GLib.idle_add(lambda: set_dock(True) or False)
-    elif settings["touch"]["enabled"] and settings["touch"]["floating"]:
-        typing.start()
     # Only now, with the handler in: the CLI signals whatever pid this file names.
     panelstate.write(RUN, shown[0], extra=extra)
     RUN.mkdir(mode=0o700, exist_ok=True)

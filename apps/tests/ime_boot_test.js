@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /* zmk-layer-hud — the Android keyboard's page (apps/android/app/src/main/assets/ime-boot.js), on the
  * HUD's page in the tests' DOM: what a tap posts to the keyboard (HudIme.kt reads it with
- * sink/Ops.kt's PageMessage), the size it says, the next-keyboard key, and the board docked.
+ * sink/Ops.kt's PageMessage), the size it says, the next-keyboard key, and the board docked, its keys
+ * their real size -- or, too big for the screen, a HUD only.
  *
  *   node apps/tests/ime_boot_test.js [--verbose]
  */
@@ -30,7 +31,7 @@ const MSG = {
   base: "base", extras: { base: "base", sticky: [], search: [] },
   actions: { v: 1, source: "keymap", positions: 2, default: 0, table: [kp(0x04), kp(0x2A)],
              layers: { 0: [0, 1] }, combos: [], conditional: [] },
-  touch: { enabled: 1, floating: 0, hold_ms: 280, flavor: "balanced", latch: 1, lock_ms: 350, sticky_ms: 0,
+  touch: { enabled: 1, key_mm: 18, hold_ms: 280, flavor: "balanced", latch: 1, lock_ms: 350, sticky_ms: 0,
            repeat_delay_ms: 450, repeat_ms: 60, combos: "chips", heat: 1 },
 };
 
@@ -47,12 +48,15 @@ function keyboard(conf) {
 }
 
 (function aTapIsTextForTheField() {
-  const p = keyboard({ maxHeight: 300, canSwitch: true });
+  const p = keyboard({ maxHeight: 300, canSwitch: true, pxPerMm: 6.3, width: 1280 });
   const html = p.document.documentElement;
   check(html.classList.contains("dock"), "the board is docked");
-  check(eq(p.hud.state.dock, { maxHeight: 300, split: true }), `as tall as the keyboard's share allows: ${JSON.stringify(p.hud.state.dock)}`);
+  const d = p.hud.state.dock;
+  check(eq([d.maxHeight, d.split, d.pxPerMm, d.width], [300, true, 6.3, 1280]),
+        `as tall as the keyboard's share allows, measured as the screen says: ${JSON.stringify(d)}`);
   p.hud.receive(MSG);
   check(html.classList.contains("touch"), "and types once the keymap is there");
+  check(Math.abs(p.hud.state.scale - 18 * 6.3 / 100) < 1e-9, `its keys their real size: scale ${p.hud.state.scale}`);
   p.posted.length = 0;
   for (const idx of [0, 1]) {
     p.hud.state.keyEls[idx].fire("pointerdown", { pointerId: idx + 1 });
@@ -68,6 +72,19 @@ function keyboard(conf) {
   check(eq(said, ["standard", "delete"]), `each press asks the keyboard for its buzz and click: ${JSON.stringify(said)}`);
   check(p.posted.findIndex((m) => m.kind === "feedback") < p.posted.findIndex((m) => m.kind === "ops"),
         "before the text it types: on the press");
+})();
+
+(function tooBigForTheScreenItIsAHudOnly() {
+  // Two keys 18 mm apart are 227 dp across at 6.3 dp a mm: more than a screen 200 dp wide.
+  const p = keyboard({ maxHeight: 300, canSwitch: true, pxPerMm: 6.3, width: 200 });
+  p.hud.receive(MSG);
+  check(!p.document.documentElement.classList.contains("touch"), "too big for the screen turned this way: no typing");
+  p.posted.length = 0;
+  p.hud.state.keyEls[0].fire("pointerdown", { pointerId: 1 });
+  p.hud.state.keyEls[0].fire("pointerup", { pointerId: 1 });
+  check(!p.posted.some((m) => m.kind === "ops" || m.kind === "feedback"), `a tap types nothing: ${JSON.stringify(p.posted)}`);
+  check(/a HUD only/.test(p.document.getElementById("layerSub").textContent), "and the banner says why");
+  check(nextKeys(p).length === 1, "the next-keyboard key is still there to leave by");
 })();
 
 (function itSaysHowTallItCameOut() {

@@ -137,6 +137,15 @@ class SinkTest {
         }
     }
 
+    @Test fun aScreensMillimetres() {
+        // A Pixel Tablet: 276 pixels to the inch, two to a dp.
+        assertEquals(276.0 / 25.4 / 2, Screen.dpPerMm(276f, 2f), 1e-9)
+        // A screen that says what none has: Android's own measure.
+        for ((dpi, density) in listOf(0f to 2f, 5000f to 2f, 276f to 0f, Float.NaN to 2f)) {
+            assertEquals(Screen.NOMINAL_DP_PER_MM, Screen.dpPerMm(dpi, density), "$dpi $density")
+        }
+    }
+
     @Test fun json() {
         assertEquals(mapOf("a" to listOf(1L, -2.5, true, null, "é\né")), Json.parse("""{"a":[1,-2.5,true,null,"é\né"]}"""))
         assertEquals(emptyMap<String, Any?>(), Json.parse(" { } "))

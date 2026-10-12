@@ -84,7 +84,9 @@
    "middle": {
     "x": 440,
     "w": 144
-   }
+   },
+   "fits": true,
+   "need": null
   },
   "chips": [
    {

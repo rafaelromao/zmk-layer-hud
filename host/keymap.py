@@ -124,8 +124,8 @@ FEED_DEFAULTS = {
 
 # `touch:` section: the touch keyboard, the HUD typing when its keys are tapped (docs/touch.md).
 TOUCH_DEFAULTS = {
-    "enabled": 1,              # 0: the HUD never types, docked or not
-    "floating": 0,             # 1: the floating HUD types too, not only the docked one
+    "enabled": 1,              # 0: the HUD never types (it types docked, at its keys' real size)
+    "key_mm": 18,              # how far apart the keyboard's keys are, in mm: 18 Choc spacing, 19.05 MX
     "hold_ms": 280,            # a key held this long is held (a hold-tap's hold): glass is slower than a switch
     "flavor": "balanced",      # how a hold-tap decides on glass: balanced, or firmware (as the keymap says)
     "latch": 1,                # a hold let go with nothing else touched latches: one-shot, then locked
@@ -139,10 +139,11 @@ TOUCH_DEFAULTS = {
     "haptics": 1,              # ...and a buzz where the device has one (an Android tablet's browser; 0: none)
 }
 TOUCH_CHOICES = {"flavor": ("balanced", "firmware"), "combos": ("chords", "chips")}
+KEY_MM = (10, 30)              # touch.key_mm's bounds: no keyboard's keys are closer or further apart
 # `dock:` section: the HUD docked along the bottom of a screen (zmk-layer-hud dock, docs/touch.md).
 DOCK_DEFAULTS = {
     "screen": "",              # the screen to dock on, by name or a word of its description ("" picks one)
-    "height_pct": 40,          # the strip is at most this share of the screen's height
+    "height_pct": 60,          # the strip is at most this share of the screen's height
     "start": 0,                # 1: the HUD starts docked
     "split": 1,                # a split board's halves go to the sides of the screen (0: in one piece, centred)
 }
@@ -902,7 +903,8 @@ def draw(doc, drawer_cfg=None, stagger=True, fetch=True, previous=None, log=None
 # ---------- the message: built at runtime ----------
 
 def touch_settings(value):
-    """The `touch:` section checked: whole numbers, and the words TOUCH_CHOICES allows."""
+    """The `touch:` section checked: whole numbers, the words TOUCH_CHOICES allows, and key_mm a
+    keyboard's key spacing in millimetres."""
     if value is None:
         value = {}
     if not isinstance(value, dict):
@@ -916,6 +918,12 @@ def touch_settings(value):
             if v not in TOUCH_CHOICES[k]:
                 raise KeymapError(f"touch.{k} must be one of {', '.join(TOUCH_CHOICES[k])} (it is {v!r})")
             out[k] = v
+            continue
+        if k == "key_mm":
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not KEY_MM[0] <= v <= KEY_MM[1]:
+                raise KeymapError(f"touch.key_mm is how far apart the keyboard's keys are, in mm, {KEY_MM[0]} to "
+                                  f"{KEY_MM[1]}: 18 for Choc spacing, 19.05 for MX (it is {v!r})")
+            out[k] = int(v) if v == int(v) else round(float(v), 2)
             continue
         if isinstance(v, bool) or not isinstance(v, (int, float)) or v != int(v) or v < 0:
             raise KeymapError(f"touch.{k} must be a whole number, 0 or more (it is {v!r}); the default is "
@@ -954,7 +962,7 @@ def _whole(v, lo, hi):
 def dock_settings(value):
     return _section("dock", value, DOCK_DEFAULTS, lambda k, v: (
         (None if isinstance(v, str) and len(v) <= 64 else "must be a screen's name") if k == "screen" else
-        _whole(v, 15, 70) if k == "height_pct" else _whole(v, 0, 1)))
+        _whole(v, 15, 90) if k == "height_pct" else _whole(v, 0, 1)))
 
 
 def remote_settings(value):

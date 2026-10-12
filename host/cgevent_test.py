@@ -47,6 +47,9 @@ class FakeCG:
     def CGRequestPostEventAccess(self):
         return self.granted
 
+    def CGDisplayScreenSize(self, display):
+        return cgevent.CGSize(302.6, 196.7) if display == 1 else cgevent.CGSize(0, 0)
+
 
 class Scheduler:
     def __init__(self):
@@ -114,6 +117,11 @@ class Backend(unittest.TestCase):
     def test_access(self):
         self.assertTrue(cgevent.access(FakeCG(True)))
         self.assertFalse(cgevent.request_access(FakeCG(False)))
+
+    def test_a_screens_size(self):
+        # What the touch keyboard's keys are drawn their real size with; a display that does not say, nothing.
+        self.assertEqual((302.6, 196.7), cgevent.screen_mm(1, FakeCG()))
+        self.assertEqual((0, 0), cgevent.screen_mm(2, FakeCG()))
 
 
 class Table(unittest.TestCase):

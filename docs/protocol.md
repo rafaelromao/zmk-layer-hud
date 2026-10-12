@@ -222,7 +222,9 @@ here:
   URL sits in every page that connects, which is why it is not enough to type with.
 - A panel tells its page `{"kind":"touch","on":true,"sink":{...}}` when it may type,
   `{"kind":"typing","state":"ok|off|denied|missing|error","fix":...}` when it cannot and why, and
-  `{"kind":"dock","on":true,"max_height":N,"split":true}` when it is docked. These go through the
+  `{"kind":"dock","on":true,"max_height":N,"split":true,"px_per_mm":P,"width":W}` when it is docked
+  (the screen's measure, for keys their real size). A page whose board does not fit at that size
+  says `{"kind":"dock","fits":false,...}` and the panel floats the HUD again. These go through the
   bridge too, and are not on this socket.
 - **Remote mode** is a second server, off until `zmk-layer-hud remote on`: the page and a socket of
   its own on port 8768, on the local network, for a paired tablet. It shares nothing with this
