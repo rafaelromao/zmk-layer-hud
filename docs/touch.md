@@ -186,6 +186,11 @@ set, glass changes a few things:
   Android tablet buzzes, a desktop does not. A sink with `feedback(kind)` of its own is asked
   instead: the Android keyboard buzzes and clicks natively, as its switches and the system's
   settings say. An iPad keyboard without Full Access can do neither.
+
+  On by default where the board is a touch screen's keyboard -- docked, the remote page, a
+  tablet's keyboard -- and off where it is the HUD that also types (floating). The side panel has a
+  switch for it while the board types; a choice made there holds in every mode and is remembered as
+  the theme is (the `feedback` preference, `on` or `off`).
 - Touch typing counts nowhere: not in the session, the WPM, or the tallies. It warms the live heat,
   except while a secret is being typed. The typed-keys strip is put away while the board types,
   docked or floating: it is the HUD's, not the keyboard's.

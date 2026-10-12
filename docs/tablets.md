@@ -68,7 +68,8 @@ sentence; one without what its keys do (a board from the landing page) is drawn 
   the rest, so its own key handling sees the keys.
 - In a password field the board's strip shows nothing.
 - The 🌐 key in the banner switches to the next keyboard, where Android offers one.
-- It takes at most 45% of the screen. Vibration on each key is on, clicks off; the app sets both.
+- It takes at most 45% of the screen. Vibration and a click on each key are on until the app
+  turns them off, as the HUD's feedback is on a touch screen.
 
 **What it does not.** The keyboard has no network permission: the app imports keymaps from files
 only, so no keyboard of yours can reach the network. There are no key codes for F13 to F24, so those

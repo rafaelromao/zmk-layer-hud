@@ -240,7 +240,7 @@ function page(opts) {
 })();
 
 // The feedback: a stand-in AudioContext that says which click each source played, and how loud.
-function audioPage(touch, sinkExtra) {
+function audioPage(touch, sinkExtra, floating) {
   const played = [], buzzed = [];
   class Audio {
     constructor() { this.sampleRate = 8000; this.state = "suspended"; this.destination = {}; }
@@ -261,6 +261,8 @@ function audioPage(touch, sinkExtra) {
   p.hud.load(m);
   p.hud.setLayers([]);
   p.hud.setTouch(Object.assign({ output: "hid", repeat: "os", send: () => {} }, sinkExtra || {}));
+  // Docked unless asked: a touch screen's keyboard, where the feedback is on until switched off.
+  if (!floating) p.hud.setDock({ on: true, max_height: 300 });
   p.tap = (idx) => { p.hud.state.keyEls[idx].fire("pointerdown", { pointerId: idx + 1 }); p.clock.advance(30);
                      p.board.fire("pointerup", { pointerId: idx + 1 }); };
   return Object.assign(p, { played, buzzed });
@@ -286,6 +288,38 @@ function audioPage(touch, sinkExtra) {
   native.tap(1);
   check(eq(said, ["standard", "delete"]) && native.played.length === 0 && native.buzzed.length === 0,
         `a sink with feedback of its own is asked instead: ${JSON.stringify(said)}`);
+})();
+
+(function theFeedbackIsOnForATouchScreenOffForTheHudAndSwitched() {
+  const sw = (p) => p.document.getElementById("stats").querySelector(".switch");
+  const tile = (p) => p.document.getElementById("stats").querySelector(".feedback");
+  const floating = audioPage({}, null, true);
+  floating.tap(0);
+  check(floating.played.length === 0 && floating.buzzed.length === 0, "the HUD that also types is quiet by default");
+  check(!tile(floating).classList.contains("off") && sw(floating).getAttribute("aria-checked") === "false",
+        "and its side panel has the switch, off");
+  sw(floating).click();
+  floating.tap(0);
+  check(floating.played.length === 1 && sw(floating).getAttribute("aria-checked") === "true", "switched on, it clicks");
+
+  const docked = audioPage();
+  check(sw(docked).getAttribute("aria-checked") === "true", "docked, the switch starts on");
+  sw(docked).click();
+  docked.tap(0);
+  check(docked.played.length === 0 && docked.buzzed.length === 0, "switched off, a touch is silent");
+  check(docked.hud.state.prefs.feedback === "off", "and the choice is kept, as the theme's is");
+  docked.hud.setDock({ on: false });
+  docked.tap(0);
+  check(docked.played.length === 0, "a choice made holds in either mode");
+
+  const native = audioPage({}, { feedback: () => {} });
+  native.hud.setPref("feedback", "off");
+  let asked = 0;
+  native.hud.setTouch({ output: "hid", repeat: "os", send: () => {}, feedback: () => asked++ });
+  native.tap(0);
+  check(asked === 0, "switched off, a shell's own feedback is not asked either");
+  native.hud.setTouch(null);
+  check(tile(native).classList.contains("off"), "and a board that does not type has no switch");
 })();
 
 (function theStatsSitBetweenTheHalvesWhenTheyFit() {

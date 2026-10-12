@@ -563,7 +563,7 @@
       // The board itself while it types (touch.js): a press on a key is a keystroke, not a drag.
       const typing = document.documentElement.classList.contains("touch") ? $("board") : null;
       const controls = [$("side"), $("hide"), $("close"), $("statsHead"), bar.layer && bar.layer.pick, typing]
-        .concat(["heatmap", "theme", "opacity"].map(n => bar[n] && bar[n].chip));
+        .concat(["heatmap", "theme", "opacity", "feedback"].map(n => bar[n] && bar[n].chip));
       rects = controls.filter(Boolean).map(e => e.getBoundingClientRect())
         .filter(r => r.width > 0 && r.height > 0)
         .map(r => [r.left, r.top, r.width, r.height].map(v => Math.round(v)));
@@ -740,11 +740,16 @@
     theme: v => v === "light" || v === "dark",
     side: v => v === "shown" || v === "hidden",
     opacity: v => Number.isInteger(v) && v >= 0 && v <= 100,   // the slider (host/session.py PREFS)
+    feedback: v => v === "on" || v === "off",                  // the touch keyboard's click and buzz (the switch)
   };
   const PREFS_KEY = "zmkhud.prefs";
   try { Object.assign(state.prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || "{}")); } catch (e) { /* no storage */ }
   const theme = () => state.prefs.theme || (T("dark") > 0 ? "dark" : "light");
   const sideShown = () => state.prefs.side !== "hidden";
+  // The touch keyboard's click and buzz (touch.js): the viewer's choice once made, everywhere; until
+  // then on where the board is a touch screen's keyboard (docked: the panels' dock, the remote page,
+  // a tablet's keyboard) and off where it is the HUD that also types (floating).
+  const feedbackOn = () => (state.prefs.feedback ? state.prefs.feedback === "on" : !!state.dock);
   // The panels' background: the slider's, else the config's hud.opacity. A GIF still's script may
   // set its own (showDemo), which outranks both.
   const opacity = () => (state.demoOpacity != null ? state.demoOpacity : state.prefs.opacity != null ? state.prefs.opacity : T("opacity"));
@@ -1167,7 +1172,7 @@
     // labels: one per row; null is a label the stat writes itself (the layer's name). A short
     // value is a tile half the block wide, and a stat of two values two tiles side by side
     // (hud.css #stats .half, .pair), so the block fits beside the panel without making it taller.
-    const HALF = ["wpm", "acc", "time", "sfb", "mode", "theme"], PAIR = ["session", "keys", "hands", "slow"];
+    const HALF = ["wpm", "acc", "time", "sfb", "mode", "theme", "feedback"], PAIR = ["session", "keys", "hands", "slow"];
     const chip = (name, labels) => {
       const c = el("div", "stat " + name + (HALF.includes(name) ? " half" : PAIR.includes(name) ? " pair" : ""));
       const vals = [], names = [];
@@ -1208,6 +1213,16 @@
     bar.theme = chip("theme", ["keys"]);
     bar.theme.chip.title = "click: light or dark keys";
     bar.theme.chip.addEventListener("click", () => setPref("theme", theme() === "dark" ? "light" : "dark"));
+    // The touch keyboard's click and buzz, as a switch, while the board types.
+    bar.feedback = chip("feedback", ["feedback"]);
+    bar.feedback.chip.title = "a click, and a buzz where the device has one, on each touch";
+    const sw = el("button", "switch");
+    sw.type = "button";
+    sw.setAttribute("role", "switch");
+    sw.setAttribute("aria-label", "sound and vibration on each touch");
+    sw.addEventListener("click", () => setPref("feedback", feedbackOn() ? "off" : "on"));
+    bar.feedback.vals[0].appendChild(sw);
+    bar.feedback.sw = sw;
     // The panels' background, as a slider: every step shows at once, and the value it is let go at
     // is the one the feed remembers.
     bar.opacity = chip("opacity", ["background"]);
@@ -1368,6 +1383,8 @@
     bar.named.chip.title = named || "";   // a long name is cut short on the column
     put(bar.heatmap, [state.heatMode]);
     put(bar.theme, [theme()]);
+    toggleChip(bar.feedback, document.documentElement.classList.contains("touch"));
+    if (bar.feedback.sw.getAttribute("aria-checked") !== String(feedbackOn())) bar.feedback.sw.setAttribute("aria-checked", String(feedbackOn()));
     put(bar.opacity, [opacity() + "%"]);
     if (bar.opacity.slider.value !== String(opacity())) bar.opacity.slider.value = String(opacity());
     bar.opacity.slider.style.setProperty("--fill", opacity() + "%");   // the track's filled part (hud.css)
@@ -2161,6 +2178,8 @@
     // A touched key's glow: never counted, never in a session (the keyboard's own counts are the
     // session's), and none at all while a secret is being typed.
     warmKey(idx) { if (!state.secure) bumpHeat(idx); },
+    // Whether a touch clicks and buzzes (touch.js): the switch's choice, else the mode's.
+    feedbackOn() { return feedbackOn(); },
     // A message for the panel this page is in (its bridge); false where there is none.
     post(obj) {
       const h = panelHandler();

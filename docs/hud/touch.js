@@ -210,7 +210,9 @@
   // ---------- feedback ----------
 
   /* A click, and a buzz where the device has one, the moment a finger lands on a key: on the
-   * press, as phone keyboards give it, not the release, and none while a key repeats. Four clicks,
+   * press, as phone keyboards give it, not the release, and none while a key repeats. On by default
+   * where the board is a touch screen's keyboard (docked), off where it is the HUD that also types,
+   * and the side panel's switch decides once it is used (hud.feedbackOn). Four clicks,
    * as Android's keyboard sounds: a key, space, delete and return. touch.sound is the click's volume
    * (0: silent), touch.haptics the buzz, which a browser gives on Android alone (navigator.vibrate).
    * A sink with feedback of its own -- the Android keyboard's, which buzzes and clicks as the
@@ -239,6 +241,7 @@
   }
 
   function feedback(kind) {
+    if (hud.feedbackOn && !hud.feedbackOn()) return;     // the side panel's switch, else the mode's default
     if (sink.feedback) { try { sink.feedback(kind); } catch (x) { /* the shell's own */ } return; }
     const volume = Math.min(100, Number(data.touch.sound) || 0) / 100;
     if (volume > 0) click(kind, volume);

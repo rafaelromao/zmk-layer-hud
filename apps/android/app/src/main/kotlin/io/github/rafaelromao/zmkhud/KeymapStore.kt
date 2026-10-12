@@ -27,7 +27,8 @@ class KeymapStore(private val context: Context) {
     fun title(): String? = read()?.let { (Keymaps.check(it) as? Keymaps.Checked.Ok)?.title }
 }
 
-/** The two choices the keyboard reads: a vibration and a click on each key. */
+/** The two choices the keyboard reads: a vibration and a click on each key, both on until turned off:
+ *  this keyboard is a touch screen's, where the HUD's feedback is on by default. */
 class Prefs(context: Context) {
     private val p = context.getSharedPreferences("keyboard", Context.MODE_PRIVATE)
 
@@ -36,6 +37,6 @@ class Prefs(context: Context) {
         set(v) = p.edit().putBoolean("haptics", v).apply()
 
     var sound: Boolean
-        get() = p.getBoolean("sound", false)
+        get() = p.getBoolean("sound", true)
         set(v) = p.edit().putBoolean("sound", v).apply()
 }

@@ -158,6 +158,13 @@ body.demo .key::before, body.demo #stats { display: none; }
 #stats .stat.half .row b, #stats .stat.pair .row b { text-align: left; font-size: 13px; line-height: 17px; }
 /* After the tiles' display, which would otherwise outrank it: a stat the config leaves out takes no room. */
 #stats .stat.off { display: none; }
+/* The touch keyboard's feedback switch (hud.js bar.feedback): on, its knob right and its track lit. */
+#stats .switch { position: relative; width: 30px; height: 16px; padding: 0; border: 0; border-radius: 8px;
+  background: rgba(255,255,255,0.18); cursor: pointer; transition: background 120ms ease; }
+#stats .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px;
+  border-radius: 50%; background: #c0caf5; transition: transform 120ms ease; }
+#stats .switch[aria-checked="true"] { background: #7aa2f7; }
+#stats .switch[aria-checked="true"]::after { transform: translateX(14px); background: #101420; }
 #stats .row span, #stats .row b { overflow: hidden; text-overflow: ellipsis; }
 #stats .row span { flex: none; }         /* a label is never cut: the value gives way */
 #stats .row b { flex: 0 1 auto; min-width: 0; color: #c0caf5; font-weight: 700; text-align: right; }

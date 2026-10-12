@@ -46,6 +46,7 @@ PREFS = {
     "theme": ("light", "dark"),       # the keys: light, keymap-drawer's; or dark, the heat in indigo
     "side": ("shown", "hidden"),      # the stats block beside the panel
     "opacity": range(0, 101),         # the panels' background, 0 (clear) to 100 (solid): the slider
+    "feedback": ("on", "off"),        # the touch keyboard's click and buzz: the switch (unset: by the mode)
 }
 
 
