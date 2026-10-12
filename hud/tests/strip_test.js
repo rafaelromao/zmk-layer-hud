@@ -73,8 +73,8 @@ function main() {
     }
   }
 
-  // A usage the feed has no name for (usage9b): the chip reads the legend of the key the keyboard
-  // says it pressed (hud.js stripEvent), and with no such press, the usage as before.
+  // A usage the feed has no name for (usage9c, Keyboard Clear): the chip reads the legend of the
+  // key the keyboard says it pressed (hud.js stripEvent), and with no such press, the usage as before.
   {
     const data = JSON.parse(fs.readFileSync(opt.keymap, "utf8"));
     const base = data.layers[data.base] || [];
@@ -84,7 +84,7 @@ function main() {
     });
     if (pos !== undefined) {
       const legend = base[data.positions[pos]].tap;
-      const unnamed = { type: "keyDown", name: "usage9b", chars: "", code: 0x9b, flags: {} };
+      const unnamed = { type: "keyDown", name: "usage9c", chars: "", code: 0x9c, flags: {} };
       page.hud.setLayers([]);
       page.clock.advance(IDLE_CLEAR);
       checked++;
@@ -92,12 +92,12 @@ function main() {
       page.hud.key(unnamed);
       page.hud.releaseAt(Number(pos));
       let chips = strip.children.map(c => c.textContent);
-      if (chips.join("|") !== legend) fail.push({ legend: "usage9b", expected: legend, actual: JSON.stringify(chips) });
+      if (chips.join("|") !== legend) fail.push({ legend: "usage9c", expected: legend, actual: JSON.stringify(chips) });
       page.clock.advance(IDLE_CLEAR + 1000);
       checked++;
       page.hud.key(unnamed);
       chips = strip.children.map(c => c.textContent);
-      if (chips.join("|") !== "USAGE9B") fail.push({ legend: "usage9b, no press", expected: "USAGE9B", actual: JSON.stringify(chips) });
+      if (chips.join("|") !== "USAGE9C") fail.push({ legend: "usage9c, no press", expected: "USAGE9C", actual: JSON.stringify(chips) });
     }
     // ...and when the keys pressed are a combo, the keystroke is the combo's: the chip reads its
     // legend, as the pill does (l+o+u types cancel on the Diamond), not its last key's.

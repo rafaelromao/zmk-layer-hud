@@ -8,7 +8,7 @@
   if (!host) return;
   const NAMED = { space: "␣", return: "↵", escape: "⎋", delete: "⌫", forwarddelete: "⌦", tab: "⇥",
     left: "←", right: "→", up: "↑", down: "↓", home: "⇱", end: "⇲", pageup: "⇞", pagedown: "⇟",
-    insert: "⎀", capslock: "⇪" };
+    insert: "⎀", capslock: "⇪", cancel: "cancel" };
   for (let i = 1; i <= 24; i++) NAMED["f" + i] = "F" + i;
   const MODS = [["cmd", "⌘"], ["ctrl", "⌃"], ["alt", "⌥"], ["shift", "⇧"]];
   const IDLE_MS = 1800, MAX_CHIPS = 5;
