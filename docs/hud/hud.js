@@ -1172,7 +1172,7 @@
     // labels: one per row; null is a label the stat writes itself (the layer's name). A short
     // value is a tile half the block wide, and a stat of two values two tiles side by side
     // (hud.css #stats .half, .pair), so the block fits beside the panel without making it taller.
-    const HALF = ["wpm", "acc", "time", "sfb", "mode", "theme", "feedback"], PAIR = ["session", "keys", "hands", "slow"];
+    const HALF = ["wpm", "acc", "time", "sfb", "mode", "theme"], PAIR = ["session", "keys", "hands", "slow"];
     const chip = (name, labels) => {
       const c = el("div", "stat " + name + (HALF.includes(name) ? " half" : PAIR.includes(name) ? " pair" : ""));
       const vals = [], names = [];
@@ -1213,7 +1213,8 @@
     bar.theme = chip("theme", ["keys"]);
     bar.theme.chip.title = "click: light or dark keys";
     bar.theme.chip.addEventListener("click", () => setPref("theme", theme() === "dark" ? "light" : "dark"));
-    // The touch keyboard's click and buzz, as a switch, while the board types.
+    // The touch keyboard's click and buzz, as a switch, while the board types: one line, as the
+    // background's slider is (hud.css #stats .stat.feedback).
     bar.feedback = chip("feedback", ["feedback"]);
     bar.feedback.chip.title = "a click, and a buzz where the device has one, on each touch";
     const sw = el("button", "switch");
@@ -1221,7 +1222,7 @@
     sw.setAttribute("role", "switch");
     sw.setAttribute("aria-label", "sound and vibration on each touch");
     sw.addEventListener("click", () => setPref("feedback", feedbackOn() ? "off" : "on"));
-    bar.feedback.vals[0].appendChild(sw);
+    bar.feedback.chip.appendChild(sw);
     bar.feedback.sw = sw;
     // The panels' background, as a slider: every step shows at once, and the value it is let go at
     // is the one the feed remembers.
@@ -1385,6 +1386,7 @@
     put(bar.theme, [theme()]);
     toggleChip(bar.feedback, document.documentElement.classList.contains("touch"));
     if (bar.feedback.sw.getAttribute("aria-checked") !== String(feedbackOn())) bar.feedback.sw.setAttribute("aria-checked", String(feedbackOn()));
+    put(bar.feedback, [feedbackOn() ? "on" : "off"]);
     put(bar.opacity, [opacity() + "%"]);
     if (bar.opacity.slider.value !== String(opacity())) bar.opacity.slider.value = String(opacity());
     bar.opacity.slider.style.setProperty("--fill", opacity() + "%");   // the track's filled part (hud.css)
