@@ -1213,8 +1213,8 @@
     bar.theme = chip("theme", ["keys"]);
     bar.theme.chip.title = "click: light or dark keys";
     bar.theme.chip.addEventListener("click", () => setPref("theme", theme() === "dark" ? "light" : "dark"));
-    // The touch keyboard's click and buzz, as a switch, while the board types: one line, as the
-    // background's slider is (hud.css #stats .stat.feedback).
+    // The touch keyboard's click and buzz, as a switch, while the board types: a tile across the
+    // panel, as the background's is (hud.css #stats .stat.feedback).
     bar.feedback = chip("feedback", ["feedback"]);
     bar.feedback.chip.title = "a click, and a buzz where the device has one, on each touch";
     const sw = el("button", "switch");

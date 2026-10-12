@@ -158,18 +158,18 @@ body.demo .key::before, body.demo #stats { display: none; }
 #stats .stat.half .row b, #stats .stat.pair .row b { text-align: left; font-size: 13px; line-height: 17px; }
 /* After the tiles' display, which would otherwise outrank it: a stat the config leaves out takes no room. */
 #stats .stat.off { display: none; }
-/* The touch keyboard's feedback switch (hud.js bar.feedback), on one line as the background slider
-   is: the label, the switch across the rest, the value. On, its knob at the far end and its track
-   lit. */
-#stats .stat.feedback { display: grid; grid-template-columns: auto 1fr auto; align-items: center; column-gap: 8px; }
+/* The touch keyboard's feedback switch (hud.js bar.feedback): a tile across the panel, as the
+   background's is, its label at one end and its value and a switch of the usual size at the other.
+   On, the knob right and the track lit. */
+#stats .stat.feedback { display: flex; align-items: center; gap: 8px; }
 #stats .stat.feedback .row { display: contents; }
-#stats .stat.feedback .row b { order: 2; }
-#stats .switch { order: 1; position: relative; display: block; width: 100%; min-width: 0; height: 14px; padding: 0;
-  border: 0; border-radius: 7px; background: rgba(122, 162, 247, 0.18); cursor: pointer; transition: background 120ms ease; }
-#stats .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 10px; height: 10px;
+#stats .stat.feedback .row span { margin-right: auto; }
+#stats .switch { position: relative; flex: none; width: 30px; height: 16px; padding: 0; border: 0; border-radius: 8px;
+  background: rgba(122, 162, 247, 0.18); cursor: pointer; transition: background 120ms ease; }
+#stats .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px;
   border-radius: 50%; background: #c0caf5; transition: left 120ms ease; }
 #stats .switch[aria-checked="true"] { background: #7aa2f7; }
-#stats .switch[aria-checked="true"]::after { left: calc(100% - 12px); background: #101420; }
+#stats .switch[aria-checked="true"]::after { left: 16px; background: #101420; }
 #stats .row span, #stats .row b { overflow: hidden; text-overflow: ellipsis; }
 #stats .row span { flex: none; }         /* a label is never cut: the value gives way */
 #stats .row b { flex: 0 1 auto; min-width: 0; color: #c0caf5; font-weight: 700; text-align: right; }
