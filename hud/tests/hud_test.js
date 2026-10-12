@@ -88,10 +88,19 @@ function nodeDriver(page) {
       return out;
     },
     async pills() {
-      return page.board.querySelectorAll(".combo-pill").map(p => ({
-        tap: legend(p.querySelector(".combo-tap")),
-        sub: legend(p.querySelector(".combo-sub")),
-      }));
+      return page.board.querySelectorAll(".combo-pill").map(p => {
+        // hud.css centres the pill on the left/top hud.js writes (translate -50%).
+        const w = p.offsetWidth, h = p.offsetHeight;
+        const box = { left: parseFloat(p.style.left) - w / 2, top: parseFloat(p.style.top) - h / 2, width: w, height: h };
+        return { tap: legend(p.querySelector(".combo-tap")), sub: legend(p.querySelector(".combo-sub")), box };
+      });
+    },
+    // Boxes on the board, in the board's own px: a key's as drawn, and the board's whole extent.
+    async keyBoxes(idxs) {
+      return idxs.map(i => page.hud.state.keyEls[i].getBoundingClientRect());
+    },
+    async boardBox() {
+      return { left: 0, top: 0, width: page.board.clientWidth, height: parseFloat(page.board.style.height) || 0 };
     },
   };
 }
