@@ -161,7 +161,7 @@ body.demo .key::before, body.demo #stats { display: none; }
 /* The touch keyboard's feedback switch (hud.js bar.feedback): a tile across the panel, as the
    background's is, its label at one end and its value and a switch of the usual size at the other.
    On, the knob right and the track lit. */
-#stats .stat.feedback { display: flex; align-items: center; gap: 8px; }
+#stats .stat.feedback:not(.off) { display: flex; align-items: center; gap: 8px; }
 #stats .stat.feedback .row { display: contents; }
 #stats .stat.feedback .row span { margin-right: auto; }
 #stats .switch { position: relative; flex: none; width: 30px; height: 16px; padding: 0; border: 0; border-radius: 8px;
