@@ -80,8 +80,14 @@ class Named(unittest.TestCase):
     def test_legends_reach_their_named_key(self):
         for legend, name in [("␣", "space"), ("↵", "return"), ("⏎", "return"), ("⎋", "escape"),
                              ("⌫", "delete"), ("⇥", "tab"), ("↹", "tab"), ("→", "right"),
-                             ("⎀", "insert"), ("F5", "f5"), ("F13", "f13")]:
+                             ("⎀", "insert"), ("F5", "f5"), ("F13", "f13"), ("cancel", "cancel")]:
             self.assertEqual(typed(legend)[0][1], name, legend)
+
+    def test_cancel_is_named(self):
+        # K_CANCEL (0x9B) is what a cancel combo sends on Linux, where the keyboard's positions may
+        # not reach the HUD to put the combo's legend on it: the feed has to name it itself.
+        out = SignalDecoder().feed({"kind": "keys", "mods": 0, "keys": [0x9B]}, 0)
+        self.assertEqual(["cancel"], [m["name"] for m in out if m["type"] == "keyDown"])
 
     def test_return_is_the_main_one_not_the_keypad(self):
         self.assertEqual(uskeys.USAGE_FOR_NAME["return"], 0x28)

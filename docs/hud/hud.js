@@ -59,6 +59,9 @@
     space: "␣", return: "↵", escape: "⎋", delete: "⌫", forwarddelete: "⌦", tab: "⇥",
     left: "←", right: "→", up: "↑", down: "↓", home: "⇱", end: "⇲",
     pagedown: "⇟", pageup: "⇞", insert: "⎀", capslock: "⇪",
+    // Keyboard Cancel (K_CANCEL), what a cancel combo sends: without positions this is how its
+    // keys light and its pill shows.
+    cancel: "cancel",
   };
   // The function keys the decoder names (f1..f24): without them a keymap's F5 resolves to no
   // token at all and the key never lights when the firmware reports no positions.
@@ -1585,11 +1588,12 @@
     renderKeys();
   }
 
-  /* A usage the feed has no name for -- usage9b, a key bound to something past F24 -- is a name no
+  /* A usage the feed has no name for -- usage9c, a key bound to something past F24 -- is a name no
    * one reads. The strip says instead what the board says of the key that sent it: the last key
    * down, from the firmware's positions, while that press is this keystroke's. When that press
-   * completed a combo, the keystroke is the combo's, and the strip says what its pill says: l+o+u
-   * on the Diamond types cancel, which read as whichever of l, o and u went down last. */
+   * completed a combo, the keystroke is the combo's, and the strip says what its pill says, not
+   * whichever of its keys went down last. (Cancel, the Diamond's l+o+u, used to be the case in
+   * point; the feed names its key now, so it reads "cancel" with or without positions.) */
   const STRIP_PRESS_MS = 1000;
   function stripEvent(ev) {
     if (!state.data || ev.type !== "keyDown" || !/^usage[0-9a-f]+$/.test(ev.name || "")) return ev;

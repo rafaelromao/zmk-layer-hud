@@ -109,7 +109,10 @@ CHARS[0x63] = (".", ".")
 NAMED = {0x28: "return", 0x29: "escape", 0x2A: "delete", 0x2B: "tab", 0x2C: "space", 0x4C: "forwarddelete",
          0x4F: "right", 0x50: "left", 0x51: "down", 0x52: "up", 0x4A: "home", 0x4D: "end", 0x4B: "pageup",
          0x4E: "pagedown", 0x39: "capslock", 0x46: "printscreen", 0x47: "scrolllock", 0x48: "pause",
-         0x49: "insert", 0x58: "return", 0x65: "menu"}
+         0x49: "insert", 0x58: "return", 0x65: "menu",
+         # Keyboard Cancel. No Mac key sends it, so Hammerspoon has no name for it, but a cancel
+         # combo does (K_CANCEL), and without the keyboard's positions nothing else names it.
+         0x9B: "cancel"}
 for i in range(24):
     NAMED[0x3A + i if i < 12 else 0x68 + i - 12] = f"f{i + 1}"
 CONTROL_CHARS = {0x28: "\r", 0x29: "\x1b", 0x2A: "\x7f", 0x2B: "\t", 0x58: "\r"}

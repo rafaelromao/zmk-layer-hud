@@ -56,6 +56,7 @@ NAME_FOR_LEGEND = {
     "←": "left", "→": "right", "↑": "up", "↓": "down",
     "⇱": "home", "⇲": "end", "⇞": "pageup", "⇟": "pagedown",
     "⎀": "insert", "⇪": "capslock",
+    "cancel": "cancel",
 }
 for _i in range(1, 25):
     NAME_FOR_LEGEND[f"F{_i}"] = f"f{_i}"
