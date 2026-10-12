@@ -211,7 +211,9 @@
 "layer": "window-management"
 }
 ],
+"altgr": false,
 "base": "alpha1",
+"combo_idle": 0,
 "combo_term": 30,
 "combos": [
 {
@@ -978,7 +980,9 @@
 "type": "key"
 },
 "layers": [
-"shortcuts"
+"alpha1",
+"shifted1",
+"vim"
 ],
 "positions": [
 7,
@@ -994,7 +998,9 @@
 "type": "key"
 },
 "layers": [
-"shortcuts"
+"alpha1",
+"shifted1",
+"vim"
 ],
 "positions": [
 10,
@@ -1010,7 +1016,9 @@
 "type": "key"
 },
 "layers": [
-"shortcuts"
+"alpha1",
+"shifted1",
+"vim"
 ],
 "positions": [
 14,
@@ -1026,7 +1034,9 @@
 "type": "key"
 },
 "layers": [
-"shortcuts"
+"alpha1",
+"shifted1",
+"vim"
 ],
 "positions": [
 17,
@@ -1132,7 +1142,6 @@
 "shifted1",
 "shifted2",
 "ç-extension",
-"vim",
 "numbers",
 "symbols",
 "nav",
@@ -2210,9 +2219,9 @@
 },
 {
 "key": {
-"hold": "⇥<>();",
+"hold": "⇥<>();⏎",
 "shifted": "",
-"tap": "<>()",
+"tap": "⇥<>();",
 "type": "key"
 },
 "layers": [
@@ -2888,7 +2897,9 @@
 "type": "key"
 },
 "layers": [
-"coding-meh"
+"intellij-meh",
+"vscode-meh",
+"nvim-meh"
 ],
 "positions": [
 11,
@@ -2903,7 +2914,22 @@
 "type": "key"
 },
 "layers": [
-"coding-hyper"
+"intellij-hyper"
+],
+"positions": [
+11,
+12
+]
+},
+{
+"key": {
+"hold": "",
+"shifted": "",
+"tap": "to def",
+"type": "key"
+},
+"layers": [
+"vscode-hyper"
 ],
 "positions": [
 11,
@@ -2936,6 +2962,32 @@
 "ç-extension"
 ]
 },
+"fingers": [
+"lr",
+"lm",
+"li",
+"ri",
+"rm",
+"rr",
+"lp",
+"lr",
+"lm",
+"li",
+"ri",
+"rm",
+"rr",
+"rp",
+"lr",
+"lm",
+"li",
+"ri",
+"rm",
+"rr",
+"lt",
+"lt",
+"rt",
+"rt"
+],
 "glyphs": {
 "mdi:apple-keyboard-command": "<svg data-glyph=\"mdi:apple-keyboard-command\"></svg>",
 "mdi:apple-keyboard-control": "<svg data-glyph=\"mdi:apple-keyboard-control\"></svg>",
@@ -2982,6 +3034,7 @@
 "mdi:content-paste": "<svg data-glyph=\"mdi:content-paste\"></svg>",
 "mdi:content-save": "<svg data-glyph=\"mdi:content-save\"></svg>",
 "mdi:content-save-check": "<svg data-glyph=\"mdi:content-save-check\"></svg>",
+"mdi:database-search-outline": "<svg data-glyph=\"mdi:database-search-outline\"></svg>",
 "mdi:debug-step-into": "<svg data-glyph=\"mdi:debug-step-into\"></svg>",
 "mdi:debug-step-out": "<svg data-glyph=\"mdi:debug-step-out\"></svg>",
 "mdi:debug-step-over": "<svg data-glyph=\"mdi:debug-step-over\"></svg>",
@@ -2993,6 +3046,7 @@
 "mdi:feature-search-outline": "<svg data-glyph=\"mdi:feature-search-outline\"></svg>",
 "mdi:file-code-outline": "<svg data-glyph=\"mdi:file-code-outline\"></svg>",
 "mdi:file-multiple": "<svg data-glyph=\"mdi:file-multiple\"></svg>",
+"mdi:file-search-outline": "<svg data-glyph=\"mdi:file-search-outline\"></svg>",
 "mdi:flash": "<svg data-glyph=\"mdi:flash\"></svg>",
 "mdi:folder-open": "<svg data-glyph=\"mdi:folder-open\"></svg>",
 "mdi:form-select": "<svg data-glyph=\"mdi:form-select\"></svg>",
@@ -3008,6 +3062,7 @@
 "mdi:keyboard-space": "<svg data-glyph=\"mdi:keyboard-space\"></svg>",
 "mdi:keyboard-tab": "<svg data-glyph=\"mdi:keyboard-tab\"></svg>",
 "mdi:layers-search-outline": "<svg data-glyph=\"mdi:layers-search-outline\"></svg>",
+"mdi:location-enter": "<svg data-glyph=\"mdi:location-enter\"></svg>",
 "mdi:lock": "<svg data-glyph=\"mdi:lock\"></svg>",
 "mdi:loupe": "<svg data-glyph=\"mdi:loupe\"></svg>",
 "mdi:magnify": "<svg data-glyph=\"mdi:magnify\"></svg>",
@@ -3043,6 +3098,7 @@
 "mdi:skip-forward": "<svg data-glyph=\"mdi:skip-forward\"></svg>",
 "mdi:stop": "<svg data-glyph=\"mdi:stop\"></svg>",
 "mdi:tab-search": "<svg data-glyph=\"mdi:tab-search\"></svg>",
+"mdi:table-row-plus-after": "<svg data-glyph=\"mdi:table-row-plus-after\"></svg>",
 "mdi:text-box-search-outline": "<svg data-glyph=\"mdi:text-box-search-outline\"></svg>",
 "mdi:undo": "<svg data-glyph=\"mdi:undo\"></svg>",
 "mdi:variable": "<svg data-glyph=\"mdi:variable\"></svg>",
@@ -3058,16 +3114,21 @@
 "activator_ms": 400,
 "combo_pill_ms": 1000,
 "combo_slack_ms": 20,
+"dark": 0,
+"heatmap_ms": 3000,
 "held_timeout_ms": 5000,
 "momentary_ms": 700,
 "one_shot_ms": 450,
 "opacity": 86,
 "positions_fresh_ms": 3000,
-"press_ms": 320,
+"press_ms": 100,
 "release_ms": 60,
 "sequence_max": 6,
 "sequence_ms": 200,
-"width": 598
+"stats_bar": 1,
+"width": 598,
+"wpm_idle_ms": 3000,
+"wpm_window_ms": 10000
 },
 "kind": "keymap",
 "layer_order": [
@@ -3089,10 +3150,13 @@
 "macros",
 "left-meh-morphs",
 "right-meh-morphs",
-"coding-meh",
-"coding-hyper",
 "desktop-management",
-"window-management"
+"window-management",
+"intellij-meh",
+"intellij-hyper",
+"vscode-meh",
+"vscode-hyper",
+"nvim-meh"
 ],
 "layers": {
 "alpha1": [
@@ -3402,334 +3466,6 @@
 "type": "key"
 }
 ],
-"coding-hyper": [
-{
-"glyph": "mdi:form-select",
-"hold": "",
-"shifted": "select in",
-"tap": "form-select",
-"type": "key"
-},
-{
-"glyph": "mdi:wrench-outline",
-"hold": "",
-"shifted": "rebuild",
-"tap": "wrench-outline",
-"type": "key"
-},
-{
-"glyph": "mdi:sine-wave",
-"hold": "code",
-"shifted": "analyze",
-"tap": "sine-wave",
-"type": "key"
-},
-{
-"hold": "everything",
-"shifted": "search",
-"tap": "🔍l",
-"type": "key"
-},
-{
-"glyph": "mdi:text-box-search-outline",
-"hold": "symbol",
-"shifted": "go to",
-"tap": "text-box-search-outline",
-"type": "key"
-},
-{
-"glyph": "mdi:feature-search-outline",
-"hold": "action",
-"shifted": "find",
-"tap": "feature-search-outline",
-"type": "key"
-},
-{
-"hold": "",
-"shifted": "",
-"tap": "",
-"type": "blank"
-},
-{
-"glyph": "mdi:code-block-parentheses",
-"hold": "complete",
-"shifted": "code",
-"tap": "code-block-parentheses",
-"type": "key"
-},
-{
-"glyph": "mdi:file-code-outline",
-"hold": "this",
-"shifted": "refactor",
-"tap": "file-code-outline",
-"type": "key"
-},
-{
-"glyph": "mdi:view-compact",
-"hold": "scheme",
-"shifted": "switch",
-"tap": "view-compact",
-"type": "key"
-},
-{
-"glyph": "mdi:stop",
-"hold": "",
-"shifted": "stop",
-"tap": "stop",
-"type": "key"
-},
-{
-"glyph": "mdi:play-pause",
-"hold": "",
-"shifted": "resume",
-"tap": "⏯",
-"type": "key"
-},
-{
-"glyph": "mdi:circle-multiple",
-"hold": "breakpoints",
-"shifted": "view",
-"tap": "circle-multiple",
-"type": "key"
-},
-{
-"hold": "",
-"shifted": "",
-"tap": "",
-"type": "blank"
-},
-{
-"glyph": "mdi:code-array",
-"hold": "code",
-"shifted": "generate",
-"tap": "code-array",
-"type": "key"
-},
-{
-"hold": "block",
-"shifted": "comment",
-"tap": "/**/",
-"type": "key"
-},
-{
-"glyph": "mdi:book-open-variant-outline",
-"hold": "usages",
-"shifted": "find",
-"tap": "book-open-variant-outline",
-"type": "key"
-},
-{
-"glyph": "mdi:bookmark-box",
-"hold": "bookmark",
-"shifted": "toggle",
-"tap": "bookmark-box",
-"type": "key"
-},
-{
-"glyph": "mdi:page-previous",
-"hold": "bookmark",
-"shifted": "previous",
-"tap": "page-previous",
-"type": "key"
-},
-{
-"glyph": "mdi:page-next",
-"hold": "bookmark",
-"shifted": "next",
-"tap": "page-next",
-"type": "key"
-},
-{
-"hold": "",
-"shifted": "",
-"tap": "",
-"type": "trans"
-},
-{
-"hold": "",
-"shifted": "",
-"tap": "",
-"type": "blank"
-},
-{
-"hold": "",
-"shifted": "",
-"tap": "",
-"type": "blank"
-},
-{
-"hold": "",
-"shifted": "",
-"tap": "",
-"type": "trans"
-}
-],
-"coding-meh": [
-{
-"glyph": "mdi:file-multiple",
-"hold": "",
-"shifted": "project",
-"tap": "file-multiple",
-"type": "key"
-},
-{
-"glyph": "mdi:wrench",
-"hold": "",
-"shifted": "build",
-"tap": "🔧",
-"type": "key"
-},
-{
-"glyph": "mdi:format-indent-increase",
-"hold": "code",
-"shifted": "format",
-"tap": "format-indent-increase",
-"type": "key"
-},
-{
-"glyph": "mdi:debug-step-out",
-"hold": "out",
-"shifted": "step",
-"tap": "debug-step-out",
-"type": "key"
-},
-{
-"glyph": "mdi:debug-step-over",
-"hold": "over",
-"shifted": "step",
-"tap": "debug-step-over",
-"type": "key"
-},
-{
-"glyph": "mdi:debug-step-into",
-"hold": "into",
-"shifted": "step",
-"tap": "debug-step-into",
-"type": "key"
-},
-{
-"hold": "",
-"shifted": "",
-"tap": "",
-"type": "blank"
-},
-{
-"glyph": "mdi:code-block-braces",
-"hold": "match",
-"shifted": "type",
-"tap": "code-block-braces",
-"type": "key"
-},
-{
-"hold": "statement",
-"shifted": "complete",
-"tap": "()",
-"type": "key"
-},
-{
-"glyph": "mdi:history",
-"hold": "files",
-"shifted": "recent",
-"tap": "history",
-"type": "key"
-},
-{
-"glyph": "mdi:play",
-"hold": "run",
-"shifted": "",
-"tap": "play",
-"type": "key"
-},
-{
-"glyph": "mdi:bug-play",
-"hold": "debug",
-"shifted": "",
-"tap": "bug-play",
-"type": "key"
-},
-{
-"glyph": "mdi:circle",
-"hold": "breakpoint",
-"shifted": "toggle",
-"tap": "circle",
-"type": "key"
-},
-{
-"hold": "",
-"shifted": "",
-"tap": "",
-"type": "blank"
-},
-{
-"glyph": "mdi:variable",
-"hold": "expression",
-"shifted": "evaluate",
-"tap": "variable",
-"type": "key"
-},
-{
-"hold": "line",
-"shifted": "comment",
-"tap": "//",
-"type": "key"
-},
-{
-"glyph": "mdi:feather",
-"hold": "def",
-"shifted": "quick",
-"tap": "feather",
-"type": "key"
-},
-{
-"glyph": "mdi:book-open-outline",
-"hold": "docs",
-"shifted": "quick",
-"tap": "book-open-outline",
-"type": "key"
-},
-{
-"glyph": "mdi:page-previous-outline",
-"hold": "error",
-"shifted": "previous",
-"tap": "page-previous-outline",
-"type": "key"
-},
-{
-"glyph": "mdi:page-next-outline",
-"hold": "error",
-"shifted": "next",
-"tap": "page-next-outline",
-"type": "key"
-},
-{
-"hold": "",
-"shifted": "",
-"tap": "",
-"type": "trans"
-},
-{
-"glyph": "mdi:brain",
-"glyph_hold": "mdi:apple-keyboard-command",
-"hold": "⌘",
-"shifted": "ai chat",
-"tap": "brain",
-"type": "key"
-},
-{
-"glyph": "mdi:gesture-tap",
-"glyph_hold": "mdi:apple-keyboard-command",
-"hold": "⌘",
-"shifted": "actions",
-"tap": "gesture-tap",
-"type": "key"
-},
-{
-"hold": "",
-"shifted": "",
-"tap": "",
-"type": "trans"
-}
-],
 "desktop-management": [
 {
 "hold": "",
@@ -4036,6 +3772,335 @@
 "shifted": "",
 "tap": "F11",
 "type": "key"
+}
+],
+"intellij-hyper": [
+{
+"glyph": "mdi:form-select",
+"hold": "",
+"shifted": "select in",
+"tap": "form-select",
+"type": "key"
+},
+{
+"glyph": "mdi:wrench-outline",
+"hold": "project",
+"shifted": "rebuild",
+"tap": "wrench-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:sine-wave",
+"hold": "code",
+"shifted": "inspect",
+"tap": "sine-wave",
+"type": "key"
+},
+{
+"glyph": "mdi:database-search-outline",
+"hold": "everywhere",
+"shifted": "search",
+"tap": "🔍",
+"type": "key"
+},
+{
+"glyph": "mdi:text-box-search-outline",
+"hold": "symbol",
+"shifted": "go to",
+"tap": "text-box-search-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:feature-search-outline",
+"hold": "action",
+"shifted": "find",
+"tap": "feature-search-outline",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:code-block-parentheses",
+"hold": "completion",
+"shifted": "basic",
+"tap": "code-block-parentheses",
+"type": "key"
+},
+{
+"glyph": "mdi:file-code-outline",
+"hold": "this",
+"shifted": "refactor",
+"tap": "file-code-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:view-compact",
+"hold": "scheme",
+"shifted": "switch",
+"tap": "view-compact",
+"type": "key"
+},
+{
+"glyph": "mdi:stop",
+"hold": "",
+"shifted": "stop",
+"tap": "stop",
+"type": "key"
+},
+{
+"glyph": "mdi:play-pause",
+"hold": "",
+"shifted": "resume",
+"tap": "⏯",
+"type": "key"
+},
+{
+"glyph": "mdi:circle-multiple",
+"hold": "breakpoints",
+"shifted": "view",
+"tap": "circle-multiple",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:code-array",
+"hold": "code",
+"shifted": "generate",
+"tap": "code-array",
+"type": "key"
+},
+{
+"hold": "block",
+"shifted": "comment",
+"tap": "/**/",
+"type": "key"
+},
+{
+"glyph": "mdi:book-open-variant-outline",
+"hold": "usages",
+"shifted": "find",
+"tap": "book-open-variant-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:bookmark-box",
+"hold": "bookmark",
+"shifted": "toggle",
+"tap": "bookmark-box",
+"type": "key"
+},
+{
+"glyph": "mdi:page-previous",
+"hold": "bookmark",
+"shifted": "previous",
+"tap": "page-previous",
+"type": "key"
+},
+{
+"glyph": "mdi:page-next",
+"hold": "bookmark",
+"shifted": "next",
+"tap": "page-next",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+}
+],
+"intellij-meh": [
+{
+"glyph": "mdi:file-multiple",
+"hold": "",
+"shifted": "project",
+"tap": "file-multiple",
+"type": "key"
+},
+{
+"glyph": "mdi:wrench",
+"hold": "project",
+"shifted": "build",
+"tap": "🔧",
+"type": "key"
+},
+{
+"glyph": "mdi:format-indent-increase",
+"hold": "code",
+"shifted": "reformat",
+"tap": "format-indent-increase",
+"type": "key"
+},
+{
+"glyph": "mdi:debug-step-out",
+"hold": "out",
+"shifted": "step",
+"tap": "debug-step-out",
+"type": "key"
+},
+{
+"glyph": "mdi:debug-step-over",
+"hold": "over",
+"shifted": "step",
+"tap": "debug-step-over",
+"type": "key"
+},
+{
+"glyph": "mdi:debug-step-into",
+"hold": "into",
+"shifted": "step",
+"tap": "debug-step-into",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:code-block-braces",
+"hold": "matching",
+"shifted": "type",
+"tap": "code-block-braces",
+"type": "key"
+},
+{
+"hold": "statement",
+"shifted": "complete",
+"tap": "()",
+"type": "key"
+},
+{
+"glyph": "mdi:history",
+"hold": "files",
+"shifted": "recent",
+"tap": "history",
+"type": "key"
+},
+{
+"glyph": "mdi:play",
+"hold": "run",
+"shifted": "",
+"tap": "play",
+"type": "key"
+},
+{
+"glyph": "mdi:bug-play",
+"hold": "debug",
+"shifted": "",
+"tap": "bug-play",
+"type": "key"
+},
+{
+"glyph": "mdi:circle",
+"hold": "breakpoint",
+"shifted": "toggle",
+"tap": "circle",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:variable",
+"hold": "expression",
+"shifted": "evaluate",
+"tap": "variable",
+"type": "key"
+},
+{
+"hold": "line",
+"shifted": "comment",
+"tap": "//",
+"type": "key"
+},
+{
+"glyph": "mdi:feather",
+"hold": "definition",
+"shifted": "quick",
+"tap": "feather",
+"type": "key"
+},
+{
+"glyph": "mdi:book-open-outline",
+"hold": "docs",
+"shifted": "quick",
+"tap": "book-open-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:page-previous-outline",
+"hold": "error",
+"shifted": "previous",
+"tap": "page-previous-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:page-next-outline",
+"hold": "error",
+"shifted": "next",
+"tap": "page-next-outline",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"glyph": "mdi:brain",
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "assistant",
+"tap": "brain",
+"type": "key"
+},
+{
+"glyph": "mdi:gesture-tap",
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "actions",
+"tap": "gesture-tap",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
 }
 ],
 "left-meh-morphs": [
@@ -4434,8 +4499,8 @@
 "glyph": "mdi:arrow-down-circle-outline",
 "hold": "",
 "shifted": "scroll",
-"tap": "",
-"type": "trans"
+"tap": "▽",
+"type": "key"
 },
 {
 "glyph": "mdi:arrow-down-circle",
@@ -4962,6 +5027,169 @@
 "shifted": "",
 "tap": "0",
 "type": "key"
+}
+],
+"nvim-meh": [
+{
+"glyph": "mdi:file-multiple",
+"hold": "",
+"shifted": "explorer",
+"tap": "file-multiple",
+"type": "key"
+},
+{
+"glyph": "mdi:wrench",
+"hold": "",
+"shifted": "make",
+"tap": "🔧",
+"type": "key"
+},
+{
+"glyph": "mdi:format-indent-increase",
+"hold": "format",
+"shifted": "lsp",
+"tap": "format-indent-increase",
+"type": "key"
+},
+{
+"glyph": "mdi:debug-step-out",
+"hold": "out",
+"shifted": "step",
+"tap": "debug-step-out",
+"type": "key"
+},
+{
+"glyph": "mdi:debug-step-over",
+"hold": "over",
+"shifted": "step",
+"tap": "debug-step-over",
+"type": "key"
+},
+{
+"glyph": "mdi:debug-step-into",
+"hold": "into",
+"shifted": "step",
+"tap": "debug-step-into",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:code-block-parentheses",
+"hold": "complete",
+"shifted": "omni",
+"tap": "code-block-parentheses",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"glyph": "mdi:history",
+"hold": "files",
+"shifted": "recent",
+"tap": "history",
+"type": "key"
+},
+{
+"glyph": "mdi:play-pause",
+"hold": "",
+"shifted": "continue",
+"tap": "⏯",
+"type": "key"
+},
+{
+"glyph": "mdi:play-pause",
+"hold": "",
+"shifted": "continue",
+"tap": "⏯",
+"type": "key"
+},
+{
+"glyph": "mdi:circle",
+"hold": "breakpoint",
+"shifted": "toggle",
+"tap": "circle",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:variable",
+"hold": "hover",
+"shifted": "evaluate",
+"tap": "variable",
+"type": "key"
+},
+{
+"hold": "gcc",
+"shifted": "comment",
+"tap": "//",
+"type": "key"
+},
+{
+"glyph": "mdi:location-enter",
+"hold": "definition",
+"shifted": "go to",
+"tap": "location-enter",
+"type": "key"
+},
+{
+"glyph": "mdi:book-open-outline",
+"hold": "hover",
+"shifted": "lsp",
+"tap": "book-open-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:page-previous-outline",
+"hold": "diagnostic",
+"shifted": "previous",
+"tap": "page-previous-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:page-next-outline",
+"hold": "diagnostic",
+"shifted": "next",
+"tap": "page-next-outline",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"glyph": "mdi:gesture-tap",
+"hold": "",
+"shifted": "code action",
+"tap": "gesture-tap",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
 }
 ],
 "right-meh-morphs": [
@@ -5993,13 +6221,13 @@
 {
 "hold": "",
 "shifted": "",
-"tap": "def OS",
+"tap": "omarchy",
 "type": "key"
 },
 {
 "hold": "",
 "shifted": "",
-"tap": "alt OS",
+"tap": "macos",
 "type": "key"
 },
 {
@@ -6196,6 +6424,329 @@
 "shifted": "",
 "tap": "",
 "type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+}
+],
+"vscode-hyper": [
+{
+"glyph": "mdi:form-select",
+"hold": "explorer",
+"shifted": "reveal in",
+"tap": "form-select",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"glyph": "mdi:file-search-outline",
+"hold": "open",
+"shifted": "quick",
+"tap": "file-search-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:text-box-search-outline",
+"hold": "symbol",
+"shifted": "go to",
+"tap": "text-box-search-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:feature-search-outline",
+"hold": "palette",
+"shifted": "command",
+"tap": "feature-search-outline",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:code-block-parentheses",
+"hold": "suggest",
+"shifted": "trigger",
+"tap": "code-block-parentheses",
+"type": "key"
+},
+{
+"glyph": "mdi:file-code-outline",
+"hold": "",
+"shifted": "refactor",
+"tap": "file-code-outline",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"glyph": "mdi:stop",
+"hold": "",
+"shifted": "stop",
+"tap": "stop",
+"type": "key"
+},
+{
+"glyph": "mdi:play-pause",
+"hold": "",
+"shifted": "continue",
+"tap": "⏯",
+"type": "key"
+},
+{
+"glyph": "mdi:circle-multiple",
+"hold": "breakpoints",
+"shifted": "view",
+"tap": "circle-multiple",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "block",
+"shifted": "comment",
+"tap": "/**/",
+"type": "key"
+},
+{
+"glyph": "mdi:book-open-variant-outline",
+"hold": "references",
+"shifted": "find",
+"tap": "book-open-variant-outline",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "ghost"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+}
+],
+"vscode-meh": [
+{
+"glyph": "mdi:file-multiple",
+"hold": "",
+"shifted": "explorer",
+"tap": "file-multiple",
+"type": "key"
+},
+{
+"glyph": "mdi:wrench",
+"hold": "task",
+"shifted": "build",
+"tap": "🔧",
+"type": "key"
+},
+{
+"glyph": "mdi:format-indent-increase",
+"hold": "document",
+"shifted": "format",
+"tap": "format-indent-increase",
+"type": "key"
+},
+{
+"glyph": "mdi:debug-step-out",
+"hold": "out",
+"shifted": "step",
+"tap": "debug-step-out",
+"type": "key"
+},
+{
+"glyph": "mdi:debug-step-over",
+"hold": "over",
+"shifted": "step",
+"tap": "debug-step-over",
+"type": "key"
+},
+{
+"glyph": "mdi:debug-step-into",
+"hold": "into",
+"shifted": "step",
+"tap": "debug-step-into",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:code-block-parentheses",
+"hold": "suggest",
+"shifted": "trigger",
+"tap": "code-block-parentheses",
+"type": "key"
+},
+{
+"glyph": "mdi:table-row-plus-after",
+"hold": "line below",
+"shifted": "insert",
+"tap": "table-row-plus-after",
+"type": "key"
+},
+{
+"glyph": "mdi:history",
+"hold": "editors",
+"shifted": "recent",
+"tap": "history",
+"type": "key"
+},
+{
+"glyph": "mdi:play",
+"hold": "run",
+"shifted": "",
+"tap": "play",
+"type": "key"
+},
+{
+"glyph": "mdi:bug-play",
+"hold": "debug",
+"shifted": "",
+"tap": "bug-play",
+"type": "key"
+},
+{
+"glyph": "mdi:circle",
+"hold": "breakpoint",
+"shifted": "toggle",
+"tap": "circle",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "blank"
+},
+{
+"glyph": "mdi:variable",
+"hold": "in console",
+"shifted": "evaluate",
+"tap": "variable",
+"type": "key"
+},
+{
+"hold": "line",
+"shifted": "comment",
+"tap": "//",
+"type": "key"
+},
+{
+"glyph": "mdi:feather",
+"hold": "definition",
+"shifted": "peek",
+"tap": "feather",
+"type": "key"
+},
+{
+"glyph": "mdi:book-open-outline",
+"hold": "hover",
+"shifted": "show",
+"tap": "book-open-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:page-previous-outline",
+"hold": "problem",
+"shifted": "previous",
+"tap": "page-previous-outline",
+"type": "key"
+},
+{
+"glyph": "mdi:page-next-outline",
+"hold": "problem",
+"shifted": "next",
+"tap": "page-next-outline",
+"type": "key"
+},
+{
+"hold": "",
+"shifted": "",
+"tap": "",
+"type": "trans"
+},
+{
+"glyph": "mdi:brain",
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "chat",
+"tap": "brain",
+"type": "key"
+},
+{
+"glyph": "mdi:gesture-tap",
+"glyph_hold": "mdi:apple-keyboard-command",
+"hold": "⌘",
+"shifted": "quick fix",
+"tap": "gesture-tap",
+"type": "key"
 },
 {
 "hold": "",
@@ -6508,178 +7059,178 @@
 ]
 },
 "layout": {
-"height": 272.0,
+"height": 403.8100726850031,
 "keys": [
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 105.0,
-"y": 34.0
+"r": 6.9,
+"w": 68.0,
+"x": 126.00859634294414,
+"y": 40.7475016430907
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 175.0,
-"y": 34.0
+"r": 10.0,
+"w": 68.0,
+"x": 208.76459634294415,
+"y": 39.3875016430907
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 245.0,
-"y": 34.0
+"r": 10.0,
+"w": 68.0,
+"x": 273.2285963429441,
+"y": 73.86350164309069
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 415.0,
-"y": 34.0
+"r": -10.0,
+"w": 68.0,
+"x": 447.4445963429441,
+"y": 73.86350164309069
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 485.0,
-"y": 34.0
+"r": -10.0,
+"w": 68.0,
+"x": 511.9085963429441,
+"y": 39.3875016430907
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 555.0,
-"y": 34.0
+"r": -6.9,
+"w": 68.0,
+"x": 594.6645963429442,
+"y": 40.7475016430907
+},
+{
+"h": 85.0,
+"r": 3.1,
+"w": 68.0,
+"x": 36.24859634294415,
+"y": 146.8955016430907
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 35.0,
-"y": 102.0
+"r": 6.9,
+"w": 68.0,
+"x": 116.28459634294416,
+"y": 120.9875016430907
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 105.0,
-"y": 102.0
+"r": 10.0,
+"w": 68.0,
+"x": 194.68859634294415,
+"y": 118.9475016430907
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 175.0,
-"y": 102.0
+"r": 10.0,
+"w": 68.0,
+"x": 259.22059634294413,
+"y": 153.42350164309073
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 245.0,
-"y": 102.0
+"r": -10.0,
+"w": 68.0,
+"x": 461.4525963429441,
+"y": 153.42350164309073
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 415.0,
-"y": 102.0
+"r": -10.0,
+"w": 68.0,
+"x": 525.9845963429442,
+"y": 118.9475016430907
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 485.0,
-"y": 102.0
+"r": -6.9,
+"w": 68.0,
+"x": 604.3885963429442,
+"y": 120.9875016430907
+},
+{
+"h": 85.0,
+"r": -3.1,
+"w": 68.0,
+"x": 684.4245963429441,
+"y": 146.8955016430907
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 555.0,
-"y": 102.0
+"r": 6.9,
+"w": 68.0,
+"x": 106.62859634294415,
+"y": 201.15950164309072
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 625.0,
-"y": 102.0
+"r": 10.0,
+"w": 68.0,
+"x": 180.68059634294414,
+"y": 198.50750164309068
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 105.0,
-"y": 170.0
+"r": 10.0,
+"w": 68.0,
+"x": 245.14459634294414,
+"y": 232.98350164309073
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 175.0,
-"y": 170.0
+"r": -10.0,
+"w": 68.0,
+"x": 475.5285963429441,
+"y": 232.98350164309073
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 245.0,
-"y": 170.0
+"r": -10.0,
+"w": 68.0,
+"x": 539.9925963429441,
+"y": 198.50750164309068
 },
 {
 "h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 415.0,
-"y": 170.0
+"r": -6.9,
+"w": 68.0,
+"x": 614.0445963429441,
+"y": 201.15950164309072
 },
 {
-"h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 485.0,
-"y": 170.0
+"h": 85.0,
+"r": 27.1,
+"w": 68.0,
+"x": 230.18459634294413,
+"y": 317.98350164309073
 },
 {
-"h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 555.0,
-"y": 170.0
+"h": 85.0,
+"r": 27.1,
+"w": 68.0,
+"x": 293.69659634294413,
+"y": 350.4875016430907
 },
 {
-"h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 210.0,
-"y": 238.0
+"h": 85.0,
+"r": -27.1,
+"w": 68.0,
+"x": 426.9765963429441,
+"y": 350.4875016430907
 },
 {
-"h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 280.0,
-"y": 238.0
-},
-{
-"h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 380.0,
-"y": 238.0
-},
-{
-"h": 68.0,
-"r": 0,
-"w": 70.0,
-"x": 450.0,
-"y": 238.0
+"h": 85.0,
+"r": -27.1,
+"w": 68.0,
+"x": 490.4885963429441,
+"y": 317.98350164309073
 }
 ],
-"width": 660.0
+"width": 720.6731926858882
 },
 "positions": {
 "1": 0,
@@ -6707,26 +7258,52 @@
 "7": 4,
 "8": 5
 },
-"signal": {
-"base": 192,
-"commit": 223
-},
+"schema": 1,
 "source": "examples/diamond.yaml",
+"stats": {
+"accuracy": true,
+"hands": false,
+"heatmap": true,
+"keys": true,
+"layer": true,
+"opacity": true,
+"session": true,
+"sfb": false,
+"slow": false,
+"theme": true,
+"time": false,
+"wpm": true
+},
 "title": "",
+"touch": {
+"combos": "chords",
+"enabled": 1,
+"flavor": "balanced",
+"floating": 0,
+"haptics": 1,
+"heat": 1,
+"hold_ms": 280,
+"latch": 1,
+"lock_ms": 350,
+"repeat_delay_ms": 450,
+"repeat_ms": 60,
+"sound": 30,
+"sticky_ms": 0
+},
 "zmk_layers": {
 "0": {
 "cls": "off",
 "drawer": "alpha1",
 "id": 0,
 "label": "Alpha 1",
-"name": "DEFAULT"
+"name": "OMARCHY"
 },
 "1": {
 "cls": "momentary",
 "drawer": null,
 "id": 1,
 "label": "Alt OS",
-"name": "ALT OS"
+"name": "MACOS"
 },
 "10": {
 "cls": "momentary",
@@ -6898,7 +7475,7 @@
 },
 "6": {
 "cls": "vim",
-"drawer": "vim",
+"drawer": null,
 "id": 6,
 "label": "Vim replace",
 "name": "REPLACE"

@@ -126,8 +126,8 @@ samples: ## write the sample boards' definitions again, as import does (the Diam
 	$(or $(VENV_PYTHON),$(PYTHON)) host/sync.py import --config config/romak-34.yaml
 	$(or $(VENV_PYTHON),$(PYTHON)) host/sync.py sync --config config/diamond.yaml
 
-fixture: ## rebuild hud/tests/fixtures/diamond.json from the configured keymap, and the 3x5 and Romak 34 samples' (glyphs placeheld)
-	$(PYTHON) host/keymap.py --dump | $(PYTHON) hud/tests/fixtures/make.py > hud/tests/fixtures/diamond.json
+fixture: ## rebuild hud/tests/fixtures/diamond.json from the Diamond sample (config/diamond.yaml), and the 3x5 and Romak 34 samples' (glyphs placeheld)
+	$(or $(VENV_PYTHON),$(PYTHON)) host/keymap.py --config config/diamond.yaml --dump | $(PYTHON) hud/tests/fixtures/make.py > hud/tests/fixtures/diamond.json
 	$(or $(VENV_PYTHON),$(PYTHON)) host/keymap.py --config config/example-3x5.yaml --dump | $(PYTHON) hud/tests/fixtures/make.py examples/3x5.yaml > hud/tests/fixtures/example-3x5.json
 	$(or $(VENV_PYTHON),$(PYTHON)) host/keymap.py --config config/romak-34.yaml --dump | $(PYTHON) hud/tests/fixtures/make.py examples/romak-34.yaml > hud/tests/fixtures/romak-34.json
 
