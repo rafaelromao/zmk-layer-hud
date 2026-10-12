@@ -320,6 +320,19 @@
             const sub = e.hold || e.shifted;
             if (pills[0].tap !== e.tap) add("combo-label", where, e.tap, pills[0].tap);
             if (pills[0].sub !== sub) add("combo-sub", where, sub, pills[0].sub);
+            // The pill names the chord without hiding it: none of the combo's own keys under it,
+            // and all of it on the board, which is as big as the panel makes room for.
+            if (driver.keyBoxes && pills[0].box) {
+              const p = pills[0].box, keys = await driver.keyBoxes(positions), b = await driver.boardBox();
+              const over = (r, k) => Math.min(r.left + r.width, k.left + k.width) - Math.max(r.left, k.left) > 0.5
+                && Math.min(r.top + r.height, k.top + k.height) - Math.max(r.top, k.top) > 0.5;
+              const covered = positions.filter((idx, i) => over(p, keys[i]));
+              if (covered.length) add("combo-pill-covers", where, "none of its keys", list(covered));
+              const out = p.left < b.left - 0.5 || p.top < b.top - 0.5
+                || p.left + p.width > b.left + b.width + 0.5 || p.top + p.height > b.top + b.height + 0.5;
+              if (out) add("combo-pill-outside", where, "inside the board",
+                           [p.left, p.top, p.width, p.height].map(Math.round).join(","));
+            }
             // Every key that went down is lit by its own press, combo member or not, and the
             // activator stays lit while it is held.
             const expectLit = list([...positions, ...held]);

@@ -76,9 +76,24 @@
         const out = []; hud.state.keyEls.forEach((e, i) => { if (e.classList.contains("activator")) out.push(i); }); return out;
       },
       async pills() {
-        return [...board.querySelectorAll(".combo-pill")].map(p => ({
-          tap: legend(p.querySelector(".combo-tap")), sub: legend(p.querySelector(".combo-sub")),
-        }));
+        // The laid-out size, not getBoundingClientRect: that one catches the pill mid-way through
+        // its grow-in transition. hud.css centres it on its left/top (translate -50%).
+        return [...board.querySelectorAll(".combo-pill")].map(p => {
+          const w = p.offsetWidth, h = p.offsetHeight;
+          const box = { left: parseFloat(p.style.left) - w / 2, top: parseFloat(p.style.top) - h / 2, width: w, height: h };
+          return { tap: legend(p.querySelector(".combo-tap")), sub: legend(p.querySelector(".combo-sub")), box };
+        });
+      },
+      // Boxes on the board, in the board's own px. A rotated key's is the box around it.
+      async keyBoxes(idxs) {
+        const b = board.getBoundingClientRect();
+        return idxs.map(i => {
+          const r = hud.state.keyEls[i].getBoundingClientRect();
+          return { left: r.left - b.left, top: r.top - b.top, width: r.width, height: r.height };
+        });
+      },
+      async boardBox() {
+        return { left: 0, top: 0, width: board.clientWidth, height: board.clientHeight };
       },
     };
 

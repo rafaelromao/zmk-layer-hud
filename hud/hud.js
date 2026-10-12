@@ -85,6 +85,10 @@
     pendingDue: null,         // ...and when it applies, fixed at the first drop
     held: new Set(),          // key idx currently down, by reported position
     keyEls: [],
+    keyBoxes: [],             // key idx -> {l, t, r, b}: its box on the board as drawn (buildBoard)
+    keyUnit: 1,               // px: the smallest key's side, what a pill's distance is measured in
+    boardSize: { w: 0, h: 0 },
+    pillSpots: new Map(),     // chord + pill size -> where its pill goes (pillSpot)
     timers: new Map(),
     scale: 1,
     heat: new Map(),          // key idx -> {h, t}: the live heatmap (see bumpHeat)
@@ -145,11 +149,21 @@
     // Legends scale with the typical key height (see --kh in hud.css).
     const kh = Math.min(...lay.keys.map(k => k.h)) * scale - GAP;
     board.style.setProperty("--kh", Math.max(20, kh) + "px");
+    // What a combo's pill is placed around (pillSpot): the board's extent, each key's box as drawn
+    // (a rotated key's is the box around it), and the size of a key, the unit its distances go by.
+    state.boardSize = { w: width, h: Math.ceil(lay.height * scale) };
+    state.keyBoxes = [];
+    state.keyUnit = Math.max(1, Math.min(...lay.keys.map(k => Math.min(k.w, k.h))) * scale - GAP);
+    state.pillSpots = new Map();
     lay.keys.forEach((k, idx) => {
       const e = el("div", "key");
       e.dataset.idx = idx;
       e.title = `#${idx}`;
       const w = k.w * scale - GAP, h = k.h * scale - GAP;
+      const a = (k.r || 0) * Math.PI / 180, cx = k.x * scale, cy = k.y * scale;
+      const hw = (Math.abs(w * Math.cos(a)) + Math.abs(h * Math.sin(a))) / 2;
+      const hh = (Math.abs(w * Math.sin(a)) + Math.abs(h * Math.cos(a))) / 2;
+      state.keyBoxes[idx] = { l: cx - hw, t: cy - hh, r: cx + hw, b: cy + hh };
       e.style.left = (k.x * scale - w / 2) + "px";
       e.style.top = (k.y * scale - h / 2) + "px";
       e.style.width = w + "px";
@@ -1292,30 +1306,63 @@
 
   // ---------- resolver ----------
 
-  // A combo is drawn the way keymap-drawer draws it: a pill with the combo's legend at the
-  // midpoint of its keys, on top of the flashed keys, fading after a moment.
+  // Where a combo's pill goes: as near the chord as it can be without covering any of its keys,
+  // and all of it on the board -- the panel is sized to the board, so a pill over its edge would
+  // be cut off. Spots every 4px are tried. One over other keys costs the share of the pill they
+  // would hide, weighed against distance, so open room nearby (between the halves, beside a
+  // thumb cluster, above a staggered column) wins, and a board with none still gets the pill
+  // right beside its chord, over keys that are not in it. Only where every spot touches the
+  // chord does the pill go over its own keys, as little as it can. Kept per chord and size, so a
+  // combo always lands in the same place.
+  const PILL_CLEAR = 3;      // px kept between a pill and its chord's keys
+  const PILL_HIDE = 2.5;     // a pill wholly over other keys costs as much as being this many keys away
+  function pillSpot(positions, w, h) {
+    const memo = positions.slice().sort((a, b) => a - b).join(",") + ":" + Math.round(w) + "x" + Math.round(h);
+    if (state.pillSpots.has(memo)) return state.pillSpots.get(memo);
+    const boxes = state.keyBoxes, mine = new Set(positions), own = positions.map(i => boxes[i]);
+    const tx = own.reduce((a, k) => a + (k.l + k.r) / 2, 0) / own.length;
+    const ty = own.reduce((a, k) => a + (k.t + k.b) / 2, 0) / own.length;
+    const area = (l, t, r, b, k, pad) => Math.max(0, Math.min(r, k.r + pad) - Math.max(l, k.l - pad))
+      * Math.max(0, Math.min(b, k.b + pad) - Math.max(t, k.t - pad));
+    // Every centre a box of `size` can take inside `extent`, ends included; the middle if it cannot fit.
+    const span = (size, extent) => {
+      if (size >= extent) return [extent / 2];
+      const out = [];
+      for (let c = size / 2; c < extent - size / 2; c += 4) out.push(c);
+      out.push(extent - size / 2);
+      return out;
+    };
+    // Nearest first: the distance alone is the least a spot can cost, so once it reaches the best
+    // found so far nothing further out can win.
+    const spots = [];
+    for (const y of span(h, state.boardSize.h)) {
+      for (const x of span(w, state.boardSize.w)) spots.push({ x, y, d: Math.hypot(x - tx, y - ty) / state.keyUnit });
+    }
+    spots.sort((p, q) => p.d - q.d || p.y - q.y || p.x - q.x);
+    let best = null;
+    for (const clear of [true, false]) {
+      for (const { x, y, d } of spots) {
+        if (best && d >= best.cost) break;
+        const l = x - w / 2, t = y - h / 2, r = x + w / 2, b = y + h / 2;
+        const onOwn = own.reduce((a, k) => a + area(l, t, r, b, k, PILL_CLEAR), 0);
+        if (clear && onOwn > 0) continue;
+        let hidden = 0;
+        boxes.forEach((k, i) => { if (!mine.has(i)) hidden += area(l, t, r, b, k, 0); });
+        const cost = d + PILL_HIDE * hidden / (w * h) + 1000 * onOwn / (w * h);
+        if (!best || cost < best.cost) best = { x, y, cost };
+      }
+      if (best) break;
+    }
+    const spot = { x: best.x, y: best.y };
+    state.pillSpots.set(memo, spot);
+    return spot;
+  }
+
+  // A combo is drawn the way keymap-drawer draws it: a pill with the combo's legend, linked to
+  // each of its keys, fading after a moment. The pill sits beside the chord rather than on it
+  // (pillSpot): the keys flashing there are what it is there to explain.
   function showCombo(positions, key) {
     const board = $("board");
-    const bb = board.getBoundingClientRect();
-    const centers = positions.map(idx => {
-      const r = state.keyEls[idx].getBoundingClientRect();
-      return { x: r.left + r.width / 2 - bb.left, y: r.top + r.height / 2 - bb.top };
-    });
-    const cx = centers.reduce((a, c) => a + c.x, 0) / centers.length;
-    const cy = centers.reduce((a, c) => a + c.y, 0) / centers.length - 30;
-
-    // Links from the output pill down to each key of the combo.
-    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-    svg.setAttribute("class", "combo-links");
-    svg.setAttribute("width", bb.width); svg.setAttribute("height", bb.height);
-    for (const c of centers) {
-      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      line.setAttribute("x1", cx); line.setAttribute("y1", cy);
-      line.setAttribute("x2", c.x); line.setAttribute("y2", c.y);
-      svg.appendChild(line);
-    }
-    board.appendChild(svg);
-
     const pill = el("div", "combo-pill");
     pill.appendChild(el("span", "combo-label", "combo"));
     const tapEl = el("span", "combo-tap");
@@ -1326,8 +1373,24 @@
       setLegend(sub, key.hold || key.shifted, key.hold ? key.glyph_hold : key.glyph_shifted);
       pill.appendChild(sub);
     }
-    pill.style.left = cx + "px"; pill.style.top = cy + "px";
     board.appendChild(pill);
+    // Its laid-out size (the grow-in transform does not count), with hud.css's least as the
+    // fallback where nothing lays it out.
+    const spot = pillSpot(positions, pill.offsetWidth || 64, pill.offsetHeight || 43);
+    pill.style.left = spot.x + "px"; pill.style.top = spot.y + "px";
+
+    // Links from the pill to each key of the combo.
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "combo-links");
+    svg.setAttribute("width", state.boardSize.w); svg.setAttribute("height", state.boardSize.h);
+    for (const idx of positions) {
+      const k = state.keyBoxes[idx];
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      line.setAttribute("x1", spot.x); line.setAttribute("y1", spot.y);
+      line.setAttribute("x2", (k.l + k.r) / 2); line.setAttribute("y2", (k.t + k.b) / 2);
+      svg.appendChild(line);
+    }
+    board.appendChild(svg);
     requestAnimationFrame(() => { pill.classList.add("show"); svg.classList.add("show"); });
     for (const idx of positions) state.keyEls[idx].classList.add("combo-key");
     setTimeout(() => {

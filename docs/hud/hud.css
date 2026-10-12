@@ -280,7 +280,8 @@ body.dark #board .key.pressed, body.dark #board .key.pressed.combo { background:
 body.dark .combo-pill { background: #2f334d; }
 body.dark .combo-pill .combo-label, body.dark .combo-pill .combo-sub { color: #a9b1d6; }
 
-/* Combo pill (keymap-drawer style): appears at the midpoint of the combo's keys when typed. */
+/* Combo pill (keymap-drawer style): appears beside the combo's keys when typed, linked to each
+   (hud.js pillSpot places it). Centred on the left/top it is given. */
 .combo-pill {
   position: absolute; transform: translate(-50%, -50%) scale(0.6); z-index: 5;
   min-width: 44px; padding: 4px 8px; border-radius: 4px; text-align: center;

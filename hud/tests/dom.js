@@ -201,6 +201,24 @@ class El {
     const n = parseFloat(this.style.width);
     return Number.isFinite(n) ? n : BOARD_WIDTH;
   }
+
+  /* A browser lays a combo pill out from what it holds; this has no layout, so it gives the pill
+   * the box the stylesheet would (hud.css .combo-pill): at least 44px of content, about 13px per
+   * character of the 22px legend, 8px of padding a side and a 2px border; an 8px label over the
+   * legend, the sub-line's 11px when there is one, 4px of padding top and bottom. hud.js finds the
+   * pill's spot from this and the sweep checks that spot, so here the two agree by construction;
+   * the browser runner is what holds the estimate to a real layout. Nothing else has a box. */
+  get offsetWidth() {
+    if (!this._classes.has("combo-pill")) return undefined;
+    const tap = this.childNodes.find(c => c._classes && c._classes.has("combo-tap"));
+    const chars = tap ? (tap._text || (tap._html ? "##" : "")).length : 0;   // a glyph: two characters' width
+    return Math.max(44, 13 * chars) + 2 * 8 + 2 * 2;
+  }
+  get offsetHeight() {
+    if (!this._classes.has("combo-pill")) return undefined;
+    const sub = this.childNodes.some(c => c._classes && c._classes.has("combo-sub"));
+    return 8 + 1 + 22 + (sub ? 2 + 9 : 0) + 2 * 4 + 2 * 2;
+  }
 }
 
 function makeStyle() {
