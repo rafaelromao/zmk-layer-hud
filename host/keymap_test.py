@@ -468,11 +468,12 @@ class Touch(unittest.TestCase):
         msg = message({}, DOC)
         self.assertEqual(km.TOUCH_DEFAULTS, msg["touch"])
         self.assertEqual(1, msg["schema"])
-        got = message({"touch": {"hold_ms": 320, "combos": "both", "flavor": "firmware"}}, DOC)["touch"]
-        self.assertEqual((320, "both", "firmware"), (got["hold_ms"], got["combos"], got["flavor"]))
+        got = message({"touch": {"hold_ms": 320, "combos": "chips", "flavor": "firmware"}}, DOC)["touch"]
+        self.assertEqual((320, "chips", "firmware"), (got["hold_ms"], got["combos"], got["flavor"]))
+        self.assertEqual("chords", message({}, DOC)["touch"]["combos"])       # no chips unless asked
         quiet = message({"touch": {"sound": 0, "haptics": 0}}, DOC)["touch"]
         self.assertEqual((0, 0), (quiet["sound"], quiet["haptics"]))
-        for bad in ({"nope": 1}, {"hold_ms": "slow"}, {"hold_ms": -5}, {"latch": True}, {"combos": "some"}, "yes",
+        for bad in ({"nope": 1}, {"hold_ms": "slow"}, {"hold_ms": -5}, {"latch": True}, {"combos": "both"}, "yes",
                     {"sound": 101}):
             with self.assertRaises(km.KeymapError, msg=repr(bad)):
                 message({"touch": bad}, DOC)

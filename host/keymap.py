@@ -133,12 +133,12 @@ TOUCH_DEFAULTS = {
     "sticky_ms": 0,            # a one-shot lapses after this (0: it waits for the next key)
     "repeat_delay_ms": 450,    # a held key repeats after this, where the host does not repeat it itself
     "repeat_ms": 60,           # ...and then every this
-    "combos": "chips",         # chips: a tappable chip per combo; chords: two fingers at once; both; off
+    "combos": "chords",        # chords: a combo is its keys touched together, as on the keyboard; chips: a chip to tap too
     "heat": 1,                 # touch typing warms the live heat (0: it does not)
     "sound": 30,               # a key's click, as loud as this in 0-100 (0: silent), the moment a finger lands
     "haptics": 1,              # ...and a buzz where the device has one (an Android tablet's browser; 0: none)
 }
-TOUCH_CHOICES = {"flavor": ("balanced", "firmware"), "combos": ("chips", "chords", "both", "off")}
+TOUCH_CHOICES = {"flavor": ("balanced", "firmware"), "combos": ("chords", "chips")}
 # `dock:` section: the HUD docked along the bottom of a screen (zmk-layer-hud dock, docs/touch.md).
 DOCK_DEFAULTS = {
     "screen": "",              # the screen to dock on, by name or a word of its description ("" picks one)

@@ -125,8 +125,8 @@ function tap(k, idx, t, ms) {
   k.down(2, 2000);
   k.tick(2300);
   check(k.chips(1400, 200, true).length === 0, "on nav, which the combo is not on, no chip");
-  const off = Kbd.create(Object.assign({}, MSG, { touch: Object.assign({}, MSG.touch, { combos: "off" }) }));
-  check(off.chips(1400, 200, true).length === 0, "touch.combos: off draws none");
+  const off = Kbd.create(Object.assign({}, MSG, { touch: Object.assign({}, MSG.touch, { combos: "chords" }) }));
+  check(off.chips(1400, 200, true).length === 0, "touch.combos: chords, the default, draws none");
 })();
 
 (function theBoardsGeometryPutsTheHalvesAtTheSides() {

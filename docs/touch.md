@@ -79,7 +79,7 @@ without an import. The keymap message gains three fields:
   "coverage": { "keymap": 1010, "legend": 52, "unsupported": 18,
                 "why": { "zmk,behavior-adaptive-key": 11 } } },
 "touch": { "enabled": 1, "hold_ms": 280, "flavor": "balanced", "latch": 1, "lock_ms": 350,
-           "sticky_ms": 0, "repeat_delay_ms": 450, "repeat_ms": 60, "combos": "chips",
+           "sticky_ms": 0, "repeat_delay_ms": 450, "repeat_ms": 60, "combos": "chords",
            "heat": 1, "sound": 30, "haptics": 1 }
 ```
 
@@ -205,8 +205,9 @@ set, glass changes a few things:
   centred, from the board's top and no taller than it, scrolling when it is taller, and hidden still
   when it was hidden. Not on the remote page or a tablet's keyboard, where touch typing counts
   nothing.
-- **Combo chips** (`touch.combos: "chips"`, the default; `"off"` draws none). A finger cannot
-  press two keys within a combo's timeout the way a hand does, so each combo that fires on the
+- **Combos** are their keys touched together, as on the keyboard (`touch.combos: "chords"`, the
+  default). **Combo chips** are there to ask for (`touch.combos: "chips"`), for when two fingers
+  within a combo's timeout are too much to ask of glass: each combo that fires on the
   layer up, whose keys are all drawn and that the drawing gives a legend, is a chip between its
   keys (`view.js chips`): at the middle of its keys' centres, moved off a key to the nearest point
   between keys within half a key, left out when there is no room there beside the others; 0.38 of

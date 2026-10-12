@@ -243,8 +243,8 @@ and the shift flag — and keeps positions.
 The HUD can type. Tap a drawn key and it does what that key does on your keyboard: the HUD runs
 your keymap as the firmware would ([docs/touch.md](docs/touch.md)), from the bindings `import`
 and `sync` capture from your ZMK repo, or from the legends of a drawing without one. A long press is
-a hold, a hold let go alone latches (a one-shot, locked on a second tap), two fingers chord, and
-each combo of the layer up is a chip between its keys. Docked, each press clicks, and buzzes where
+a hold, a hold let go alone latches (a one-shot, locked on a second tap), and two fingers on a
+combo's keys are the combo (`touch.combos: chips` adds a chip to tap for each). Docked, each press clicks, and buzzes where
 the device can (`touch.sound`, `touch.haptics`); the side panel's feedback switch turns that off,
 or on for the floating HUD, where it starts off.
 

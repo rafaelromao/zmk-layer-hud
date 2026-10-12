@@ -406,7 +406,7 @@ function chipPage(combos) {
   p.clock.advance(30);
   p.board.fire("pointerup", { pointerId: 2 });
   check(p.chips().length === 1, "back on the base, it is there again");
-  check(chipPage("off").chips().length === 0, "touch.combos: off draws none");
+  check(chipPage("chords").chips().length === 0, "touch.combos: chords, the default, draws none");
   const q = chipPage();
   q.hud.setTouch(null);
   check(q.chips().length === 0, "and a board that does not type has none");
