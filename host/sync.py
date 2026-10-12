@@ -421,10 +421,13 @@ def drawing_from_yaml(cfg, config_path, previous, fetch, log):
     """The drawing of the keymap-drawer YAML the config names, with its drawer config."""
     base = os.path.dirname(os.path.abspath(config_path))
     try:
-        doc = keymap_mod.load_yaml(keymap_mod.expand(cfg["keymap"], base))
+        path = keymap_mod.expand(cfg["keymap"], base)
+        doc = keymap_mod.load_yaml(path)
         drawer_cfg = keymap_mod.load_yaml(keymap_mod.expand(cfg["drawer_config"], base)) if cfg.get("drawer_config") else None
     except Exception as e:   # the YAML parser's own errors too: a file saved half-edited
         raise SyncError(f"could not read the keymap-drawer file the config names: {e}")
+    if isinstance(doc, dict) and "layout" in doc:
+        doc["layout"] = keymap_mod.layout_files(doc["layout"], path)
     try:
         return keymap_mod.draw(doc, drawer_cfg, stagger=cfg.get("stagger", True) is not False,
                                fetch=fetch, previous=previous, log=log)
