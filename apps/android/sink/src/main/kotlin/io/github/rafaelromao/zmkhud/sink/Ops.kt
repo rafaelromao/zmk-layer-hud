@@ -35,6 +35,9 @@ sealed class PageMessage {
     /** A finger landed on a key: standard, space, delete or return (touch.js kindOf). */
     data class Feedback(val key: String) : PageMessage()
     object Switch : PageMessage()
+
+    /** The banner's detach: the field back to the keyboard used before, which works as it always did. */
+    object Detach : PageMessage()
     object Unknown : PageMessage()
 
     companion object {
@@ -57,6 +60,7 @@ sealed class PageMessage {
                 } })
                 "size" -> m.int("height")?.takeIf { it in 1..10_000 }?.let { Size(it) } ?: Unknown
                 "switch" -> Switch
+                "detach" -> Detach
                 "feedback" -> Feedback(m.string("key")?.takeIf { it in FEEDBACK } ?: "standard")
                 else -> Unknown
             }

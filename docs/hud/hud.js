@@ -101,6 +101,8 @@
     heatMode: "live",         // what the keys glow with: live | session | physical | speed | off
     prefs: {},                // what the viewer chose (setPref): theme light | dark, side shown | hidden
     secure: false,            // secure input: a secret is being typed, and nothing of it shows
+    mini: false,              // docked and minimized: the keyboard down to its banner (setMini)
+    touchNote: "",            // why the board that was asked to type cannot (touch.js setTouchNote)
     watched: null,            // what the feed says sees a secret being typed ([] = nothing); null until told
     demo: false,              // a GIF still (&demo=N): drawn as it always was, no heat, no counts
     ledger: [],               // keystrokes drawn and not counted yet (see "ledger")
@@ -132,6 +134,7 @@
   };
   // What other scripts on the page hook into (hud.on): touch.js follows the keymap and the layers.
   const hooks = {};
+  let attachOwn = null;      // a page's own attach and detach (hud.setAttach), else the panel's
   function fire(name, arg) {
     for (const fn of hooks[name] || []) {
       try { fn(arg); } catch (e) { console.error(e); }
@@ -256,7 +259,7 @@
   // The banner's word on a board too big to type on here.
   function fitNote() {
     const fit = state.dock && state.dock.fit;
-    if (!fit || fit.fits) return "";
+    if (!fit || fit.fits) return state.touchNote;
     return `a HUD only · at ${fit.keyMm} mm a key the board is ${fit.needMm[0]} × ${fit.needMm[1]} mm, ` +
       `the screen has ${fit.roomMm[0]} × ${fit.roomMm[1]} mm for it`;
   }
@@ -563,7 +566,9 @@
     if (!f) return;
     // Only the two waiting states are worth a line; once the keyboard reports, say nothing.
     if (!state.data) { f.textContent = "waiting for the keymap…"; f.className = ""; return; }
-    f.textContent = state.live ? "" : "waiting for the keyboard's layers…";
+    // A touch keyboard waits for no keyboard: there may be none plugged in.
+    const waiting = !state.live && !state.dock && !document.documentElement.classList.contains("touch");
+    f.textContent = waiting ? "waiting for the keyboard's layers…" : "";
     f.className = state.live ? "live" : "";
   }
 
@@ -631,7 +636,7 @@
     try {
       // The board itself while it types (touch.js): a press on a key is a keystroke, not a drag.
       const typing = document.documentElement.classList.contains("touch") ? $("board") : null;
-      const controls = [$("side"), $("hide"), $("close"), $("statsHead"), bar.layer && bar.layer.pick, typing]
+      const controls = [$("mini"), $("attach"), $("side"), $("hide"), $("close"), $("statsHead"), bar.layer && bar.layer.pick, typing]
         .concat(["heatmap", "theme", "opacity", "feedback"].map(n => bar[n] && bar[n].chip));
       rects = controls.filter(Boolean).map(e => e.getBoundingClientRect())
         .filter(r => r.width > 0 && r.height > 0)
@@ -657,6 +662,8 @@
     }
     // A panel that can hide the HUD is one that has one of these: offer the button there only.
     document.documentElement.classList.toggle("hideable", !!panelHandler());
+    // ...and one that can dock it, attach and detach.
+    if (!attachOwn) document.documentElement.classList.toggle("attachable", !!panelHandler());
     postNoDrag();
   }
 
@@ -2250,9 +2257,29 @@
                           pxPerMm: Number(d.px_per_mm) || null, width: Number(d.width) || null } : null;
       document.documentElement.classList.toggle("dock", on);
       const fitNews = on ? checkFit() : !!(was && was.fit && !was.fit.fits);   // floating, there is no keyboard to refuse
+      if (!on) setMini(false);
+      $("attach").setAttribute("aria-pressed", String(on));
+      $("attach").setAttribute("aria-label", on ? "detach" : "attach as a touch keyboard");
+      $("attach").title = !on ? "attach: a touch keyboard along the bottom of the screen" :
+        attachOwn ? attachOwn.title || "detach" : "detach: the floating HUD again";
       if (state.data) { buildBoard(); render(); }
       if (fitNews) sayFit();
       postSize();
+    },
+    // Attach and detach for a page that does it its own way (the browser's, in touch.js; a tablet
+    // keyboard's, handing the field back to the keyboard used before): fn(on) is called with
+    // what is asked for, and fn.title names what detaching does. Else a panel is asked, as its
+    // menu's Dock and Float ask it ({"kind":"attach","on":bool}).
+    setAttach(fn) {
+      attachOwn = fn || null;
+      document.documentElement.classList.toggle("attachable", !!attachOwn || !!panelHandler());
+    },
+    setMini(on) { setMini(on); },
+    // Why the board, asked to type, cannot (touch.js): on the banner while it is so.
+    setTouchNote(text) {
+      if ((text || "") === state.touchNote) return;
+      state.touchNote = text || "";
+      if (state.data) renderBanner();
     },
     // A touched key's glow: never counted, never in a session (the keyboard's own counts are the
     // session's), and none at all while a secret is being typed.
@@ -2303,6 +2330,33 @@
     }
     return null;
   }
+
+  // Attach and detach (setAttach): docked along the bottom of the screen as a touch keyboard, or the
+  // floating HUD again. Minimize, docked: the keyboard down to its banner, a bar of buttons, and
+  // back -- room for the windows above without undocking it; it types nothing while it is a bar.
+  const attachBtn = $("attach");
+  if (attachBtn) attachBtn.addEventListener("click", () => {
+    const on = !state.dock;
+    if (attachOwn) { attachOwn(on); return; }
+    const h = panelHandler();
+    if (h) h.postMessage(JSON.stringify({ kind: "attach", on }));
+  });
+  function setMini(on) {
+    on = !!on && !!state.dock;
+    if (on === state.mini) return;
+    state.mini = on;
+    document.documentElement.classList.toggle("mini", on);
+    const b = $("mini");
+    if (b) {
+      b.setAttribute("aria-pressed", String(on));
+      b.title = on ? "maximize: the keyboard back" : "minimize: the keyboard down to this bar, still docked";
+    }
+    fire("mini", on);                         // touch.js lets go of whatever is held
+    if (!on && state.data) { buildBoard(); render(); }   // laid out afresh: it was not, while hidden
+    postSize();
+  }
+  const miniBtn = $("mini");
+  if (miniBtn) miniBtn.addEventListener("click", () => setMini(!state.mini));
 
   // Hide: the panel takes itself off screen, and this page goes on counting as before.
   const hideBtn = $("hide");

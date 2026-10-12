@@ -5,7 +5,7 @@ import ZmkHudCore
 /// middle, the hold one under it, the shifted one over it -- placed where hud/view.js says, and
 /// marked as the page marks them (a finger on it, a hold latched or locked, a layer below showing
 /// through), with the combos as chips between their keys. Fingers are tracked one by one, so two
-/// thumbs chord; a finger on a chip is that combo.
+/// thumbs chord; a finger on a chip is that combo. Minimized, it is its banner alone, a bar.
 final class BoardView: UIView {
     static let bannerHeight: CGFloat = 26
 
@@ -18,8 +18,21 @@ final class BoardView: UIView {
     var board: Board? { didSet { paint() } }
     var problem: String? { didSet { paint() } }
     var chips: [Chip] = [] { didSet { paintChips() } }
+    /// Down to the banner: the keys put away, and no finger takes one.
+    var minimized = false {
+        didSet {
+            keys.forEach { $0.isHidden = minimized }
+            chipLayers.forEach { $0.isHidden = minimized }
+            mini.setImage(UIImage(systemName: minimized ? "chevron.up" : "chevron.down"), for: .normal)
+            mini.accessibilityLabel = minimized ? "maximize the keyboard" : "minimize the keyboard"
+        }
+    }
 
     let globe = UIButton(type: .system)
+    /// The banner's two, as the HUD's page has them: minimize, and detach -- the next keyboard, the
+    /// system's own working as it always did.
+    let mini = UIButton(type: .system)
+    let detach = UIButton(type: .system)
     private let name = UILabel()
     private let sub = UILabel()
     private var keys: [KeyLayer] = []
@@ -47,7 +60,12 @@ final class BoardView: UIView {
         sub.font = .systemFont(ofSize: 12)
         sub.textColor = Ink.faint
         globe.setTitle("🌐", for: .normal)
-        for v in [name, sub, globe] as [UIView] { addSubview(v) }
+        mini.setImage(UIImage(systemName: "chevron.down"), for: .normal)
+        mini.accessibilityLabel = "minimize the keyboard"
+        detach.setImage(UIImage(systemName: "keyboard"), for: .normal)
+        detach.accessibilityLabel = "detach: the next keyboard"
+        for b in [mini, detach] { b.tintColor = Ink.faint }
+        for v in [name, sub, globe, mini, detach] as [UIView] { addSubview(v) }
     }
 
     required init?(coder: NSCoder) { fatalError("BoardView is made in code") }
@@ -56,8 +74,11 @@ final class BoardView: UIView {
         super.layoutSubviews()
         let h = Self.bannerHeight
         globe.frame = globe.isHidden ? .zero : CGRect(x: bounds.width - 40, y: 0, width: 36, height: h)
+        let right = globe.isHidden ? bounds.width - 4 : globe.frame.minX
+        detach.frame = CGRect(x: right - 36, y: 0, width: 36, height: h)
+        mini.frame = CGRect(x: right - 72, y: 0, width: 36, height: h)
         name.frame = CGRect(x: 10, y: 0, width: bounds.width / 2, height: h)
-        sub.frame = CGRect(x: bounds.width / 2, y: 0, width: bounds.width / 2 - 50, height: h)
+        sub.frame = CGRect(x: bounds.width / 2, y: 0, width: max(0, mini.frame.minX - bounds.width / 2 - 8), height: h)
         sub.textAlignment = .right
     }
 
@@ -71,6 +92,7 @@ final class BoardView: UIView {
             k.bounds = CGRect(x: 0, y: 0, width: r.w, height: r.h)
             k.position = CGPoint(x: r.centerX, y: r.centerY + Self.bannerHeight)
             k.setAffineTransform(CGAffineTransform(rotationAngle: CGFloat(r.r * Double.pi / 180)))
+            k.isHidden = minimized
             layer.addSublayer(k)
             keys.append(k)
         }
@@ -102,6 +124,7 @@ final class BoardView: UIView {
             l.alignmentMode = .center
             l.fontSize = min(c.size * 0.45, 14)
             l.string = c.tap
+            l.isHidden = minimized
             layer.addSublayer(l)
             return l
         }
@@ -119,7 +142,7 @@ final class BoardView: UIView {
     // ---------- fingers ----------
 
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
-        guard let g = geometry else { return }
+        guard let g = geometry, !minimized else { return }
         for t in touches {
             let p = t.location(in: self)
             let x = Double(p.x), y = Double(p.y - Self.bannerHeight)

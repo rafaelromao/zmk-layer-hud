@@ -12,6 +12,7 @@ final class KeyboardViewController: UIInputViewController {
     private var height: NSLayoutConstraint?
     private var timer: Timer?
     private var room: (width: Double, maxHeight: Double) = (0, 0)
+    private var minimized = false
     private let epoch = CACurrentMediaTime()
     private lazy var field = ProxyField(self)
 
@@ -33,6 +34,8 @@ final class KeyboardViewController: UIInputViewController {
         h.isActive = true
         height = h
         boardView.globe.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
+        boardView.mini.addTarget(self, action: #selector(toggleMini), for: .touchUpInside)
+        boardView.detach.addTarget(self, action: #selector(detachKeyboard), for: .touchUpInside)
         boardView.onDown = { [weak self] idx in self?.down(idx) }
         boardView.onUp = { [weak self] idx in self?.up(idx) }
         boardView.onChord = { [weak self] combo, down in
@@ -100,7 +103,22 @@ final class KeyboardViewController: UIInputViewController {
             boardView.board = kbd.board()
             boardView.chips = kbd.chips(width: self.room.width, maxHeight: room)
         }
-        height?.constant = CGFloat(g.height) + BoardView.bannerHeight + 4
+        height?.constant = (minimized ? 0 : CGFloat(g.height)) + BoardView.bannerHeight + 4
+    }
+
+    /// Minimized, the keyboard is its banner: the app has the room, and nothing is left held.
+    @objc private func toggleMini() {
+        minimized.toggle()
+        if minimized, let kbd { handle(kbd.releaseAll(at: now())) }
+        boardView.minimized = minimized
+        relayout()
+    }
+
+    /// Detached, the next keyboard is the field's -- the system's own, working as it always did; this
+    /// one comes back when it is picked again, as any keyboard does.
+    @objc private func detachKeyboard() {
+        if let kbd { handle(kbd.releaseAll(at: now())) }
+        advanceToNextInputMode()
     }
 
     // ---------- fingers ----------

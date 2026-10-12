@@ -67,7 +67,9 @@ sentence; one without what its keys do (a board from the landing page) is drawn 
 - A terminal's field (Termux) gets key events for what a US layout types from the key, and text for
   the rest, so its own key handling sees the keys.
 - In a password field the board's strip shows nothing.
-- The 🌐 key in the banner switches to the next keyboard, where Android offers one.
+- The 🌐 key in the banner switches to the next keyboard, where Android offers one. Its detach
+  arrow goes back to the keyboard you used before, which works as it always did; pick this one again
+  to bring it back. Its chevron minimizes it to a bar of buttons, and the app gets the room.
 - Its keys are their real size (`touch.key_mm` apart, from the screen's dpi), and it takes at most
   60% of the screen. A board too big for the screen turned this way is a HUD only: it types nothing
   and says why, until the tablet is turned or 🌐 picks another keyboard. Vibration and a click on
@@ -98,7 +100,9 @@ works, though what it signs runs for 7 days), a bundle id prefix you own, and an
 ZmkHud scheme and your iPad, and run.
 
 **Turn it on.** Settings › General › Keyboard › Keyboards › Add New Keyboard… › ZMK Layer HUD. It
-asks for no Full Access, and needs none: it sends nothing anywhere. Switch to it with 🌐.
+asks for no Full Access, and needs none: it sends nothing anywhere. Switch to it with 🌐. Its
+banner's keyboard button detaches it -- the next keyboard is the field's, working as it always did
+-- and its chevron minimizes it to the banner.
 
 **Your keymap.** In the app: *Import a keymap…* (Files), or AirDrop `board.json` to the iPad and
 open it with ZMK Layer HUD. Or, with the HUD running on the computer:

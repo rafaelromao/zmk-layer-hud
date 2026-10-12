@@ -38,7 +38,8 @@ class Height(unittest.TestCase):
         self.assertEqual(300, dock.height(300, 1080, 40))
         self.assertEqual(432, dock.height(900, 1080, 40))
         self.assertEqual(432, dock.height(0, 1080, 40))           # before the page says: the share
-        self.assertEqual(dock.MIN_HEIGHT, dock.height(40, 1080, 40))
+        self.assertEqual(40, dock.height(40, 1080, 40))             # minimized: a bar, the windows take the rest
+        self.assertEqual(dock.BAR_HEIGHT, dock.height(10, 1080, 40))
         self.assertEqual(dock.MIN_HEIGHT, dock.max_height(200, 40))
         self.assertEqual(648, dock.height(0, 1080))                 # unless said, 60%: a keyboard at its real size
 

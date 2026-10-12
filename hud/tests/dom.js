@@ -257,7 +257,7 @@ function makeStyle() {
 
 // The ids index.html defines. Everything hud.js looks up with $() has to be here, or it silently
 // renders into nothing and every assertion passes for the wrong reason.
-const PAGE_IDS = ["frame", "hud", "layer", "layerName", "layerSub", "side", "hide", "close", "board", "stats", "statsHead", "status", "feed", "title", "keys"];
+const PAGE_IDS = ["frame", "hud", "layer", "layerName", "layerSub", "mini", "attach", "side", "hide", "close", "board", "stats", "statsHead", "status", "feed", "title", "keys"];
 // ...each with the attributes index.html gives it: the heading's href, which ?embed takes away.
 const PAGE_HTML = fs.readFileSync(path.join(HUD_DIR, "index.html"), "utf8");
 const SCRIPTS = [...PAGE_HTML.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
@@ -354,6 +354,7 @@ function loadPage(opts = {}) {
     requestAnimationFrame: fn => clock.requestAnimationFrame(fn),
     Date: makeDate(clock),
     innerHeight: opts.innerHeight || 800,
+    innerWidth: opts.innerWidth || 1280,
   };
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;

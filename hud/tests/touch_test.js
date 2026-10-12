@@ -288,6 +288,89 @@ function page(opts) {
         `a board that fits docks at its real size: scale ${short.hud.state.scale}`);
 })();
 
+(function attachDetachAndMinimize() {
+  const html = (p) => p.document.documentElement;
+  const btn = (p, id) => p.document.getElementById(id);
+  // In a panel: its banner asks it to dock the HUD as a touch keyboard, or to float it again.
+  const p = page();
+  const posted = [];
+  p.window.webkit = { messageHandlers: { zmkhud: { postMessage: (s) => posted.push(JSON.parse(s)) } } };
+  p.hud.relayout();
+  check(html(p).classList.contains("attachable"), "a panel's page offers attach");
+  btn(p, "attach").click();
+  check(eq(posted.filter((m) => m.kind === "attach"), [{ kind: "attach", on: true }]), "floating, it asks to be docked");
+  p.hud.receive({ kind: "dock", on: true, max_height: 600, px_per_mm: 5, width: 1600 });
+  btn(p, "attach").click();
+  check(eq(posted.filter((m) => m.kind === "attach").pop(), { kind: "attach", on: false }), "docked, to float again");
+  check(btn(p, "attach").getAttribute("aria-pressed") === "true", "and says it is attached");
+  // Minimized: still docked and still the keyboard, down to its banner; the panel is told the new height.
+  posted.length = 0;
+  btn(p, "mini").click();
+  check(html(p).classList.contains("mini") && html(p).classList.contains("dock"), "minimize keeps it docked, a bar");
+  check(posted.some((m) => m.kind === "size"), "and the panel hears how tall it is now");
+  p.sent.length = 0;
+  p.tap(0);
+  check(p.reports().length === 0, `a bar types nothing: ${JSON.stringify(p.reports())}`);
+  btn(p, "mini").click();
+  check(!html(p).classList.contains("mini"), "maximize brings the keys back");
+  p.tap(0);
+  check(eq(p.reports(), [[0, [4]], [0, []]]), `and they type: ${JSON.stringify(p.reports())}`);
+  btn(p, "mini").click();
+  p.hud.receive({ kind: "dock", on: false });
+  check(!html(p).classList.contains("mini"), "floating, nothing is minimized");
+  // A page with nothing to dock it offers no attach (the landing page's demo, a browser on the socket).
+  const bare = page();
+  bare.hud.relayout();
+  check(!html(bare).classList.contains("attachable"), "no panel, no attach");
+})();
+
+(function aTouchKeyboardWaitsForNoKeyboard() {
+  const p = page();
+  check(!/waiting for the keyboard/.test(p.document.getElementById("feed").textContent),
+        `no keyboard plugged in is no matter to a touch keyboard: ${p.document.getElementById("feed").textContent}`);
+  const hud = loadPage();
+  hud.hud.load(JSON.parse(JSON.stringify(MSG)));
+  check(/waiting for the keyboard/.test(hud.document.getElementById("feed").textContent), "the HUD still waits for one");
+})();
+
+(function aKeymapThatSaysNothingOfItsKeysIsAHud() {
+  // As the site's boards come (site/build.py leaves out what keys do): drawn, and saying it cannot type.
+  const bare = JSON.parse(JSON.stringify(MSG));
+  delete bare.actions;
+  delete bare.touch;
+  const p = loadPage();
+  p.hud.load(bare);
+  p.hud.setTouch({ output: "hid", repeat: "os", send: () => {} });
+  check(!p.document.documentElement.classList.contains("touch"), "no actions: not a keyboard");
+  check(/a HUD only · this keymap says nothing of what its keys do/.test(p.document.getElementById("layerSub").textContent),
+        `and the banner says why: ${p.document.getElementById("layerSub").textContent}`);
+  p.hud.load(JSON.parse(JSON.stringify(MSG)));
+  check(p.document.documentElement.classList.contains("touch") && !/HUD only/.test(p.document.getElementById("layerSub").textContent),
+        "a keymap that says types");
+})();
+
+(function inABrowserTouchAttachesAlongTheBottom() {
+  // Development: ?touch from a local server is the touch keyboard docked along the window's bottom,
+  // its keys real size at &mm= pixels a millimetre, typing into the console.
+  const p = loadPage({ search: "?touch&mm=5", protocol: "http:", innerWidth: 1600, innerHeight: 1000 });
+  const typed = [];
+  p.window.console = Object.assign({}, console, { log: (...a) => typed.push(a.join(" ")) });
+  p.hud.load(JSON.parse(JSON.stringify(MSG)));
+  const html = p.document.documentElement;
+  check(html.classList.contains("dock") && html.classList.contains("bottom") && html.classList.contains("touch"),
+        `docked along the bottom, typing: ${html.className}`);
+  check(Math.abs(p.hud.state.scale - 0.9) < 1e-9, `real size at 5 px a mm: ${p.hud.state.scale}`);
+  check(html.classList.contains("attachable"), "with attach and detach");
+  p.hud.state.keyEls[0].fire("pointerdown", { pointerId: 1, button: 0 });
+  p.hud.state.keyEls[0].fire("pointerup", { pointerId: 1 });
+  check(typed.some((t) => /"keys":\[4\]/.test(t)), `a click types, into the console: ${JSON.stringify(typed)}`);
+  p.document.getElementById("attach").click();
+  check(!html.classList.contains("dock") && !html.classList.contains("bottom") && !html.classList.contains("touch"),
+        "detached: the floating HUD, typing nothing");
+  p.document.getElementById("attach").click();
+  check(html.classList.contains("dock") && html.classList.contains("touch"), "and attached again");
+})();
+
 // The feedback: a stand-in AudioContext that says which click each source played, and how loud.
 function audioPage(touch, sinkExtra, floating) {
   const played = [], buzzed = [];

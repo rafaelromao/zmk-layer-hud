@@ -223,6 +223,9 @@ class Bridge(NSObject):
                 Host.instance.typing.hid(msg)
         elif kind == "size":
             Host.instance.resize(msg.get("width"), msg.get("height"))
+        elif kind == "attach":      # the banner's attach/detach: docked as a touch keyboard, or floating
+            if isinstance(msg.get("on"), bool):
+                Host.instance.set_dock(msg["on"])
         elif kind == "dock":        # the board too big to type on here at its real size: a HUD, floating
             Host.instance.refused_dock(msg)
         elif kind == "hide":        # the page's hide button

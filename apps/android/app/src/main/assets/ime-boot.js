@@ -20,6 +20,12 @@
                  feedback: (key) => post({ kind: "feedback", key }) });
   hud.setDock({ on: true, max_height: conf.maxHeight || window.innerHeight, split: true,
                 px_per_mm: conf.pxPerMm, width: conf.width });
+  // The banner's detach: the field goes back to the keyboard used before (HudIme.kt), which works as
+  // it always did; this one is a system keyboard like any other, picked again to come back. Its
+  // minimize makes it a bar, and the app has the room.
+  const detach = () => post({ kind: "detach" });
+  detach.title = "detach: back to the keyboard you used before";
+  hud.setAttach(detach);
 
   // The next keyboard, where Android says this one should offer it.
   const bar = document.getElementById("layer");

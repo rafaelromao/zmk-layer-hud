@@ -350,8 +350,23 @@ body.side-hidden #side svg { transform: scaleX(-1); }
 html.hideable #hide { display: inline-flex; }
 #hide:hover { background: rgba(255,255,255,0.14); color: #e6e8ef; }
 #hide svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+/* The touch keyboard's two (hud.js setAttach, setMini). Attach: docked along the bottom of the
+   screen as a touch keyboard, its arrow down; detach, the arrow up: the floating HUD again, or on a
+   tablet the keyboard used before. Only where something can do it (html.attachable). Minimize,
+   docked only: the keyboard down to its banner, a bar, and back, still docked. */
+#mini, #attach { width: 22px; height: 22px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06); color: #aab0c0; cursor: pointer; padding: 0;
+  display: none; align-items: center; justify-content: center; }
+html.attachable #attach, html.dock #mini { display: inline-flex; }
+#mini:hover, #attach:hover { background: rgba(255,255,255,0.14); color: #e6e8ef; }
+#mini svg, #attach svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.6;
+  stroke-linecap: round; stroke-linejoin: round; transition: transform 120ms ease; }
+html.mini #mini svg { transform: scaleY(-1); }
+html.dock #attach .arrow { transform: rotate(180deg); transform-origin: 5px 3.5px; }
+html.dock #layer button { height: 20px; }      /* the banner's 20px: DOCK_CHROME */
+html.dock.mini #board, html.dock.mini #chips, html.dock.mini #stats { display: none !important; }
 /* #layer spaces its items 12px apart: these sit 4px apart, a group */
-#side + #close, #side + #hide, #hide + #close { margin-left: -8px; }
+#side + #close, #side + #hide, #hide + #close, #mini + #attach, #attach + #side { margin-left: -8px; }
 body.demo #side { display: none; }
 
 /* Framed by another page (index.html?embed, the landing page's demo): that page sizes the frame to
@@ -388,6 +403,9 @@ html.dock #layer { min-height: 20px; padding: 0 4px 2px; border-bottom-width: 2p
 html.dock #layerName { font-size: 15px; line-height: 20px; }
 html.dock #layerSub { padding-top: 0; }
 html.dock #stats, html.dock #status, html.dock #keys, html.dock #side { display: none; }
+/* A browser window docked (touch.js, `&touch` in development): the keyboard along its bottom, as
+   along a screen's. */
+html.dock.bottom #frame { position: fixed; left: 0; right: 0; bottom: 0; }   /* over html.stats-middle #frame: fixed holds the column as well */
 /* ...but a split board's halves at the sides leave room between them, and there the stats column
    sits when it fits (hud.js placeStats): whole, the strip growing to hold it (fitMiddle), scrolling
    only past the room the host allows. Hidden still when it was hidden (the chevron's choice,

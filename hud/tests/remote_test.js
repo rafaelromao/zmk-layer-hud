@@ -117,9 +117,9 @@ function visit(opts) {
   check(auth && /^[0-9a-f]{32}$/.test(auth.cnonce) && auth.mac === R.mac(KEY, R.authText(nonce, auth.cnonce)),
         "the page proves the key, and sends only the proof");
   check(!JSON.stringify(ws.sent).includes(V.key), "the key itself never goes on the socket");
-  check(p.document.documentElement.classList.contains("touch"), "paired, the board types");
   ws.say(MSG);
   check(p.hud.state.keyEls.length === 2, "the keymap comes on the socket once paired");
+  check(p.document.documentElement.classList.contains("touch"), "paired, with the keymap, the board types");
   p.hud.state.keyEls[0].fire("pointerdown", { pointerId: 1 });
   p.clock.advance(40);
   p.hud.state.keyEls[0].fire("pointerup", { pointerId: 1 });

@@ -48,9 +48,13 @@
     pointers.clear();
     clearInterval(beat); beat = null; last = null;
     view = { ids: null, down: [], latched: {}, mods: 0 };
-    html.classList.toggle("touch", !!sink && fits);
     const usable = data && data.actions && !data.actions.error && data.touch && data.touch.enabled;
-    if (!sink || !fits || !usable) { hud.setTouchView(null); return; }
+    html.classList.toggle("touch", !!sink && fits && !!usable);
+    // Asked to type and cannot: the banner says why, rather than the board looking like a keyboard.
+    hud.setTouchNote(!sink || !data || usable ? "" :
+      !data.actions ? "a HUD only · this keymap says nothing of what its keys do (zmk-layer-hud keymap -o has it)" :
+      data.actions.error ? `a HUD only · ${data.actions.error}` : "a HUD only · touch.enabled is 0");
+    if (!sink || !fits || !usable) { hud.setTouchView(null); hud.relayout(); return; }
     engine = Engine.create(data.actions, { touch: data.touch, sink: {
       repeat: sink.repeat || "os", pages: sink.pages || [7, 12], mouse: sink.mouse || "none" } });
     driver = Engine.drive(engine, { now: () => Date.now(), setTimeout: (f, ms) => setTimeout(f, ms),
@@ -186,7 +190,7 @@
   }
 
   board.addEventListener("pointerdown", (e) => {
-    if (!typing() || e.button > 0) return;
+    if (!typing() || e.button > 0 || html.classList.contains("mini")) return;   // a mouse's left button is a finger
     const h = hit(e);
     if (!h) return;
     e.preventDefault();
@@ -297,6 +301,8 @@
 
   hud.on("load", (d) => { data = d; rebuild(); });
   hud.on("layers", (ids) => { if (engine && engine.idle()) driver.adopt(ids); });
+  // Minimized, the keys are put away: nothing stays held under them.
+  hud.on("mini", (on) => { if (on) releaseAll(); });
   hud.on("fit", (f) => {
     if (f === fits) return;
     fits = f;
@@ -316,11 +322,30 @@
   hud.setTouch = setTouch;
   hud.touch = { state: () => (engine ? engine.state() : null), releaseAll };
 
-  // Dev, from disk or a local server: &touch types into the console, &dock docks.
+  // Dev, from disk or a local server: &touch attaches the board as a touch keyboard along the bottom
+  // of the window, typing into the console; its button detaches it to the HUD and back. A browser
+  // cannot measure its screen: keys are drawn at CSS's 96 pixels to the inch unless &mm= says how
+  // many pixels a millimetre is (a 13" MacBook Air's 1470 points over 303 mm: &mm=4.85). &dock
+  // docks the HUD without typing.
   const params = new URLSearchParams(location.search);
   const local = location.protocol === "file:" || ["127.0.0.1", "localhost", "[::1]", "::1"].includes(location.hostname);
   if (local && params.get("touch") !== null) {
-    setTouch({ output: "hid", repeat: "synthetic", send: (m) => console.log("touch:", JSON.stringify(m)) });
+    const pxPerMm = Number(params.get("mm")) || 96 / 25.4;
+    const console_ = { output: "hid", repeat: "synthetic", send: (m) => console.log("touch:", JSON.stringify(m)) };
+    let attached = false;
+    const dock = () => hud.setDock({ on: true, split: true, px_per_mm: pxPerMm, width: window.innerWidth,
+                                     max_height: Math.round(window.innerHeight * 0.6) });
+    const attach = (on) => {
+      attached = on;
+      html.classList.toggle("bottom", on);
+      setTouch(on ? console_ : null);
+      if (on) dock(); else hud.setDock({ on: false });
+    };
+    attach.title = "detach: the floating HUD again";
+    hud.setAttach(attach);
+    attach(true);
+    window.addEventListener("resize", () => { if (attached) dock(); });
+  } else if (local && params.get("dock") !== null) {
+    hud.setDock({ on: true, max_height: Number(params.get("dock")) || window.innerHeight });
   }
-  if (local && params.get("dock") !== null) hud.setDock({ on: true, max_height: Number(params.get("dock")) || window.innerHeight });
 })();

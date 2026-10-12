@@ -217,6 +217,26 @@ set, glass changes a few things:
   (`{"kind":"dock","fits":false,...}`), which floats the HUD again; `zmk-layer-hud dock` says why it
   did not dock, and `dock status` keeps saying it. The Android keyboard stays up, a HUD, until the
   tablet is turned or the 🌐 key picks another keyboard.
+- **Attach and detach.** The banner's arrow attaches the HUD as a touch keyboard -- docked along
+  the bottom, its keys their real size, a split board's halves at the sides -- and detaches it to
+  the floating HUD, which types nothing. A panel is asked (`{"kind":"attach","on":true}`), as its
+  menu's Dock and Float ask it; a page with a way of its own is given it (`hud.setAttach(fn)`). On a
+  tablet's keyboard, detach is the keyboard used before (Android) or the next one (the iPad): the
+  system's own keyboard is the field's again and works as it always did, and this one comes back
+  when it is picked, as any keyboard does. Nothing is registered with the operating system.
+- **Minimize.** Attached, the chevron puts the keys away: the keyboard is its banner, a bar of its
+  buttons, still docked, and the strip's room goes back to the windows above (on Hyprland its
+  reservation shrinks to the bar; on a tablet the app gets the room). It types nothing until the
+  chevron brings the keys back.
+- A touch keyboard waits for no keyboard: "waiting for the keyboard's layers" is the HUD's line,
+  never shown while the board types, since no keyboard may be plugged in.
+- A keymap that says nothing of what its keys do -- the landing page's boards, which `site/build.py`
+  leaves it out of -- is a HUD only: asked to type, the banner says it cannot.
+- **In a browser**, for development: `hud/index.html?keymap=board.json&touch` from a local server is
+  the touch keyboard attached along the bottom of the window, typing into the console; a mouse's
+  left button is a finger. A browser cannot measure its screen, so keys are drawn at CSS's 96 pixels
+  to the inch unless `&mm=` says how many pixels are a millimetre (`&mm=4.85` on a 13" MacBook
+  Air). `zmk-layer-hud keymap -o board.json` writes a keymap that types.
 - When the room between the halves holds it, the **stats column** sits there (`html.stats-middle`):
   centred, from the board's top and no taller than it, scrolling when it is taller, and hidden still
   when it was hidden. Not on the remote page or a tablet's keyboard, where touch typing counts
@@ -261,6 +281,12 @@ Host → page:
   keys are their real size or the board is a HUD only. A host sends them when `touch.enabled` is on.
 - A native shell calls `hud.setTouch(sink)` and `hud.setDock({on, max_height, px_per_mm, width})`
   directly.
+
+Page → host, the banner's attach and detach (the same as the menu's Dock and Float):
+
+```json
+{"kind":"attach","on":true}
+```
 
 Page → host, the board too big to type on here at its real size, once for each dock:
 

@@ -16,7 +16,8 @@ Stdlib only, and Python 3.9: the Linux panel runs under the system interpreter.
 """
 
 BUILT_IN = ("eDP", "LVDS", "DSI")
-MIN_HEIGHT = 120           # a strip shorter than this is no keyboard
+MIN_HEIGHT = 120           # a screen's share shorter than this is no keyboard
+BAR_HEIGHT = 30            # ...but minimized, the keyboard is its banner: a bar this tall
 DEFAULT_PCT = 60           # of the screen's height, at most
 
 
@@ -48,12 +49,12 @@ def max_height(screen_h, pct=DEFAULT_PCT):
 
 
 def height(page_h, screen_h, pct=DEFAULT_PCT):
-    """How tall the strip is: what the page needs, within the screen's share; the share itself while
-    the page has not said."""
+    """How tall the strip is: what the page needs, within the screen's share -- as little as a bar,
+    when the keyboard is minimized; the share itself while the page has not said."""
     cap = max_height(screen_h, pct)
     if not page_h:
         return cap
-    return int(max(MIN_HEIGHT, min(page_h, cap)))
+    return int(max(BAR_HEIGHT, min(page_h, cap)))
 
 
 # CSS's own measure, 96 pixels to the inch: what a screen that does not say how big it is gets.

@@ -544,6 +544,9 @@ def main():
             return
         if kind == "hid":       # the touch keyboard: keys to press (docs/touch.md)
             typing.hid(msg)
+        elif kind == "attach":  # the banner's attach/detach: docked as a touch keyboard, or floating
+            if isinstance(msg.get("on"), bool):
+                set_dock(msg["on"])
         elif kind == "dock":    # the board too big to type on here at its real size: a HUD, floating
             note = dock_mod.refusal(msg, pct)
             if note and docked[0]:
@@ -649,7 +652,7 @@ def main():
         except (ValueError, TypeError, AttributeError):
             return
         if docked[0]:
-            if msg.get("kind") == "size" and 50 <= h <= 4000:
+            if msg.get("kind") == "size" and dock_mod.BAR_HEIGHT <= h <= 4000:   # minimized, a bar
                 want = dock_mod.height(h, dock_geo[0].height, pct)
                 if want != dock_h[0]:
                     size_dock(want)

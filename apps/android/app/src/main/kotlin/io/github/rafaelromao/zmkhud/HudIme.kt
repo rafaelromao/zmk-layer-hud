@@ -199,6 +199,11 @@ class HudIme : InputMethodService() {
             PageMessage.Switch -> if (!switchToNextInputMethod(false)) {
                 (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
             }
+            // Detached, the keyboard used before is the field's again, working as it always did; this
+            // one comes back when it is picked, as any keyboard does.
+            PageMessage.Detach -> if (!switchToPreviousInputMethod()) {
+                (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
+            }
             PageMessage.Unknown -> Unit
         }
     }
@@ -215,7 +220,8 @@ class HudIme : InputMethodService() {
      *  their real size with it, or, too big for the screen turned this way, the board is a HUD only. */
     private fun dpPerMm() = resources.displayMetrics.let { Screen.dpPerMm(it.xdpi, it.density) }
 
-    /** As tall as the board came out (CSS pixels are dp), within the keyboard's share of the screen. */
+    /** As tall as the board came out (CSS pixels are dp), within the keyboard's share of the screen:
+     *  minimized, a bar (hud.js setMini), and the app has the rest. */
     private fun resize(dp: Int) {
         val density = resources.displayMetrics.density
         val px = (dp * density).roundToInt().coerceIn((MIN_HEIGHT_DP * density).roundToInt(), maxHeightPx())
@@ -246,7 +252,7 @@ class HudIme : InputMethodService() {
         const val PAGE = "$ORIGIN/assets/hud/index.html?embed"
         const val BRIDGE = "zmkhudIme"
         const val MAX_SHARE = 0.6f       // a keyboard of keys their real size is taller than the system's
-        const val MIN_HEIGHT_DP = 120
+        const val MIN_HEIGHT_DP = 30     // minimized, the keyboard is its banner
 
         /** What the page gets for anything that is not one of its own files: nothing, from nowhere. */
         @Suppress("FunctionName")

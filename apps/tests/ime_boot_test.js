@@ -87,6 +87,24 @@ function keyboard(conf) {
   check(nextKeys(p).length === 1, "the next-keyboard key is still there to leave by");
 })();
 
+(function detachedTheKeyboardUsedBeforeIsBack() {
+  const p = keyboard({ maxHeight: 300, canSwitch: true, pxPerMm: 6.3, width: 1280 });
+  p.hud.receive(MSG);
+  const html = p.document.documentElement;
+  check(html.classList.contains("attachable"), "the banner has detach");
+  p.document.getElementById("attach").click();
+  check(p.posted.some((m) => m.kind === "detach"), "which asks for the keyboard used before");
+  check(html.classList.contains("dock"), "and the page stays as it is, for when this keyboard is picked again");
+  // Minimized: a bar, its keys put away, and the app has the room.
+  p.document.getElementById("mini").click();
+  check(html.classList.contains("mini"), "minimize makes it a bar");
+  p.posted.length = 0;
+  p.hud.state.keyEls[0].fire("pointerdown", { pointerId: 1 });
+  check(!p.posted.some((m) => m.kind === "ops" || m.kind === "feedback"), "a bar types nothing");
+  p.document.getElementById("mini").click();
+  check(!html.classList.contains("mini") && html.classList.contains("touch"), "and maximize brings the keyboard back");
+})();
+
 (function itSaysHowTallItCameOut() {
   const p = keyboard({ maxHeight: 300, canSwitch: false });
   check(p.posted.some((m) => m.kind === "size" && Number.isInteger(m.height)), "the board's height goes to the keyboard");

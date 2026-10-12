@@ -252,8 +252,9 @@ turns that off.
   along the bottom of the touch screen as wide as it, a split board's halves at its sides, and it
   never takes the keyboard from the app you type into. On Hyprland it reserves its height, so
   windows tile above it; on macOS it lies over the bottom of the screen, as macOS's own
-  Accessibility Keyboard does. The menubar and the Omarchy bar have Dock and Float. Floating, the
-  HUD types nothing.
+  Accessibility Keyboard does. The banner's arrow attaches and detaches it, as the menubar's and
+  the Omarchy bar's Dock and Float do; its chevron minimizes it to a bar, still docked, giving the
+  room back to the windows. Floating, the HUD types nothing; docked, a mouse types too.
 - **Its keys are their real size**: `touch.key_mm` apart (18 mm, Choc spacing; 19.05 for MX), from
   the size the screen reports. A board that does not fit the screen at that size, or the dock's
   share of it (`dock.height_pct`, 60%), is not docked: it stays a HUD, and `zmk-layer-hud dock` says
