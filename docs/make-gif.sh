@@ -83,7 +83,7 @@ WORK="$(mktemp -d "${TMPDIR:-/tmp}/zmk-layer-hud-gif.XXXXXX")"
 trap 'kill $SERVER 2>/dev/null || true; wait $SERVER 2>/dev/null || true; rm -rf "$WORK"' EXIT
 # No subshell: $! must be the server itself, or the trap kills the wrapper and leaves the
 # server holding the port (which then silently breaks every later run).
-python3 -m http.server -d "$ROOT/hud" "$PORT" >/dev/null 2>&1 & SERVER=$!
+python3 -m http.server --bind 127.0.0.1 -d "$ROOT/hud" "$PORT" >/dev/null 2>&1 & SERVER=$!
 sleep 1
 kill -0 "$SERVER" 2>/dev/null || { echo "could not serve $ROOT/hud on port $PORT (already in use?)" >&2; exit 1; }
 
@@ -99,7 +99,7 @@ for i in $(seq 0 $((FRAMES - 1))); do
   "$BROWSER" --headless=new --disable-gpu --no-first-run --user-data-dir="$WORK/profile-$i" \
     --window-size="$W,$H" --hide-scrollbars --virtual-time-budget=800 \
     --default-background-color=1A1B26FF --screenshot="$FRAME" \
-    "http://localhost:$PORT/$(frame_url "$i")" >/dev/null 2>&1 &
+    "http://127.0.0.1:$PORT/$(frame_url "$i")" >/dev/null 2>&1 &
   BPID=$!
   for _ in $(seq 1 "$TIMEOUT_TICKS"); do [ -s "$FRAME" ] && break; sleep 0.2; done
   sleep 0.3                                   # let the PNG finish landing
