@@ -75,6 +75,7 @@ import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import a11y  # noqa: E402  (host/a11y.py)
+import sessionlock  # noqa: E402
 import keymap as keymap_mod  # noqa: E402  (host/keymap.py)
 import panelstate  # noqa: E402  (host/panelstate.py)
 import session as session_mod  # noqa: E402  (host/session.py)
@@ -1227,16 +1228,20 @@ class Feed:
             if self.source is not None and self.source.message:
                 self.sessions.set_keymap(self.source.message)
         # While a secret is being typed -- macOS says so, a terminal is asking for one, or on Linux a
-        # password field has focus on the accessibility bus -- nothing typed goes on (SecureInput).
+        # password field has focus on the accessibility bus or the session is locked -- nothing
+        # typed goes on (SecureInput). `watched` names the probes this run has, for the log.
         self.secure = None
         self.focus = None
+        self.watched = ()
         if int(feed_cfg.get("secure_input", 1)):
-            probes = [p for p in (carbon_probe(), terminal_probe()) if p is not None]
+            probes = {"carbon": carbon_probe(), "terminals": terminal_probe(), "lock": sessionlock.probe(log)}
             if a11y.available():
                 self.focus = a11y.PasswordFocus(log=log, enable=bool(int(feed_cfg.get("accessibility", 1))))
-                probes.append(self.focus.probe)
+                probes["a11y"] = self.focus.probe
+            probes = {name: p for name, p in probes.items() if p is not None}
+            self.watched = tuple(probes)
             if probes:
-                self.secure = SecureInput(emit, any_of(probes), log=log)
+                self.secure = SecureInput(emit, any_of(list(probes.values())), log=log)
 
     def _emit(self, msg):
         # --no-keys: layers only. The positions go with the keys: with the keymap they are the typing.

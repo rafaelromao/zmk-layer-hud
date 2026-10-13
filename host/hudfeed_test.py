@@ -502,12 +502,13 @@ class Secure(unittest.TestCase):
 
     def test_the_feed_asks_the_system_and_the_terminals(self):
         # Either saying so is enough; and where neither can be asked, there is nothing to hold back.
-        said = {"system": False, "terminal": False}
-        probes = {"system": lambda: said["system"], "terminal": lambda: said["terminal"]}
+        said = {"system": False, "terminal": False, "lock": False}
+        probes = {"system": lambda: said["system"], "terminal": lambda: said["terminal"], "lock": lambda: said["lock"]}
 
         def feed_with(**have):
             with mock.patch("hudfeed.carbon_probe", return_value=probes["system"] if have.get("system") else None), \
                  mock.patch("hudfeed.terminal_probe", return_value=probes["terminal"] if have.get("terminal") else None), \
+                 mock.patch("hudfeed.sessionlock.probe", return_value=probes["lock"] if have.get("lock") else None), \
                  tempfile.TemporaryDirectory() as tmp:
                 path = os.path.join(tmp, "config.yaml")
                 with open(path, "w", encoding="utf-8") as f:
@@ -522,6 +523,12 @@ class Secure(unittest.TestCase):
         said["system"] = False
         self.assertIsNotNone(feed_with(terminal=True).secure)    # Linux: the terminals alone
         self.assertIsNone(feed_with().secure)
+        self.assertEqual((), feed_with().watched)
+        feed = feed_with(terminal=True, lock=True)               # Linux under Hyprland: the session lock too
+        self.assertEqual(("terminals", "lock"), feed.watched)
+        self.assertFalse(feed.secure.probe())
+        said["lock"] = True
+        self.assertTrue(feed.secure.probe())
 
     def test_raw_logging_is_held_while_it_is_on(self):
         # `feed --raw` logs what the readers decode, which is the typing: not while a secret is typed.
