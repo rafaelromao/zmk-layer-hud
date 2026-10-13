@@ -1218,7 +1218,8 @@ class Feed:
                 self.secure = SecureInput(emit, lambda: any(p() for p in probes), log=log)
 
     def _emit(self, msg):
-        if not self.keys and msg["kind"] == "key":
+        # --no-keys: layers only. The positions go with the keys: with the keymap they are the typing.
+        if not self.keys and msg["kind"] in ("key", "press", "release"):
             return
         if self.secure is not None and not self.secure.allows(msg):
             return
@@ -1517,7 +1518,8 @@ def parse_args(argv=None):
     p.add_argument("--no-ws", action="store_true", help="do not serve the WebSocket")
     p.add_argument("--port", type=int, default=int(os.environ.get("ZMKHUD_PORT", "8766")))
     p.add_argument("--no-keymap", action="store_true", help="skip the keymap feed (pages keep whatever they have)")
-    p.add_argument("--no-keys", action="store_true", help="send layers only, no key events")
+    p.add_argument("--no-keys", action="store_true",
+                   help="send layers only: no typed keys and no key positions (--no-hid-keys keeps the positions)")
     p.add_argument("--vid", type=lambda s: int(s, 0), help="keyboard vendor id (default: config `keyboard.vid`, else ZMK's)")
     p.add_argument("--pid", type=lambda s: int(s, 0), help="keyboard product id (default: config `keyboard.pid`, else ZMK's)")
     p.add_argument("--name", help="substring of the product name to select one keyboard (default: config `keyboard.name`)")

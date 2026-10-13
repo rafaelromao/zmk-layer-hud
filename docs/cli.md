@@ -414,7 +414,8 @@ options:
   --no-ws               do not serve the WebSocket
   --port PORT
   --no-keymap           skip the keymap feed (pages keep whatever they have)
-  --no-keys             send layers only, no key events
+  --no-keys             send layers only: no typed keys and no key positions (--no-hid-keys keeps
+                        the positions)
   --vid VID             keyboard vendor id (default: config `keyboard.vid`, else ZMK's)
   --pid PID             keyboard product id (default: config `keyboard.pid`, else ZMK's)
   --name NAME           substring of the product name to select one keyboard (default: config

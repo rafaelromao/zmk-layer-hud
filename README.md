@@ -226,8 +226,9 @@ flags of any one of them, and [docs/cli.md](docs/cli.md) has every verb's in one
 screen, counting from the first key. `setup` prints every
 privileged step and asks before running it, and `setup --no-sudo` prints them without running any.
 
-Two flags on `feed` read alike and are not: `--no-keys` sends layers only, while `--no-hid-keys`
-drops just the HID half — the typed-keys strip and the shift flag — and keeps positions.
+Two flags on `feed` read alike and are not: `--no-keys` sends layers only, neither the keys typed
+nor the positions pressed, while `--no-hid-keys` drops just the HID half — the typed-keys strip
+and the shift flag — and keeps positions.
 
 ## Configuration
 

@@ -917,6 +917,22 @@ class ReaderSettings(unittest.TestCase):
     def test_a_keymap_that_does_not_convert(self):
         self.check(*self.feed_for("keymap: /nowhere/keymap-drawer.yaml\n" + self.SETTINGS))
 
+    def test_no_keys_sends_layers_only(self):
+        # Neither the keys typed nor the positions pressed: with the keymap, the positions are the
+        # typing too. --no-hid-keys is the flag that drops just the strip and keeps them.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(self.SETTINGS)
+            out = []
+            feed = Feed(out.append, log=lambda *a: None, config=path, keys=False, sessions=False)
+        self.assertIsNone(feed.hid)
+        for msg in ({"kind": "press", "pos": 3, "device": "T"}, {"kind": "release", "pos": 3, "device": "T"},
+                    {"kind": "key", "type": "keyDown", "chars": "a", "device": "T"},
+                    {"kind": "layers", "ids": [2], "device": "T"}, {"kind": "device", "name": "T"}):
+            feed._emit(msg)
+        self.assertEqual(["layers", "device"], [m["kind"] for m in out])
+
     def test_a_config_with_no_keymap_yet(self):
         self.check(*self.feed_for(self.SETTINGS))
 

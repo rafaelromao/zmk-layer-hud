@@ -117,8 +117,9 @@ zmk-layer-hud feed --stdout --no-ws --no-keymap --no-keys --debug
 ```
 
 Within two seconds (heartbeat) it prints `{"kind":"layers","ids":[]}`; holding a layer key
-prints that layer's id, releasing prints `[]` again. Drop `--no-keys` to also see every key press
-as `{"kind":"key",…}`. Type into a terminal and a text field meanwhile: nothing stray appears. If
+prints that layer's id, releasing prints `[]` again. Drop `--no-keys` to also see every key typed
+as `{"kind":"key",…}` and, with `positions;` on, every key pressed as `{"kind":"press",…}`. Type
+into a terminal and a text field meanwhile: nothing stray appears. If
 it prints `cannot open`, see the README's troubleshooting; if it prints nothing, add `--raw` to log
 every frame and HID report that decodes -- your typing, held while a secret is being typed --
 which separates a silent keyboard from a host that cannot read it.
