@@ -50,10 +50,85 @@ covered what they look for in a tree this size.
 | 17 | Info | `pgrep -f`/`pkill -f` find processes by command line; the Omarchy launcher's `pkill -f -- "--class=zmkhud"` is broad. | `host/cli.py`, `host/linux/hud.sh` | Noted. Signals reach only the user's own processes, and `panel.json`'s pid is checked against `pgrep`. |
 | 18 | Info | The firmware's UART free-space check and write are not one operation. | `firmware/src/signal_uart.c` | Noted. Every caller runs on ZMK's system work queue thread, so there is no second writer; a frame goes whole or not at all. |
 
+## Review of 2026-10-13: a password in front of the HUD
+
+A second pass over the tree, with one question: where can a password typed on the keyboard end
+up somewhere the user did not intend? The feed reads the keyboard's own HID reports, so it is a
+keylogger by construction, and what holds it back is the secure-input gate. This pass traced the
+gate end to end -- the probes, what they gate, the race windows, what fails silently -- and then
+the page's buffers, every file the HUD writes, every listener, the demo's and `poke`'s token and
+the git history, and read the Linux lockers' sources for what a lock screen tells anyone.
+
+- Every tracked source read again along the typing's path: firmware, carriers, readers, decoder,
+  gate, Hub, page, panels, session files, logs.
+- `shellcheck -S style` on the five shell scripts: clean before and after.
+- `bandit -r host site` (tests excluded): 0 high, 7 medium, 74 low, against 5 medium and 64 low
+  on 2026-10-02. The two mediums since are `ET.fromstring` on a glyph (`host/keymap.py`
+  glyph_problem, which refuses a doctype, entity, CDATA section or processing instruction before
+  the parser sees the text, so there is no entity to expand) and the release lookup's `urlopen`
+  (`host/cli.py` latest_release: https, GitHub's API, from `update` alone). The rest are the
+  earlier review's.
+- `pip-audit --local` on the virtualenv's 51 packages: no known vulnerabilities on the day.
+- Git history: no log, recording or session file was ever committed; `run/` and the page's
+  dumps are ignored.
+
+Every finding is fixed in the commit named.
+
+| # | Severity | What | Where | Status |
+|---|---|---|---|---|
+| 19 | High (Linux) | The session lock was not seen. hyprlock, Omarchy's shell and swaylock are no toolkit's widget tree and no terminal, and none sets logind's `LockedHint` (their sources say so), so the unlock password reached the strip, which showed it for about two seconds after the screen came back, the counts and the socket's clients. macOS's lock screen turns secure input on and is covered by the switch. | `host/a11y.py`, `hud/keys.js`, `host/linux/panel.py` | Fixed in `24d6457`: `host/sessionlock.py` asks Hyprland's control socket whether a session lock holds a monitor (`solitaryBlockedBy` with `LOCK`, what Omarchy's own lock script reads), the answer kept 100 ms; a Hyprland that does not say falls back to the lockers' process names. Another compositor's lock is a limit (below). |
+| 20 | Medium | Layer changes passed the gate: which layer each password character came from (digits, symbols, a shift layer) and when, to the board and every client. | `host/hudfeed.py` SecureInput.allows | Fixed in `4b78d1b`: held with the keys; the latest of each keyboard follows the off message. |
+| 21 | Medium (Linux) | The accessibility probe answered from a flag set after the focus signal was taken in and the app had said what the widget is (a round trip, up to 2 s for one that hangs), while SecureInput's docstring promised the first key could not slip through. Keys typed meanwhile went on. | `host/a11y.py` PasswordFocus, `host/hudfeed.py` SecureInput.check | Fixed in `b4e03bf`: the probe says it does not know yet from the signal to the answer, and the feed holds keys, positions and layers silently meanwhile; a flood that fills the signal queue is said. |
+| 22 | Medium (Linux) | A password field focused before the watch looked -- the feed started or the bus came back with a login form up, a window brought back to the front with its field still focused -- was never seen. | `host/a11y.py` PasswordFocus._watch | Fixed in `a12c4c4`: the active window is asked for a focused password field at the start, on `window:activate` and after a flood (Collection `GetMatches`; a bounded walk where the app has no Collection). The Collection constants are to be confirmed on a live bus (below). |
+| 23 | Medium | `feed --raw` logged every decoded HID report before the gate, passwords included, and the README's troubleshooting and docs/zmk-setup.md send users there. | `host/hudfeed.py` Stream.message | Fixed in `5206c1f`: the readers ask the gate before each frame is logged; the help and the docs say the raw log is the typing and goes quiet while a secret is typed. |
+| 24 | Low-Med | `--no-keys`, documented as "layers only", dropped only `key`: press and release positions still went out, and with the keymap they are the typing. | `host/hudfeed.py` Feed._emit | Fixed in `da3bb87`: the positions go with the keys; `--no-hid-keys` keeps them. |
+| 25 | Low-Med | Fail-open was silent: Carbon not loading, jeepney missing, no bus, no Hyprland, a role lookup failing and `feed.secure_input: 0` each left keys flowing with nothing said, and `doctor` reported the watch on from `IsEnabled` alone, without jeepney in the venv. | `host/hudfeed.py` Feed, `host/cli.py` check_accessibility | Fixed in `924018c`: the feed names its probes when it starts, or says nothing watches; every `secure` message carries `watched` and one goes out at the start; the page says `typing not watched`; `feed --probes` reports each probe and `doctor` reads it. |
+| 26 | Low | On `secure on` the page kept what it had not yet counted or sent (the ledger, the strokes, the unsent counts, the WPM windows, the recent positions): a key that slipped in as the probe caught up was counted, and the test tolerated one. | `hud/hud.js` setSecure | Fixed in `d49b4e6`: all of it goes, as when a keymap is replaced; the test counts exactly. |
+| 27 | Low | `demo` printed `poke --url ws://127.0.0.1:8767/<token>`, which puts the socket's token in a command line that every user on the machine reads with `ps`. | `host/cli.py` demo_socket | Fixed in `060da91`: `ZMKHUD_TOKEN=… ZMKHUD_PORT=… zmk-layer-hud poke`, the environment being the user's alone; `--url` still works. |
+| 28 | Low | `docs/make-gif.sh` served `hud/` on every interface for as long as a render ran; the review above said every listener binds loopback. | `docs/make-gif.sh` | Fixed in `9876565`: `--bind 127.0.0.1`. |
+| 29 | Low | A `panel.log` or `menubar.log` from before `umask 077` kept its 0644 (`>` keeps a file's mode); cli.py opened `menubar.log` with the default umask; launchd makes `autostart.log` 0644 from the plist. Status lines only, today. | `host/linux/hud.sh`, `host/macos/start.sh`, `host/cli.py` | Fixed in `dd87dde`: chmod 600 before the redirect; `panelstate.open_private` for cli.py's logs, `autostart.log` made 0600 first for launchd to append to. |
+| 30 | Info | `:memory:.ses`, a tool's session marker, sat untracked and not ignored at the root. | `.gitignore` | `c5198e4`: `*.ses` ignored. |
+
+Found sound, again: the socket's token and Origin gate; no character and no order on disk (a
+session is counts per layer and position, 0600 in 0700); no telemetry, no remote script, font or
+analytics on any page; the glyph allowlist; the Linux panel passes the token in the WebView's
+URL and the feed's environment, never on a command line; the macOS panel keeps the Hub
+in-process; the firmware sends positions and a layer bitmap, never usages or characters.
+
+### Limits added
+
+- **The terminal probe sees a prompt that reads a line with echo off**, which is what `sudo`,
+  `ssh`, `su`, `passwd` and `getpass` do. One that takes the keys raw, one at a time -- `sudo`
+  with `pwfeedback`, `systemd-ask-password`, a curses or tty pinentry, a prompt that masks with
+  stars -- looks like an editor and is not seen; nor is a prompt on the far side of `ssh`,
+  `mosh`, a container or a VM, whose pty is not this machine's (the local one is raw for the
+  whole session). Local tmux and screen are seen, and the ssh client's own passphrase prompt.
+- **The session lock is seen under Hyprland alone.** Another compositor's lock screen is not:
+  the lockers set no logind hint, so there is nothing to ask. Stop the HUD before locking there.
+- **When the gate misses, a session keeps the keys as a multiset**: a count per key and layer,
+  no order, which for a short secret typed on an otherwise quiet day says which keys it used.
+  `feed.sessions: 0` keeps no files.
+- **A keyboard cabled to one machine while typing over BLE to another** sends its positions to
+  the cabled machine's serial port too (`positions;`), with no prompt of its own to tell it to
+  stop; the serial-port limit above is about the local case.
+- **Typing sent in (`poke`) bypasses the gate**, and the Linux strip window shows it even while
+  secure input is on: only a holder of the run's token can, which is the user's own process.
+- **`hide` keeps counting and broadcasting**: it is for recording with the HUD off screen, not a
+  privacy switch. The off switch is `stop`.
+- **Not confirmed here.** This pass ran in a sandbox with no display, no ptys, no D-Bus and no
+  Hyprland; the Linux probes are tested against fakes (`a11y_test`, `sessionlock_test`). To
+  confirm on Omarchy: `hyprctl -j monitors | jq '[.[].solitaryBlockedBy]'` carries `"LOCK"`
+  while locked (`omarchy-hyprland-session-locked` exits 0 then); `grep -n ATSPI_Collection_
+  /usr/include/at-spi-2.0/atspi/atspi-constants.h` gives MATCH_ALL 1, MATCH_ANY 2 and
+  SORT_ORDER_CANONICAL 1; a browser's login form up before `zmk-layer-hud start` hides the
+  typing at once; `zmk-layer-hud doctor` names the four probes. On macOS: the lock screen's
+  password field leaves `secure input · typing hidden` on a HUD left visible.
+
 ## What was looked for and found sound
 
-- Every listener binds 127.0.0.1 only. No server serves files from disk except the demo's
-  page server, which serves `hud/` and nothing else.
+- Every listener binds 127.0.0.1 only (since `9876565` the GIF script's page server too, finding
+  28). No server serves files from disk except the demo's page server and that one, which serve
+  `hud/` and nothing else.
 - The firmware parses no input: UART receive is disabled, the GATT characteristic is notify-only
   with no writable attribute, and nothing reaches the keyboard from the host. There is no
   `memcpy`, `strcpy` or `sprintf` in the module; the frame encoder checks its lengths; positions
@@ -117,14 +192,19 @@ covered what they look for in a tree this size.
 
 ```bash
 make test
-shellcheck -S style install.sh bin/zmk-layer-hud host/linux/hud.sh host/macos/start.sh
-.venv/bin/pip freeze | pip-audit -r /dev/stdin --no-deps
+shellcheck -S style install.sh bin/zmk-layer-hud host/linux/hud.sh host/macos/start.sh docs/make-gif.sh
+.venv/bin/python -m pip_audit --local
 bandit -q -r host site -x '*_test.py' -ll
 ```
 
 The suite covers the gate (`hudfeed_test.Gate`, `Socket`), the token file (`panelstate_test.Token`),
 `poke`'s URL (`hudpoke_test.Url`), the glyph allowlist on both sides (`keymap_test.Glyphs`,
 `hud_test.js` `checkGlyphs`), the page's local-only parameters (`checkLocalOnly`), the tarball
-(`cli_test.Update`), the port (`hudfeed_test.PortTaken`) and the Hyprland backup. The three
-`Socket` tests open a real port and skip where the process may not; run `make test-host` from a
-terminal to see them.
+(`cli_test.Update`), the port (`hudfeed_test.PortTaken`) and the Hyprland backup. Since
+2026-10-13 also secure input end to end: `hudfeed_test.Secure` (layers held, the raw log held, a
+probe that does not know yet, what watches said), the accessibility watch against a bus of the
+test's own (`a11y_test`, which runs where jeepney is on the path; it is not in the macOS venv),
+the session lock (`sessionlock_test`), the page's secure block (`stats_test.js`), the log modes
+(`panelstate_test.PrivateFile`, `cli_test.Autostart`) and the doctor's rows (`cli_test.Doctor`).
+The three `Socket` tests and `sessionlock_test.Wire` open a real socket and skip where the
+process may not; run `make test-host` from a terminal to see them.

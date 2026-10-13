@@ -563,6 +563,13 @@ beside anything that is wrong. What it cannot see:
   under Hyprland alone (by name -- hyprlock, swaylock, gtklock, waylock -- where Hyprland does not
   say); another compositor's lock screen is not. `zmk-layer-hud doctor` says what sees a secret
   being typed here. Stop the HUD, or record with it hidden, when that matters.
+- A terminal's prompt is seen when it reads a line with echo off, as `sudo`, `ssh`, `su`, `passwd`
+  and `getpass` do. One that takes the keys raw, one at a time -- `sudo` with `pwfeedback`,
+  `systemd-ask-password`, a pinentry, a prompt that masks with stars -- is not, and nor is a prompt
+  on the far side of `ssh` or inside a container, whose pty is not this machine's. When the gate
+  misses, a session keeps the keys as counts per key and layer, never their order (`feed.sessions:
+  0` keeps none), and a keyboard cabled to one machine while typing over BLE to another sends its
+  positions to the cabled one's port too.
 - The HUD's socket takes one port (`ZMKHUD_PORT`, 8766). If something else holds it when the macOS
   panel starts (a `zmk-layer-hud feed` of its own, say), the panel runs without a socket and
   `zmk-layer-hud poke` cannot reach it. Its log says so. The socket takes a token in its URL path,
