@@ -33,9 +33,13 @@ class FakeBus:
     """A bus as the watch sees it: replies to what it is asked, and delivers the signals a test
     puts on it through the watch's own filters, as jeepney does."""
 
-    def __init__(self, roles=None, focused=(), enabled=True, fail=()):
+    def __init__(self, roles=None, focused=(), enabled=True, fail=(), children=None, active=(), matches=None):
         self.roles = dict(roles or {})          # (sender, path) -> AtspiRole
         self.focused = set(focused)             # (sender, path) that GetState says are focused
+        self.active = set(active)               # (sender, path) of windows GetState says are active
+        self.children = dict(children or {})    # (sender, path) -> [(sender, path), ...], GetChildren
+        self.matches = dict(matches or {})      # (sender, window) -> [(sender, field)], the Collection's answer
+        self.die = threading.Event()            # set: the bus goes away at the next receive
         self.enabled = enabled                  # org.a11y.Status IsEnabled
         self.fail = set(fail)                   # members answered with an error
         self.hold = {}                          # member -> an Event the answer waits for (an app that is slow)
@@ -63,8 +67,13 @@ class FakeBus:
         if member == "GetRole":
             return new_method_return(msg, "u", (self.roles.get((dest, path), 0),))
         if member == "GetState":
-            bits = (1 << a11y.STATE_FOCUSED) if (dest, path) in self.focused else 0
+            bits = ((1 << a11y.STATE_FOCUSED) if (dest, path) in self.focused else 0) | \
+                   ((1 << a11y.STATE_ACTIVE) if (dest, path) in self.active else 0)
             return new_method_return(msg, "au", ([bits, 0],))
+        if member == "GetChildren":
+            return new_method_return(msg, "a(so)", (list(self.children.get((dest, path), [])),))
+        if member == "GetMatches":
+            return new_method_return(msg, "a(so)", (list(self.matches.get((dest, path), [])),))
         return new_method_return(msg)           # RegisterEvent, AddMatch
 
     # ---- what it listens to ----
@@ -74,6 +83,8 @@ class FakeBus:
         return contextlib.nullcontext(q)
 
     def recv_until_filtered(self, q, *, timeout=None):
+        if self.die.is_set():
+            raise OSError("the bus went away")
         deadline = time.monotonic() + (timeout or 0)
         while not q:
             try:
@@ -105,7 +116,13 @@ class FakeBus:
         self.inbox.put(msg)
 
     def deactivate(self, sender, path="/org/a11y/atspi/accessible/win"):
-        msg = new_signal(DBusAddress(path, bus_name=sender, interface=a11y.WINDOW_EVENTS), "Deactivate",
+        self._window(sender, path, "Deactivate")
+
+    def activate(self, sender, path="/org/a11y/atspi/accessible/win"):
+        self._window(sender, path, "Activate")
+
+    def _window(self, sender, path, member):
+        msg = new_signal(DBusAddress(path, bus_name=sender, interface=a11y.WINDOW_EVENTS), member,
                          "siiva{sv}", ("", 0, 0, ("i", 0), {}))
         msg.header.fields[HeaderFields.sender] = sender
         self.inbox.put(msg)
@@ -126,6 +143,12 @@ LOGIN = (BROWSER, "/org/a11y/atspi/accessible/2001")      # a password field in 
 SEARCH = (BROWSER, "/org/a11y/atspi/accessible/2002")     # a text field beside it
 VAULT = (MANAGER, "/org/a11y/atspi/accessible/7")         # the password manager's master password
 PASSWORD, TEXT = a11y.ROLE_PASSWORD_TEXT, 61
+WIN = (BROWSER, "/org/a11y/atspi/accessible/win")          # the browser's window
+PANEL = (BROWSER, "/org/a11y/atspi/accessible/panel")      # a pane in it, with the two fields
+DESKTOP = (a11y.REGISTRY_NAME, a11y.ROOT_PATH)
+TREE = {DESKTOP: [(BROWSER, a11y.ROOT_PATH), (MANAGER, a11y.ROOT_PATH)],
+        (BROWSER, a11y.ROOT_PATH): [WIN], WIN: [PANEL], PANEL: [SEARCH, LOGIN],
+        (MANAGER, a11y.ROOT_PATH): [(MANAGER, "/org/a11y/atspi/accessible/mwin")]}
 
 
 @unittest.skipUnless(HAVE_JEEPNEY, "jeepney is not in this venv")
@@ -246,6 +269,58 @@ class Watch(unittest.TestCase):
         self.assertEqual(2, len(matches))
         self.assertTrue(all("type='signal'" in m for m in matches), matches)
         self.assertEqual(2, len(self.bus.filters))
+        self.assertIn(("GetChildren", a11y.REGISTRY_NAME, a11y.ROOT_PATH, ()), self.bus.calls)   # and the desktop looked at
+
+    def test_a_password_field_already_focused_when_the_watch_starts_is_seen(self):
+        self.bus = FakeBus(roles={LOGIN: PASSWORD}, focused={LOGIN}, children=TREE, active={WIN}, matches={WIN: [LOGIN]})
+        focus = self.watch()
+        self.assertTrue(settles(focus.probe, True))           # with no focus signal at all
+        self.assertIn(("GetMatches", BROWSER, WIN[1]), [c[:3] for c in self.bus.calls])
+        self.bus.focus(*LOGIN, gained=False)
+        self.assertTrue(settles(focus.probe, False))
+
+    def test_and_found_by_walking_where_the_app_has_no_collection(self):
+        self.bus = FakeBus(roles={LOGIN: PASSWORD, SEARCH: TEXT}, focused={LOGIN}, children=TREE, active={WIN},
+                           fail={"GetMatches"})
+        focus = self.watch()
+        self.assertTrue(settles(focus.probe, True))
+        self.assertLessEqual(len([c for c in self.bus.calls if c[0] in ("GetChildren", "GetState")]), a11y.WALK)
+
+    def test_the_walk_gives_up_within_its_budget(self):
+        # A big window with no password field anywhere: the walk stops at WALK calls, and says no.
+        wide = dict(TREE)
+        leaves = [(BROWSER, f"/org/a11y/atspi/accessible/n{i}") for i in range(600)]
+        wide[PANEL] = leaves
+        self.bus = FakeBus(roles={}, focused=set(), children=wide, active={WIN}, fail={"GetMatches"})
+        focus = self.watch()
+        time.sleep(0.2)
+        self.assertFalse(focus.probe())
+        walked = [c for c in self.bus.calls if c[0] in ("GetChildren", "GetState")]
+        self.assertLessEqual(len(walked), a11y.WALK + 4)   # the desktop and the app roots aside
+
+    def test_a_window_activated_again_is_looked_at(self):
+        self.bus = FakeBus(roles={LOGIN: PASSWORD, SEARCH: TEXT}, focused={LOGIN}, children=TREE, matches={WIN: [LOGIN]})
+        focus = self.watch()                                  # no window active at the start: nothing found
+        self.assertFalse(focus.probe())
+        self.bus.focus(*LOGIN)
+        self.assertTrue(settles(focus.probe, True))
+        self.bus.deactivate(BROWSER)
+        self.assertTrue(settles(focus.probe, False))
+        self.bus.activate(*WIN)                               # back in front, no new focus event
+        self.assertTrue(settles(focus.probe, True))
+
+    def test_after_the_bus_comes_back_the_field_is_found_again(self):
+        first = self.bus
+        second = FakeBus(roles={LOGIN: PASSWORD}, focused={LOGIN}, children=TREE, active={WIN}, matches={WIN: [LOGIN]})
+        buses = [(self.session, first), (FakeBus(), second)]
+        focus = a11y.PasswordFocus(log=self.logged.append, connect=lambda: buses.pop(0), confirm_s=0.1, retry_s=0.05)
+        self.addCleanup(focus.stop)
+        focus.start()
+        self.assertTrue(settles(lambda: focus.said, "watching"))
+        self.assertFalse(focus.probe())
+        first.die.set()
+        self.assertTrue(settles(focus.probe, True, within=3))  # the second bus: the field found at once
+        self.assertTrue(first.closed)
 
     def test_a_bus_that_is_away_is_said_once_and_tried_again(self):
         tries = []
