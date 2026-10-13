@@ -553,9 +553,11 @@ class Secure(unittest.TestCase):
         feed = feed_with()
         self.assertIsNone(feed.secure)
         self.assertEqual((), feed.watched)
-        # Nothing watching is said when it starts, in the log and to the page, so nobody trusts it.
+        # Nothing watching is said when it starts, in the log and to the page, so nobody trusts it. No
+        # accessibility bus either, as above: a Linux machine with one (CI's) would have it watching.
         told, logged = [], []
         with mock.patch("hudfeed.carbon_probe", return_value=None), mock.patch("hudfeed.terminal_probe", return_value=None), \
+             mock.patch("hudfeed.a11y.available", return_value=False), \
              mock.patch("hudfeed.sessionlock.probe", return_value=None), mock.patch("hudfeed.SerialReader.start"), \
              tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "config.yaml")
