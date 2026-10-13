@@ -402,7 +402,7 @@ options:
 usage: zmk-layer-hud feed [-h] [--config CONFIG] [--stdout] [--no-ws] [--port PORT] [--no-keymap]
                           [--no-keys] [--vid VID] [--pid PID] [--name NAME] [--serial DEV]
                           [--no-ble] [--ble-address BLE_ADDRESS] [--no-hid-keys] [--no-inject]
-                          [--no-sessions] [--debug] [--raw]
+                          [--no-sessions] [--debug] [--probes] [--raw]
 
 Host feed for the zmk-layer-hud pages. One source: the keyboard's own signal channel.
 
@@ -434,6 +434,8 @@ options:
   --no-sessions         keep no session files (config `feed.sessions: 0`): the counts last as long
                         as the page
   --debug               log layer messages to stderr
+  --probes              say which probes see a secret being typed on this system, one per line
+                        (name, on|off|none, why), and exit; what `zmk-layer-hud doctor` reads
   --raw                 DEBUG ONLY: log every decoded frame and HID report, your typing included;
                         nothing is logged while secure input is on
 ```

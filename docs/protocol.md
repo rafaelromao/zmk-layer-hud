@@ -71,10 +71,14 @@ README's [stats bar](../README.md#how-it-works)). `gen` goes up when the session
 `{"kind":"secure","on":true}` says a secret is being typed: on macOS a password field has focus
 (the system's secure input is on), on Linux a password field has focus on the accessibility bus
 (host/a11y.py), or on either system a terminal is asking for a password (echo off, a line at a
-time). From then on the feed sends no `key`, `press`, `release` or `layers` (which layer each
-character came from is part of the secret) until `{"kind":"secure","on":false}`, which the
-latest `layers` of each keyboard follows so the board catches up, and a page clears what is on
-screen of the typing. It is cached like the rest, so a page that connects in the middle is told.
+time), or under Hyprland the session is locked (host/sessionlock.py). From then on the feed sends
+no `key`, `press`, `release` or `layers` (which layer each character came from is part of the
+secret) until `{"kind":"secure","on":false}`, which the latest `layers` of each keyboard follows
+so the board catches up, and a page clears what is on screen of the typing. Every `secure`
+message carries `"watched"`, the probes the feed has (`carbon`, `terminals`, `a11y`, `lock`),
+and one is sent when the feed starts, off or on: `[]` means nothing sees a secret being typed,
+and the page says `typing not watched` on its banner. It is cached like the rest, so a page that
+connects in the middle is told.
 
 ## Inbound messages
 

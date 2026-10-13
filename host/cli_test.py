@@ -527,6 +527,41 @@ def desktop_exec(text):
     return [a.replace("%%", "%") for a in shlex.split(value)]
 
 
+class Doctor(unittest.TestCase):
+    """What the doctor says of secure input: the feed's own report of its probes, one row for what
+    sees a secret being typed and one per probe that should and does not."""
+
+    def rows(self, stdout):
+        results = []
+        done = subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout, stderr="")
+        with mock.patch.object(cli, "venv_ok", return_value=True), \
+                mock.patch.object(cli.subprocess, "run", return_value=done) as run, \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            cli.check_secure(results)
+        self.assertIn("--probes", run.call_args[0][0])
+        return results, out.getvalue()
+
+    def test_what_sees_a_secret_is_one_row_and_what_does_not_one_each(self):
+        results, said = self.rows("carbon\tnone\tnot macOS\nterminals\ton\ta prompt is seen\n"
+                                  "a11y\toff\tjeepney is not in the venv (zmk-layer-hud setup)\nlock\ton\tHyprland says unlocked\n")
+        self.assertEqual([cli.OK, cli.WARN], results)
+        self.assertIn("seen by the terminals' prompts, Hyprland's session lock", said)
+        self.assertIn("secure input: the accessibility bus: jeepney is not in the venv", said)
+
+    def test_nothing_watching_is_a_warning_with_what_to_do(self):
+        results, said = self.rows("carbon\tnone\tnot macOS\nterminals\toff\tno terminals' directory\n"
+                                  "a11y\toff\tno bus\nlock\toff\tno Hyprland\n")
+        self.assertEqual(cli.WARN, results[0])
+        self.assertIn("nothing here sees a secret being typed", said)
+        self.assertIn("stop the HUD before typing one", said)
+
+    def test_without_a_venv_the_bus_alone_is_asked(self):
+        with mock.patch.object(cli, "venv_ok", return_value=False), \
+                mock.patch.object(cli, "check_accessibility") as fallback:
+            cli.check_secure([])
+        self.assertTrue(fallback.called)
+
+
 class Autostart(unittest.TestCase):
     """The login item: what it runs, and enable/disable putting it there and taking it out."""
 

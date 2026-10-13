@@ -341,11 +341,14 @@ is on), the system turns on secure input. On Linux, a password field with focus 
 accessibility bus, where the apps -- browsers, password managers, polkit's dialog -- say which
 widget has focus and what it is. For that the feed tells them assistive technology is wanted, as a
 screen reader would; a browser running since before shows nothing until it is started again, and
-`feed.accessibility: 0` leaves that setting alone. On both systems, while a terminal is asking for
-a password -- `sudo`, `ssh`, `su`, anything that reads a line with echo off -- the feed sees that
-too. Either way it then passes on nothing typed: no characters, no keys lit, nothing counted. The
-strip clears, the board dims and the banner says `secure input · typing hidden` until it is over.
-The HUD reads the keyboard itself, where none of this reaches, so it holds back on its own.
+`feed.accessibility: 0` leaves that setting alone. Under Hyprland the session lock is seen too, on
+Hyprland's own socket, so the unlock password goes nowhere. On both systems, while a terminal is
+asking for a password -- `sudo`, `ssh`, `su`, anything that reads a line with echo off -- the feed
+sees that too. Either way it then passes on nothing typed: no characters, no keys lit, no layer
+changes, nothing counted. The strip clears, the board dims and the banner says `secure input ·
+typing hidden` until it is over. The HUD reads the keyboard itself, where none of this reaches, so
+it holds back on its own. When it starts, the feed's log names what watches, `zmk-layer-hud doctor`
+says the same, and a HUD that nothing watches says `typing not watched` on its banner.
 `feed.secure_input: 0` turns all of it off; what is not seen is under [Limits](#limits).
 
 ### Keeping the config in a repo
@@ -556,8 +559,10 @@ beside anything that is wrong. What it cannot see:
   Chromium and what is built on it, Firefox) -- once that app has started with it on, which the
   feed turns on, so a browser from before the first start needs starting again. An app that
   exposes nothing (no accessibility bus, `GTK_A11Y=none`, a toolkit of its own) gives no sign, and
-  there the strip shows what is typed and the board lights its keys. `zmk-layer-hud doctor` says
-  where the setting stands. Stop the HUD, or record with it hidden, when that matters.
+  there the strip shows what is typed and the board lights its keys. The session lock is seen
+  under Hyprland alone (by name -- hyprlock, swaylock, gtklock, waylock -- where Hyprland does not
+  say); another compositor's lock screen is not. `zmk-layer-hud doctor` says what sees a secret
+  being typed here. Stop the HUD, or record with it hidden, when that matters.
 - The HUD's socket takes one port (`ZMKHUD_PORT`, 8766). If something else holds it when the macOS
   panel starts (a `zmk-layer-hud feed` of its own, say), the panel runs without a socket and
   `zmk-layer-hud poke` cannot reach it. Its log says so. The socket takes a token in its URL path,

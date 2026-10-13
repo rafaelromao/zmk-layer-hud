@@ -19,7 +19,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
-from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SerialReader, any_of,  # noqa: E402
+from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SerialReader, any_of, probe_report,  # noqa: E402
                      SignalDecoder, Stream, asks_secret, hid_scan_note, hidraw_match, sent_in, serve_hub,
                      split_report, terminal_probe)
 
@@ -446,10 +446,10 @@ class Secure(unittest.TestCase):
         self.assertFalse(self.secure.allows({"kind": "layers", "ids": [2], "device": "A"}))
         self.assertFalse(self.secure.allows({"kind": "layers", "ids": [2, 5], "device": "A"}))
         self.assertFalse(self.secure.allows({"kind": "layers", "ids": [0], "device": "B"}))
-        self.assertEqual([{"kind": "secure", "on": True}], self.said)
+        self.assertEqual([{"kind": "secure", "on": True, "watched": []}], self.said)
         self.secret = False
         self.secure.check()
-        self.assertEqual([{"kind": "secure", "on": True}, {"kind": "secure", "on": False},
+        self.assertEqual([{"kind": "secure", "on": True, "watched": []}, {"kind": "secure", "on": False, "watched": []},
                           {"kind": "layers", "ids": [2, 5], "device": "A"},      # the latest of each keyboard, once
                           {"kind": "layers", "ids": [0], "device": "B"}], self.said)
         self.secure.check()
@@ -464,13 +464,13 @@ class Secure(unittest.TestCase):
         self.assertEqual([], self.said)                          # the page is not told of a lookup
         self.secret = True
         self.assertFalse(self.secure.allows(key))
-        self.assertEqual([{"kind": "secure", "on": True}], self.said)
+        self.assertEqual([{"kind": "secure", "on": True, "watched": []}], self.said)
         self.secret = None
         self.assertFalse(self.secure.allows(key))
         self.assertEqual(1, len(self.said))                      # still on, nothing new said
         self.secret = False
         self.assertTrue(self.secure.allows(key))
-        self.assertEqual([{"kind": "secure", "on": True}, {"kind": "secure", "on": False}, layers], self.said)
+        self.assertEqual([{"kind": "secure", "on": True, "watched": []}, {"kind": "secure", "on": False, "watched": []}, layers], self.said)
 
     def test_a_layer_change_held_during_a_lookup_that_was_no_secret_goes_on_at_once(self):
         layers = {"kind": "layers", "ids": [3], "device": "A"}
@@ -479,6 +479,31 @@ class Secure(unittest.TestCase):
         self.secret = False
         self.assertTrue(self.secure.allows({"kind": "key", "type": "keyDown", "chars": "p"}))
         self.assertEqual([layers], self.said)                    # no secure message: it never was one
+
+    def test_what_watches_is_said_at_the_start_and_on_every_message(self):
+        said = []
+        secure = SecureInput(said.append, lambda: self.secret, watched=("terminals", "lock"))
+        secure.start()
+        secure.stop()
+        self.assertEqual([{"kind": "secure", "on": False, "watched": ["terminals", "lock"]}], said)
+        self.secret = True
+        secure.check()
+        self.assertEqual({"kind": "secure", "on": True, "watched": ["terminals", "lock"]}, said[-1])
+        said.clear()
+        secure = SecureInput(said.append, lambda: True, watched=("carbon",))
+        secure.start()
+        secure.stop()
+        self.assertEqual([{"kind": "secure", "on": True, "watched": ["carbon"]}], said)    # on at once: said once
+
+    def test_the_report_names_each_probe(self):
+        lines = [line.split("\t") for line in probe_report()]
+        self.assertEqual(["carbon", "terminals", "a11y", "lock"], [name for name, _, _ in lines])
+        self.assertTrue(all(state in ("on", "off", "none") and why for _, state, why in lines), lines)
+        if sys.platform == "darwin":
+            self.assertEqual("on", lines[0][1])
+            self.assertEqual(("none", "none"), (lines[2][1], lines[3][1]))
+            with mock.patch("hudfeed.carbon_probe", return_value=None):
+                self.assertEqual("off", probe_report()[0].split("\t")[1])
 
     def test_any_of_the_probes(self):
         self.assertIsNone(any_of([lambda: False, lambda: None])())
@@ -493,11 +518,11 @@ class Secure(unittest.TestCase):
         self.secure.check()
         self.secret = False
         self.secure.check()
-        self.assertEqual([{"kind": "secure", "on": True}, {"kind": "secure", "on": False}], self.said)
+        self.assertEqual([{"kind": "secure", "on": True, "watched": []}, {"kind": "secure", "on": False, "watched": []}], self.said)
 
     def test_a_page_that_connects_is_told_too(self):
         hub = Hub()
-        asyncio.run(hub.send({"kind": "secure", "on": True}))
+        asyncio.run(hub.send({"kind": "secure", "on": True, "watched": []}))
         self.assertIn("secure", hub.cache)
 
     def test_the_feed_asks_the_system_and_the_terminals(self):
@@ -522,8 +547,20 @@ class Secure(unittest.TestCase):
         self.assertTrue(feed.secure.probe())
         said["system"] = False
         self.assertIsNotNone(feed_with(terminal=True).secure)    # Linux: the terminals alone
-        self.assertIsNone(feed_with().secure)
-        self.assertEqual((), feed_with().watched)
+        feed = feed_with()
+        self.assertIsNone(feed.secure)
+        self.assertEqual((), feed.watched)
+        # Nothing watching is said when it starts, in the log and to the page, so nobody trusts it.
+        told, logged = [], []
+        with mock.patch("hudfeed.carbon_probe", return_value=None), mock.patch("hudfeed.terminal_probe", return_value=None), \
+             mock.patch("hudfeed.sessionlock.probe", return_value=None), mock.patch("hudfeed.SerialReader.start"), \
+             tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("keyboard: {name: Test Board}\nserial: {port: /dev/cu.test}\nble: {enabled: false}\n")
+            Feed(told.append, log=logged.append, config=path, keys=False, sessions=False, keymap=False).start()
+        self.assertIn({"kind": "secure", "on": False, "watched": []}, told)
+        self.assertTrue(any("nothing here sees a secret" in line for line in logged), logged)
         feed = feed_with(terminal=True, lock=True)               # Linux under Hyprland: the session lock too
         self.assertEqual(("terminals", "lock"), feed.watched)
         self.assertFalse(feed.secure.probe())

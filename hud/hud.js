@@ -99,6 +99,7 @@
     heatMode: "live",         // what the keys glow with: live | session | physical | speed | off
     prefs: {},                // what the viewer chose (setPref): theme light | dark, side shown | hidden
     secure: false,            // secure input: a secret is being typed, and nothing of it shows
+    watched: null,            // what the feed says sees a secret being typed ([] = nothing); null until told
     demo: false,              // a GIF still (&demo=N): drawn as it always was, no heat, no counts
     ledger: [],               // keystrokes drawn and not counted yet (see "ledger")
     ledgerTimer: null,
@@ -416,7 +417,12 @@
     const a = activeSummary();
     $("layer").className = a.cls;
     $("layerName").textContent = a.name;
-    $("layerSub").textContent = state.secure ? "secure input · typing hidden" : a.sub;
+    // A feed that says nothing sees a secret being typed (watched: []) is said on the banner, so
+    // that nobody types a password in front of it trusting that it would hold back.
+    const unwatched = !state.secure && Array.isArray(state.watched) && state.watched.length === 0;
+    $("layerSub").textContent = state.secure ? "secure input · typing hidden"
+      : unwatched ? (a.sub ? a.sub + " · typing not watched" : "typing not watched") : a.sub;
+    document.body.classList.toggle("unwatched", unwatched);
     $("board").className = a.cls;
   }
 
@@ -424,9 +430,10 @@
    * stopped passing on keys. What is still on screen of the typing before it goes too -- the
    * strip, the keys lit, their glow, the macro memory -- and the banner says why the board has
    * stopped following. Anything that arrives anyway (sent in) is drawn nowhere until it ends. */
-  function setSecure(on) {
+  function setSecure(on, watched) {
     on = !!on;
-    if (on === state.secure) return;
+    if (Array.isArray(watched)) state.watched = watched.filter(w => typeof w === "string");
+    if (on === state.secure) { if (state.data) renderBanner(); return; }
     state.secure = on;
     document.body.classList.toggle("secure", on);
     if (on) {
@@ -2061,7 +2068,7 @@
       else if (m.kind === "press") hud.pressAt(m.pos, m.sent === true || m.synthetic === true);
       else if (m.kind === "release") hud.releaseAt(m.pos);
       else if (m.kind === "session") applySession(m);
-      else if (m.kind === "secure") setSecure(m.on);
+      else if (m.kind === "secure") setSecure(m.on, m.watched);
       else if (m.kind === "heat") setHeatmap(m.mode, true);   // a demo's moment: shown, never kept
       if (m.device) hud.setDevice(m.device);  // the keyboard that is typing names the panel
     },

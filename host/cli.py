@@ -1558,6 +1558,42 @@ def check_python(results):
                                   "macOS: brew install python\nArch:  sudo pacman -S python"))
 
 
+def check_secure(results):
+    """What sees a secret being typed, so the feed passes nothing of it on (host/hudfeed.py
+    SecureInput): macOS's secure input, a terminal's prompt, on Linux the accessibility bus and
+    Hyprland's session lock. Asked of the feed itself (`hudfeed.py --probes`), which has the venv
+    and the probes; without a venv, the accessibility bus alone, through systemd's busctl."""
+    if not venv_ok():
+        check_accessibility(results)
+        return
+    try:
+        got = subprocess.run([VENV_PYTHON, os.path.join(ROOT, "host", "hudfeed.py"), "--probes"],
+                             capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        results.append(report(WARN, "secure input", f"could not ask the feed what sees a secret being typed: {e}"))
+        return
+    on, off = [], []
+    for line in got.stdout.splitlines():
+        name, _, rest = line.partition("\t")
+        state, _, why = rest.partition("\t")
+        if state == "on":
+            on.append(name)
+        elif state == "off":
+            off.append((name, why))
+    if on:
+        results.append(report(OK, "secure input", "a secret being typed is seen by " +
+                              ", ".join(PROBE_WORDS.get(n, n) for n in on) + " (feed.secure_input)"))
+    else:
+        results.append(report(WARN, "secure input", "nothing here sees a secret being typed",
+                              "what is typed into a password field reaches the pages; stop the HUD before typing one"))
+    for name, why in off:
+        results.append(report(WARN, f"secure input: {PROBE_WORDS.get(name, name)}", why))
+
+
+PROBE_WORDS = {"carbon": "macOS's secure input", "terminals": "the terminals' prompts",
+               "a11y": "the accessibility bus", "lock": "Hyprland's session lock"}
+
+
 def check_accessibility(results):
     """Linux: whether the apps expose their widgets to assistive technology, which is how a password
     field with focus is seen (host/a11y.py). The feed turns it on when it starts; this is where it
@@ -1679,7 +1715,7 @@ def cmd_doctor(args):
     check_platform(results)
     check_config(results)
     check_udev(results)
-    check_accessibility(results)
+    check_secure(results)
     check_path(results)
     print()
     cmd_status(args)

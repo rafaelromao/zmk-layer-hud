@@ -955,6 +955,15 @@ function main() {
     p.hud.receive({ kind: "secure", on: false });
     p.hud.pressAt(C.pos);
     check("once it is off, the board follows again", lit() === 1 && p.document.getElementById("layerSub").textContent !== "secure input · typing hidden");
+    // A feed that says nothing watches for a secret being typed is said on the banner.
+    const sub = () => p.document.getElementById("layerSub").textContent;
+    p.hud.receive({ kind: "secure", on: false, watched: [] });
+    check("a feed with nothing watching says so on the banner", sub().endsWith("typing not watched") && p.document.body.classList.contains("unwatched"), sub());
+    p.hud.receive({ kind: "secure", on: false, watched: ["terminals"] });
+    check("and not once something does", !sub().includes("not watched") && !p.document.body.classList.contains("unwatched"), sub());
+    p.hud.receive({ kind: "secure", on: true });
+    check("a secret hides the typing with or without the list", sub() === "secure input · typing hidden" && !p.document.body.classList.contains("unwatched"));
+    p.hud.receive({ kind: "secure", on: false });
   }
 
   for (const n of notes) console.log("note " + n);

@@ -78,6 +78,12 @@ def connect_buses():
     return session, bus
 
 
+def is_enabled(session):
+    """Whether the apps are told assistive technology is wanted (org.a11y.Status IsEnabled)."""
+    status = Properties(DBusAddress(BUS_PATH, bus_name=BUS_NAME, interface="org.a11y.Status"))
+    return bool(returned(session.send_and_get_reply(status.get("IsEnabled"), timeout=TIMEOUT_S))[0][1])
+
+
 class PasswordFocus:
     """Whether a password field has focus, kept up from the accessibility bus on a thread of its
     own. `probe()` is what SecureInput asks: True while one has, None while the app is still being
@@ -161,9 +167,9 @@ class PasswordFocus:
 
     def _enable(self, session):
         """Tell the apps assistive technology is wanted, when nothing has yet."""
-        status = Properties(DBusAddress(BUS_PATH, bus_name=BUS_NAME, interface="org.a11y.Status"))
-        if returned(session.send_and_get_reply(status.get("IsEnabled"), timeout=TIMEOUT_S))[0][1]:
+        if is_enabled(session):
             return
+        status = Properties(DBusAddress(BUS_PATH, bus_name=BUS_NAME, interface="org.a11y.Status"))
         returned(session.send_and_get_reply(status.set("IsEnabled", "b", True), timeout=TIMEOUT_S))
         self.log("a11y: told the apps that assistive technology is wanted (org.a11y.Status IsEnabled), which is "
                  "how a password field with focus is seen. Chromium and Firefox read that when they start: "
