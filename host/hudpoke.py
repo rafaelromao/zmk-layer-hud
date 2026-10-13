@@ -44,7 +44,8 @@ def feed_url(args, environ=os.environ):
     token = environ.get("ZMKHUD_TOKEN") or panelstate.read_token(state)
     if not token:
         sys.exit(f"hudpoke: no running HUD has written {os.path.join(state, panelstate.TOKEN_FILE)}; "
-                 "start one, or pass --url ws://127.0.0.1:PORT/<token> as `zmk-layer-hud demo` prints it")
+                 "start one, or set ZMKHUD_TOKEN and ZMKHUD_PORT as `zmk-layer-hud demo` prints them "
+                 "(--url ws://127.0.0.1:PORT/<token> works too)")
     return f"ws://127.0.0.1:{environ.get('ZMKHUD_PORT', '8766')}/{token}"
 
 
@@ -191,9 +192,9 @@ async def main(args):
 
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    p.add_argument("--url", help="hudfeed's WebSocket, token included, as `zmk-layer-hud demo` prints it "
-                                 "(default: ws://127.0.0.1:$ZMKHUD_PORT or 8766, with the running HUD's "
-                                 "token from $ZMKHUD_STATE/token)")
+    p.add_argument("--url", help="hudfeed's WebSocket, token included (default: ws://127.0.0.1:$ZMKHUD_PORT or "
+                                 "8766, with $ZMKHUD_TOKEN as `zmk-layer-hud demo` prints it, else the running "
+                                 "HUD's token from $ZMKHUD_STATE/token)")
     p.add_argument("--type", metavar="TEXT", help="type TEXT one character at a time")
     p.add_argument("--legend", action="append", metavar="L", help="type one legend (repeatable)")
     p.add_argument("--combos", action="store_true",

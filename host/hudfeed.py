@@ -53,8 +53,8 @@ Dependencies: pyserial (`make venv`); bleak for BLE; python-websockets for the W
 macOS only -- Linux reads /dev/hidrawN itself (HidrawReader), because the wheel's Linux backend is
 libusb, which wants /dev/bus/usb and detaches the kernel HID driver; PyYAML (or yq) for the config;
 jeepney on Linux only, for the accessibility bus, where a password field with focus is seen
-(host/a11y.py). Not keymap-drawer: the drawing comes ready in the definitions `zmk-layer-hud
-import` wrote.
+(host/a11y.py); under Hyprland the session lock is seen on its control socket (host/sessionlock.py).
+Not keymap-drawer: the drawing comes ready in the definitions `zmk-layer-hud import` wrote.
 """
 
 from __future__ import annotations
@@ -75,6 +75,7 @@ import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import a11y  # noqa: E402  (host/a11y.py)
+import sessionlock  # noqa: E402
 import keymap as keymap_mod  # noqa: E402  (host/keymap.py)
 import panelstate  # noqa: E402  (host/panelstate.py)
 import session as session_mod  # noqa: E402  (host/session.py)
@@ -280,6 +281,9 @@ class Stream:
     share it, because a BLE notification and a run of serial bytes decode the same way."""
 
     def __init__(self, emit, device, dead_key_ms=DEAD_KEY_MS, raw=False, log=print, altgr=False):
+        # `raw` logs every decoded message: True, or a callable asked at each one, which is how the
+        # feed keeps the log quiet while a secret is being typed (SecureInput): the log is the
+        # typing, and the gate sits downstream of here.
         self.emit, self.device, self.log, self.raw = emit, device, log, raw
         self.frames = signal_frame.Decoder()
         self.decoder = SignalDecoder(dead_key_ms=dead_key_ms, altgr=altgr)
@@ -294,7 +298,7 @@ class Stream:
     def message(self, msg, now_ms):
         """One decoded message, wherever it came from -- a frame off the wire, or a HID report the
         host read itself. Both arrive here in the same shape, so one decoder serves both."""
-        if self.raw:
+        if self.raw and (self.raw is True or self.raw()):
             self.log(f"hudfeed: {self.device} {msg}")
         for out in self.decoder.feed(msg, now_ms):
             self._emit(out)
@@ -1056,6 +1060,82 @@ def terminal_probe(where=None):
     return probe
 
 
+def any_of(probes):
+    """One probe from several: True at the first that says so, None if one does not know yet
+    (a11y.PasswordFocus while an app is asked), else False."""
+    def probe():
+        unknown = False
+        for p in probes:
+            got = p()
+            if got:
+                return True
+            if got is None:
+                unknown = True
+        return None if unknown else False
+    return probe
+
+
+# What each probe is, for the log and the doctor.
+PROBE_WORDS = {"carbon": "macOS's secure input", "terminals": "the terminals' prompts",
+               "a11y": "the accessibility bus", "lock": "Hyprland's session lock"}
+
+
+def probe_report(environ=os.environ):
+    """One line per probe, for `--probes` and `zmk-layer-hud doctor`: its name, `on`, `off` or
+    `none` (not for this system), and why. Asked here rather than in the doctor because the probes
+    need the venv (jeepney) and the feed's own tables."""
+    lines = []
+
+    def say(name, state, detail):
+        lines.append(f"{name}\t{state}\t{detail}")
+    if sys.platform == "darwin":
+        say("carbon", "on" if carbon_probe() else "off",
+            "IsSecureEventInputEnabled is asked at every keystroke" if carbon_probe() else "Carbon could not be loaded")
+    else:
+        say("carbon", "none", "not macOS")
+    where = PTY_DIRS.get(sys.platform)
+    if terminal_probe():
+        say("terminals", "on", f"a prompt reading a line with echo off on {where[0]} is seen")
+    else:
+        say("terminals", "off", "no terminals' directory on this system")
+    if sys.platform != "linux":
+        say("a11y", "none", "macOS has its switch")
+        say("lock", "none", "macOS's lock screen turns secure input on")
+        return lines
+    if not a11y.HAVE_JEEPNEY:
+        say("a11y", "off", "jeepney is not in the venv (zmk-layer-hud setup)")
+    else:
+        try:
+            session, bus = a11y.connect_buses()
+        except Exception as e:
+            say("a11y", "off", f"the accessibility bus cannot be reached: {type(e).__name__}: {e} (at-spi2-core)")
+        else:
+            try:
+                enabled = a11y.is_enabled(session)
+            except Exception as e:
+                enabled = None
+                say("a11y", "off", f"the accessibility bus does not answer: {type(e).__name__}: {e}")
+            finally:
+                for c in (bus, session):
+                    try:
+                        c.close()
+                    except Exception:
+                        pass
+            if enabled is not None:
+                say("a11y", "on", "the apps expose their widgets (org.a11y.Status IsEnabled)" if enabled else
+                    "IsEnabled is off: the feed turns it on when it starts (feed.accessibility), and a browser "
+                    "running since before needs starting again")
+    path = sessionlock.socket_path(environ)
+    if not path:
+        say("lock", "off", "no Hyprland (HYPRLAND_INSTANCE_SIGNATURE unset, or no control socket): a lock screen is not seen")
+    else:
+        got = sessionlock.locked(path)
+        say("lock", "on", "Hyprland does not say (no solitaryBlockedBy in `hyprctl -j monitors`): a locker is looked for "
+            f"by name ({', '.join(sessionlock.LOCKERS)})" if got is None else
+            f"Hyprland says the session is {'locked' if got else 'unlocked'}")
+    return lines
+
+
 class SecureInput:
     """When what is being typed is a secret, nothing of it goes on. macOS says so: while a password
     field has focus, or a terminal's Secure Keyboard Entry is on, secure event input is enabled and
@@ -1063,39 +1143,63 @@ class SecureInput:
     prompt it reads a line with echo off (terminal_probe), on Linux as on macOS. The feed cannot
     help seeing -- it reads the keyboard's own channel and its HID reports, which neither reaches
     -- so for as long as either says so it passes on nothing that could spell the secret: no
-    character typed and no key pressed. Layers still go through, and the page is told
-    (`{"kind": "secure", "on": true}`), clears what is on screen and says why.
+    character typed, no key pressed, and no layer change either, which would say of each
+    character whether it was a digit, a symbol or a capital, and when. The page is told
+    (`{"kind": "secure", "on": true}`), clears what is on screen and says why. The latest layers
+    of each keyboard are kept and follow the off message, so the board catches up at once
+    rather than at the next heartbeat; `device`, `keymap`, `session` and `secure` go through.
 
     Asked at every keystroke, not only by the poll: the first key typed into a password field must
-    not slip through in the moment before a poll would have noticed. The poll is what tells the
-    page when nothing is being typed."""
+    not slip through in the moment before a poll would have noticed. A probe that does not know
+    yet (None: the accessibility watch, while the app is asked what the widget is) holds the keys
+    the same, with nothing said to the page, whose clearing of the screen is not for a lookup of
+    a few milliseconds. The poll is what tells the page when nothing is being typed."""
 
-    def __init__(self, emit, probe, poll_s=0.25, log=print):
+    def __init__(self, emit, probe, poll_s=0.25, log=print, watched=()):
         self.emit, self.probe, self.poll_s, self.log = emit, probe, poll_s, log
+        self.watched = tuple(watched)      # the probes' names, on every message: what the page may trust
         self.on = False
+        self.held = {}          # device -> the latest layers message kept back while it is on
         self.lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = None
 
-    def check(self):
+    def check(self, hold=None):
+        """Whether a secret is being typed now (True, or while it is not known yet), the page told
+        of a change. `hold` is a layers message to keep back meanwhile: the latest of each
+        keyboard follows the off message, or goes on at once when nothing was being typed."""
         try:
-            on = bool(self.probe())
+            on = self.probe()
+            on = None if on is None else bool(on)
         except Exception:
             on = self.on   # a probe that failed once says nothing new
         with self.lock:
+            if hold is not None and on is not False:
+                self.held[hold.get("device")] = hold
+            if on is None:
+                return True                 # held back; nothing said until it is known
             if on != self.on:
                 self.on = on
-                self.emit({"kind": "secure", "on": on})
+                self.emit(self._message(on))
+            if not on and self.held:
+                held, self.held = self.held, {}
+                for msg in held.values():
+                    self.emit(msg)
         return on
 
     def allows(self, msg):
-        """Whether `msg` may go on: not a key or a position while secure input is on."""
-        if msg.get("kind") not in ("key", "press", "release"):
+        """Whether `msg` may go on: not a key, a position or a layer change while secure input is on."""
+        kind = msg.get("kind")
+        if kind not in ("key", "press", "release", "layers"):
             return True
-        return not self.check()
+        return not self.check(hold=msg if kind == "layers" else None)
+
+    def _message(self, on):
+        return {"kind": "secure", "on": on, "watched": list(self.watched)}
 
     def start(self):
-        self.check()
+        if self.check() is not True:
+            self.emit(self._message(False))     # said at the start either way: the page learns what watches
         self._thread = threading.Thread(target=self._run, name="secure-input", daemon=True)
         self._thread.start()
         return self
@@ -1152,15 +1256,19 @@ class Feed:
         rescan, dead_key_ms = float(feed_cfg["rescan_s"]), int(feed_cfg["dead_key_ms"])
         altgr = bool(int(feed_cfg["altgr"]))
         kb_name = name if name is not None else kb.get("name")
+        # --raw logs what the readers decode, which is the typing: asked at every message, like a
+        # keystroke is, so that nothing is logged while a secret is being typed (self.secure is
+        # made below and read when a message arrives).
+        raw_log = (lambda: self.secure is None or not self.secure.check()) if raw else False
         self.reader = SerialReader(
-            self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
+            self._emit, log=log, raw=raw_log, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
             vid=vid if vid is not None else int(kb.get("vid", ZMK_VID)),
             pid=pid if pid is not None else int(kb.get("pid", ZMK_PID)),
             name=kb_name, port=port if port is not None else ser.get("port"),
             probe_s=float(ser.get("probe_s", 8.0)))
         self.ble = None
         if ble and bt.get("enabled", True):
-            self.ble = BleReader(self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
+            self.ble = BleReader(self._emit, log=log, raw=raw_log, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
                                  address=ble_address if ble_address is not None else bt.get("address"),
                                  name=kb_name)
         # What is typed comes from the keyboard's HID reports, not from the signal channel: one
@@ -1172,7 +1280,7 @@ class Feed:
             # here grants and detaches the kernel driver from the keyboard it opens.
             reader = HidrawReader if sys.platform.startswith("linux") else HidKeysReader
             self.hid = reader(
-                self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
+                self._emit, log=log, raw=raw_log, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
                 vid=vid if vid is not None else int(kb.get('vid', ZMK_VID)),
                 pid=pid if pid is not None else int(kb.get('pid', ZMK_PID)),
                 name=kb_name)
@@ -1186,19 +1294,25 @@ class Feed:
             if self.source is not None and self.source.message:
                 self.sessions.set_keymap(self.source.message)
         # While a secret is being typed -- macOS says so, a terminal is asking for one, or on Linux a
-        # password field has focus on the accessibility bus -- nothing typed goes on (SecureInput).
+        # password field has focus on the accessibility bus or the session is locked -- nothing
+        # typed goes on (SecureInput). `watched` names the probes this run has, for the log.
         self.secure = None
         self.focus = None
-        if int(feed_cfg.get("secure_input", 1)):
-            probes = [p for p in (carbon_probe(), terminal_probe()) if p is not None]
+        self.watched = ()
+        self.secure_wanted = bool(int(feed_cfg.get("secure_input", 1)))
+        if self.secure_wanted:
+            probes = {"carbon": carbon_probe(), "terminals": terminal_probe(), "lock": sessionlock.probe(log)}
             if a11y.available():
                 self.focus = a11y.PasswordFocus(log=log, enable=bool(int(feed_cfg.get("accessibility", 1))))
-                probes.append(self.focus.probe)
+                probes["a11y"] = self.focus.probe
+            probes = {name: p for name, p in probes.items() if p is not None}
+            self.watched = tuple(probes)
             if probes:
-                self.secure = SecureInput(emit, lambda: any(p() for p in probes), log=log)
+                self.secure = SecureInput(emit, any_of(list(probes.values())), log=log, watched=self.watched)
 
     def _emit(self, msg):
-        if not self.keys and msg["kind"] == "key":
+        # --no-keys: layers only. The positions go with the keys: with the keymap they are the typing.
+        if not self.keys and msg["kind"] in ("key", "press", "release"):
             return
         if self.secure is not None and not self.secure.allows(msg):
             return
@@ -1229,8 +1343,17 @@ class Feed:
                 self.sessions = None
         if self.focus:
             self.focus.start()
+        # What watches for a secret being typed is said once, and so is nothing watching: the page
+        # is told too (`watched`), and says `typing not watched` on its banner.
         if self.secure:
+            self.log("hudfeed: a secret being typed is seen by " + ", ".join(PROBE_WORDS[n] for n in self.watched))
             self.secure.start()
+        else:
+            self.log("hudfeed: secure input is off (feed.secure_input: 0): what is typed into a password field reaches "
+                     "the pages" if not self.secure_wanted else
+                     "hudfeed: nothing here sees a secret being typed (no macOS switch, no terminals, no accessibility "
+                     "bus, no Hyprland): what is typed into a password field reaches the pages")
+            self.emit({"kind": "secure", "on": False, "watched": []})
         if self.watcher:
             self.watcher.start()
         self.reader.start()
@@ -1497,7 +1620,8 @@ def parse_args(argv=None):
     p.add_argument("--no-ws", action="store_true", help="do not serve the WebSocket")
     p.add_argument("--port", type=int, default=int(os.environ.get("ZMKHUD_PORT", "8766")))
     p.add_argument("--no-keymap", action="store_true", help="skip the keymap feed (pages keep whatever they have)")
-    p.add_argument("--no-keys", action="store_true", help="send layers only, no key events")
+    p.add_argument("--no-keys", action="store_true",
+                   help="send layers only: no typed keys and no key positions (--no-hid-keys keeps the positions)")
     p.add_argument("--vid", type=lambda s: int(s, 0), help="keyboard vendor id (default: config `keyboard.vid`, else ZMK's)")
     p.add_argument("--pid", type=lambda s: int(s, 0), help="keyboard product id (default: config `keyboard.pid`, else ZMK's)")
     p.add_argument("--name", help="substring of the product name to select one keyboard (default: config `keyboard.name`)")
@@ -1515,7 +1639,12 @@ def parse_args(argv=None):
     p.add_argument("--no-sessions", action="store_true",
                    help="keep no session files (config `feed.sessions: 0`): the counts last as long as the page")
     p.add_argument("--debug", action="store_true", help="log layer messages to stderr")
-    p.add_argument("--raw", action="store_true", help="DEBUG ONLY: log every decoded frame (includes your typing)")
+    p.add_argument("--probes", action="store_true",
+                   help="say which probes see a secret being typed on this system, one per line (name, on|off|none, "
+                        "why), and exit; what `zmk-layer-hud doctor` reads")
+    p.add_argument("--raw", action="store_true",
+                   help="DEBUG ONLY: log every decoded frame and HID report, your typing included; "
+                        "nothing is logged while secure input is on")
     return p.parse_args(argv)
 
 
@@ -1565,7 +1694,11 @@ async def main(args):
 
 
 if __name__ == "__main__":
+    args = parse_args()
+    if args.probes:
+        print("\n".join(probe_report()))
+        sys.exit(0)
     try:
-        asyncio.run(main(parse_args()))
+        asyncio.run(main(args))
     except KeyboardInterrupt:
         pass

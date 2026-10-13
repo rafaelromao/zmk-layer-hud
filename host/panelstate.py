@@ -92,6 +92,22 @@ def _write_private(path, text):
         raise
 
 
+def open_private(path, truncate=True):
+    """A file of this user's alone to write to (0600, in a 0700 directory), new or from before:
+    O_CREAT leaves the mode of a file an earlier run made as it was, so it is set again. The logs
+    a launcher or launchd goes on writing are opened this way, or made this way first."""
+    d = os.path.dirname(path)
+    os.makedirs(d, mode=0o700, exist_ok=True)
+    os.chmod(d, 0o700)
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | (os.O_TRUNC if truncate else os.O_APPEND), 0o600)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        os.close(fd)
+        raise
+    return os.fdopen(fd, "w" if truncate else "a", encoding="utf-8")
+
+
 def write_token(d, token):
     """The socket's token for this run, from whoever serves the socket."""
     _write_private(os.path.join(d, TOKEN_FILE), token + "\n")

@@ -808,16 +808,23 @@ def config_link(args):
 # ---------- the sample board ----------
 
 def demo_urls(port, ws_port, token):
-    """The page the demo opens, and the socket that feeds it (which `poke --url` takes). The demo's
-    token is in both: the page connects with it, and so must anyone else."""
+    """The page the demo opens, and the socket that feeds it. The demo's token is in both: the page
+    connects with it, and so must anyone else."""
     ws = f"ws://127.0.0.1:{ws_port}/{token}"
     return f"http://127.0.0.1:{port}/index.html?ws={ws}", ws
+
+
+def demo_hint(token, ws_port):
+    """How to type on the demo from a terminal: the token in the environment, which only this user
+    reads, not on a command line that `ps` shows to every user on the machine (`poke --url` with
+    the token in its path works too). The demo's port is never poke's default, so both are named."""
+    return f"ZMKHUD_TOKEN={token} ZMKHUD_PORT={ws_port} zmk-layer-hud poke --type hello"
 
 
 def cmd_demo(args):
     """The HUD's pages against a sample keymap, with no keyboard: what `examples/` is for. They are
     served over http and fed by a socket of their own, the way the Linux panel's pages are, so
-    `zmk-layer-hud poke --url` drives them, the page's own API (`hud.setLayers([1])`,
+    `zmk-layer-hud poke` drives them (demo_hint), the page's own API (`hud.setLayers([1])`,
     `hud.pressAt(13)`) does from the browser console, and with --play a demo script is typed on
     them in real time (host/play.py). There is no session behind the demo: the bar and the
     session heatmap count what the page is shown, for as long as it is open."""
@@ -898,7 +905,7 @@ async def demo_socket(args, message, compiled, play_mod):
     # A token of the demo's own, printed with its URLs rather than kept in $STATE/token, which is
     # a running HUD's.
     token = secrets.token_hex(16)
-    page, ws_url = demo_urls(args.port, args.ws_port, token)
+    page = demo_urls(args.port, args.ws_port, token)[0]
     hub = hudfeed.Hub(token=token)
     await hub.send(message)   # kept, and replayed to the page when it connects
     try:
@@ -907,7 +914,7 @@ async def demo_socket(args, message, compiled, play_mod):
         raise Fail(f"cannot open the demo's socket on port {args.ws_port}: {e}. Pass --ws-port to pick another.")
     async with server:
         print(f"==> {page}")
-        print(f"    zmk-layer-hud poke --url {ws_url} --type hello   types on it; ^C to stop")
+        print(f"    {demo_hint(token, args.ws_port)}   types on it; ^C to stop")
         if not args.no_browser:
             asyncio.get_running_loop().run_in_executor(None, webbrowser.open, page)
         if compiled is not None:
@@ -1275,8 +1282,8 @@ def macos_menubar(action):
     if not running:
         if not venv_ok():
             raise Fail("no venv yet -- run `zmk-layer-hud setup` first")
-        os.makedirs(STATE, exist_ok=True)
-        with open(os.path.join(STATE, "menubar.log"), "w") as log:
+        # The log is this user's alone, even one a run from before left readable to all.
+        with panelstate.open_private(os.path.join(STATE, "menubar.log")) as log:
             subprocess.Popen([VENV_PYTHON, "-u", MENUBAR], stdout=log, stderr=log, stdin=subprocess.DEVNULL,
                              env=dict(os.environ, ZMKHUD_STATE=STATE), start_new_session=True)
     print("the menubar icon is on; it stays when the HUD quits, and a click starts it again")
@@ -1487,6 +1494,9 @@ def cmd_autostart(args):
     if system == "Darwin":
         if build_launcher():
             print(f"    built {LOGIN_APP}")
+        # launchd makes the log with the default umask, readable to all: made here first, this
+        # user's alone, and launchd appends to what is there (as it does to one from before).
+        panelstate.open_private(os.path.join(STATE, "autostart.log"), truncate=False).close()
         with open(path, "wb") as f:
             f.write(launch_agent_plist())
         print(f"    {path}")
@@ -1546,6 +1556,42 @@ def check_python(results):
             results.append(report(BAD, "python",
                                   f"no Python >= {PYTHON_MIN[0]}.{PYTHON_MIN[1]} found",
                                   "macOS: brew install python\nArch:  sudo pacman -S python"))
+
+
+def check_secure(results):
+    """What sees a secret being typed, so the feed passes nothing of it on (host/hudfeed.py
+    SecureInput): macOS's secure input, a terminal's prompt, on Linux the accessibility bus and
+    Hyprland's session lock. Asked of the feed itself (`hudfeed.py --probes`), which has the venv
+    and the probes; without a venv, the accessibility bus alone, through systemd's busctl."""
+    if not venv_ok():
+        check_accessibility(results)
+        return
+    try:
+        got = subprocess.run([VENV_PYTHON, os.path.join(ROOT, "host", "hudfeed.py"), "--probes"],
+                             capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError) as e:
+        results.append(report(WARN, "secure input", f"could not ask the feed what sees a secret being typed: {e}"))
+        return
+    on, off = [], []
+    for line in got.stdout.splitlines():
+        name, _, rest = line.partition("\t")
+        state, _, why = rest.partition("\t")
+        if state == "on":
+            on.append(name)
+        elif state == "off":
+            off.append((name, why))
+    if on:
+        results.append(report(OK, "secure input", "a secret being typed is seen by " +
+                              ", ".join(PROBE_WORDS.get(n, n) for n in on) + " (feed.secure_input)"))
+    else:
+        results.append(report(WARN, "secure input", "nothing here sees a secret being typed",
+                              "what is typed into a password field reaches the pages; stop the HUD before typing one"))
+    for name, why in off:
+        results.append(report(WARN, f"secure input: {PROBE_WORDS.get(name, name)}", why))
+
+
+PROBE_WORDS = {"carbon": "macOS's secure input", "terminals": "the terminals' prompts",
+               "a11y": "the accessibility bus", "lock": "Hyprland's session lock"}
 
 
 def check_accessibility(results):
@@ -1669,7 +1715,7 @@ def cmd_doctor(args):
     check_platform(results)
     check_config(results)
     check_udev(results)
-    check_accessibility(results)
+    check_secure(results)
     check_path(results)
     print()
     cmd_status(args)

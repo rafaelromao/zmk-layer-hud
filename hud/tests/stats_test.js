@@ -927,23 +927,43 @@ function main() {
     const p = fresh();
     const strip = () => p.document.getElementById("keys").children.map(c => c.textContent);
     const lit = () => p.hud.state.keyEls.filter(e => e.classList.contains("pressed")).length;
-    p.hud.pressAt(A.pos);
+    const st = () => p.hud.stats;
+    tap(p, A.pos); p.clock.advance(settle);                     // counted, and waiting to be sent
     p.hud.key({ type: "keyDown", name: "a", chars: "a", code: 4, flags: {}, repeat: false });
-    const counted = total(p.hud.stats.local());
+    p.clock.advance(100);
+    p.hud.key({ type: "keyDown", name: "b", chars: "b", code: 5, flags: {}, repeat: false });   // and a WPM window
+    p.hud.pressAt(A.pos);                                       // waiting to be counted
+    const counted = total(st().local());
+    check("before secure input, something waits to be counted, something to be sent, and the WPM is up",
+          st().pending() === 1 && total(st().unsent()) === 1 && st().wpm() > 0 && p.hud.state.down.size === 1,
+          `${st().pending()} pending, ${total(st().unsent())} unsent, ${st().wpm()} wpm, ${p.hud.state.down.size} down`);
     p.hud.receive({ kind: "secure", on: true });
     check("secure input clears the strip", strip().length === 0, JSON.stringify(strip()));
     check("and the keys lit, and their glow", lit() === 0 && warmKeys(p).length === 0, `${lit()} lit, ${warmKeys(p).length} warm`);
     check("and the banner says why", p.document.getElementById("layerSub").textContent === "secure input · typing hidden" &&
           p.document.body.classList.contains("secure"));
+    check("and what waited to be counted, the counts not yet sent, and the WPM windows",
+          st().pending() === 0 && total(st().unsent()) === 0 && st().unsent().chars === 0 && st().wpm() === 0 &&
+          p.hud.state.down.size === 0 && p.hud.state.strokes.length === 0 && p.hud.state.lastPress === null,
+          `${st().pending()} pending, ${total(st().unsent())} unsent, ${st().wpm()} wpm, ${p.hud.state.down.size} down`);
     p.hud.pressAt(B.pos);
     p.hud.key({ type: "keyDown", name: "p", chars: "p", code: 19, flags: {}, repeat: false });
     p.clock.advance(settle);
     check("while it is on, nothing typed shows or counts",
-          strip().length === 0 && lit() === 0 && p.hud.stats.local().chars <= 1 && total(p.hud.stats.local()) <= counted + 1,
-          `${strip().length} chips, ${lit()} lit, ${total(p.hud.stats.local())} counted`);
+          strip().length === 0 && lit() === 0 && st().local().chars === 2 && total(st().local()) === counted,
+          `${strip().length} chips, ${lit()} lit, ${st().local().chars} chars, ${total(st().local())} counted (was ${counted})`);
     p.hud.receive({ kind: "secure", on: false });
     p.hud.pressAt(C.pos);
     check("once it is off, the board follows again", lit() === 1 && p.document.getElementById("layerSub").textContent !== "secure input · typing hidden");
+    // A feed that says nothing watches for a secret being typed is said on the banner.
+    const sub = () => p.document.getElementById("layerSub").textContent;
+    p.hud.receive({ kind: "secure", on: false, watched: [] });
+    check("a feed with nothing watching says so on the banner", sub().endsWith("typing not watched") && p.document.body.classList.contains("unwatched"), sub());
+    p.hud.receive({ kind: "secure", on: false, watched: ["terminals"] });
+    check("and not once something does", !sub().includes("not watched") && !p.document.body.classList.contains("unwatched"), sub());
+    p.hud.receive({ kind: "secure", on: true });
+    check("a secret hides the typing with or without the list", sub() === "secure input · typing hidden" && !p.document.body.classList.contains("unwatched"));
+    p.hud.receive({ kind: "secure", on: false });
   }
 
   for (const n of notes) console.log("note " + n);

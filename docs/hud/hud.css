@@ -109,6 +109,7 @@ body { font-family: var(--font); color: var(--chip-fg); user-select: none; }
 /* Secure input (hud.js setSecure): the board has stopped following, and looks it. */
 body.secure #board { opacity: 0.55; }
 body.secure #layerSub { color: #e0af68; }
+body.unwatched #layerSub { color: #e0af68; }   /* nothing sees a secret being typed: said the same way */
 /* A GIF still (&demo=N) is drawn as it always was. */
 body.demo .key::before, body.demo #stats { display: none; }
 

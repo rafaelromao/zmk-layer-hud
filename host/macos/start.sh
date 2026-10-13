@@ -39,6 +39,7 @@ menubar() {
   # -a: macOS's pgrep leaves out its own ancestors, and when the HUD is started from the icon the
   # icon is one. (menubar.py also takes a lock, so a second one goes at once.)
   pgrep -a -f "$HERE/menubar.py" >/dev/null && return 0
+  : >"$RUN/menubar.log"; chmod 600 "$RUN/menubar.log"     # a log from before umask 077 keeps its mode
   nohup "$PYTHON" -u "$HERE/menubar.py" >"$RUN/menubar.log" 2>&1 &
 }
 
@@ -51,6 +52,8 @@ case "${1:-start}" in
     "$PYTHON" "$ROOT/host/keymap.py" ${ZMKHUD_CONFIG:+--config "$ZMKHUD_CONFIG"}
     stop
     menubar
+    # A log from before umask 077 keeps the mode it was made with: set it again before writing.
+    : >"$RUN/panel.log"; chmod 600 "$RUN/panel.log"
     # A login item has to stay attached: launchd ends whatever a job leaves behind when it exits.
     [ "${1:-start}" = run ] && exec "$PYTHON" -u "$HERE/panel.py" >"$RUN/panel.log" 2>&1
     nohup "$PYTHON" -u "$HERE/panel.py" >"$RUN/panel.log" 2>&1 &

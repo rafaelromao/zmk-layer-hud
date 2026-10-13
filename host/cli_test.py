@@ -7,6 +7,7 @@ import contextlib
 import io
 import json
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -82,8 +83,12 @@ class Parser(unittest.TestCase):
         args = self.parser.parse_args(["demo", "--play", "docs/demo-type.json", "--loop", "--no-browser"])
         self.assertEqual(("docs/demo-type.json", True, True, 8767), (args.play, args.loop, args.no_browser, args.ws_port))
         page, ws = cli.demo_urls(8765, 8767, "tok")
-        self.assertEqual("ws://127.0.0.1:8767/tok", ws)     # the token in the path: the page, and `poke --url`, carry it
+        self.assertEqual("ws://127.0.0.1:8767/tok", ws)     # the token in the path: the page carries it
         self.assertEqual("http://127.0.0.1:8765/index.html?ws=ws://127.0.0.1:8767/tok", page)
+        # ...and poke takes it from the environment, which `ps` does not show, not from its command line.
+        hint = cli.demo_hint("tok", 8767)
+        self.assertEqual("ZMKHUD_TOKEN=tok ZMKHUD_PORT=8767 zmk-layer-hud poke --type hello", hint)
+        self.assertNotIn("--url", hint)
 
     def test_session_takes_an_action_and_a_name(self):
         args = self.parser.parse_args(["session", "save", "week1"])
@@ -522,6 +527,41 @@ def desktop_exec(text):
     return [a.replace("%%", "%") for a in shlex.split(value)]
 
 
+class Doctor(unittest.TestCase):
+    """What the doctor says of secure input: the feed's own report of its probes, one row for what
+    sees a secret being typed and one per probe that should and does not."""
+
+    def rows(self, stdout):
+        results = []
+        done = subprocess.CompletedProcess(args=[], returncode=0, stdout=stdout, stderr="")
+        with mock.patch.object(cli, "venv_ok", return_value=True), \
+                mock.patch.object(cli.subprocess, "run", return_value=done) as run, \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            cli.check_secure(results)
+        self.assertIn("--probes", run.call_args[0][0])
+        return results, out.getvalue()
+
+    def test_what_sees_a_secret_is_one_row_and_what_does_not_one_each(self):
+        results, said = self.rows("carbon\tnone\tnot macOS\nterminals\ton\ta prompt is seen\n"
+                                  "a11y\toff\tjeepney is not in the venv (zmk-layer-hud setup)\nlock\ton\tHyprland says unlocked\n")
+        self.assertEqual([cli.OK, cli.WARN], results)
+        self.assertIn("seen by the terminals' prompts, Hyprland's session lock", said)
+        self.assertIn("secure input: the accessibility bus: jeepney is not in the venv", said)
+
+    def test_nothing_watching_is_a_warning_with_what_to_do(self):
+        results, said = self.rows("carbon\tnone\tnot macOS\nterminals\toff\tno terminals' directory\n"
+                                  "a11y\toff\tno bus\nlock\toff\tno Hyprland\n")
+        self.assertEqual(cli.WARN, results[0])
+        self.assertIn("nothing here sees a secret being typed", said)
+        self.assertIn("stop the HUD before typing one", said)
+
+    def test_without_a_venv_the_bus_alone_is_asked(self):
+        with mock.patch.object(cli, "venv_ok", return_value=False), \
+                mock.patch.object(cli, "check_accessibility") as fallback:
+            cli.check_secure([])
+        self.assertTrue(fallback.called)
+
+
 class Autostart(unittest.TestCase):
     """The login item: what it runs, and enable/disable putting it there and taking it out."""
 
@@ -553,6 +593,28 @@ class Autostart(unittest.TestCase):
         self.assertEqual(cli.STATE, a["EnvironmentVariables"]["ZMKHUD_STATE"])
         self.assertEqual((True, "Aqua"), (a["RunAtLoad"], a["LimitLoadToSessionType"]))
         self.assertNotIn("KeepAlive", a)          # a HUD that is stopped stays stopped
+
+    def test_the_logs_are_this_users_alone_even_from_before(self):
+        # launchd makes autostart.log with the default umask, and `>` keeps a file's mode: both logs
+        # are made 0600 first, the login item's kept for launchd to append to.
+        os.makedirs(cli.STATE)
+        auto, menu = os.path.join(cli.STATE, "autostart.log"), os.path.join(cli.STATE, "menubar.log")
+        for log in (auto, menu):
+            with open(log, "w") as f:
+                f.write("from before\n")
+            os.chmod(log, 0o644)
+        code, said = self.run_cli("autostart", "enable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(0o600, stat.S_IMODE(os.stat(auto).st_mode))
+        with open(auto) as f:
+            self.assertEqual("from before\n", f.read())
+        with mock.patch.object(cli, "venv_ok", return_value=True), mock.patch.object(cli, "pgrep", return_value=False), \
+             mock.patch.object(cli, "MENUBAR_OFF", os.path.join(self.tmp.name, "menubar-off")), \
+             mock.patch.object(cli.subprocess, "Popen") as popen:
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertTrue(popen.called)
+        self.assertEqual(0o600, stat.S_IMODE(os.stat(menu).st_mode))
 
     def test_the_desktop_entry_says_the_same_quoted(self):
         with mock.patch.dict(os.environ, {"ZMKHUD_CONFIG": '/k/my "50%" board.yaml'}):

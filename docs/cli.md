@@ -376,9 +376,9 @@ Drive the HUD without a keyboard, by sending hudfeed the messages one would have
 
 options:
   -h, --help         show this help message and exit
-  --url URL          hudfeed's WebSocket, token included, as `zmk-layer-hud demo` prints it
-                     (default: ws://127.0.0.1:$ZMKHUD_PORT or 8766, with the running HUD's token
-                     from $ZMKHUD_STATE/token)
+  --url URL          hudfeed's WebSocket, token included (default: ws://127.0.0.1:$ZMKHUD_PORT or
+                     8766, with $ZMKHUD_TOKEN as `zmk-layer-hud demo` prints it, else the running
+                     HUD's token from $ZMKHUD_STATE/token)
   --type TEXT        type TEXT one character at a time
   --legend L         type one legend (repeatable)
   --combos           draw what is typed with the keymap's combos where it has them (default:
@@ -402,7 +402,7 @@ options:
 usage: zmk-layer-hud feed [-h] [--config CONFIG] [--stdout] [--no-ws] [--port PORT] [--no-keymap]
                           [--no-keys] [--vid VID] [--pid PID] [--name NAME] [--serial DEV]
                           [--no-ble] [--ble-address BLE_ADDRESS] [--no-hid-keys] [--no-inject]
-                          [--no-sessions] [--debug] [--raw]
+                          [--no-sessions] [--debug] [--probes] [--raw]
 
 Host feed for the zmk-layer-hud pages. One source: the keyboard's own signal channel.
 
@@ -414,7 +414,8 @@ options:
   --no-ws               do not serve the WebSocket
   --port PORT
   --no-keymap           skip the keymap feed (pages keep whatever they have)
-  --no-keys             send layers only, no key events
+  --no-keys             send layers only: no typed keys and no key positions (--no-hid-keys keeps
+                        the positions)
   --vid VID             keyboard vendor id (default: config `keyboard.vid`, else ZMK's)
   --pid PID             keyboard product id (default: config `keyboard.pid`, else ZMK's)
   --name NAME           substring of the product name to select one keyboard (default: config
@@ -433,7 +434,10 @@ options:
   --no-sessions         keep no session files (config `feed.sessions: 0`): the counts last as long
                         as the page
   --debug               log layer messages to stderr
-  --raw                 DEBUG ONLY: log every decoded frame (includes your typing)
+  --probes              say which probes see a secret being typed on this system, one per line
+                        (name, on|off|none, why), and exit; what `zmk-layer-hud doctor` reads
+  --raw                 DEBUG ONLY: log every decoded frame and HID report, your typing included;
+                        nothing is logged while secure input is on
 ```
 
 ## version

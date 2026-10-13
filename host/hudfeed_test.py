@@ -19,7 +19,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
-from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SerialReader,  # noqa: E402
+from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SerialReader, any_of, probe_report,  # noqa: E402
                      SignalDecoder, Stream, asks_secret, hid_scan_note, hidraw_match, sent_in, serve_hub,
                      split_report, terminal_probe)
 
@@ -239,6 +239,22 @@ class StreamTest(unittest.TestCase):
         self.stream.feed(layers, 2)                      # same heartbeat, now a change again
         self.assertEqual([m["ids"] for m in self.out], [[1], [1]])
 
+    def test_raw_logging_asks_before_it_logs(self):
+        # --raw is the typing in the log; a callable in place of True is asked at every message,
+        # which is how the feed keeps it quiet while a secret is being typed.
+        allowed, said = [False], []
+        stream = Stream(self.out.append, "Diamond", raw=lambda: allowed[0], log=said.append)
+        stream.message({"kind": "keys", "mods": 0, "keys": [0x04]}, 0)
+        self.assertEqual([], said)
+        self.assertEqual(1, len(self.out))                       # the message itself still goes on: the gate is the feed's
+        allowed[0] = True
+        stream.message({"kind": "keys", "mods": 0, "keys": []}, 1)
+        self.assertEqual(1, len(said))
+        self.assertTrue(said[0].startswith("hudfeed: Diamond {"), said)
+        plain = Stream(self.out.append, "Diamond", raw=True, log=said.append)
+        plain.message({"kind": "layers", "ids": [1]}, 2)
+        self.assertEqual(2, len(said))
+
     def test_closing_releases_what_was_held(self):
         self.stream.message({"kind": "keys", "mods": 0, "keys": [0x04]}, 0)
         self.out.clear()
@@ -408,7 +424,8 @@ class Secure(unittest.TestCase):
         self.secret = True
         for msg in (key, press, {"kind": "release", "pos": 3}):
             self.assertFalse(self.secure.allows(msg))
-        self.assertTrue(self.secure.allows({"kind": "layers", "ids": [2]}))   # the banner stays right
+        self.assertFalse(self.secure.allows({"kind": "layers", "ids": [2]}))  # which layer a character came from is part of it
+        self.assertTrue(self.secure.allows({"kind": "device", "name": "Diamond"}))
         self.secret = False
         self.assertTrue(self.secure.allows(key))
 
@@ -418,6 +435,82 @@ class Secure(unittest.TestCase):
         self.assertFalse(self.secure.allows({"kind": "key", "type": "keyDown", "chars": "p"}))
         self.assertEqual(1, self.asked)
 
+    def test_layers_are_asked_about_at_once_too(self):
+        # A layer held for a symbol is the first thing to arrive at a password field.
+        self.secret = True
+        self.assertFalse(self.secure.allows({"kind": "layers", "ids": [2], "device": "A"}))
+        self.assertEqual(1, self.asked)
+
+    def test_layers_are_held_and_the_latest_follows_when_it_ends(self):
+        self.secret = True
+        self.assertFalse(self.secure.allows({"kind": "layers", "ids": [2], "device": "A"}))
+        self.assertFalse(self.secure.allows({"kind": "layers", "ids": [2, 5], "device": "A"}))
+        self.assertFalse(self.secure.allows({"kind": "layers", "ids": [0], "device": "B"}))
+        self.assertEqual([{"kind": "secure", "on": True, "watched": []}], self.said)
+        self.secret = False
+        self.secure.check()
+        self.assertEqual([{"kind": "secure", "on": True, "watched": []}, {"kind": "secure", "on": False, "watched": []},
+                          {"kind": "layers", "ids": [2, 5], "device": "A"},      # the latest of each keyboard, once
+                          {"kind": "layers", "ids": [0], "device": "B"}], self.said)
+        self.secure.check()
+        self.assertEqual(4, len(self.said))                                     # and nothing is held any more
+
+    def test_a_probe_that_does_not_know_yet_holds_the_keys_and_says_nothing(self):
+        # The accessibility watch, while an app is asked what the widget that gained focus is.
+        key, layers = {"kind": "key", "type": "keyDown", "chars": "p"}, {"kind": "layers", "ids": [3], "device": "A"}
+        self.secret = None
+        self.assertFalse(self.secure.allows(key))
+        self.assertFalse(self.secure.allows(layers))
+        self.assertEqual([], self.said)                          # the page is not told of a lookup
+        self.secret = True
+        self.assertFalse(self.secure.allows(key))
+        self.assertEqual([{"kind": "secure", "on": True, "watched": []}], self.said)
+        self.secret = None
+        self.assertFalse(self.secure.allows(key))
+        self.assertEqual(1, len(self.said))                      # still on, nothing new said
+        self.secret = False
+        self.assertTrue(self.secure.allows(key))
+        self.assertEqual([{"kind": "secure", "on": True, "watched": []}, {"kind": "secure", "on": False, "watched": []}, layers], self.said)
+
+    def test_a_layer_change_held_during_a_lookup_that_was_no_secret_goes_on_at_once(self):
+        layers = {"kind": "layers", "ids": [3], "device": "A"}
+        self.secret = None
+        self.assertFalse(self.secure.allows(layers))
+        self.secret = False
+        self.assertTrue(self.secure.allows({"kind": "key", "type": "keyDown", "chars": "p"}))
+        self.assertEqual([layers], self.said)                    # no secure message: it never was one
+
+    def test_what_watches_is_said_at_the_start_and_on_every_message(self):
+        said = []
+        secure = SecureInput(said.append, lambda: self.secret, watched=("terminals", "lock"))
+        secure.start()
+        secure.stop()
+        self.assertEqual([{"kind": "secure", "on": False, "watched": ["terminals", "lock"]}], said)
+        self.secret = True
+        secure.check()
+        self.assertEqual({"kind": "secure", "on": True, "watched": ["terminals", "lock"]}, said[-1])
+        said.clear()
+        secure = SecureInput(said.append, lambda: True, watched=("carbon",))
+        secure.start()
+        secure.stop()
+        self.assertEqual([{"kind": "secure", "on": True, "watched": ["carbon"]}], said)    # on at once: said once
+
+    def test_the_report_names_each_probe(self):
+        lines = [line.split("\t") for line in probe_report()]
+        self.assertEqual(["carbon", "terminals", "a11y", "lock"], [name for name, _, _ in lines])
+        self.assertTrue(all(state in ("on", "off", "none") and why for _, state, why in lines), lines)
+        if sys.platform == "darwin":
+            self.assertEqual("on", lines[0][1])
+            self.assertEqual(("none", "none"), (lines[2][1], lines[3][1]))
+            with mock.patch("hudfeed.carbon_probe", return_value=None):
+                self.assertEqual("off", probe_report()[0].split("\t")[1])
+
+    def test_any_of_the_probes(self):
+        self.assertIsNone(any_of([lambda: False, lambda: None])())
+        self.assertTrue(any_of([lambda: None, lambda: True])())
+        self.assertFalse(any_of([lambda: False, lambda: False])())
+        self.assertFalse(any_of([])())
+
     def test_the_page_is_told_when_it_changes(self):
         self.secure.check()
         self.secret = True
@@ -425,21 +518,22 @@ class Secure(unittest.TestCase):
         self.secure.check()
         self.secret = False
         self.secure.check()
-        self.assertEqual([{"kind": "secure", "on": True}, {"kind": "secure", "on": False}], self.said)
+        self.assertEqual([{"kind": "secure", "on": True, "watched": []}, {"kind": "secure", "on": False, "watched": []}], self.said)
 
     def test_a_page_that_connects_is_told_too(self):
         hub = Hub()
-        asyncio.run(hub.send({"kind": "secure", "on": True}))
+        asyncio.run(hub.send({"kind": "secure", "on": True, "watched": []}))
         self.assertIn("secure", hub.cache)
 
     def test_the_feed_asks_the_system_and_the_terminals(self):
         # Either saying so is enough; and where neither can be asked, there is nothing to hold back.
-        said = {"system": False, "terminal": False}
-        probes = {"system": lambda: said["system"], "terminal": lambda: said["terminal"]}
+        said = {"system": False, "terminal": False, "lock": False}
+        probes = {"system": lambda: said["system"], "terminal": lambda: said["terminal"], "lock": lambda: said["lock"]}
 
         def feed_with(**have):
             with mock.patch("hudfeed.carbon_probe", return_value=probes["system"] if have.get("system") else None), \
                  mock.patch("hudfeed.terminal_probe", return_value=probes["terminal"] if have.get("terminal") else None), \
+                 mock.patch("hudfeed.sessionlock.probe", return_value=probes["lock"] if have.get("lock") else None), \
                  tempfile.TemporaryDirectory() as tmp:
                 path = os.path.join(tmp, "config.yaml")
                 with open(path, "w", encoding="utf-8") as f:
@@ -453,7 +547,46 @@ class Secure(unittest.TestCase):
         self.assertTrue(feed.secure.probe())
         said["system"] = False
         self.assertIsNotNone(feed_with(terminal=True).secure)    # Linux: the terminals alone
-        self.assertIsNone(feed_with().secure)
+        feed = feed_with()
+        self.assertIsNone(feed.secure)
+        self.assertEqual((), feed.watched)
+        # Nothing watching is said when it starts, in the log and to the page, so nobody trusts it.
+        told, logged = [], []
+        with mock.patch("hudfeed.carbon_probe", return_value=None), mock.patch("hudfeed.terminal_probe", return_value=None), \
+             mock.patch("hudfeed.sessionlock.probe", return_value=None), mock.patch("hudfeed.SerialReader.start"), \
+             tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("keyboard: {name: Test Board}\nserial: {port: /dev/cu.test}\nble: {enabled: false}\n")
+            Feed(told.append, log=logged.append, config=path, keys=False, sessions=False, keymap=False).start()
+        self.assertIn({"kind": "secure", "on": False, "watched": []}, told)
+        self.assertTrue(any("nothing here sees a secret" in line for line in logged), logged)
+        feed = feed_with(terminal=True, lock=True)               # Linux under Hyprland: the session lock too
+        self.assertEqual(("terminals", "lock"), feed.watched)
+        self.assertFalse(feed.secure.probe())
+        said["lock"] = True
+        self.assertTrue(feed.secure.probe())
+
+    def test_raw_logging_is_held_while_it_is_on(self):
+        # `feed --raw` logs what the readers decode, which is the typing: not while a secret is typed.
+        said = {"terminal": False}
+        with mock.patch("hudfeed.carbon_probe", return_value=None), \
+             mock.patch("hudfeed.terminal_probe", return_value=lambda: said["terminal"]), \
+             tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("keyboard: {name: Test Board}\nserial: {port: /dev/cu.test}\nble: {enabled: false}\n")
+            feed = Feed(lambda msg: None, log=lambda *a: None, config=path, keys=False, sessions=False, raw=True)
+            self.assertTrue(feed.reader.raw())
+            said["terminal"] = True
+            self.assertFalse(feed.reader.raw())
+            with open(path, "a", encoding="utf-8") as f:
+                f.write("feed: {secure_input: 0}\n")
+            off = Feed(lambda msg: None, log=lambda *a: None, config=path, keys=False, sessions=False, raw=True)
+            self.assertIsNone(off.secure)
+            self.assertTrue(off.reader.raw())                    # nothing watches, nothing holds
+            quiet = Feed(lambda msg: None, log=lambda *a: None, config=path, keys=False, sessions=False)
+            self.assertFalse(quiet.reader.raw)                   # and without --raw, no log at all
 
     def test_on_linux_the_accessibility_bus_is_watched_too(self):
         # A password field with focus in a window (host/a11y.py), with the apps told to expose their
@@ -858,6 +991,22 @@ class ReaderSettings(unittest.TestCase):
 
     def test_a_keymap_that_does_not_convert(self):
         self.check(*self.feed_for("keymap: /nowhere/keymap-drawer.yaml\n" + self.SETTINGS))
+
+    def test_no_keys_sends_layers_only(self):
+        # Neither the keys typed nor the positions pressed: with the keymap, the positions are the
+        # typing too. --no-hid-keys is the flag that drops just the strip and keeps them.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(self.SETTINGS)
+            out = []
+            feed = Feed(out.append, log=lambda *a: None, config=path, keys=False, sessions=False)
+        self.assertIsNone(feed.hid)
+        for msg in ({"kind": "press", "pos": 3, "device": "T"}, {"kind": "release", "pos": 3, "device": "T"},
+                    {"kind": "key", "type": "keyDown", "chars": "a", "device": "T"},
+                    {"kind": "layers", "ids": [2], "device": "T"}, {"kind": "device", "name": "T"}):
+            feed._emit(msg)
+        self.assertEqual(["layers", "device"], [m["kind"] for m in out])
 
     def test_a_config_with_no_keymap_yet(self):
         self.check(*self.feed_for(self.SETTINGS))

@@ -107,8 +107,10 @@ zmk-layer-hud demo --config ~/.local/share/zmk-layer-hud/config/example-4x12.yam
 (From a clone, the second is `--config config/example-4x12.yaml`.) That loads the sample's
 definitions, committed beside its config, serves the pages and opens them, fed by a socket of their own the way the Linux panel's are. In
 the browser console, `hud.setLayers([1])` switches layers, `hud.pressAt(13)` lights a key and
-`hud.releaseAt(13)` lets it go; `zmk-layer-hud poke --url <the socket demo printed> --type hello`
-types on it from a terminal (the demo's socket URL carries its token, like a running HUD's).
+`hud.releaseAt(13)` lets it go; the `poke` line the demo prints,
+`ZMKHUD_TOKEN=… ZMKHUD_PORT=8767 zmk-layer-hud poke --type hello`, types on it from a terminal
+(the demo's token travels in the environment, which `ps` does not show to other users; `poke --url`
+with the token in the socket's path works too).
 
 **A demo that types.** A script says what the keyboard does, and the demo plays it in real time:
 
@@ -226,8 +228,9 @@ flags of any one of them, and [docs/cli.md](docs/cli.md) has every verb's in one
 screen, counting from the first key. `setup` prints every
 privileged step and asks before running it, and `setup --no-sudo` prints them without running any.
 
-Two flags on `feed` read alike and are not: `--no-keys` sends layers only, while `--no-hid-keys`
-drops just the HID half — the typed-keys strip and the shift flag — and keeps positions.
+Two flags on `feed` read alike and are not: `--no-keys` sends layers only, neither the keys typed
+nor the positions pressed, while `--no-hid-keys` drops just the HID half — the typed-keys strip
+and the shift flag — and keeps positions.
 
 ## Configuration
 
@@ -338,11 +341,14 @@ is on), the system turns on secure input. On Linux, a password field with focus 
 accessibility bus, where the apps -- browsers, password managers, polkit's dialog -- say which
 widget has focus and what it is. For that the feed tells them assistive technology is wanted, as a
 screen reader would; a browser running since before shows nothing until it is started again, and
-`feed.accessibility: 0` leaves that setting alone. On both systems, while a terminal is asking for
-a password -- `sudo`, `ssh`, `su`, anything that reads a line with echo off -- the feed sees that
-too. Either way it then passes on nothing typed: no characters, no keys lit, nothing counted. The
-strip clears, the board dims and the banner says `secure input · typing hidden` until it is over.
-The HUD reads the keyboard itself, where none of this reaches, so it holds back on its own.
+`feed.accessibility: 0` leaves that setting alone. Under Hyprland the session lock is seen too, on
+Hyprland's own socket, so the unlock password goes nowhere. On both systems, while a terminal is
+asking for a password -- `sudo`, `ssh`, `su`, anything that reads a line with echo off -- the feed
+sees that too. Either way it then passes on nothing typed: no characters, no keys lit, no layer
+changes, nothing counted. The strip clears, the board dims and the banner says `secure input ·
+typing hidden` until it is over. The HUD reads the keyboard itself, where none of this reaches, so
+it holds back on its own. When it starts, the feed's log names what watches, `zmk-layer-hud doctor`
+says the same, and a HUD that nothing watches says `typing not watched` on its banner.
 `feed.secure_input: 0` turns all of it off; what is not seen is under [Limits](#limits).
 
 ### Keeping the config in a repo
@@ -532,13 +538,15 @@ beside anything that is wrong. What it cannot see:
 - **`no definitions yet`**: `start` waits for `import` to have drawn the keymap:
   `zmk-layer-hud import <your zmk-config>`, or with `keymap:` set, `zmk-layer-hud import`.
 - **No `layers` lines**: `zmk-layer-hud feed --raw` logs every frame it decodes, so silence there
-  separates "the keyboard says nothing" from "the host makes nothing of it".
+  separates "the keyboard says nothing" from "the host makes nothing of it". It logs every HID
+  report too, which is your typing; the log goes quiet while a secret is being typed.
 - **Wrong keys light** on a curated keymap: `positions:` is missing or wrong; the feed logs
   `key position N is not in the keymap's … drawer keys`.
 - **A key stays lit ~5 s**: the firmware is reporting presses but not releases. Rebuild and
   reflash it.
 - `ZMKHUD_DEBUG=1 zmk-layer-hud start` logs every layer message with a timestamp. Key positions
-  are never logged: with the keymap they are the typing. (`feed --raw` does log them, and says so.)
+  are never logged: with the keymap they are the typing. (`feed --raw` does log them, and the keys
+  typed, and says so; it logs nothing while secure input is on.)
 
 ## Limits
 
@@ -551,8 +559,17 @@ beside anything that is wrong. What it cannot see:
   Chromium and what is built on it, Firefox) -- once that app has started with it on, which the
   feed turns on, so a browser from before the first start needs starting again. An app that
   exposes nothing (no accessibility bus, `GTK_A11Y=none`, a toolkit of its own) gives no sign, and
-  there the strip shows what is typed and the board lights its keys. `zmk-layer-hud doctor` says
-  where the setting stands. Stop the HUD, or record with it hidden, when that matters.
+  there the strip shows what is typed and the board lights its keys. The session lock is seen
+  under Hyprland alone (by name -- hyprlock, swaylock, gtklock, waylock -- where Hyprland does not
+  say); another compositor's lock screen is not. `zmk-layer-hud doctor` says what sees a secret
+  being typed here. Stop the HUD, or record with it hidden, when that matters.
+- A terminal's prompt is seen when it reads a line with echo off, as `sudo`, `ssh`, `su`, `passwd`
+  and `getpass` do. One that takes the keys raw, one at a time -- `sudo` with `pwfeedback`,
+  `systemd-ask-password`, a pinentry, a prompt that masks with stars -- is not, and nor is a prompt
+  on the far side of `ssh` or inside a container, whose pty is not this machine's. When the gate
+  misses, a session keeps the keys as counts per key and layer, never their order (`feed.sessions:
+  0` keeps none), and a keyboard cabled to one machine while typing over BLE to another sends its
+  positions to the cabled one's port too.
 - The HUD's socket takes one port (`ZMKHUD_PORT`, 8766). If something else holds it when the macOS
   panel starts (a `zmk-layer-hud feed` of its own, say), the panel runs without a socket and
   `zmk-layer-hud poke` cannot reach it. Its log says so. The socket takes a token in its URL path,
