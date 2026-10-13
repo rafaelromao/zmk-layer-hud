@@ -439,6 +439,17 @@
       recent.length = 0;
       state.heat.clear();
       paintHeat();
+      // Nothing typed before it is counted or sent either: a key that slipped in as the secret
+      // began would say what it was. What waits to be counted, what waits to be known as a tap or
+      // a hold, the counts not yet handed to the session and the WPM windows go, as they do when
+      // a keymap is replaced; what was already sent (inflight) is the host's.
+      clearTimeout(state.ledgerTimer); state.ledgerTimer = null; state.ledgerDue = 0;
+      state.ledger = []; state.comboEntry = null;
+      state.down.clear(); state.strokes = []; state.lastStroke = null; state.lastOwnStroke = null;
+      state.unsent = emptyTally();
+      state.typing = newTyping(); state.ownTyping = newTyping();
+      recentPos.length = 0; state.lastPress = null;
+      state.viewCache = null;
     }
     if (state.data) renderBanner();
     renderStats();
