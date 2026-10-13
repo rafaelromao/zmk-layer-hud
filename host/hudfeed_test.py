@@ -408,7 +408,8 @@ class Secure(unittest.TestCase):
         self.secret = True
         for msg in (key, press, {"kind": "release", "pos": 3}):
             self.assertFalse(self.secure.allows(msg))
-        self.assertTrue(self.secure.allows({"kind": "layers", "ids": [2]}))   # the banner stays right
+        self.assertFalse(self.secure.allows({"kind": "layers", "ids": [2]}))  # which layer a character came from is part of it
+        self.assertTrue(self.secure.allows({"kind": "device", "name": "Diamond"}))
         self.secret = False
         self.assertTrue(self.secure.allows(key))
 
@@ -417,6 +418,26 @@ class Secure(unittest.TestCase):
         self.secret = True
         self.assertFalse(self.secure.allows({"kind": "key", "type": "keyDown", "chars": "p"}))
         self.assertEqual(1, self.asked)
+
+    def test_layers_are_asked_about_at_once_too(self):
+        # A layer held for a symbol is the first thing to arrive at a password field.
+        self.secret = True
+        self.assertFalse(self.secure.allows({"kind": "layers", "ids": [2], "device": "A"}))
+        self.assertEqual(1, self.asked)
+
+    def test_layers_are_held_and_the_latest_follows_when_it_ends(self):
+        self.secret = True
+        self.assertFalse(self.secure.allows({"kind": "layers", "ids": [2], "device": "A"}))
+        self.assertFalse(self.secure.allows({"kind": "layers", "ids": [2, 5], "device": "A"}))
+        self.assertFalse(self.secure.allows({"kind": "layers", "ids": [0], "device": "B"}))
+        self.assertEqual([{"kind": "secure", "on": True}], self.said)
+        self.secret = False
+        self.secure.check()
+        self.assertEqual([{"kind": "secure", "on": True}, {"kind": "secure", "on": False},
+                          {"kind": "layers", "ids": [2, 5], "device": "A"},      # the latest of each keyboard, once
+                          {"kind": "layers", "ids": [0], "device": "B"}], self.said)
+        self.secure.check()
+        self.assertEqual(4, len(self.said))                                     # and nothing is held any more
 
     def test_the_page_is_told_when_it_changes(self):
         self.secure.check()

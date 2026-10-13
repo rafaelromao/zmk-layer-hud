@@ -1063,8 +1063,11 @@ class SecureInput:
     prompt it reads a line with echo off (terminal_probe), on Linux as on macOS. The feed cannot
     help seeing -- it reads the keyboard's own channel and its HID reports, which neither reaches
     -- so for as long as either says so it passes on nothing that could spell the secret: no
-    character typed and no key pressed. Layers still go through, and the page is told
-    (`{"kind": "secure", "on": true}`), clears what is on screen and says why.
+    character typed, no key pressed, and no layer change either, which would say of each
+    character whether it was a digit, a symbol or a capital, and when. The page is told
+    (`{"kind": "secure", "on": true}`), clears what is on screen and says why. The latest layers
+    of each keyboard are kept and follow the off message, so the board catches up at once
+    rather than at the next heartbeat; `device`, `keymap`, `session` and `secure` go through.
 
     Asked at every keystroke, not only by the poll: the first key typed into a password field must
     not slip through in the moment before a poll would have noticed. The poll is what tells the
@@ -1073,26 +1076,36 @@ class SecureInput:
     def __init__(self, emit, probe, poll_s=0.25, log=print):
         self.emit, self.probe, self.poll_s, self.log = emit, probe, poll_s, log
         self.on = False
+        self.held = {}          # device -> the latest layers message kept back while it is on
         self.lock = threading.Lock()
         self._stop = threading.Event()
         self._thread = None
 
-    def check(self):
+    def check(self, hold=None):
+        """Whether a secret is being typed now, the page told of a change. `hold` is a layers
+        message to keep back while it is on: the latest of each keyboard follows the off."""
         try:
             on = bool(self.probe())
         except Exception:
             on = self.on   # a probe that failed once says nothing new
         with self.lock:
+            if on and hold is not None:
+                self.held[hold.get("device")] = hold
             if on != self.on:
                 self.on = on
                 self.emit({"kind": "secure", "on": on})
+                if not on:
+                    held, self.held = self.held, {}
+                    for msg in held.values():
+                        self.emit(msg)
         return on
 
     def allows(self, msg):
-        """Whether `msg` may go on: not a key or a position while secure input is on."""
-        if msg.get("kind") not in ("key", "press", "release"):
+        """Whether `msg` may go on: not a key, a position or a layer change while secure input is on."""
+        kind = msg.get("kind")
+        if kind not in ("key", "press", "release", "layers"):
             return True
-        return not self.check()
+        return not self.check(hold=msg if kind == "layers" else None)
 
     def start(self):
         self.check()
