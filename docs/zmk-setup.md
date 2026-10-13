@@ -120,7 +120,8 @@ Within two seconds (heartbeat) it prints `{"kind":"layers","ids":[]}`; holding a
 prints that layer's id, releasing prints `[]` again. Drop `--no-keys` to also see every key press
 as `{"kind":"key",…}`. Type into a terminal and a text field meanwhile: nothing stray appears. If
 it prints `cannot open`, see the README's troubleshooting; if it prints nothing, add `--raw` to log
-every frame that decodes, which separates a silent keyboard from a host that cannot read it.
+every frame and HID report that decodes -- your typing, held while a secret is being typed --
+which separates a silent keyboard from a host that cannot read it.
 
 ## Why a channel of its own
 

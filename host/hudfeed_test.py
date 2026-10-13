@@ -239,6 +239,22 @@ class StreamTest(unittest.TestCase):
         self.stream.feed(layers, 2)                      # same heartbeat, now a change again
         self.assertEqual([m["ids"] for m in self.out], [[1], [1]])
 
+    def test_raw_logging_asks_before_it_logs(self):
+        # --raw is the typing in the log; a callable in place of True is asked at every message,
+        # which is how the feed keeps it quiet while a secret is being typed.
+        allowed, said = [False], []
+        stream = Stream(self.out.append, "Diamond", raw=lambda: allowed[0], log=said.append)
+        stream.message({"kind": "keys", "mods": 0, "keys": [0x04]}, 0)
+        self.assertEqual([], said)
+        self.assertEqual(1, len(self.out))                       # the message itself still goes on: the gate is the feed's
+        allowed[0] = True
+        stream.message({"kind": "keys", "mods": 0, "keys": []}, 1)
+        self.assertEqual(1, len(said))
+        self.assertTrue(said[0].startswith("hudfeed: Diamond {"), said)
+        plain = Stream(self.out.append, "Diamond", raw=True, log=said.append)
+        plain.message({"kind": "layers", "ids": [1]}, 2)
+        self.assertEqual(2, len(said))
+
     def test_closing_releases_what_was_held(self):
         self.stream.message({"kind": "keys", "mods": 0, "keys": [0x04]}, 0)
         self.out.clear()
@@ -475,6 +491,27 @@ class Secure(unittest.TestCase):
         said["system"] = False
         self.assertIsNotNone(feed_with(terminal=True).secure)    # Linux: the terminals alone
         self.assertIsNone(feed_with().secure)
+
+    def test_raw_logging_is_held_while_it_is_on(self):
+        # `feed --raw` logs what the readers decode, which is the typing: not while a secret is typed.
+        said = {"terminal": False}
+        with mock.patch("hudfeed.carbon_probe", return_value=None), \
+             mock.patch("hudfeed.terminal_probe", return_value=lambda: said["terminal"]), \
+             tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("keyboard: {name: Test Board}\nserial: {port: /dev/cu.test}\nble: {enabled: false}\n")
+            feed = Feed(lambda msg: None, log=lambda *a: None, config=path, keys=False, sessions=False, raw=True)
+            self.assertTrue(feed.reader.raw())
+            said["terminal"] = True
+            self.assertFalse(feed.reader.raw())
+            with open(path, "a", encoding="utf-8") as f:
+                f.write("feed: {secure_input: 0}\n")
+            off = Feed(lambda msg: None, log=lambda *a: None, config=path, keys=False, sessions=False, raw=True)
+            self.assertIsNone(off.secure)
+            self.assertTrue(off.reader.raw())                    # nothing watches, nothing holds
+            quiet = Feed(lambda msg: None, log=lambda *a: None, config=path, keys=False, sessions=False)
+            self.assertFalse(quiet.reader.raw)                   # and without --raw, no log at all
 
     def test_on_linux_the_accessibility_bus_is_watched_too(self):
         # A password field with focus in a window (host/a11y.py), with the apps told to expose their

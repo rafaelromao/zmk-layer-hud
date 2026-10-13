@@ -532,13 +532,15 @@ beside anything that is wrong. What it cannot see:
 - **`no definitions yet`**: `start` waits for `import` to have drawn the keymap:
   `zmk-layer-hud import <your zmk-config>`, or with `keymap:` set, `zmk-layer-hud import`.
 - **No `layers` lines**: `zmk-layer-hud feed --raw` logs every frame it decodes, so silence there
-  separates "the keyboard says nothing" from "the host makes nothing of it".
+  separates "the keyboard says nothing" from "the host makes nothing of it". It logs every HID
+  report too, which is your typing; the log goes quiet while a secret is being typed.
 - **Wrong keys light** on a curated keymap: `positions:` is missing or wrong; the feed logs
   `key position N is not in the keymap's … drawer keys`.
 - **A key stays lit ~5 s**: the firmware is reporting presses but not releases. Rebuild and
   reflash it.
 - `ZMKHUD_DEBUG=1 zmk-layer-hud start` logs every layer message with a timestamp. Key positions
-  are never logged: with the keymap they are the typing. (`feed --raw` does log them, and says so.)
+  are never logged: with the keymap they are the typing. (`feed --raw` does log them, and the keys
+  typed, and says so; it logs nothing while secure input is on.)
 
 ## Limits
 

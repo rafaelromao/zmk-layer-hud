@@ -433,7 +433,8 @@ options:
   --no-sessions         keep no session files (config `feed.sessions: 0`): the counts last as long
                         as the page
   --debug               log layer messages to stderr
-  --raw                 DEBUG ONLY: log every decoded frame (includes your typing)
+  --raw                 DEBUG ONLY: log every decoded frame and HID report, your typing included;
+                        nothing is logged while secure input is on
 ```
 
 ## version

@@ -280,6 +280,9 @@ class Stream:
     share it, because a BLE notification and a run of serial bytes decode the same way."""
 
     def __init__(self, emit, device, dead_key_ms=DEAD_KEY_MS, raw=False, log=print, altgr=False):
+        # `raw` logs every decoded message: True, or a callable asked at each one, which is how the
+        # feed keeps the log quiet while a secret is being typed (SecureInput): the log is the
+        # typing, and the gate sits downstream of here.
         self.emit, self.device, self.log, self.raw = emit, device, log, raw
         self.frames = signal_frame.Decoder()
         self.decoder = SignalDecoder(dead_key_ms=dead_key_ms, altgr=altgr)
@@ -294,7 +297,7 @@ class Stream:
     def message(self, msg, now_ms):
         """One decoded message, wherever it came from -- a frame off the wire, or a HID report the
         host read itself. Both arrive here in the same shape, so one decoder serves both."""
-        if self.raw:
+        if self.raw and (self.raw is True or self.raw()):
             self.log(f"hudfeed: {self.device} {msg}")
         for out in self.decoder.feed(msg, now_ms):
             self._emit(out)
@@ -1165,15 +1168,19 @@ class Feed:
         rescan, dead_key_ms = float(feed_cfg["rescan_s"]), int(feed_cfg["dead_key_ms"])
         altgr = bool(int(feed_cfg["altgr"]))
         kb_name = name if name is not None else kb.get("name")
+        # --raw logs what the readers decode, which is the typing: asked at every message, like a
+        # keystroke is, so that nothing is logged while a secret is being typed (self.secure is
+        # made below and read when a message arrives).
+        raw_log = (lambda: self.secure is None or not self.secure.check()) if raw else False
         self.reader = SerialReader(
-            self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
+            self._emit, log=log, raw=raw_log, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
             vid=vid if vid is not None else int(kb.get("vid", ZMK_VID)),
             pid=pid if pid is not None else int(kb.get("pid", ZMK_PID)),
             name=kb_name, port=port if port is not None else ser.get("port"),
             probe_s=float(ser.get("probe_s", 8.0)))
         self.ble = None
         if ble and bt.get("enabled", True):
-            self.ble = BleReader(self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
+            self.ble = BleReader(self._emit, log=log, raw=raw_log, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
                                  address=ble_address if ble_address is not None else bt.get("address"),
                                  name=kb_name)
         # What is typed comes from the keyboard's HID reports, not from the signal channel: one
@@ -1185,7 +1192,7 @@ class Feed:
             # here grants and detaches the kernel driver from the keyboard it opens.
             reader = HidrawReader if sys.platform.startswith("linux") else HidKeysReader
             self.hid = reader(
-                self._emit, log=log, raw=raw, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
+                self._emit, log=log, raw=raw_log, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
                 vid=vid if vid is not None else int(kb.get('vid', ZMK_VID)),
                 pid=pid if pid is not None else int(kb.get('pid', ZMK_PID)),
                 name=kb_name)
@@ -1528,7 +1535,9 @@ def parse_args(argv=None):
     p.add_argument("--no-sessions", action="store_true",
                    help="keep no session files (config `feed.sessions: 0`): the counts last as long as the page")
     p.add_argument("--debug", action="store_true", help="log layer messages to stderr")
-    p.add_argument("--raw", action="store_true", help="DEBUG ONLY: log every decoded frame (includes your typing)")
+    p.add_argument("--raw", action="store_true",
+                   help="DEBUG ONLY: log every decoded frame and HID report, your typing included; "
+                        "nothing is logged while secure input is on")
     return p.parse_args(argv)
 
 
