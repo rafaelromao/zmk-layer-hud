@@ -205,6 +205,9 @@ BarWidget {
   }
 
   // The WPM, then the glyph: the number on the left, while the HUD runs, shown or hidden.
+  // Both follow barForeground -- the same white-ish source the neighboring icon+text pills
+  // (agents, vim-mode) paint from -- rather than foreground, which the bar tones cyan on
+  // its right side and which does not follow transparency. Dimming still grays the tile.
   Row {
     id: content
     anchors.centerIn: parent
@@ -215,7 +218,7 @@ BarWidget {
       anchors.verticalCenter: parent.verticalCenter
       visible: root.hud !== "stopped"
       text: root.wpmOf(root.wpmChoice)
-      color: root.bar ? root.bar.foreground : "white"
+      color: root.bar ? root.bar.barForeground : "white"
       font.family: root.fontName
       font.pixelSize: 12
     }
@@ -230,7 +233,7 @@ BarWidget {
         id: glyphText
         x: -ink.tightBoundingRect.x / 2
         text: root.glyph
-        color: root.bar ? root.bar.foreground : "white"
+        color: root.bar ? root.bar.barForeground : "white"
         font.family: root.fontName
         font.pixelSize: 14
       }
