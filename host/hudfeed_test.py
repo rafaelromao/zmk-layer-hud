@@ -19,7 +19,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
-from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SerialReader,  # noqa: E402
+from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SerialReader, any_of,  # noqa: E402
                      SignalDecoder, Stream, asks_secret, hid_scan_note, hidraw_match, sent_in, serve_hub,
                      split_report, terminal_probe)
 
@@ -454,6 +454,37 @@ class Secure(unittest.TestCase):
                           {"kind": "layers", "ids": [0], "device": "B"}], self.said)
         self.secure.check()
         self.assertEqual(4, len(self.said))                                     # and nothing is held any more
+
+    def test_a_probe_that_does_not_know_yet_holds_the_keys_and_says_nothing(self):
+        # The accessibility watch, while an app is asked what the widget that gained focus is.
+        key, layers = {"kind": "key", "type": "keyDown", "chars": "p"}, {"kind": "layers", "ids": [3], "device": "A"}
+        self.secret = None
+        self.assertFalse(self.secure.allows(key))
+        self.assertFalse(self.secure.allows(layers))
+        self.assertEqual([], self.said)                          # the page is not told of a lookup
+        self.secret = True
+        self.assertFalse(self.secure.allows(key))
+        self.assertEqual([{"kind": "secure", "on": True}], self.said)
+        self.secret = None
+        self.assertFalse(self.secure.allows(key))
+        self.assertEqual(1, len(self.said))                      # still on, nothing new said
+        self.secret = False
+        self.assertTrue(self.secure.allows(key))
+        self.assertEqual([{"kind": "secure", "on": True}, {"kind": "secure", "on": False}, layers], self.said)
+
+    def test_a_layer_change_held_during_a_lookup_that_was_no_secret_goes_on_at_once(self):
+        layers = {"kind": "layers", "ids": [3], "device": "A"}
+        self.secret = None
+        self.assertFalse(self.secure.allows(layers))
+        self.secret = False
+        self.assertTrue(self.secure.allows({"kind": "key", "type": "keyDown", "chars": "p"}))
+        self.assertEqual([layers], self.said)                    # no secure message: it never was one
+
+    def test_any_of_the_probes(self):
+        self.assertIsNone(any_of([lambda: False, lambda: None])())
+        self.assertTrue(any_of([lambda: None, lambda: True])())
+        self.assertFalse(any_of([lambda: False, lambda: False])())
+        self.assertFalse(any_of([])())
 
     def test_the_page_is_told_when_it_changes(self):
         self.secure.check()

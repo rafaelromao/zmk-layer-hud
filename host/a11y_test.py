@@ -38,6 +38,7 @@ class FakeBus:
         self.focused = set(focused)             # (sender, path) that GetState says are focused
         self.enabled = enabled                  # org.a11y.Status IsEnabled
         self.fail = set(fail)                   # members answered with an error
+        self.hold = {}                          # member -> an Event the answer waits for (an app that is slow)
         self.inbox = queue.Queue()
         self.filters = []
         self.calls = []
@@ -48,6 +49,8 @@ class FakeBus:
         f = msg.header.fields
         member, dest, path = f.get(HeaderFields.member), f.get(HeaderFields.destination), f.get(HeaderFields.path)
         self.calls.append((member, dest, path, msg.body))
+        if member in self.hold:
+            self.hold[member].wait()
         if member in self.fail:
             return new_error(msg, "org.freedesktop.DBus.Error.Failed", "s", ("no",))
         if member == "GetAddress":
@@ -74,13 +77,22 @@ class FakeBus:
         deadline = time.monotonic() + (timeout or 0)
         while not q:
             try:
-                msg = self.inbox.get(timeout=max(0.0, deadline - time.monotonic()))
+                self._route(self.inbox.get(timeout=max(0.0, deadline - time.monotonic())))
             except queue.Empty:
                 raise TimeoutError
-            for rule, into in self.filters:
-                if rule.matches(msg):
-                    into.append(msg)
+        # What arrived while the watch was asking an app is in the queues already, as jeepney
+        # routes what it reads while it waits for a reply.
+        while True:
+            try:
+                self._route(self.inbox.get_nowait())
+            except queue.Empty:
+                break
         return q.popleft()
+
+    def _route(self, msg):
+        for rule, into in self.filters:
+            if rule.matches(msg):
+                into.append(msg)
 
     def close(self):
         self.closed = True
@@ -169,6 +181,34 @@ class Watch(unittest.TestCase):
         self.assertIn(("GetState", BROWSER, LOGIN[1], ()), self.bus.calls)
         self.bus.focused.discard(LOGIN)
         self.assertTrue(settles(focus.probe, False))
+
+    def test_while_the_app_is_asked_the_answer_is_not_known(self):
+        # The keys are held meanwhile (hudfeed.SecureInput): the first typed into a password field
+        # would otherwise go on before the app said what the widget is.
+        self.bus.hold["GetRole"] = threading.Event()
+        focus = self.watch()
+        self.bus.focus(*SEARCH)
+        self.assertTrue(settles(focus.probe, None))
+        self.bus.hold["GetRole"].set()
+        self.assertTrue(settles(focus.probe, False))
+        self.bus.hold["GetRole"] = threading.Event()
+        self.bus.focus(*LOGIN)
+        self.assertTrue(settles(focus.probe, None))
+        self.bus.hold["GetRole"].set()
+        self.assertTrue(settles(focus.probe, True))
+
+    def test_a_flood_of_signals_while_an_app_is_asked_is_said(self):
+        # The queue keeps the last QUEUE; what was dropped may have been a focus change.
+        self.bus.hold["GetRole"] = threading.Event()
+        focus = self.watch()
+        self.bus.focus(*SEARCH)
+        self.assertTrue(settles(focus.probe, None))
+        for _ in range(a11y.QUEUE + 5):
+            self.bus.focus(*SEARCH, gained=False)
+        self.bus.hold["GetRole"].set()
+        self.assertTrue(settles(lambda: focus.said, "overflow"), self.logged)
+        self.assertEqual(1, len([line for line in self.logged if "dropped" in line]))
+        self.assertFalse(focus.probe())
 
     def test_a_widget_the_app_will_not_describe_is_no_secret(self):
         self.bus.fail.add("GetRole")

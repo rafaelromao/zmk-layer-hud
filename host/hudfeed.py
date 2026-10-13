@@ -1059,6 +1059,21 @@ def terminal_probe(where=None):
     return probe
 
 
+def any_of(probes):
+    """One probe from several: True at the first that says so, None if one does not know yet
+    (a11y.PasswordFocus while an app is asked), else False."""
+    def probe():
+        unknown = False
+        for p in probes:
+            got = p()
+            if got:
+                return True
+            if got is None:
+                unknown = True
+        return None if unknown else False
+    return probe
+
+
 class SecureInput:
     """When what is being typed is a secret, nothing of it goes on. macOS says so: while a password
     field has focus, or a terminal's Secure Keyboard Entry is on, secure event input is enabled and
@@ -1073,8 +1088,10 @@ class SecureInput:
     rather than at the next heartbeat; `device`, `keymap`, `session` and `secure` go through.
 
     Asked at every keystroke, not only by the poll: the first key typed into a password field must
-    not slip through in the moment before a poll would have noticed. The poll is what tells the
-    page when nothing is being typed."""
+    not slip through in the moment before a poll would have noticed. A probe that does not know
+    yet (None: the accessibility watch, while the app is asked what the widget is) holds the keys
+    the same, with nothing said to the page, whose clearing of the screen is not for a lookup of
+    a few milliseconds. The poll is what tells the page when nothing is being typed."""
 
     def __init__(self, emit, probe, poll_s=0.25, log=print):
         self.emit, self.probe, self.poll_s, self.log = emit, probe, poll_s, log
@@ -1085,22 +1102,26 @@ class SecureInput:
         self._thread = None
 
     def check(self, hold=None):
-        """Whether a secret is being typed now, the page told of a change. `hold` is a layers
-        message to keep back while it is on: the latest of each keyboard follows the off."""
+        """Whether a secret is being typed now (True, or while it is not known yet), the page told
+        of a change. `hold` is a layers message to keep back meanwhile: the latest of each
+        keyboard follows the off message, or goes on at once when nothing was being typed."""
         try:
-            on = bool(self.probe())
+            on = self.probe()
+            on = None if on is None else bool(on)
         except Exception:
             on = self.on   # a probe that failed once says nothing new
         with self.lock:
-            if on and hold is not None:
+            if hold is not None and on is not False:
                 self.held[hold.get("device")] = hold
+            if on is None:
+                return True                 # held back; nothing said until it is known
             if on != self.on:
                 self.on = on
                 self.emit({"kind": "secure", "on": on})
-                if not on:
-                    held, self.held = self.held, {}
-                    for msg in held.values():
-                        self.emit(msg)
+            if not on and self.held:
+                held, self.held = self.held, {}
+                for msg in held.values():
+                    self.emit(msg)
         return on
 
     def allows(self, msg):
@@ -1215,7 +1236,7 @@ class Feed:
                 self.focus = a11y.PasswordFocus(log=log, enable=bool(int(feed_cfg.get("accessibility", 1))))
                 probes.append(self.focus.probe)
             if probes:
-                self.secure = SecureInput(emit, lambda: any(p() for p in probes), log=log)
+                self.secure = SecureInput(emit, any_of(probes), log=log)
 
     def _emit(self, msg):
         # --no-keys: layers only. The positions go with the keys: with the keymap they are the typing.
