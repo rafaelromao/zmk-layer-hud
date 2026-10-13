@@ -1282,8 +1282,8 @@ def macos_menubar(action):
     if not running:
         if not venv_ok():
             raise Fail("no venv yet -- run `zmk-layer-hud setup` first")
-        os.makedirs(STATE, exist_ok=True)
-        with open(os.path.join(STATE, "menubar.log"), "w") as log:
+        # The log is this user's alone, even one a run from before left readable to all.
+        with panelstate.open_private(os.path.join(STATE, "menubar.log")) as log:
             subprocess.Popen([VENV_PYTHON, "-u", MENUBAR], stdout=log, stderr=log, stdin=subprocess.DEVNULL,
                              env=dict(os.environ, ZMKHUD_STATE=STATE), start_new_session=True)
     print("the menubar icon is on; it stays when the HUD quits, and a click starts it again")
@@ -1494,6 +1494,9 @@ def cmd_autostart(args):
     if system == "Darwin":
         if build_launcher():
             print(f"    built {LOGIN_APP}")
+        # launchd makes the log with the default umask, readable to all: made here first, this
+        # user's alone, and launchd appends to what is there (as it does to one from before).
+        panelstate.open_private(os.path.join(STATE, "autostart.log"), truncate=False).close()
         with open(path, "wb") as f:
             f.write(launch_agent_plist())
         print(f"    {path}")

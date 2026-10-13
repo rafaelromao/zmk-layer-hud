@@ -72,6 +72,8 @@ export ZMKHUD_PYTHON="$FEED_PYTHON"
 "$FEED_PYTHON" "$ROOT/host/shortcuts.py"
 stop
 sleep 0.5
+# A log from before umask 077 keeps the mode it was made with: set it again before writing.
+: >"$RUN/panel.log"; chmod 600 "$RUN/panel.log"
 # A login item has to stay attached: its service ends whatever it leaves behind when it exits.
 [ "$CMD" = run ] && exec python3 -u "$HERE/panel.py" >"$RUN/panel.log" 2>&1
 nohup python3 -u "$HERE/panel.py" >"$RUN/panel.log" 2>&1 &

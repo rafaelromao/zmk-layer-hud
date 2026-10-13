@@ -7,6 +7,7 @@ import contextlib
 import io
 import json
 import os
+import stat
 import subprocess
 import sys
 import tempfile
@@ -557,6 +558,28 @@ class Autostart(unittest.TestCase):
         self.assertEqual(cli.STATE, a["EnvironmentVariables"]["ZMKHUD_STATE"])
         self.assertEqual((True, "Aqua"), (a["RunAtLoad"], a["LimitLoadToSessionType"]))
         self.assertNotIn("KeepAlive", a)          # a HUD that is stopped stays stopped
+
+    def test_the_logs_are_this_users_alone_even_from_before(self):
+        # launchd makes autostart.log with the default umask, and `>` keeps a file's mode: both logs
+        # are made 0600 first, the login item's kept for launchd to append to.
+        os.makedirs(cli.STATE)
+        auto, menu = os.path.join(cli.STATE, "autostart.log"), os.path.join(cli.STATE, "menubar.log")
+        for log in (auto, menu):
+            with open(log, "w") as f:
+                f.write("from before\n")
+            os.chmod(log, 0o644)
+        code, said = self.run_cli("autostart", "enable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(0o600, stat.S_IMODE(os.stat(auto).st_mode))
+        with open(auto) as f:
+            self.assertEqual("from before\n", f.read())
+        with mock.patch.object(cli, "venv_ok", return_value=True), mock.patch.object(cli, "pgrep", return_value=False), \
+             mock.patch.object(cli, "MENUBAR_OFF", os.path.join(self.tmp.name, "menubar-off")), \
+             mock.patch.object(cli.subprocess, "Popen") as popen:
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertTrue(popen.called)
+        self.assertEqual(0o600, stat.S_IMODE(os.stat(menu).st_mode))
 
     def test_the_desktop_entry_says_the_same_quoted(self):
         with mock.patch.dict(os.environ, {"ZMKHUD_CONFIG": '/k/my "50%" board.yaml'}):

@@ -15,6 +15,40 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import panelstate  # noqa: E402
 
 
+class PrivateFile(unittest.TestCase):
+    """A log opened for this user alone, even one a run from before left readable to all."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.d = os.path.join(self.tmp.name, "state")
+        self.path = os.path.join(self.d, "x.log")
+
+    def mode(self, p):
+        return stat.S_IMODE(os.stat(p).st_mode)
+
+    def test_a_log_from_before_is_made_this_users_alone_again(self):
+        os.makedirs(self.d, mode=0o755)
+        with open(self.path, "w") as f:
+            f.write("old\n")
+        os.chmod(self.path, 0o644)
+        with panelstate.open_private(self.path) as f:
+            f.write("new\n")
+        self.assertEqual((0o600, 0o700), (self.mode(self.path), self.mode(self.d)))
+        with open(self.path) as f:
+            self.assertEqual("new\n", f.read())                 # truncated, as a fresh log is
+
+    def test_or_kept_and_appended_to(self):
+        with panelstate.open_private(self.path, truncate=False) as f:   # the directory made too
+            f.write("one\n")
+        os.chmod(self.path, 0o644)
+        with panelstate.open_private(self.path, truncate=False) as f:
+            f.write("two\n")
+        self.assertEqual(0o600, self.mode(self.path))
+        with open(self.path) as f:
+            self.assertEqual("one\ntwo\n", f.read())
+
+
 class Token(unittest.TestCase):
     """The socket's token for the run, kept where `poke` finds it and nobody else does."""
 
