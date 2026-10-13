@@ -57,6 +57,7 @@ class Url(unittest.TestCase):
         with self.assertRaises(SystemExit) as stop, contextlib.redirect_stderr(err):
             self.url()
         self.assertIn(os.path.join(self.tmp.name, "token"), str(stop.exception))
+        self.assertIn("ZMKHUD_TOKEN", str(stop.exception))       # the demo's way, token off the command line
         self.assertIn("--url", str(stop.exception))
 
     def test_the_token_is_kept_out_of_what_is_said_back(self):

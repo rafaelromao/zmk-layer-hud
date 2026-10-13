@@ -29,9 +29,11 @@ page reports its counts through the panel's bridge, not the socket. If the port 
 `zmk-layer-hud feed` already running), the panel says so in its log and goes on without a socket.
 
 `zmk-layer-hud demo` serves a socket of its own, `ws://127.0.0.1:8767/<token>` (`--ws-port`),
-feeding its pages with no keyboard behind it: the same messages, `poke --url` sends to it (the
-demo prints the URL, token included, rather than writing over a running HUD's token file), and a
-demo script it plays (`--play`) goes through it as typing sent in.
+feeding its pages with no keyboard behind it: the same messages, `poke` sends to it with the
+demo's token from the environment, as the demo prints it (`ZMKHUD_TOKEN=… ZMKHUD_PORT=8767`,
+which `ps` does not show, rather than writing over a running HUD's token file; `--url` with the
+token in the socket's path works too), and a demo script it plays (`--play`) goes through it as
+typing sent in.
 
 ## Outbound messages
 

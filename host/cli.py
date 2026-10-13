@@ -808,16 +808,23 @@ def config_link(args):
 # ---------- the sample board ----------
 
 def demo_urls(port, ws_port, token):
-    """The page the demo opens, and the socket that feeds it (which `poke --url` takes). The demo's
-    token is in both: the page connects with it, and so must anyone else."""
+    """The page the demo opens, and the socket that feeds it. The demo's token is in both: the page
+    connects with it, and so must anyone else."""
     ws = f"ws://127.0.0.1:{ws_port}/{token}"
     return f"http://127.0.0.1:{port}/index.html?ws={ws}", ws
+
+
+def demo_hint(token, ws_port):
+    """How to type on the demo from a terminal: the token in the environment, which only this user
+    reads, not on a command line that `ps` shows to every user on the machine (`poke --url` with
+    the token in its path works too). The demo's port is never poke's default, so both are named."""
+    return f"ZMKHUD_TOKEN={token} ZMKHUD_PORT={ws_port} zmk-layer-hud poke --type hello"
 
 
 def cmd_demo(args):
     """The HUD's pages against a sample keymap, with no keyboard: what `examples/` is for. They are
     served over http and fed by a socket of their own, the way the Linux panel's pages are, so
-    `zmk-layer-hud poke --url` drives them, the page's own API (`hud.setLayers([1])`,
+    `zmk-layer-hud poke` drives them (demo_hint), the page's own API (`hud.setLayers([1])`,
     `hud.pressAt(13)`) does from the browser console, and with --play a demo script is typed on
     them in real time (host/play.py). There is no session behind the demo: the bar and the
     session heatmap count what the page is shown, for as long as it is open."""
@@ -898,7 +905,7 @@ async def demo_socket(args, message, compiled, play_mod):
     # A token of the demo's own, printed with its URLs rather than kept in $STATE/token, which is
     # a running HUD's.
     token = secrets.token_hex(16)
-    page, ws_url = demo_urls(args.port, args.ws_port, token)
+    page = demo_urls(args.port, args.ws_port, token)[0]
     hub = hudfeed.Hub(token=token)
     await hub.send(message)   # kept, and replayed to the page when it connects
     try:
@@ -907,7 +914,7 @@ async def demo_socket(args, message, compiled, play_mod):
         raise Fail(f"cannot open the demo's socket on port {args.ws_port}: {e}. Pass --ws-port to pick another.")
     async with server:
         print(f"==> {page}")
-        print(f"    zmk-layer-hud poke --url {ws_url} --type hello   types on it; ^C to stop")
+        print(f"    {demo_hint(token, args.ws_port)}   types on it; ^C to stop")
         if not args.no_browser:
             asyncio.get_running_loop().run_in_executor(None, webbrowser.open, page)
         if compiled is not None:

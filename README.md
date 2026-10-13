@@ -107,8 +107,10 @@ zmk-layer-hud demo --config ~/.local/share/zmk-layer-hud/config/example-4x12.yam
 (From a clone, the second is `--config config/example-4x12.yaml`.) That loads the sample's
 definitions, committed beside its config, serves the pages and opens them, fed by a socket of their own the way the Linux panel's are. In
 the browser console, `hud.setLayers([1])` switches layers, `hud.pressAt(13)` lights a key and
-`hud.releaseAt(13)` lets it go; `zmk-layer-hud poke --url <the socket demo printed> --type hello`
-types on it from a terminal (the demo's socket URL carries its token, like a running HUD's).
+`hud.releaseAt(13)` lets it go; the `poke` line the demo prints,
+`ZMKHUD_TOKEN=… ZMKHUD_PORT=8767 zmk-layer-hud poke --type hello`, types on it from a terminal
+(the demo's token travels in the environment, which `ps` does not show to other users; `poke --url`
+with the token in the socket's path works too).
 
 **A demo that types.** A script says what the keyboard does, and the demo plays it in real time:
 

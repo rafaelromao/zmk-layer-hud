@@ -376,9 +376,9 @@ Drive the HUD without a keyboard, by sending hudfeed the messages one would have
 
 options:
   -h, --help         show this help message and exit
-  --url URL          hudfeed's WebSocket, token included, as `zmk-layer-hud demo` prints it
-                     (default: ws://127.0.0.1:$ZMKHUD_PORT or 8766, with the running HUD's token
-                     from $ZMKHUD_STATE/token)
+  --url URL          hudfeed's WebSocket, token included (default: ws://127.0.0.1:$ZMKHUD_PORT or
+                     8766, with $ZMKHUD_TOKEN as `zmk-layer-hud demo` prints it, else the running
+                     HUD's token from $ZMKHUD_STATE/token)
   --type TEXT        type TEXT one character at a time
   --legend L         type one legend (repeatable)
   --combos           draw what is typed with the keymap's combos where it has them (default:
