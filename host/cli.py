@@ -1915,24 +1915,19 @@ def check_config(results):
 
 
 def sync_due():
-    """A source a sync reads that is newer than the definitions it wrote, or None. A look at file
-    times, for doctor alone: the HUD never reads these files."""
+    """A file the definitions are made from (sync.inputs: the drawing and its layout files, the
+    keyboard's keymap and what it includes) that is newer than they are, or None. The config's own
+    settings are read as they are, so it is not one. A look at file times, for doctor alone: the
+    HUD never reads these files."""
     sys.path.insert(0, os.path.join(ROOT, "host"))
     try:
-        import json
         import keymap as keymap_mod
+        import sync as sync_mod
         path = keymap_mod.find_config()
-        defs = keymap_mod.definitions_path(path)
-        cfg = keymap_mod.load_yaml(path)
-        sources = [keymap_mod.resolve(cfg[k], path) for k in ("keymap", "drawer_config") if cfg.get(k)]
-        with open(defs, encoding="utf-8") as f:
-            repo = (json.load(f).get("sources") or {}).get("repo")
+        made = os.stat(keymap_mod.definitions_path(path)).st_mtime
+        repo, keyboard = sync_mod.recorded(path)
         repo = repo and os.path.expanduser(repo)
-        if repo and os.path.isdir(repo):
-            for b, dirs, files in os.walk(repo):
-                dirs[:] = [d for d in dirs if d not in (".git", "build", "modules", "zmk", "zephyr")]
-                sources += [os.path.join(b, n) for n in files if n.endswith(".keymap")]
-        made = os.stat(defs).st_mtime
+        sources = [p for p in sync_mod.inputs(path, repo, keyboard) if p != os.path.abspath(path)]
         newer = [p for p in sources if os.path.isfile(p) and os.stat(p).st_mtime > made]
         return os.path.basename(newer[0]) if newer else None
     except Exception:
