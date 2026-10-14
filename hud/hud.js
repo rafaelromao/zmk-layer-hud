@@ -1436,14 +1436,25 @@
     board.appendChild(svg);
     requestAnimationFrame(() => { pill.classList.add("show"); svg.classList.add("show"); });
     for (const idx of positions) state.keyEls[idx].classList.add("combo-key");
-    setTimeout(() => {
+    const shown = { positions };
+    livePills.add(shown);
+    // A key is a combo's while a pill up names it: when this one goes, its keys stop being marked
+    // unless another pill still up names them too (the bigger combo that took this one's place).
+    const unmark = () => {
+      livePills.delete(shown);
+      for (const idx of positions) {
+        if (![...livePills].some(o => o.positions.includes(idx))) state.keyEls[idx].classList.remove("combo-key");
+      }
+    };
+    const timer = setTimeout(() => {
       pill.classList.remove("show"); svg.classList.remove("show");
-      for (const idx of positions) state.keyEls[idx].classList.remove("combo-key");
+      unmark();
       setTimeout(() => { pill.remove(); svg.remove(); }, 200);
     }, T('combo_pill_ms'));
-    // A handle to take the pill down early when a longer legend supersedes it.
-    return { remove() { pill.remove(); svg.remove(); } };
+    // A handle to take the pill down early when a longer legend supersedes it: its time is over.
+    return { remove() { if (!livePills.has(shown)) return; clearTimeout(timer); pill.remove(); svg.remove(); unmark(); } };
   }
+  const livePills = new Set();   // the pills up: {positions}
 
   function flash(indices, cls) {
     for (const idx of indices) {
@@ -1507,7 +1518,7 @@
       // A guess taken back: its keys and its pill go now.
       for (const idx of op.idxs) {
         const e = state.keyEls[idx];
-        if (e) { e.classList.remove("pressed", "combo", "combo-key"); clearTimeout(state.timers.get(idx)); }
+        if (e) { e.classList.remove("pressed", "combo"); clearTimeout(state.timers.get(idx)); }
       }
       if (op.pill !== null && pills.has(op.pill)) { pills.get(op.pill).handle.remove(); pills.delete(op.pill); }
     } else if (op.op === "render") {
