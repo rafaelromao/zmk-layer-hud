@@ -360,6 +360,26 @@ function checkModRings(data) {
   return fails;
 }
 
+/* A layer picked to look at changes what the board draws, not what the keyboard has up: the key that
+ * turned Shift on is found on the keyboard's layers. Held on the base, a home-row ⇧ rings although
+ * the layer picked over it has another key there. */
+function checkModUnderPick(data) {
+  const carries = k => !!k && ((k.hold && k.hold.includes("⇧")) || k.tap === "⇧");
+  const posOf = idx => Object.entries(data.positions || {}).find(([, i]) => Number(i) === idx);
+  const pick = (data.layer_order || []).find(l => l !== data.base && data.layers[l]);
+  const key = (data.layers[data.base] || []).findIndex((k, i) => carries(k) && posOf(i) &&
+    pick && data.layers[pick][i] && data.layers[pick][i].type !== "trans" && !carries(data.layers[pick][i]));
+  if (key < 0) return ["the fixture has no positioned ⇧ key on its base that the layer after it hides"];
+  const page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  page.hud.pressAt(Number(posOf(key)[0]));
+  page.hud.pickLayer(pick);
+  page.hud.key({ type: "flagsChanged", flags: { shift: true } });
+  const ringed = page.hud.state.keyEls.flatMap((el, i) => (el.classList.contains("mod") ? [i] : []));
+  return ringed.join() === String(key) ? [] : [`Shift held on ${key} with ${pick} picked should ring it; ringed [${ringed}]`];
+}
+
 /* A layer picked from the stats' layer tile is drawn until the next keystroke, from the firmware's
  * positions or the keyboard's reports alike; then the board follows the keyboard again. */
 function checkLayerPick(data) {
@@ -445,6 +465,12 @@ async function main() {
   const modFailures = checkModRings(data);
   if (modFailures.length) {
     for (const failure of modFailures) console.error(`FAIL mod-rings: ${failure}`);
+    process.exit(1);
+  }
+
+  const modPickFailures = checkModUnderPick(data);
+  if (modPickFailures.length) {
+    for (const failure of modPickFailures) console.error(`FAIL mod-under-pick: ${failure}`);
     process.exit(1);
   }
 
