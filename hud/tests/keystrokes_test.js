@@ -54,6 +54,38 @@ const says = (out, kind) => out.said.filter(s => s.say === kind);
         "a layer falling away long after the last key goes at once");
 })();
 
+// A base key's ZMK position, for keystrokes that only need to have happened.
+const E = Number(Object.entries(DIAMOND.positions).find(([, i]) => i === DIAMOND.layers[DIAMOND.base].findIndex(k => k.tap === "e"))[0]);
+const PRESS_MS = (DIAMOND.hud && DIAMOND.hud.press_ms) || K.DEFAULTS.press_ms;
+
+(function aDropRightAfterAKeyWaitsForItsFlash() {
+  const ks = fresh();
+  const at = 1100, due = at + PRESS_MS;
+  ks.read({ kind: "layers", ids: [ALPHA2] }, 1000);
+  ks.read({ kind: "press", pos: E }, at);
+  ks.read({ kind: "release", pos: E }, at + 10);
+  let out = ks.read({ kind: "layers", ids: [] }, at + 20);
+  check(out.board.layers[0] === "alpha2" && !says(out, "layers").length, "a layer falling away right after a key stays while the key flashes");
+  check(out.next === due, `until press_ms after the key: next ${out.next}, want ${due}`);
+  out = ks.read({ kind: "layers", ids: [] }, at + 40);
+  check(out.next === due, "said again, it keeps its time");
+  out = ks.tick(due);
+  check(out.board.layers[0] === DIAMOND.base && eq(says(out, "layers"), [{ say: "layers", ids: [] }]), "and then goes");
+  check(out.next === null, "with nothing left to wait for");
+})();
+
+(function theNextKeyAppliesAHeldDropAtOnce() {
+  const ks = fresh();
+  const at = 1100;
+  ks.read({ kind: "layers", ids: [ALPHA2] }, 1000);
+  ks.read({ kind: "press", pos: E }, at);
+  ks.read({ kind: "release", pos: E }, at + 10);
+  ks.read({ kind: "layers", ids: [] }, at + 20);
+  const out = ks.read({ kind: "press", pos: E }, at + 30);
+  check(out.board.layers[0] === DIAMOND.base && says(out, "layers").length === 1 && out.next === null,
+        "a key going down applies the drop it was waiting behind");
+})();
+
 (function layersNoLongerReportedAreEmulatedAgain() {
   const ks = fresh();
   ks.read({ kind: "layers", ids: [ALPHA2] }, 1000);
