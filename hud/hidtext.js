@@ -16,12 +16,12 @@
  *          down, F-keys), or {kind:"chord", chars, name, usage, mods} for a ⌘ or Ctrl shortcut --
  *          left out with shortcuts:false, for a sink that cannot send one. Each keeps usage and mods.
  *
- * The tables are hudfeed's, written out by host/hidtables_gen.py (hud/hidtables.js). DOM-free, no
+ * The tables are the key vocabulary's, written out by host/keynames_gen.py (hud/keynames.js). DOM-free, no
  * timers: the page, node's tests and a bare JavaScriptCore all run it.
  */
 (function (root) {
   "use strict";
-  const T = (typeof module === "object" && module.exports) ? require("./hidtables.js") : root.ZmkHidTables;
+  const T = (typeof module === "object" && module.exports) ? require("./keynames.js") : root.ZmkKeyNames;
   const RALT = T.RALT;
 
   function flagsOf(mods) {
