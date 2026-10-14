@@ -11,6 +11,7 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const K = require("../keystrokes.js");
+const View = require("../view.js");
 
 const VERBOSE = process.argv.includes("--verbose");
 const fail = [];
@@ -208,6 +209,85 @@ const counted = said => said.filter(s => ["press", "combo", "guess"].includes(s.
   k.read({ kind: "press", pos: E }, 3200);
   k.to(4000);
   check(counted(k.said).length === 1, "and typing after it is");
+})();
+
+// ---------- what the board shows ----------
+
+const RELEASE_MS = (DIAMOND.hud && DIAMOND.hud.release_ms) || K.DEFAULTS.release_ms;
+const PILL_MS = (DIAMOND.hud && DIAMOND.hud.combo_pill_ms) || K.DEFAULTS.combo_pill_ms;
+const eIdx = DIAMOND.layers[DIAMOND.base].findIndex(key => key.tap === "e");
+
+(function aKeyIsLitWhileItIsDownAndAMomentAfter() {
+  const k = session();
+  k.read({ kind: "layers", ids: [] }, 900);
+  let out = k.read({ kind: "press", pos: E }, 1000);
+  check(eq(out.board.lit, [eIdx]) && eq(out.board.held, [eIdx]), "a key down is lit, and held");
+  out = k.to(3000);
+  check(eq(out.board.lit, [eIdx]), "for as long as it is down");
+  k.read({ kind: "release", pos: E }, 3000);
+  out = k.to(3000 + RELEASE_MS - 1);
+  check(eq(out.board.lit, [eIdx]) && eq(out.board.held, []), "up, it is still lit for release_ms");
+  out = k.to(3000 + RELEASE_MS);
+  check(eq(out.board.lit, []), "and then out");
+})();
+
+(function aBiggerChordsPillTakesTheSmallerOnesPlace() {
+  const big = DIAMOND.combos.find(c => onBase(c) && c.key.tap === "meh ␣");
+  const small = DIAMOND.combos.find(c => onBase(c) && c.positions.length === 2 && c.positions.every(p => big.positions.includes(p)) &&
+                                          c.positions.includes(big.positions[0]));
+  const k = session();
+  k.read({ kind: "layers", ids: [] }, 900);
+  for (const p of small.positions) k.read({ kind: "press", pos: posOfIdx(p) }, 1000);
+  let out = k.read({ kind: "press", pos: posOfIdx(big.positions.find(p => !small.positions.includes(p))) }, 1005);
+  check(eq(out.board.pills.map(p => p.key.tap), [big.key.tap]), `one pill, the bigger chord's: ${out.board.pills.map(p => p.key.tap)}`);
+  check(eq(out.board.chord.slice().sort((a, b) => a - b), big.positions.slice().sort((a, b) => a - b)), "its keys lit as a combo's");
+  out = k.to(1005 + PILL_MS - 1);
+  check(out.board.pills.length === 1, "up for combo_pill_ms");
+  out = k.to(1005 + PILL_MS);
+  check(out.board.pills.length === 0, "and then down");
+})();
+
+(function aGuessedPillGoesWhenTheChordsPositionsCome() {
+  const z = DIAMOND.combos.find(c => onBase(c) && c.key.tap === "z");
+  const k = session();
+  k.read({ kind: "layers", ids: [] }, 900);
+  let out = k.read(keyDown("z", { name: "z", combos: true }), 1000);
+  check(eq(out.board.pills.map(p => p.key.tap), ["z"]), "typed-in z with combos: the z chord's pill");
+  const id = out.board.pills[0].id;
+  // Sent in: the keyboard's own presses for the chord, a moment later.
+  for (const p of z.positions) out = k.read({ kind: "press", pos: posOfIdx(p) }, 1010);
+  check(out.board.pills.length === 1 && out.board.pills[0].id !== id, "taken down for the chord's own pill, one pill all the same");
+})();
+
+(function theTouchKeyboardsLayersAreWhatAPressResolvesOn() {
+  const k = session();
+  k.read({ kind: "layers", ids: [] }, 900);
+  k.read({ kind: "touch", ids: [NAV, 0] }, 950);
+  k.read({ kind: "press", pos: E }, 1000);
+  k.to(2000);
+  const press = k.said.find(s => s.say === "press");
+  check(press && press.layer === View.resolve(DIAMOND, eIdx, View.drawnStack(DIAMOND, [NAV, 0])).layer,
+        `a press counts where the touch keyboard's layers put it: ${press && press.layer}`);
+})();
+
+(function aTouchKeyboardShowingTheKeyboardsLayersFollowsThem() {
+  const k = session();
+  k.read({ kind: "layers", ids: [ALPHA2] }, 900);
+  k.read({ kind: "touch", ids: [ALPHA2, 0] }, 950);             // the keyboard's own, nothing on glass
+  k.read({ kind: "press", pos: E }, 1000);
+  k.read({ kind: "release", pos: E }, 1010);
+  k.read({ kind: "layers", ids: [] }, 1020);                    // held back for the key's flash
+  const out = k.read({ kind: "press", pos: E }, 1030);         // ...and applied by the next key
+  check(out.board.layers[0] === DIAMOND.base, `the next key resolves on the layers really up: ${out.board.layers}`);
+})();
+
+(function aSecretPutsOutWhatIsLit() {
+  const k = session();
+  k.read({ kind: "layers", ids: [] }, 900);
+  k.read(keyDown("z", { name: "z", combos: true }), 1000);
+  k.read({ kind: "press", pos: E }, 1010);
+  const out = k.read({ kind: "secure", on: true }, 1020);
+  check(eq(out.board.lit, []) && eq(out.board.pills, []) && eq(out.board.held, []) && out.board.secure, "nothing lit, no pill, nothing held");
 })();
 
 (function layersNoLongerReportedAreEmulatedAgain() {
