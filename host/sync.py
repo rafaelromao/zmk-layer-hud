@@ -484,7 +484,7 @@ def layout_for_keymap(cfg, config_path, root, keymap_path, parsed):
         spec = dict(cfg["layout"])
         for key in keymap_mod.LAYOUT_FILES:
             if isinstance(spec.get(key), str):
-                spec[key] = keymap_mod.resolve(spec[key], config_path)
+                spec[key] = keymap_mod.resolve(spec[key], config_path, walk_up=True)
         return spec
     guess = parsed.get("layout") or {}
     bindings = len(next(iter((parsed.get("layers") or {}).values()), []))

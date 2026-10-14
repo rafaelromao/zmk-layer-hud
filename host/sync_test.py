@@ -455,6 +455,17 @@ class Layout(unittest.TestCase):
                                           os.path.join(d, "config.yaml"), d, self.repo(d), {})
         self.assertEqual({"dts_layout": os.path.join(d, "shape.dtsi"), "layout_name": "a"}, spec)
 
+    def test_the_configs_layout_file_is_found_from_the_config_up_as_a_drawings_is(self):
+        # A config kept in the keyboard's repo names its layout from the repo's root, as a drawer
+        # YAML does there; both are found from the file that names them up through its parents.
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "config"))
+            os.makedirs(os.path.join(d, "docs"))
+            write(os.path.join(d, "docs"), "shape.dtsi", "/ {};")
+            spec = sync.layout_for_keymap({"layout": {"dts_layout": "docs/shape.dtsi"}},
+                                          os.path.join(d, "config", "hud.yaml"), d, self.repo(d), {})
+            self.assertEqual(os.path.join(d, "docs", "shape.dtsi"), spec["dts_layout"])
+
     def test_a_layout_zmk_shares_is_named_for_keymap_drawer_to_fetch(self):
         with tempfile.TemporaryDirectory() as d:
             keymap = self.repo(d)
