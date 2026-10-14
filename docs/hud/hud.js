@@ -1489,11 +1489,12 @@
     for (const idx of named) if (!painted.comboKeys.has(idx)) { const e = state.keyEls[idx]; if (e) e.classList.add("combo-key"); }
     painted = { lit, pills: painted.pills, comboKeys: named };
   }
-  // The board drawn afresh (buildBoard) has nothing on it: what was lit and up stays as it is told,
-  // and goes out, unseen, when it is told.
+  // The board drawn afresh (buildBoard: resized, docked, back from minimized) has nothing on it: what
+  // is lit and up is drawn on it again, so a key still down stays lit and a chord finished on it is
+  // drawn whole. Its old pills went with the old board.
   function paintedAfresh() {
-    painted = { lit: new Map(board.lit.map(idx => [idx, board.chord.includes(idx)])),
-                pills: new Map(board.pills.map(p => [p.id, null])), comboKeys: new Set(board.pills.flatMap(p => p.positions)) };
+    painted = { lit: new Map(), pills: new Map(), comboKeys: new Set() };
+    paintBoard(board, Date.now());
   }
 
   // ---------- public API ----------
@@ -1505,8 +1506,10 @@
       if (typeof data === "string") data = JSON.parse(data);
       if (!data || !data.layout || !data.layers) return;
       state.data = data;
-      // Read now, answered once the board is built for it.
+      // Read now, answered once the board is built for it -- which is drawn from the new keymap's
+      // board: nothing of the old one is lit on it.
       const loaded = ks.read(data.kind === "keymap" ? data : Object.assign({ kind: "keymap" }, data), Date.now());
+      board = loaded.board;
       applyPrefs();                 // the config's hud.dark, until the viewer chose
       state.pick = null;
       state.posOf = View.posOf(data);   // a session is kept by ZMK position
