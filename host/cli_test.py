@@ -224,26 +224,38 @@ class HostScript(unittest.TestCase):
 
 # A stand-in for a panel: says it is shown, and does what panel.want says each time SIGUSR2 comes.
 FAKE_PANEL = textwrap.dedent('''
+    # A panel with no window: the real one (host/panelcore.py), answering the CLI's signal as both
+    # platforms' panels do, its window and its keys doing nothing.
     import os, signal, sys, time
     sys.path.insert(0, sys.argv[1])
-    import panelstate
+    import panelcore, panelstate
     d = sys.argv[2]
-    docked = [False]
+    SETTINGS = {"touch": {"enabled": 1}, "dock": {"screen": "", "height_pct": 60, "start": 0, "split": 1}}
+
+    class Typing:
+        def start(self):
+            panel.tell({"kind": "typing", "state": "ok"})
+
+        def stop(self):
+            panel.tell({"kind": "typing", "state": "off"})
+
+        def release(self):
+            pass
+
+    nothing = lambda *a: None
+    window = panelcore.Window(show=nothing, front=nothing, resize=nothing, no_drag=nothing, open=nothing,
+                              tell=nothing, typing_access=nothing, close=nothing,
+                              dock=lambda on: {"kind": "dock", "on": True} if on else None)
+    panel = panelcore.Panel(window, d, Typing(), lambda: SETTINGS, log=nothing)
+
     def asked(*_):
-        shown = panelstate.wanted(d)
-        dock = panelstate.take_want(d, "dock")
-        if dock is not None:
-            docked[0] = bool(dock)
-        extra = {"dock": docked[0], "dock_at": time.time(), "typing": "ok" if docked[0] else "off"}
-        panelstate.write(d, True if shown is None else shown, extra=extra)
+        panel.wake()
         # A board too big for the screen at its real size: the page says so a moment after it docks.
-        if docked[0] and os.path.exists(os.path.join(d, "too-big")):
+        if panel.docked and os.path.exists(os.path.join(d, "too-big")):
             time.sleep(0.2)
-            docked[0] = False
-            extra.update(dock=False, dock_at=time.time(), typing="off", dock_note="the board is 191 x 115 mm")
-            panelstate.write(d, True if shown is None else shown, extra=extra)
+            panel.page({"kind": "dock", "fits": False, "key_mm": 19, "need_mm": [191, 115], "room_mm": [150, 90]})
     signal.signal(panelstate.SIGNAL, asked)
-    panelstate.write(d, True)
+    panel.start()
     time.sleep(30)
 ''')
 
@@ -300,10 +312,10 @@ class ShowHide(unittest.TestCase):
         open(os.path.join(self.tmp.name, "too-big"), "w").close()
         code, said = self.run_cli("dock", "on", pids=[proc.pid])
         self.assertEqual(1, code, said)
-        self.assertIn("did not dock, and is a HUD only: the board is 191 x 115 mm", said)
+        self.assertIn("did not dock, and is a HUD only: at 19 mm a key (touch.key_mm) the board is 191 x 115 mm", said)
         self.assertFalse(cli.panelstate.read(self.tmp.name)["dock"])
         code, said = self.run_cli("dock", "status", pids=[proc.pid])
-        self.assertIn("floating, a HUD only: the board is 191 x 115 mm", said)
+        self.assertIn("floating, a HUD only: at 19 mm a key (touch.key_mm) the board is 191 x 115 mm", said)
         # The note of a refusal before is not this one's: a board that fits now docks.
         os.remove(os.path.join(self.tmp.name, "too-big"))
         self.assertEqual(0, self.run_cli("dock", "on", pids=[proc.pid])[0])
