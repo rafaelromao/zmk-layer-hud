@@ -1,4 +1,4 @@
-"""What a US-layout keyboard sends to type a legend — the inverse of hudfeed's decode.
+"""What a US-layout keyboard sends to type a legend — the inverse of the feed's decode (host/hiddecode.py).
 
 The HUD draws two things for one keypress: the key on the board, which comes from the keymap, and
 the character in the strip below, which comes from the report snapshot the keyboard actually sent.
@@ -65,7 +65,7 @@ def keystrokes_for(legend, altgr=False):
 
     Order matters: a plain or shifted key first, then the dead-key pair an accent is really typed
     as (the US-International layout, which is how the keymap's accent macros type on the host),
-    then the Option layer. With `altgr` (a Linux host, hudfeed ALTGR_CHARS), what the keymap types
+    then the Option layer. With `altgr` (a Linux host, keynames ALTGR_CHARS), what the keymap types
     with AltGr there comes first: ç is AltGr+, rather than ' then c.
     """
     if altgr and legend in ALTGR_USAGE_FOR:
@@ -145,7 +145,7 @@ def main(argv):
                 print(legend)
         return 0
     if "--events" in argv:
-        altgr = "--altgr" in argv   # a Linux host's AltGr (hudfeed ALTGR_CHARS), not macOS's Option
+        altgr = "--altgr" in argv   # a Linux host's AltGr (keynames ALTGR_CHARS), not macOS's Option
         for line in sys.stdin:
             legend = line.rstrip("\n")
             if not legend:
