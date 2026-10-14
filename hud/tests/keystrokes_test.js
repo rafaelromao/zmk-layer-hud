@@ -23,6 +23,17 @@ const idOf = drawer => Number(Object.entries(DIAMOND.zmk_layers).find(([, z]) =>
 const ALPHA2 = idOf("alpha2"), NAV = idOf("nav");
 const fresh = () => { const ks = K.create(); ks.read(DIAMOND, 0); return ks; };
 const says = (out, kind) => out.said.filter(s => s.say === kind);
+// Everything due up to `t`, each at its own time: the answer, with what was said on the way.
+function runTo(ks, t) { return ks.tick(t); }
+// A keymap read, and everything said from then on kept, by reads and ticks alike.
+function session() {
+  const ks = fresh(), said = [];
+  return {
+    said,
+    read(m, t) { const o = ks.read(m, t); said.push(...o.said); return o; },
+    to(t) { const o = ks.tick(t); said.push(...o.said); return o; },
+  };
+}
 
 // ---------- the layers ----------
 
@@ -66,12 +77,11 @@ const PRESS_MS = (DIAMOND.hud && DIAMOND.hud.press_ms) || K.DEFAULTS.press_ms;
   ks.read({ kind: "release", pos: E }, at + 10);
   let out = ks.read({ kind: "layers", ids: [] }, at + 20);
   check(out.board.layers[0] === "alpha2" && !says(out, "layers").length, "a layer falling away right after a key stays while the key flashes");
-  check(out.next === due, `until press_ms after the key: next ${out.next}, want ${due}`);
   out = ks.read({ kind: "layers", ids: [] }, at + 40);
-  check(out.next === due, "said again, it keeps its time");
-  out = ks.tick(due);
-  check(out.board.layers[0] === DIAMOND.base && eq(says(out, "layers"), [{ say: "layers", ids: [] }]), "and then goes");
-  check(out.next === null, "with nothing left to wait for");
+  out = runTo(ks, due - 1);
+  check(out.board.layers[0] === "alpha2" && !says(out, "layers").length, "said again, it keeps its time: still up just before press_ms after the key");
+  out = runTo(ks, due);
+  check(out.board.layers[0] === DIAMOND.base && eq(says(out, "layers"), [{ say: "layers", ids: [] }]), "and gone at it");
 })();
 
 (function theNextKeyAppliesAHeldDropAtOnce() {
@@ -82,7 +92,7 @@ const PRESS_MS = (DIAMOND.hud && DIAMOND.hud.press_ms) || K.DEFAULTS.press_ms;
   ks.read({ kind: "release", pos: E }, at + 10);
   ks.read({ kind: "layers", ids: [] }, at + 20);
   const out = ks.read({ kind: "press", pos: E }, at + 30);
-  check(out.board.layers[0] === DIAMOND.base && says(out, "layers").length === 1 && out.next === null,
+  check(out.board.layers[0] === DIAMOND.base && says(out, "layers").length === 1,
         "a key going down applies the drop it was waiting behind");
 })();
 
@@ -96,8 +106,9 @@ const posOfIdx = idx => Number(Object.entries(DIAMOND.positions).find(([, i]) =>
   const ks = fresh();                                  // no layers from the keyboard: inferred
   let out = ks.read(keyDown("\\"), 1000);
   check(eq(out.board.momentary, ["numbers"]) && out.board.layers[0] === "numbers", `\\ is on Numbers alone: held, inferred (${out.board.momentary})`);
-  check(out.next === 1000 + MOMENTARY_MS + 20, `until momentary_ms after it: next ${out.next}`);
-  out = ks.tick(out.next);
+  out = runTo(ks, 1000 + MOMENTARY_MS);
+  check(eq(out.board.momentary, ["numbers"]), "still up momentary_ms after it");
+  out = runTo(ks, 1000 + MOMENTARY_MS + 20);
   check(eq(out.board.momentary, []) && out.board.layers[0] === DIAMOND.base, "and then it lets go");
 })();
 
@@ -117,6 +128,86 @@ const posOfIdx = idx => Number(Object.entries(DIAMOND.positions).find(([, i]) =>
   ks.read({ kind: "press", pos: posOfIdx(combo.positions[1]) }, 5005);
   out = ks.read(keyDown("", { name: "usage9d" }), 5010);
   check(out.label === combo.key.tap, `a combo's keystroke reads as its legend, not its last key: ${out.label}`);
+})();
+
+// ---------- what is said, once nothing can take it back ----------
+
+const TERM = (DIAMOND.combo_term || 50) + ((DIAMOND.hud && DIAMOND.hud.combo_slack_ms) || K.DEFAULTS.combo_slack_ms);
+const onBase = c => c.layers.includes(DIAMOND.base);
+const posKey = idxs => idxs.map(posOfIdx).sort((a, b) => a - b).join(",");
+const counted = said => said.filter(s => ["press", "combo", "guess"].includes(s.say));
+
+(function aKeyIsSaidOnceNothingCanTakeItBack() {
+  const k = session();
+  k.read({ kind: "layers", ids: [] }, 900);
+  k.read({ kind: "press", pos: E }, 1000);
+  k.read({ kind: "release", pos: E }, 1040);
+  k.to(1000 + TERM - 1);
+  check(!counted(k.said).length, "not within the combo term: a combo could still claim it");
+  k.to(1000 + TERM);
+  const e = DIAMOND.layers[DIAMOND.base].findIndex(key => key.tap === "e");
+  check(eq(counted(k.said), [{ say: "press", idx: e, pos: E, layer: DIAMOND.base, own: true, t: 1000 }]), `then once, on its layer: ${JSON.stringify(k.said)}`);
+  check(eq(k.said.filter(s => s.say === "keystroke").map(s => s.as), ["tap"]), "and it typed: a tap");
+})();
+
+(function aBiggerChordTakesTheSmallerCombosPlace() {
+  const big = DIAMOND.combos.find(c => onBase(c) && c.key.tap === "meh ␣");
+  const small = DIAMOND.combos.find(c => onBase(c) && c.positions.length === 2 && c.positions.every(p => big.positions.includes(p)) &&
+                                          c.positions.includes(big.positions[0]));
+  const [a, b] = small.positions, c = big.positions.find(p => !small.positions.includes(p));
+  const k = session();
+  k.read({ kind: "layers", ids: [] }, 900);
+  k.read({ kind: "press", pos: posOfIdx(a) }, 1000);
+  k.read({ kind: "press", pos: posOfIdx(b) }, 1005);
+  k.read({ kind: "press", pos: posOfIdx(c) }, 1010);
+  for (const p of [a, b, c]) k.read({ kind: "release", pos: posOfIdx(p) }, 1200);
+  k.to(1300);
+  const combos = k.said.filter(s => s.say === "combo");
+  check(eq(combos.map(s => s.key), [posKey(big.positions)]), `one chord, one combo -- ${JSON.stringify(big.key.tap)}, not ${JSON.stringify(small.key.tap)}: ${JSON.stringify(combos)}`);
+  check(k.said.filter(s => s.say === "press").length === 3, "and each of its keys pressed once");
+  check(eq(k.said.filter(s => s.say === "keystroke").map(s => s.as), ["chord"]), "a chord is one keystroke");
+})();
+
+(function aGuessItsPositionTakesBackIsNotSaid() {
+  const k = session();
+  k.read({ kind: "layers", ids: [] }, 900);
+  k.read(keyDown("e", { name: "e" }), 1000);              // the report first, its position after
+  k.read({ kind: "press", pos: E }, 1010);
+  k.read({ kind: "release", pos: E }, 1050);
+  k.to(2000);
+  check(eq(counted(k.said).map(s => s.say), ["press"]), `the position's press is said, the guess is not: ${JSON.stringify(counted(k.said))}`);
+})();
+
+(function aKeyThatCanBeHeldIsATapOrAHold() {
+  const holder = DIAMOND.layers[DIAMOND.base].findIndex(key => key.hold && key.hold.includes("⇧"));
+  const pos = posOfIdx(holder);
+  const strokes = k => k.said.filter(s => s.say === "keystroke" || s.say === "hold").map(s => s.as || s.say);
+  let k = session();
+  k.read({ kind: "layers", ids: [] }, 900);
+  k.read({ kind: "press", pos }, 1000);
+  k.read({ kind: "release", pos }, 1080);
+  k.to(2000);
+  check(eq(strokes(k), ["tap"]), `let go quickly, a home-row mod typed: ${strokes(k)}`);
+  k = session();
+  k.read({ kind: "layers", ids: [] }, 900);
+  k.read({ kind: "press", pos }, 1000);
+  k.read({ kind: "release", pos }, 1600);
+  k.to(2000);
+  check(eq(strokes(k), ["hold"]), `held past HOLD_MS, it typed nothing: ${strokes(k)}`);
+})();
+
+(function aSecretTakesWhatWaitsWithIt() {
+  const k = session();
+  k.read({ kind: "layers", ids: [] }, 900);
+  k.read({ kind: "press", pos: E }, 1000);
+  k.read({ kind: "secure", on: true }, 1010);
+  k.read({ kind: "press", pos: E }, 1020);
+  k.to(3000);
+  check(!counted(k.said).length, "nothing typed before a secret, or during it, is said");
+  k.read({ kind: "secure", on: false }, 3100);
+  k.read({ kind: "press", pos: E }, 3200);
+  k.to(4000);
+  check(counted(k.said).length === 1, "and typing after it is");
 })();
 
 (function layersNoLongerReportedAreEmulatedAgain() {

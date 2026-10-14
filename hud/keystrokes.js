@@ -8,14 +8,26 @@
  *   const ks = ZmkKeystrokes.create();
  *   ks.read(message, now)    a feed message: keymap, layers (ids; null: no longer reported), press
  *                            and release (pos, and `sent` for a press sent in), key (a report:
- *                            keyDown, flagsChanged; `combos` for typing sent in), touch (the touch
- *                            keyboard's layer ids; null: off). Other kinds are ignored.
+ *                            keyDown, flagsChanged; `combos` for typing sent in), secure (on: a
+ *                            secret is being typed, and nothing typed before it is kept), touch
+ *                            (the touch keyboard's layer ids; null: off). Other kinds are ignored.
  *   ks.tick(now)             nothing new: only what has come due by now
  *       -> { board, said, label, next }
  *          board  what the board shows as read: { ready, layers (top first, the base last), live
  *                 ({ids, at} or null), oneShot, momentary (inferred layers) }
  *          said   what happened since the last call, in order, never taken back:
  *                 { say: "layers", ids }  the keyboard's layers applied (late, if held back)
+ *                 { say: "press", idx, pos, layer, own, t }   a key struck, settled: count it on
+ *                                         `layer`, at ZMK position `pos`
+ *                 { say: "combo", layer, key, own, t }        a combo struck, settled ("p,p": its
+ *                                         ZMK positions)
+ *                 { say: "guess", keys: [{idx, pos, layer}], layer, combo, own, t }  keys a report
+ *                                         lit with no position to say so, settled (`combo`: the
+ *                                         chord they make, or null)
+ *                 { say: "keystroke", as: "tap", idx, pos, layer, own, t }  a key that typed, in
+ *                                         the order keys went down; as: "chord" for a combo
+ *                 { say: "hold", idx, pos, own, t }  a key that was held: no keystroke
+ *                 `own`: the keyboard's own typing, not typing sent in
  *          label  for a key message: the board's name for a key the feed cannot name, or null
  *          next   when to call tick again, or null
  *   ZmkKeystrokes.play(feed, until)   [[t, message], ...] read on a clock of its own, ticked up to
@@ -64,6 +76,9 @@
       modSource: {},            // modifier flag -> the key idx that turned it on, null: none known (positions)
       recent: [],               // the last few tokens typed, with what they lit, for macros (remember)
       capitals: false,          // the board draws its letters as capitals (load)
+      ledgerDue: 0,             // when what waits to be settled is next due (armLedger)
+      strokes: [],              // settled keystrokes not yet known to be taps or holds (strokes)
+      secure: false,            // a secret is being typed: nothing of it is read
     };
     let label = null;
     let pillSeq = 0;
@@ -86,8 +101,99 @@
     // places nowhere the firmware could report.
     const zmkPos = idx => (s.posOf[idx] !== undefined ? s.posOf[idx] : null);
     const comboKey = idxs => idxs.map(zmkPos).sort((a, b) => a - b).join(",");
-    // A keystroke drawn, to be counted once nothing can take it back (hud.js counts it).
-    const ledgerAdd = entry => { s.ledger.push(entry); return entry; };
+    // A key counts where its binding came from on the layers that were up when it went down: a
+    // transparent key on a held layer typed the layer underneath's legend, and counts there.
+    const bindingLayer = (idx, layers) => { const r = View.resolve(s.data, idx, layers); return r ? r.layer : layers[0]; };
+
+    // ---------- settling ----------
+
+    /* What the board drew, said once. A keystroke goes into the ledger first and is settled only
+     * when nothing can take it back any more: a press once no combo can claim it, a combo once no
+     * longer one can supersede it, a key lit from a report alone once its position can no longer
+     * arrive and no macro absorb it. Said any sooner, a report that beats its own position counts
+     * its keystroke twice, a guess the position corrects counts the wrong key, and a macro's steps
+     * count as the keys they spell. */
+    function ledgerAdd(entry) {
+      s.ledger.push(entry);
+      armLedger();
+      return entry;
+    }
+
+    function armLedger() {
+      if (!s.ledger.length) return;
+      const at = Math.min(...s.ledger.map(e => e.due));
+      if (due.has("ledger") && s.ledgerDue <= at) return;
+      s.ledgerDue = at;
+      after("ledger", at, when => { settle(when, false); armLedger(); });
+    }
+
+    // Say what is due (everything, with `all`: a keymap about to be replaced).
+    function settle(now, all) {
+      const keep = [];
+      for (const e of s.ledger) {
+        if (!all && e.due > now) { keep.push(e); continue; }
+        if (e.cancelled) continue;
+        said.push(settled(e));
+        // A keystroke of its own, for the time it took and whose finger struck it: a press that
+        // was not one key of a chord, and a chord.
+        if ((e.kind === "press" && !e.chord) || e.kind === "combo") s.strokes.push(e);
+      }
+      s.ledger = keep;
+      if (!all) resolveStrokes(now);
+    }
+
+    function settled(e) {
+      if (e.kind === "press") return { say: "press", idx: e.idx, pos: e.pos, layer: bindingLayer(e.idx, e.stack), own: e.eligible, t: e.t };
+      if (e.kind === "combo") return { say: "combo", layer: e.layer, key: e.key, own: e.eligible, t: e.t };
+      // a guess: the keys a report lit, with no position to say so
+      const keys = e.idxs.map(idx => ({ idx, pos: zmkPos(idx), layer: bindingLayer(idx, e.stack) }));
+      const combo = e.idxs.length > 1 && keys.every(k => k.pos !== null) ? comboKey(e.idxs) : null;
+      return { say: "guess", keys, layer: e.layer, combo, own: e.eligible, t: e.t };
+    }
+
+    // ---------- strokes ----------
+
+    /* Which keystrokes typed, in the order they went down, for the time each key takes and
+     * same-finger bigrams (hud.js). A chord is one keystroke, struck by no one finger. A key that
+     * can be held (a layer key, a home-row mod: anything with a hold) is a keystroke only when it
+     * was tapped; held, it typed nothing, and the key struck under it follows the keystroke before
+     * it. It was held when it stayed down past HOLD_MS, when another key went down and came up
+     * again inside it (how ZMK's balanced hold-tap tells a hold), or when a layer came up with it
+     * and another key went down on that layer. Only its release says which, so a keystroke waits
+     * in `strokes` until the ones before it are known, and is said then. */
+    const HOLD_MS = 400;
+
+    function strokeKind(e, now) {        // "tap", "hold", "chord", or null while it cannot be told
+      if (e.kind === "combo") return "chord";
+      if (!e.holder) return "tap";
+      if (e.activator && e.overlapped) return "hold";
+      const up = e.upAt === undefined ? null : e.upAt;
+      if ((up === null ? now : up) - e.t > HOLD_MS) return "hold";
+      if (up === null) return null;
+      return e.nested ? "hold" : "tap";
+    }
+
+    function resolveStrokes(now) {
+      while (s.strokes.length) {
+        const e = s.strokes[0], kind = strokeKind(e, now);
+        if (kind === null) break;
+        s.strokes.shift();
+        if (kind === "hold") said.push({ say: "hold", idx: e.idx, pos: e.pos, own: e.eligible, t: e.t });
+        else if (kind === "chord") said.push({ say: "keystroke", as: "chord", own: e.eligible, t: e.t });
+        else said.push({ say: "keystroke", as: "tap", idx: e.idx, pos: e.pos, layer: bindingLayer(e.idx, e.stack), own: e.eligible, t: e.t });
+      }
+    }
+
+    // A secret is being typed: nothing typed before it is kept either. A key that slipped in as the
+    // secret began would say what it was: what waits to be settled, what waits to be known as a tap
+    // or a hold, the keys down and the last few typed go.
+    function secure(on) {
+      s.secure = on;
+      if (!on) return;
+      s.held.clear(); s.recent.length = 0; s.recentPos.length = 0;
+      s.ledger = []; s.ledgerDue = 0; cancel("ledger");
+      s.comboEntry = null; s.down.clear(); s.strokes = []; s.lastPress = null;
+    }
 
     // The drawer key at a reported ZMK position. A position the keymap does not place lights
     // nothing: lighting the key that happens to share the number is worse than lighting none, and
@@ -327,6 +433,7 @@
       for (const d of s.down.values()) d.overlapped = true;      // down under another key: maybe held (strokeKind)
       s.down.set(idx, entry);
       ledgerAdd(entry);
+      resolveStrokes(now);    // a key waiting to be told a tap from a hold may have been down long enough
       paint.push({ op: "down", idx, pos: Number(pos), t: now });
       // Older presses stay in the list for the activator lookup (setLayers); the combo group is
       // the trailing run of presses that started within the term of this one.
@@ -411,8 +518,9 @@
         s.down.delete(idx);
         press.upAt = now;
         for (const d of s.down.values()) if (d.t < press.t) d.nested = true;
+        resolveStrokes(now);
       }
-      paint.push({ op: "up", idx, t: now, stroke: !!press });
+      paint.push({ op: "up", idx, t: now });
     }
 
     /* Which key turned a modifier on, when positions say which keys went down: one still held that
@@ -741,8 +849,12 @@
 
     // The keymap message. Re-sent by the host when a sync rewrites it: the live layer set is kept,
     // what was read on the keymap going away is not.
-    function load(data) {
+    function load(data, now) {
       if (!data.layout || !data.layers) return;
+      // What is still waiting to be settled was drawn with the keymap going away: said with that
+      // one, whose layers and keys it names.
+      if (s.data) settle(now, true);
+      s.strokes = [];
       s.data = data;
       s.momentary = []; s.oneShot = null;
       s.activatorOf = {}; s.drawnSince = {}; s.held.clear();
@@ -779,14 +891,15 @@
       if (typeof now !== "number" || !isFinite(now)) throw new TypeError("keystrokes: read needs the time it is");
       runDue(now);
       if (m && typeof m === "object") {
-        if (m.kind === "keymap") load(m);
+        if (m.kind === "keymap") load(m, now);
+        else if (m.kind === "secure") secure(!!m.on);
         else if (m.kind === "touch") s.touch = Array.isArray(m.ids) ? m.ids.slice() : null;
-        else if (m.kind === "press" && s.data) press(m.pos, m.sent === true, now);
+        else if (m.kind === "press" && s.data && !s.secure) press(m.pos, m.sent === true, now);
         else if (m.kind === "release" && s.data) release(m.pos, now);
         else if (m.kind === "key" && s.data) {
           if (m.type === "flagsChanged") {
             if (m.flags && typeof m.flags === "object" && !Array.isArray(m.flags)) setMods(m.flags, now);
-          } else if (m.type === "keyDown") {
+          } else if (m.type === "keyDown" && !s.secure) {
             if (!m.repeat) keyDown(m, now);
             label = labelOf(m, now);
           }
