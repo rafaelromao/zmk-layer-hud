@@ -279,7 +279,9 @@ WPM or the tallies.
 ## Configuration
 
 `~/.config/zmk-layer-hud/config.yaml` (or `--config` / `ZMKHUD_CONFIG`). Paths may be relative to
-the file, and nothing in it is required. [config/example.yaml](config/example.yaml) is the config
+the file; a layout file (`qmk_info_json`, `dts_layout`), in the config or in a keymap-drawer YAML, is
+also looked for in the directories above the file that names it, as a keyboard repo names it from
+its root. Nothing in it is required. [config/example.yaml](config/example.yaml) is the config
 `setup` starts you with; [config/diamond.yaml](config/diamond.yaml), the author's own, shows every
 key with its default and a comment. The first three rows are what `import` and `sync` draw from;
 the HUD itself never reads them:
@@ -443,8 +445,9 @@ never leaves the HUD without the keymap it had.
 
 A URL is cloned into `~/.cache/zmk-layer-hud/repos` (`$ZMKHUD_CACHE` moves it) and fetched on every
 later sync, so a sync sees what you pushed; a path is read where it is, so it sees what you have
-not pushed yet. `sync --watch` stays, and syncs again whenever the config, the keymap-drawer files,
-or a working copy's keymap and what it includes are saved; the running HUD redraws. A repo given
+not pushed yet. `sync --watch` stays, and syncs again whenever the config, the keymap-drawer files
+and the layout files they name, or a working copy's keymap and what it includes are saved; the
+running HUD redraws, and `doctor` says when one of them is newer than the last sync. A repo given
 by URL is not watched. [config/diamond.definitions.json](config/diamond.definitions.json) and
 [config/diamond.imported.yaml](config/diamond.imported.yaml) are what it writes for the Diamond.
 

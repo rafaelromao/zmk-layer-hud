@@ -372,8 +372,9 @@ options:
   --config CONFIG  config file
   --quiet          say nothing but errors
   --no-fetch       fetch no glyphs: use keymap-drawer's cache only
-  --watch          stay, and sync again each time the config, the keymap-drawer files or a working
-                   copy's keymap is edited; the running HUD redraws (Ctrl-C stops)
+  --watch          stay, and sync again each time the config, the keymap-drawer files and the
+                   layout files they name, or a working copy's keymap is edited; the running HUD
+                   redraws (Ctrl-C stops)
 ```
 
 ## keymap
