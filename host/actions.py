@@ -484,8 +484,7 @@ class Legends:
         a named key in any spelling the drawings use, or -- on a layer made for typing -- a word."""
         if self.capitals and len(legend) == 1 and legend.isalpha() and legend.isupper():
             legend = legend.lower()
-        name = uskeys.NAME_FOR_LEGEND.get(legend) or uskeys.NAME_FOR_LEGEND.get(legend.lower()) \
-            or uskeys.LEGEND_WORDS.get(_word(legend))
+        name = uskeys.name_of(legend)
         if name and name in uskeys.USAGE_FOR_NAME:
             return [{"page": KEY_PAGE, "id": uskeys.USAGE_FOR_NAME[name], "mods": 0}]
         snaps = uskeys.keystrokes_for(legend, self.altgr)
