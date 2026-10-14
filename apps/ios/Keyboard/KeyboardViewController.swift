@@ -13,6 +13,9 @@ final class KeyboardViewController: UIInputViewController {
     private var timer: Timer?
     private var room: (width: Double, maxHeight: Double) = (0, 0)
     private var minimized = false
+    /// When the keymap it drew was written (keymapStamp): another, imported since, is loaded on the
+    /// keyboard's next appearance.
+    private var loadedStamp: Date?
     private let epoch = CACurrentMediaTime()
     private lazy var field = ProxyField(self)
 
@@ -48,6 +51,13 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         boardView.globe.isHidden = !needsInputModeSwitchKey
+        // The extension outlives an import in the app: viewDidLoad does not run again, so the keymap
+        // the app wrote since is looked for here, each time the keyboard comes up.
+        if Self.keymapStamp() != loadedStamp {
+            load()
+            boardView.geometry = nil        // drawn afresh from the new keymap, even at the same size
+            view.setNeedsLayout()
+        }
     }
 
     override func viewWillLayoutSubviews() {
@@ -63,6 +73,8 @@ final class KeyboardViewController: UIInputViewController {
     // ---------- the keymap ----------
 
     private func load() {
+        loadedStamp = Self.keymapStamp()
+        kbd = nil
         do {
             guard let keymap = Self.keymap() else {
                 boardView.problem = "no keymap yet: import one in the ZMK Layer HUD app"
@@ -78,6 +90,14 @@ final class KeyboardViewController: UIInputViewController {
         } catch {
             boardView.problem = "the keyboard could not start: \(error)"
         }
+    }
+
+    /// When the App Group's keymap was last written; nil where there is none (the built-in one).
+    static func keymapStamp() -> Date? {
+        guard let group = Bundle.main.object(forInfoDictionaryKey: "ZMKHUDAppGroup") as? String,
+              let dir = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: group) else { return nil }
+        let attrs = try? FileManager.default.attributesOfItem(atPath: dir.appendingPathComponent(KeymapFile.name).path)
+        return attrs?[.modificationDate] as? Date
     }
 
     /// The app's keymap, from the App Group they share; else the one this keyboard was built with.

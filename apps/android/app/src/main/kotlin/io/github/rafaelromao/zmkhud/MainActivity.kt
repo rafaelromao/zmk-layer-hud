@@ -101,8 +101,7 @@ class MainActivity : Activity() {
 
     private fun import(uri: Uri) {
         val text = try {
-            contentResolver.openInputStream(uri)?.use { it.readBytes() }
-                ?.takeIf { it.size <= Keymaps.MAX_BYTES }?.toString(Charsets.UTF_8)
+            contentResolver.openInputStream(uri)?.use { Keymaps.read(it) }?.toString(Charsets.UTF_8)
         } catch (e: Exception) {
             null
         }

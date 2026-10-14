@@ -156,6 +156,19 @@ class SinkTest {
         }
     }
 
+    @Test fun aKeymapIsReadNoFurtherThanItsLimit() {
+        assertEquals("abc", Keymaps.read("abc".byteInputStream(), max = 3)?.toString(Charsets.UTF_8))
+        assertNull(Keymaps.read("abcd".byteInputStream(), max = 3))
+        // A stream with no end is given up on at the limit, not read on.
+        var given = 0
+        val endless = object : java.io.InputStream() {
+            override fun read(): Int = 1.also { given++ }
+            override fun read(b: ByteArray, off: Int, len: Int): Int { b.fill(1, off, off + len); given += len; return len }
+        }
+        assertNull(Keymaps.read(endless, max = 100_000))
+        assertTrue(given <= 100_001, "read $given bytes")
+    }
+
     @Test fun aKeymapIsCheckedBeforeItIsKept() {
         val keys = """"layout":{"keys":[]},"layers":{}"""
         assertEquals(Keymaps.Checked.Ok("Diamond", true),

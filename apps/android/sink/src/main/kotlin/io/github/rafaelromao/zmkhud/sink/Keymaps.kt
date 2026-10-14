@@ -1,5 +1,7 @@
 package io.github.rafaelromao.zmkhud.sink
 
+import java.io.InputStream
+
 /**
  * A keymap file the app is given -- `zmk-layer-hud keymap -o board.json` on the computer, sent over
  * by a share, Files or a sample -- checked before it replaces the one the keyboard draws.
@@ -14,6 +16,20 @@ object Keymaps {
          *  landing page, say): it is drawn, and its keys do nothing. */
         data class Ok(val title: String, val types: Boolean) : Checked()
         data class Refused(val why: String) : Checked()
+    }
+
+    /** A keymap file's bytes, read no further than [max]: null for a longer one. A share or a VIEW can
+     *  hand the app any stream at all, and reading it whole first would let it take all the memory
+     *  there is -- the keyboard's too, which shares the process. */
+    fun read(input: InputStream, max: Int = MAX_BYTES): ByteArray? {
+        val out = java.io.ByteArrayOutputStream()
+        val buf = ByteArray(64 * 1024)
+        while (true) {
+            val n = input.read(buf, 0, minOf(buf.size, max + 1 - out.size()))
+            if (n < 0) return out.toByteArray()
+            out.write(buf, 0, n)
+            if (out.size() > max) return null
+        }
     }
 
     fun check(text: String): Checked {
