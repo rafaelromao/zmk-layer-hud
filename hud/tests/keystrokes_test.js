@@ -86,6 +86,39 @@ const PRESS_MS = (DIAMOND.hud && DIAMOND.hud.press_ms) || K.DEFAULTS.press_ms;
         "a key going down applies the drop it was waiting behind");
 })();
 
+// ---------- the reports ----------
+
+const MOMENTARY_MS = (DIAMOND.hud && DIAMOND.hud.momentary_ms) || K.DEFAULTS.momentary_ms;
+const keyDown = (chars, more) => Object.assign({ kind: "key", type: "keyDown", name: null, chars, flags: {} }, more || {});
+const posOfIdx = idx => Number(Object.entries(DIAMOND.positions).find(([, i]) => i === idx)[0]);
+
+(function aCharacterOnlyAHeldLayerTypesBringsItUpForAWhile() {
+  const ks = fresh();                                  // no layers from the keyboard: inferred
+  let out = ks.read(keyDown("\\"), 1000);
+  check(eq(out.board.momentary, ["numbers"]) && out.board.layers[0] === "numbers", `\\ is on Numbers alone: held, inferred (${out.board.momentary})`);
+  check(out.next === 1000 + MOMENTARY_MS + 20, `until momentary_ms after it: next ${out.next}`);
+  out = ks.tick(out.next);
+  check(eq(out.board.momentary, []) && out.board.layers[0] === DIAMOND.base, "and then it lets go");
+})();
+
+(function aKeyTheFeedCannotNameIsNamedByTheBoard() {
+  const ks = fresh();
+  ks.read({ kind: "layers", ids: [] }, 900);
+  const b = DIAMOND.layers[DIAMOND.base].findIndex(k => k.tap === "b");
+  ks.read({ kind: "press", pos: posOfIdx(b) }, 1000);
+  let out = ks.read(keyDown("", { name: "usage9c" }), 1010);
+  check(out.label === "b", `a usage the feed has no name for reads as its key: ${out.label}`);
+  out = ks.read(keyDown("", { name: "usage9c" }), 2500);
+  check(out.label === null, "but not from a press long gone");
+  out = ks.read(keyDown("x", { name: "x" }), 2600);
+  check(out.label === null, "and a key the feed names needs none");
+  const combo = DIAMOND.combos.find(c => c.layers.includes(DIAMOND.base) && c.positions.length === 2 && c.key.tap);
+  ks.read({ kind: "press", pos: posOfIdx(combo.positions[0]) }, 5000);
+  ks.read({ kind: "press", pos: posOfIdx(combo.positions[1]) }, 5005);
+  out = ks.read(keyDown("", { name: "usage9d" }), 5010);
+  check(out.label === combo.key.tap, `a combo's keystroke reads as its legend, not its last key: ${out.label}`);
+})();
+
 (function layersNoLongerReportedAreEmulatedAgain() {
   const ks = fresh();
   ks.read({ kind: "layers", ids: [ALPHA2] }, 1000);
