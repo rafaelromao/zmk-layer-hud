@@ -80,6 +80,8 @@ import keymap as keymap_mod  # noqa: E402  (host/keymap.py)
 import panelstate  # noqa: E402  (host/panelstate.py)
 import session as session_mod  # noqa: E402  (host/session.py)
 import signal_frame  # noqa: E402  (host/signal_frame.py)
+from keynames import (ALT_CHARS, ALTGR_CHARS, CHARS, CONTROL_CHARS, DEAD_KEY_SPECIAL, DEAD_KEYS,  # noqa: E402
+                      MOD_BITS, NAMED, RALT)
 
 ZMK_VID, ZMK_PID = 0x1D50, 0x615E
 
@@ -89,61 +91,6 @@ ZMK_VID, ZMK_PID = 0x1D50, 0x615E
 BLE_SERVICE_UUID = "d1f0a7c2-6b3e-4f8a-9c21-5e7b4a0d9f31"
 BLE_SIGNAL_UUID = "d1f0a7c3-6b3e-4f8a-9c21-5e7b4a0d9f31"
 BLE_RETRY_MAX_S = 60  # longest gap between scans while none of them find anything
-
-# HID modifier byte bits -> HUD flag names (left/right collapse).
-MOD_BITS = {0x01: "ctrl", 0x02: "shift", 0x04: "alt", 0x08: "cmd", 0x10: "ctrl", 0x20: "shift", 0x40: "alt", 0x80: "cmd"}
-
-# Keyboard-page usage -> (char, shifted char), US layout.
-CHARS = {}
-for i, c in enumerate("abcdefghijklmnopqrstuvwxyz"):
-    CHARS[0x04 + i] = (c, c.upper())
-for i, (c, s) in enumerate(zip("1234567890", "!@#$%^&*()")):
-    CHARS[0x1E + i] = (c, s)
-CHARS.update({0x2C: (" ", " "), 0x2D: ("-", "_"), 0x2E: ("=", "+"), 0x2F: ("[", "{"), 0x30: ("]", "}"),
-              0x31: ("\\", "|"), 0x32: ("#", "~"), 0x33: (";", ":"), 0x34: ("'", '"'), 0x35: ("`", "~"),
-              0x36: (",", "<"), 0x37: (".", ">"), 0x38: ("/", "?"), 0x64: ("\\", "|"),
-              0x54: ("/", "/"), 0x55: ("*", "*"), 0x56: ("-", "-"), 0x57: ("+", "+"), 0x67: ("=", "=")})
-for i, c in enumerate("1234567890"):
-    CHARS[0x59 + i] = (c, c)  # keypad 1..9, 0 (0x59..0x62)
-CHARS[0x63] = (".", ".")
-# Usage -> name, spelled like Hammerspoon's hs.keycodes.map (the pages share one table).
-NAMED = {0x28: "return", 0x29: "escape", 0x2A: "delete", 0x2B: "tab", 0x2C: "space", 0x4C: "forwarddelete",
-         0x4F: "right", 0x50: "left", 0x51: "down", 0x52: "up", 0x4A: "home", 0x4D: "end", 0x4B: "pageup",
-         0x4E: "pagedown", 0x39: "capslock", 0x46: "printscreen", 0x47: "scrolllock", 0x48: "pause",
-         0x49: "insert", 0x58: "return", 0x65: "menu",
-         # Keyboard Cancel. No Mac key sends it, so Hammerspoon has no name for it, but a cancel
-         # combo does (K_CANCEL), and without the keyboard's positions nothing else names it.
-         0x9B: "cancel"}
-for i in range(24):
-    NAMED[0x3A + i if i < 12 else 0x68 + i - 12] = f"f{i + 1}"
-CONTROL_CHARS = {0x28: "\r", 0x29: "\x1b", 0x2A: "\x7f", 0x2B: "\t", 0x58: "\r"}
-# macOS Option layer of the US layout: (usage, shifted) -> character. Macros like &kp LS(LA(N2))
-# for € land here. Dead keys of that layer (⌥e ⌥` ⌥i ⌥u ⌥n) are left out on purpose.
-ALT_CHARS = {
-    (0x1E, False): "¡", (0x1E, True): "⁄", (0x1F, False): "™", (0x1F, True): "€", (0x20, False): "£", (0x20, True): "‹",
-    (0x21, False): "¢", (0x21, True): "›", (0x22, False): "∞", (0x22, True): "ﬁ", (0x23, False): "§", (0x23, True): "ﬂ",
-    (0x24, False): "¶", (0x24, True): "‡", (0x25, False): "•", (0x25, True): "°", (0x26, False): "ª", (0x26, True): "·",
-    (0x27, False): "º", (0x27, True): "‚", (0x2D, False): "–", (0x2D, True): "—", (0x2E, False): "≠", (0x2E, True): "±",
-    (0x2F, False): "“", (0x2F, True): "”", (0x30, False): "‘", (0x30, True): "’", (0x31, False): "«", (0x31, True): "»",
-    (0x33, False): "…", (0x33, True): "Ú", (0x34, False): "æ", (0x34, True): "Æ", (0x36, False): "≤", (0x36, True): "¯",
-    (0x37, False): "≥", (0x37, True): "˘", (0x38, False): "÷", (0x38, True): "¿",
-    (0x04, False): "å", (0x04, True): "Å", (0x05, False): "∫", (0x05, True): "ı", (0x06, False): "ç", (0x06, True): "Ç",
-    (0x07, False): "∂", (0x07, True): "Î", (0x09, False): "ƒ", (0x09, True): "Ï", (0x0A, False): "©", (0x0A, True): "˝",
-    (0x0B, False): "˙", (0x0B, True): "Ó", (0x0D, False): "∆", (0x0D, True): "Ô", (0x0E, False): "˚", (0x0E, True): "",
-    (0x0F, False): "¬", (0x0F, True): "Ò", (0x10, False): "µ", (0x10, True): "Â", (0x12, False): "ø", (0x12, True): "Ø",
-    (0x13, False): "π", (0x13, True): "∏", (0x14, False): "œ", (0x14, True): "Œ", (0x15, False): "®", (0x15, True): "‰",
-    (0x16, False): "ß", (0x16, True): "Í", (0x17, False): "†", (0x17, True): "ˇ", (0x19, False): "√", (0x19, True): "◊",
-    (0x1A, False): "∑", (0x1A, True): "„", (0x1B, False): "≈", (0x1B, True): "˛", (0x1C, False): "¥", (0x1C, True): "Á",
-    (0x1D, False): "Ω", (0x1D, True): "¸",
-}
-
-
-# The right Alt as AltGr, on a Linux host with the US-International layout: what a keymap that
-# morphs by OS sends there instead of macOS's Option (rafaelromao/keyboards, the Linux side of its
-# OS_MORPHs: ç is &kp RA(COMMA)). Only those, and only with `feed.altgr` on: without it the right Alt
-# is Option, as on a Mac.
-RALT = 0x40
-ALTGR_CHARS = {(0x36, False): "ç", (0x36, True): "Ç", (0x33, True): "°", (0x22, False): "€"}
 
 
 def flags_of(mods):
@@ -173,11 +120,6 @@ def key_message(usage, down, flags, altgr=False):
             "code": usage, "flags": flags, "repeat": False}
 
 
-# Dead keys of the US-International layout, which is how accent macros type on the host:
-# the dead key, then the letter, back to back (ZMK macro with wait-ms 0).
-DEAD_KEYS = {"`": "̀", "'": "́", "^": "̂", "~": "̃", '"': "̈"}
-# US-International special cases that are not the combining mark: ' + c is ç, not ć.
-DEAD_KEY_SPECIAL = {("'", "c"): "ç", ("'", "C"): "Ç"}
 DEAD_KEY_MS = 60  # a dead key followed by a letter within this window is one accented character
 
 

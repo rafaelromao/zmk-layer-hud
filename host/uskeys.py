@@ -6,9 +6,9 @@ They can disagree. An accented letter is not one keypress but a dead key and a l
 need Option; Return is a named key whose glyph each table spells its own way. The only way to test
 the strip is to send it what a keyboard would send and see what comes out.
 
-The character tables are inverted from hudfeed's own at import, so they cannot drift from the
-decoder they are meant to exercise. What is written down here is the part hudfeed has no opinion
-about: which legend means which named key.
+The tables are the key vocabulary's (host/keynames.py), inverted at import, so they cannot drift
+from the decoder they are meant to exercise: which character a key types, and which legend means
+which named key (name_of), are written down there once.
 
   python3 host/uskeys.py --events < legends    one JSON object per line, for hud/tests/strip_test.js
   python3 host/uskeys.py --corpus KEYMAP.json  the legends of a keymap message, ready for --events
@@ -21,8 +21,9 @@ import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from hudfeed import (ALT_CHARS, ALTGR_CHARS, CHARS, DEAD_KEY_SPECIAL, DEAD_KEYS, NAMED, RALT,  # noqa: E402
-                     SignalDecoder)
+from hudfeed import SignalDecoder  # noqa: E402
+from keynames import (ALT_CHARS, ALTGR_CHARS, CHARS, DEAD_KEY_SPECIAL, DEAD_KEYS, NAMED, RALT,  # noqa: E402
+                      name_of, spellings)
 
 MOD_SHIFT, MOD_ALT = 0x02, 0x04
 
@@ -43,38 +44,6 @@ ALTGR_USAGE_FOR = {_ch: (_usage, _shift) for (_usage, _shift), _ch in ALTGR_CHAR
 USAGE_FOR_NAME = {}
 for _usage in sorted(NAMED, reverse=True):
     USAGE_FOR_NAME[NAMED[_usage]] = _usage
-
-# The one place a legend is tied to a named key: every spelling a drawing uses for one, as a glyph
-# or a word, kept lowercased and without spaces. keymap-drawer's parse writes words (Tab, BSpace,
-# Page Down), drawings by hand glyphs or capitals (↹, BSPC); name_of reads them all by one rule. A
-# drawing's "Delete" is ZMK's DEL, the key that deletes forward; "BSpace" is Backspace.
-SPELLINGS = {}
-for _name, _spelled in [
-    ("space", "␣ spc space"), ("return", "↵ ⏎ ret enter return"), ("escape", "⎋ esc escape"),
-    ("delete", "⌫ bspc bspace backspace"), ("forwarddelete", "⌦ del delete"), ("tab", "⇥ ↹ tab"),
-    ("left", "← left"), ("right", "→ right"), ("up", "↑ up"), ("down", "↓ down"),
-    ("home", "⇱ home"), ("end", "⇲ end"), ("pageup", "⇞ pgup pageup"), ("pagedown", "⇟ pgdn pagedown"),
-    ("insert", "⎀ ins insert"), ("capslock", "⇪ caps capslock"), ("cancel", "cancel"),
-]:
-    for _s in _spelled.split():
-        SPELLINGS[_s] = _name
-for _i in range(1, 25):
-    SPELLINGS[f"f{_i}"] = f"f{_i}"
-
-
-def _spelling(legend):
-    return "".join(legend.split()).lower()
-
-
-def name_of(legend):
-    """The named key a legend stands for, however the drawing spells it, or None."""
-    return SPELLINGS.get(_spelling(legend)) if isinstance(legend, str) else None
-
-
-def spellings(name):
-    """Every spelling of a named key, as SPELLINGS keeps them."""
-    return [s for s, n in SPELLINGS.items() if n == name]
-
 
 def snapshot(usage, mods=0):
     """One `keys` message: the keyboard's report snapshot holding a single key."""

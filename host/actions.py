@@ -26,6 +26,7 @@ import re
 import sys
 from collections import Counter
 
+import keynames
 import uskeys
 import zmk_expr
 import zmk_tables as T
@@ -484,7 +485,7 @@ class Legends:
         a named key in any spelling the drawings use, or -- on a layer made for typing -- a word."""
         if self.capitals and len(legend) == 1 and legend.isalpha() and legend.isupper():
             legend = legend.lower()
-        name = uskeys.name_of(legend)
+        name = keynames.name_of(legend)
         if name and name in uskeys.USAGE_FOR_NAME:
             return [{"page": KEY_PAGE, "id": uskeys.USAGE_FOR_NAME[name], "mods": 0}]
         snaps = uskeys.keystrokes_for(legend, self.altgr)
