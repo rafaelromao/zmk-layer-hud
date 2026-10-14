@@ -298,6 +298,29 @@ function checkComboPill(data) {
   return fails;
 }
 
+/* A letter only Alpha 2 has, typed with no layers from the keyboard, is placed there: its key and
+ * the keys that bring Alpha 2 up flash. A position going down a moment later says what was really
+ * struck, and takes that guess back -- the activators with the key, not the key alone. */
+function checkAlpha2Withdrawn(data) {
+  const d = JSON.parse(JSON.stringify(data));
+  const ex = d.extras || {};
+  const q = ex.alpha2 ? (d.layers[ex.alpha2] || []).findIndex(k => k.tap === "q") : -1;
+  const e = (d.layers[d.base] || []).findIndex(k => k.tap === "e");
+  const ePos = Object.entries(d.positions || {}).find(([, i]) => Number(i) === e);
+  if (q < 0 || !ePos) return ["the fixture lacks Alpha 2's q or a positioned e on its base"];
+  d.extras = Object.assign({}, ex, { letter_combos_on: ["vim"] });   // vim is not up: letters are typing
+  const page = loadPage();
+  page.hud.load(d);
+  const lit = () => page.hud.state.keyEls.flatMap((el, i) => (el.classList.contains("pressed") ? [i] : []));
+  page.hud.key({ type: "keyDown", name: "q", chars: "q", flags: {}, repeat: false });
+  const guessed = lit();
+  if (!guessed.includes(q) || guessed.length < 2) return [`q should light Alpha 2's q (${q}) and its activators; lit [${guessed}]`];
+  page.clock.advance(5);
+  page.hud.pressAt(Number(ePos[0]));
+  if (lit().join() !== String(e)) return [`e's position should leave e (${e}) lit alone; lit [${lit()}]`];
+  return [];
+}
+
 /* A modifier rings the key that turned it on, not every key that carries it: the home-row Shift
  * held, or a Shift whose report came before its position. With no positions from the firmware
  * there is no telling which, and every key carrying it is ringed. */
@@ -428,6 +451,12 @@ async function main() {
   const capitalFailures = checkCapitals();
   if (capitalFailures.length) {
     for (const failure of capitalFailures) console.error(`FAIL capitals: ${failure}`);
+    process.exit(1);
+  }
+
+  const alpha2Failures = checkAlpha2Withdrawn(data);
+  if (alpha2Failures.length) {
+    for (const failure of alpha2Failures) console.error(`FAIL alpha2-withdrawn: ${failure}`);
     process.exit(1);
   }
 
