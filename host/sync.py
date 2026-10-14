@@ -912,7 +912,7 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
     not make again (carried(), below) is said first; keep=True keeps just that and makes the rest
     anew, keep=False drops it, and keep=None asks `ask` (a question -> yes/no), or refuses with the
     list when there is no one to ask. config.yaml is never written either way."""
-    config_path = os.path.abspath(os.path.expanduser(config_path))
+    config_path = keymap_mod.config_path(config_path)
     if not os.path.exists(config_path):
         new_config(config_path)
         say(quiet, f"no config yet; wrote one to start from: {config_path}")
@@ -1283,7 +1283,7 @@ def main(argv=None):
                              pristine=opts.get("pristine", False) or keep is not None, keep=keep,
                              ask=ask_tty if sys.stdin.isatty() else None)
         if cmd == "sync":
-            config_path = opts.get("config") or keymap_mod.find_config()
+            config_path = keymap_mod.find_config(opts.get("config"))
             repo, keyboard = recorded(config_path)
             if repo is None and not keymap_mod.load_yaml(config_path).get("keymap"):
                 raise SyncError("nothing to sync: import a ZMK repo (`zmk-layer-hud import <repo>`), "

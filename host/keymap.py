@@ -1185,16 +1185,21 @@ def _merge_imported(cfg, imported):
     return cfg
 
 
+def config_path(path):
+    """A config's path as the HUD names it, wherever it was written: ~ and $VARS expanded, absolute."""
+    return os.path.abspath(expand(path))
+
+
 def find_config(path=None):
     """The config asked for, which must be there; asked for none, $ZMKHUD_CONFIG's, else the default.
     A config asked for and not found is said, never stood in for by another board's."""
     if path:
-        if os.path.exists(expand(path)):
-            return expand(path)
+        if os.path.exists(config_path(path)):
+            return config_path(path)
         raise KeymapError(f"no config at {path}")
     for candidate in (os.environ.get("ZMKHUD_CONFIG"), DEFAULT_CONFIG):
-        if candidate and os.path.exists(expand(candidate)):
-            return expand(candidate)
+        if candidate and os.path.exists(config_path(candidate)):
+            return config_path(candidate)
     raise KeymapError(f"no config: pass --config, set ZMKHUD_CONFIG, or create {DEFAULT_CONFIG} "
                       "(see config/example.yaml and config/diamond.yaml in zmk-layer-hud)")
 

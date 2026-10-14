@@ -525,6 +525,15 @@ class Import(unittest.TestCase):
     def run_import(self, source=None, keyboard=None):
         return sync.do_import(source, keyboard, self.config, quiet=True, fetch=False)
 
+    def test_a_config_named_through_a_variable_is_the_one_meant(self):
+        # As the HUD reads it (keymap.find_config): ~ and $VARS, then absolute. A $VAR left as it
+        # was named a directory called "$ZMKHUD_T" and wrote a new config there.
+        with mock.patch.dict(os.environ, {"ZMKHUD_T": self.d}):
+            sync.do_import(None, None, "$ZMKHUD_T/config.yaml", quiet=True, fetch=False)
+        self.assertTrue(os.path.isfile(self.defs))
+        self.assertFalse(os.path.exists(os.path.join(os.getcwd(), "$ZMKHUD_T")))
+        self.assertEqual(self.config, sync.keymap_mod.config_path(os.path.join(self.d, ".", "config.yaml")))
+
     def test_a_drawing_alone_from_the_configs_keymap_drawer_file(self):
         self.run_import()
         with open(self.defs, encoding="utf-8") as f:
