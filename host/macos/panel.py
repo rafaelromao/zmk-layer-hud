@@ -90,7 +90,7 @@ def save_state(changes):
     state.update(changes)
     try:
         STATE.parent.mkdir(parents=True, exist_ok=True)
-        panelstate._write(str(STATE), state)     # whole or not at all
+        panelstate.write_json(str(STATE), state)     # whole or not at all
     except OSError as e:
         log(f"could not save {STATE}: {e}")
 

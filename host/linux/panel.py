@@ -45,9 +45,8 @@ import uinput  # noqa: E402  (host/linux/uinput.py)
 ROOT = Path(__file__).resolve().parent.parent.parent
 PAGES = ROOT / "hud"
 # Outside the tree, because `zmk-layer-hud update` replaces the tree wholesale. hud.sh exports
-# ZMKHUD_STATE; the default is repeated so running this directly still works.
-RUN = Path(os.environ.get("ZMKHUD_STATE") or
-           Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "zmk-layer-hud")
+# ZMKHUD_STATE; panelstate works out the default, so running this directly still works.
+RUN = Path(panelstate.default_dir())
 # Until the page says how big it is (follow_page): the board, the banner and one row of the stats
 # bar above them (hud/hud.css #stats: 26px + 6px).
 STATS_H = 32
@@ -99,7 +98,7 @@ def load_state():
 
 def write_state(state):
     try:
-        panelstate._write(str(POSITION), state)     # whole or not at all, and this user's alone
+        panelstate.write_json(str(POSITION), state)     # whole or not at all, and this user's alone
     except OSError as e:
         print(f"panel: could not save {POSITION}: {e}", file=sys.stderr, flush=True)
 
