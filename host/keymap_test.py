@@ -300,7 +300,10 @@ class Settings(unittest.TestCase):
             self.assertEqual(km.layout_files({"qmk_info_json": "docs/d/layout.json", "layout_name": "L"}, yaml_path),
                              {"qmk_info_json": json_path, "layout_name": "L"})
             self.assertEqual(km.layout_files({"qmk_info_json": "layout.json"}, yaml_path), {"qmk_info_json": json_path})
-            self.assertEqual(km.layout_files({"dts_layout": "missing.dtsi"}, yaml_path), {"dts_layout": "missing.dtsi"})
+            # Found nowhere: where it would be beside the YAML, not wherever keymap-drawer happens to
+            # run, so its error names the place it was looked for.
+            self.assertEqual(km.layout_files({"dts_layout": "missing.dtsi"}, yaml_path),
+                             {"dts_layout": os.path.join(root, "docs", "d", "missing.dtsi")})
             self.assertEqual(km.layout_files({"cols_thumbs_notation": "33+2 2+33"}, yaml_path),
                              {"cols_thumbs_notation": "33+2 2+33"})
 

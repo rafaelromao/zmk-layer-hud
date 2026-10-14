@@ -209,8 +209,9 @@ def resolve(path, named_in, walk_up=False):
     """A path one of the HUD's files names, as the HUD finds it: ~ and $VARS expanded, an absolute
     one as it is, a relative one from the directory of the file that names it (`named_in`).
     `walk_up`, for layout files: from there up through its parents, the first that has it -- a
-    drawer repo names them from its root, where keymap-drawer runs, and the HUD runs anywhere. A
-    layout file found nowhere is left as written, for keymap-drawer's error to name."""
+    drawer repo names them from its root, where keymap-drawer runs, and the HUD runs anywhere. One
+    found nowhere is where it would be beside the file that names it, so keymap-drawer's error says
+    where it was looked for rather than wherever it happens to run."""
     if not isinstance(path, str):
         return path
     p = expand(path)
@@ -223,7 +224,7 @@ def resolve(path, named_in, walk_up=False):
         if os.path.exists(os.path.join(d, p)):
             return os.path.normpath(os.path.join(d, p))
         if os.path.dirname(d) == d:
-            return p
+            return os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(named_in)), p))
         d = os.path.dirname(d)
 
 
