@@ -2,14 +2,27 @@
 read it. The test oracle (host/ways.py) and the page share these spellings, so they are pinned here
 rather than by the sweeps."""
 
+import json
 import os
+import re
+import shutil
+import subprocess
 import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import keynames  # noqa: E402
-from keynames import GLYPHS, MOD_BITS, MOD_GLYPHS, NAMED, name_of, spellings  # noqa: E402
+import keymap  # noqa: E402
+from keynames import CONTROL_CHARS, GLYPHS, MOD_BITS, MOD_GLYPHS, NAMED, name_of, spellings  # noqa: E402
+
+REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+NODE = shutil.which("node")
+
+
+def read(*parts):
+    with open(os.path.join(REPO, *parts), encoding="utf-8") as f:
+        return f.read()
 
 
 class Records(unittest.TestCase):
@@ -74,6 +87,54 @@ class Spellings(unittest.TestCase):
         self.assertTrue({"⇥", "↹", "tab"} <= set(spellings("tab")))
         self.assertEqual(spellings("printscreen"), [])
         self.assertEqual(spellings(None), [])
+
+
+
+class Adapters(unittest.TestCase):
+    """The adapters keep their own words for keys, each keyed by the key name: the browser's
+    (site/demo.js), a text field's (hud/hidtext.js TEXT_KEYS, and the Android keyboard's codes for
+    those), keymap-drawer's glyph ids (host/keymap.py GLYPHS). Each must name keys the vocabulary
+    knows, as the vocabulary names them."""
+
+    @unittest.skipUnless(NODE, "node is not installed")
+    def test_the_browsers_named_keys(self):
+        out = subprocess.run([NODE, "-e", "process.stdout.write(JSON.stringify(require(process.argv[1]).NAMED))",
+                              os.path.join(REPO, "site", "demo.js")], capture_output=True, text=True, check=True)
+        control = {NAMED[u]: c for u, c in CONTROL_CHARS.items()}
+        for key, (name, chars) in json.loads(out.stdout).items():
+            self.assertIn(name, NAMED.values(), key)
+            self.assertEqual(chars, control.get(name, ""), key)
+
+    def test_a_text_fields_named_keys(self):
+        src = read("hud", "hidtext.js")
+        table = re.search(r"const TEXT_KEYS = \{(.*?)\};", src, re.S).group(1)
+        text_keys = dict(re.findall(r'"(\w+)": "(\w+)"', table))
+        self.assertTrue(text_keys)
+        for name in text_keys:
+            self.assertIn(name, NAMED.values())
+        self.assertIn('TEXT_KEYS["f" + i] = "f" + i', src)    # f1..f24, which the vocabulary names
+        # The Android keyboard's codes are keyed by the text field's words.
+        kotlin = read("apps", "android", "sink", "src", "main", "kotlin", "io", "github", "rafaelromao", "zmkhud",
+                      "sink", "ImeSink.kt")
+        android = re.findall(r'put\("(\w+)", KeyEvent', kotlin)
+        self.assertTrue(android)
+        self.assertLessEqual(set(android), set(text_keys.values()))
+
+    def test_keymap_drawers_glyphs_read_as_their_keys(self):
+        for glyph_id, name in [("mdi:keyboard-space", "space"), ("mdi:keyboard-return", "return"),
+                               ("mdi:keyboard-tab", "tab"), ("mdi:keyboard-esc", "escape"),
+                               ("mdi:backspace-outline", "delete"), ("mdi:backspace-reverse-outline", "forwarddelete"),
+                               ("mdi:arrow-left", "left"), ("mdi:arrow-right", "right"), ("mdi:arrow-up", "up"),
+                               ("mdi:arrow-down", "down"), ("mdi:format-horizontal-align-left", "home"),
+                               ("mdi:format-horizontal-align-right", "end"), ("mdi:home", "home"),
+                               ("mdi:page-first", "home"), ("mdi:page-last", "end"),
+                               ("mdi:chevron-double-up", "pageup"), ("mdi:chevron-double-down", "pagedown"),
+                               ("mdi:arrow-up-bold-outline", "pageup"), ("mdi:arrow-down-bold-outline", "pagedown"),
+                               ("mdi:keyboard-caps", "capslock"), ("mdi:apple-keyboard-caps", "capslock")]:
+            self.assertEqual(name_of(keymap.GLYPHS[glyph_id]), name, glyph_id)
+        for glyph_id, flag in [("mdi:apple-keyboard-shift", "shift"), ("mdi:apple-keyboard-control", "ctrl"),
+                               ("mdi:apple-keyboard-option", "alt"), ("mdi:apple-keyboard-command", "cmd")]:
+            self.assertEqual(keymap.GLYPHS[glyph_id], MOD_GLYPHS[flag], glyph_id)
 
 
 if __name__ == "__main__":
