@@ -41,6 +41,31 @@ The typed-keys strip below the board: what was typed, as chips.
 **Strip label**:
 The board's name for a key the feed cannot name, or a combo's legend, shown on the strip.
 
+### Keys
+
+**Named key**:
+A key that types no character of its own and is known by its name: Return, Escape, F5, Cancel.
+_Avoid_: special key, control key
+
+**Key name**:
+The feed's word for a named key. `delete` is Backspace, the key that deletes backwards;
+`forwarddelete` is the one that deletes forwards.
+_Avoid_: key code, keysym
+
+**Glyph**:
+The symbol the HUD draws for a named key or a modifier: ↵ for Return, ⌘ for Command.
+_Avoid_: icon, symbol
+
+**Spelling**:
+One way a drawing writes a named key's legend, as a glyph or a word: ↵, `ret`, `Enter`. A drawing's
+`Delete` is the key that deletes forwards.
+_Avoid_: alias
+
+**Key vocabulary**:
+Every named key and modifier with its key name, glyph and spellings, and the characters each key
+types: one statement of it, which the feed, the pages and the tools all read.
+_Avoid_: key table, key map
+
 ### Layers
 
 **Drawer layer**:
