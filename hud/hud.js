@@ -1456,12 +1456,14 @@
   }
   const livePills = new Set();   // the pills up: {positions}
 
-  function flash(indices, cls) {
+  // `held`: keys down at the time (keystrokes.js), lit until they come up and timed by their own.
+  function flash(indices, cls, held) {
     for (const idx of indices) {
       const e = state.keyEls[idx];
       if (!e) continue;
       e.classList.add("pressed");
       if (cls) for (const c of cls.split(" ")) if (c) e.classList.add(c);
+      if (held && held.includes(idx)) continue;
       clearTimeout(state.timers.get(idx));
       state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo"), T('press_ms')));
     }
@@ -1510,7 +1512,7 @@
       for (const p of op.positions) { const e = state.keyEls[p]; if (e) e.classList.add("pressed", "combo"); }
       state.comboShown = showCombo(op.positions, op.key);
     } else if (op.op === "flash") {
-      flash(op.idxs, op.cls);
+      flash(op.idxs, op.cls, op.held);
     } else if (op.op === "pill") {
       for (const [id, p] of pills) if (op.t - p.t > T("combo_pill_ms") + 1000) pills.delete(id);   // long gone by itself
       pills.set(op.id, { t: op.t, handle: showCombo(op.positions, op.key) });
