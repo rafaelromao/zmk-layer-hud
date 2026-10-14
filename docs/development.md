@@ -44,6 +44,14 @@ typed-keys strip against what a keyboard would have sent to type each legend. Ov
 about a third of a second. The cases are generated from the keymap message, so pointing it at
 another board sweeps that board.
 
+What the page draws is read by `hud/keystrokes.js`: the feed's messages go in, each with the time it
+came, and the board comes out -- the layers up, the keys down and lit, the combo pills, the keys that
+brought a layer up -- with what was struck, said once nothing can take it back, for the page to
+count. It keeps no time of its own (what is due next is an answer, not a timer), so
+`hud/tests/keystrokes_test.js` drives it with plain numbers and no DOM: a chord a bigger one
+supersedes inside its term, a guess its position takes back, a layer drop held back for a key's
+flash. The other suites go through the page, the DOM included.
+
 Those two drive one channel each, with the page's own rules for what a keymap means, and that is
 how a letter typed by a combo lit nothing once the board had to work from the character: both
 stayed green. `hud/tests/words_test.js` works from the keyboard's side instead. `host/ways.py`
@@ -53,7 +61,9 @@ comes when the key comes up), stated there rather than borrowed from `hud.js`. E
 down every channel it can arrive by: positions and reports in either order, reports alone with and
 without layers, positions alone, and typing sent in with combos on and off. Words go key after key
 on one page at a typist's pace, so a way is also tested next to its neighbours: a one-shot layer
-that outlives its key, a chord inside a combo term, a macro across two layers.
+that outlives its key, a chord inside a combo term, a macro across two layers. It also lists the
+chords a layer rules out -- a base combo's keys struck with a layer up that declares none on them --
+and each is struck as ZMK types it: its keys one by one, and no pill.
 
 `make audit` checks what those cases cannot: the drawing itself. One drawer layer stands for every
 ZMK layer drawn as it, so where two of them fire different things on the same keys, the HUD can be
