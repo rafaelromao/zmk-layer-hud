@@ -360,6 +360,29 @@ function checkModRings(data) {
   return fails;
 }
 
+/* The layer and the key that brought it up are two reports, in no promised order. Until the key
+ * comes, every key that can reach the layer is marked as its activator; once its position says
+ * which one did, that one alone is -- at once, not at the next redraw. */
+function checkLateActivator(data) {
+  const id = Object.entries(data.zmk_layers || {}).find(([, z]) => z && z.drawer === "alpha2");
+  const keys = [...new Set((data.activators || []).filter(a => a.layer === "alpha2").map(a => a.idx))];
+  const posOf = idx => Object.entries(data.positions || {}).find(([, i]) => Number(i) === idx);
+  const key = keys.find(posOf);
+  if (!id || keys.length < 2 || key === undefined) return ["the fixture lacks Alpha 2 with two activators, one positioned"];
+  const page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  page.clock.advance(1000);
+  const marked = () => page.hud.state.keyEls.flatMap((el, i) => (el.classList.contains("activator") ? [i] : []));
+  page.hud.setLayers([Number(id[0])]);
+  const before = marked();
+  if (!keys.every(k => before.includes(k))) return [`before its key, every activator of Alpha 2 [${keys}] should be marked; marked [${before}]`];
+  page.clock.advance(5);
+  page.hud.pressAt(Number(posOf(key)[0]));
+  const after = marked();
+  return after.join() === String(key) ? [] : [`its key ${key} going down should leave it marked alone; marked [${after}]`];
+}
+
 /* A layer picked to look at changes what the board draws, not what the keyboard has up: the key that
  * turned Shift on is found on the keyboard's layers. Held on the base, a home-row ⇧ rings although
  * the layer picked over it has another key there. */
@@ -465,6 +488,12 @@ async function main() {
   const modFailures = checkModRings(data);
   if (modFailures.length) {
     for (const failure of modFailures) console.error(`FAIL mod-rings: ${failure}`);
+    process.exit(1);
+  }
+
+  const lateFailures = checkLateActivator(data);
+  if (lateFailures.length) {
+    for (const failure of lateFailures) console.error(`FAIL late-activator: ${failure}`);
     process.exit(1);
   }
 

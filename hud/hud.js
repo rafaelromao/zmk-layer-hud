@@ -1984,6 +1984,7 @@
       // if the layer appeared at the same moment. One already up (a one-shot tapped earlier) came
       // with an earlier keystroke, and this press belongs to whatever chord it arrives in: with
       // Alpha 2 waiting, the 0 chord that uses Alpha 2's own key drew nothing.
+      let redraw = false;
       if (state.live) {
         for (const name of liveStack()) {
           if (name === base() || state.activatorOf[name] != null) continue;
@@ -1991,6 +1992,7 @@
           if (activatorsOf(name).includes(idx)) {
             state.activatorOf[name] = idx;
             entry.activator = true;
+            redraw = true;                // marked as what brought it up, its alternates no longer
             // It went down on the layers below the one it brought up, and counts there.
             entry.stack = entry.stack.filter(l => l !== name);
           }
@@ -2014,11 +2016,10 @@
       while (recentPos.length && now - recentPos[0].t > keepMs) recentPos.shift();
       recentPos.push({ idx, t: now, entry });
       // A modifier reported before the key that turned it on: this is that key, if it carries it.
-      let modFound = false;
       for (const f of Object.keys(state.modSource)) {
-        if (state.modSource[f] === null && r && carries(r.key, MOD_GLYPH[f])) { state.modSource[f] = idx; modFound = true; }
+        if (state.modSource[f] === null && r && carries(r.key, MOD_GLYPH[f])) { state.modSource[f] = idx; redraw = true; }
       }
-      if (modFound) renderKeys();
+      if (redraw) renderKeys();
       // The keyboard has already decided. A key still down that is what brought one of the live
       // layers up was treated by ZMK as a layer hold, not as part of a chord — had it been half
       // of a combo, the combo would have fired and the layer would not have changed. So the group
