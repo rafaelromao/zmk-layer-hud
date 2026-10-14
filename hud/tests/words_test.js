@@ -11,7 +11,7 @@
  * keymap has of typing each character: its key, a combo, another layer, a held Shift.
  *
  * The ways come from host/ways.py, which states ZMK's rules itself rather than asking hud.js (see
- * there for why). The reports are hudfeed's own decoder run backwards (host/uskeys.py). Each way is
+ * there for why). The reports are the feed's own decoder run backwards (host/uskeys.py). Each way is
  * replayed on a fresh page per channel; each word is typed on one page, key after key, so a way is
  * also tested next to its neighbours. Needs python3 (PYTHON=... to choose one); skips without it.
  */
