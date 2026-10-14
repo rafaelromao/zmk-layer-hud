@@ -58,22 +58,8 @@
   const ks = Keystrokes.create();
   const KS = ks._s;
   const recentPos = KS.recentPos;
+  const recent = KS.recent;          // the last few tokens typed, for macros
 
-  // Named keys → the legend text keymap-drawer keymaps usually use for them.
-  const NAMED = {
-    space: "␣", return: "↵", escape: "⎋", delete: "⌫", forwarddelete: "⌦", tab: "⇥",
-    left: "←", right: "→", up: "↑", down: "↓", home: "⇱", end: "⇲",
-    pagedown: "⇟", pageup: "⇞", insert: "⎀", capslock: "⇪",
-    // Keyboard Cancel (K_CANCEL), what a cancel combo sends: without positions this is how its
-    // keys light and its pill shows.
-    cancel: "cancel",
-  };
-  // The function keys the decoder names (f1..f24): without them a keymap's F5 resolves to no
-  // token at all and the key never lights when the firmware reports no positions.
-  for (let i = 1; i <= 24; i++) NAMED["f" + i] = "F" + i;
-  // Alternative spellings a drawer file may use for the same named key.
-  const ALIASES = { "␣": ["space", "spc", "SPACE"], "↵": ["⏎", "enter", "ret", "RET"], "⎋": ["esc", "ESC"],
-    "⌫": ["bspc", "BSPC", "backspace"], "⌦": ["del", "DEL"], "⇥": ["tab", "TAB", "↹"] };
   // Modifier flags → the glyph a hold legend uses for them (home-row mods light while held).
   const MOD_GLYPH = { shift: "⇧", ctrl: "⌃", alt: "⌥", cmd: "⌘" };
   // Where the keys go and which legend each shows (hud/view.js), the same answers a native board draws from.
@@ -940,16 +926,6 @@
     }
   }
 
-  // Keys a report lit, entered against the record remember() keeps for the macro and pressAt
-  // lookups: unlight() cancels the guess, and so does any position going down.
-  function guess(rec, idxs, layer, ev) {
-    if (!idxs.length) return;
-    const now = Date.now();
-    rec.guess = ledgerAdd({ kind: "guess", idxs: idxs.slice(), layer, t: now,
-                            stack: [layer].concat(stack().filter(l => l !== layer)),
-                            due: now + Math.max(comboTerm(), T("sequence_ms")), eligible: fromKeyboard(ev) });
-  }
-
   // ---------- strokes ----------
 
   /* The time each key takes and same-finger bigrams -- keybr's number and a layout analyser's --
@@ -1560,304 +1536,8 @@
     }
   }
 
-  // A legend matches a typed token exactly, through the alias table, or as one side of an
-  // "a|b" legend (a key that produces either). A multi-key sequence (a macro) matches when its
-  // printable core equals the legend's: motion keys the macro types (End, arrows) and the
-  // glyphs the legend uses to hint at them (⇥ → ⇲ …) are ignored on both sides.
-  const MOTION = /[⇥⇤→←↑↓⇲⇱⇢⇠⏎↵␣⌫⌦\s]/g;
-  const core = s => s.replace(MOTION, "");
-  // `exact`: the legend itself, not one alternative of an adaptive key's "a|b" (findOnLayer).
-  function legendMatches(legend, token, exact) {
-    if (!legend) return false;
-    if (legend === token) return true;
-    if (!exact && legend.includes("|") && legend.split("|").some(part => part.trim() === token)) return true;
-    const alts = ALIASES[token];
-    if (alts && alts.includes(legend)) return true;
-    if (token.length > 1) { const c = core(token); return c.length > 1 && c === core(legend); }
-    return false;
-  }
-
-  const isLetter = t => /^[\p{L}]$/u.test(t);
-
-  // Letter-producing combos on the base layer are commands (e.g. vim motions) rather than typing
-  // when `extras.letter_combos_on` is set: outside those layers they are ignored, so a typed
-  // letter missing from the base is attributed to the secondary alpha layer instead.
-  // `noCombos`: typing whose sender says combos are not how it is typed (handleKey).
-  // Returns {hit, combo}: the keys that type it, and the combo they are when they are one -- the
-  // combo found here, so its pill names what is lit -- or null.
-  function findOnLayer(layer, token, commandLayersActive, noCombos) {
-    const keys = state.data.layers[layer];
-    if (!keys) return null;
-    const gate = extras().letter_combos_on;
-    // A legend that says exactly this beats one that only sometimes does. "h|v" is an adaptive
-    // key -- h, or v right after a vowel -- while a combo drawn "v" always types v, so from a v
-    // alone the combo is the likelier and the adaptive key the fallback.
-    for (const exact of [true, false]) {
-      for (let i = 0; i < keys.length; i++) if (keys[i].type !== "trans" && legendMatches(keys[i].tap, token, exact)) return { hit: [i], combo: null };
-      if (noCombos) continue;
-      for (const c of state.data.combos) {
-        if (!c.layers.includes(layer) || !legendMatches(c.key.tap, token, exact)) continue;
-        if (gate && gate.length && isLetter(token) && layer === base() && !commandLayersActive) continue;
-        return { hit: c.positions.slice(), combo: c };
-      }
-    }
-    return null;
-  }
-
-  function tokenFor(ev) {
-    if (ev.name && NAMED[ev.name]) return NAMED[ev.name];
-    if (ev.chars && ev.chars.length === 1) {
-      // On a board drawn in capitals, h is the H key (load).
-      const upper = ev.chars.toUpperCase();
-      return state.capitals && upper.length === 1 && upper !== ev.chars && isLetter(ev.chars) ? upper : ev.chars;
-    }
-    return null;
-  }
-
-  function armMomentary(layer) {
-    const now = Date.now();
-    const m = state.momentary.find(x => x.layer === layer);
-    if (m) m.until = now + T('momentary_ms'); else state.momentary.push({ layer, until: now + T('momentary_ms') });
-    setTimeout(expire, T('momentary_ms') + 20);
-  }
-
-  function expire() {
-    const now = Date.now();
-    const before = state.momentary.length;
-    state.momentary = state.momentary.filter(m => m.until > now);
-    if (state.momentary.length !== before) render();
-  }
-
-  // Resolve a typed token on the given stack (top first). Returns {hit, combo, layer, viaShift} or null.
-  // An uppercase letter may live on a shifted layer the config names among the sticky ones.
-  function resolveOnStack(token, layers, commandLayersActive, noCombos) {
-    const shiftLayers = (extras().sticky || []).filter(l => /shift/i.test(l) && !layers.includes(l));
-    // A capital the stack itself draws came from there -- Caps word up, K is its chord. Only a
-    // capital the stack has no key for came from a Shift the layers do not show, and a shift
-    // layer that is not up is where the drawer keeps it. Searched the other way round, a live
-    // Caps word's K was drawn as Shift · Alpha 2's key and that layer's activator.
-    const searchStack = /^\p{Lu}$/u.test(token) ? [...layers, ...shiftLayers] : layers;
-    for (const layer of searchStack) {
-      const found = findOnLayer(layer, token, commandLayersActive, noCombos);
-      if (found) return { hit: found.hit, combo: found.combo, layer, viaShift: shiftLayers.includes(layer) };
-    }
-    return null;
-  }
-
-  // Recent keyDown tokens with the keys they lit, for multi-key legends ("->", "=>", "&&", "()").
-  const recent = [];
-  function remember(token, lit, pill, layer) {
-    const now = Date.now();
-    while (recent.length && now - recent[0].t > T('sequence_ms')) recent.shift();
-    const rec = { token, t: now, lit: lit || [], pill: pill || null, layer: layer || null, guess: null };
-    recent.push(rec);
-    if (recent.length > T('sequence_max')) recent.shift();
-    return rec;
-  }
-  // `inferring`: placing a key the keyboard's own stack does not speak for (handleKey).
-  function matchSequence(token, layers, cmdActive, noCombos, inferring, ev) {
-    const now = Date.now();
-    const fresh = recent.filter(r => now - r.t <= T('sequence_ms'));
-    for (let n = Math.min(fresh.length, T('sequence_max') - 1); n >= 1; n--) {
-      const parts = fresh.slice(fresh.length - n);
-      const seq = parts.map(p => p.token).join("") + token;
-      // A macro's first character can use up the one-shot layer the macro lives on (Qu on
-      // Shift · Alpha 2, ão on the Ç extension), so by its last character that layer is off the
-      // stack: look where its first characters were found, too. Without layers from the keyboard
-      // that may never have been the macro's own -- Qu's Q reads as Alpha 2's q with Shift -- so
-      // the sticky layers a macro can live on are looked at as well, and for typing sent in, which
-      // never came from the keyboard's layers at all. Otherwise the keyboard reports a one-shot
-      // layer for as long as it is up, and the live stack says all there is to say.
-      const where = [...new Set(parts.map(p => p.layer).concat(inferring ? (extras().sticky || []) : [])
-        .filter(l => l && !layers.includes(l)))];
-      const r = resolveOnStack(seq, where.concat(layers), cmdActive, noCombos);
-      if (!r) continue;
-      // The keys lit so far were the macro's steps (or a shorter legend that matched first, like
-      // "()" inside "();"): unlight them, pill included, and light the longer match.
-      for (const p of parts) unlight(p);
-      flash(r.hit, r.hit.length > 1 ? "combo" : null);
-      let pill = null;
-      if (r.combo) pill = showCombo(r.hit, r.combo.key);
-      // Keep the tokens: a still longer legend may follow (";" after "()", "⏎" after "do {").
-      guess(remember(token, r.hit, pill, r.layer), r.hit, r.layer, ev);
-      afterKey();
-      return true;
-    }
-    return false;
-  }
-  function unlight(entry) {
-    for (const idx of entry.lit) {
-      const e = state.keyEls[idx];
-      if (e) { e.classList.remove("pressed", "combo", "combo-key"); clearTimeout(state.timers.get(idx)); }
-    }
-    if (entry.pill) entry.pill.remove();
-    if (entry.guess) entry.guess.cancelled = true;   // taken back before it was counted
-    entry.lit = []; entry.pill = null;
-  }
-
-  function commandLayersActive(layers) {
-    const gate = extras().letter_combos_on;
-    return !gate || !gate.length || gate.some(l => layers.includes(l));
-  }
-
   // A key that carries a modifier: a home-row mod (hold legend) or the modifier key itself (tap).
   const carries = (key, glyph) => !!key && ((key.hold && key.hold.includes(glyph)) || key.tap === glyph);
-
-  /* A usage the feed has no name for -- usage9c, a key bound to something past F24 -- is a name no
-   * one reads. The strip says instead what the board says of the key that sent it: the last key
-   * down, from the firmware's positions, while that press is this keystroke's. When that press
-   * completed a combo, the keystroke is the combo's, and the strip says what its pill says, not
-   * whichever of its keys went down last. (Cancel, the Diamond's l+o+u, used to be the case in
-   * point; the feed names its key now, so it reads "cancel" with or without positions.) */
-  const STRIP_PRESS_MS = 1000;
-  function stripEvent(ev) {
-    if (!state.data || ev.type !== "keyDown" || !/^usage[0-9a-f]+$/.test(ev.name || "")) return ev;
-    const p = state.lastPress;
-    if (!p || Date.now() - p.t > STRIP_PRESS_MS) return ev;
-    const r = p.combo ? null : resolveBinding(p.idx, p.stack);
-    const key = p.combo || (r && r.key);
-    const legend = key && (key.tap || key.glyph);
-    return legend ? Object.assign({}, ev, { label: legend }) : ev;
-  }
-
-  function handleKey(ev) {
-    if (!state.data) return;
-    if (ev.type === "flagsChanged") {
-      apply(ks.read({ kind: "key", type: "flagsChanged", flags: ev.flags }, Date.now()));
-      return;
-    }
-    if (ev.type !== "keyDown" || ev.repeat) return;
-    unpick();                          // typing again: the board follows the keyboard
-    state.lastKeyAt = Date.now();
-    // With key positions coming from the firmware, the board is lit from them; the character
-    // only feeds the strip (hud.key forwards it).
-    // Physical character reports are redundant while firmware position reports are fresh. The
-    // rehearsal feed marks its uinput events synthetic: those have no matching firmware positions,
-    // so they must still resolve and light their key after a synthetic thumb flash.
-    if (!ev.synthetic && state.posAt && Date.now() - state.posAt < T('positions_fresh_ms')) return;
-    const token = tokenFor(ev);
-    if (!token) return;
-
-    const layers = stack();
-    // Typing sent in -- `zmk-layer-hud poke`, a WebSocket client -- carries `combos`: whether
-    // combos are part of how it is typed (the feed makes it false for a sender that does not
-    // say). It did not come from the keyboard's own layers, so it is placed the way inference
-    // places a key, live or not: on the stack, else on the layer that has it -- z as Alpha 2's key
-    // rather than the r+a chord, unless the sender says combos. A character only a combo types is
-    // still that combo: the sender said how it types, not that the keymap has another way.
-    const sent = typeof ev.combos === "boolean";
-    const noCombos = sent && !ev.combos;
-    // `letter_combos_on` is an inference hint, for a key the keyboard's live stack cannot explain.
-    // A live stack is the keyboard's own word on which combos can fire -- ZMK matches a combo
-    // against the highest active layer, and the import records each combo's real coverage -- so
-    // on it a letter combo is typing, whatever the hint says. Gating it there hid every
-    // base-layer letter combo (k w v q x z j y) whenever positions were not fresh. Typing sent in
-    // says for itself whether combos count.
-    const cmdActive = state.live || sent ? true : commandLayersActive(layers);
-
-    // Macros type several keys back to back (-> is "-" then ">"): when the last few tokens
-    // together spell a legend on the live stack, that key or combo is what was pressed.
-    if (matchSequence(token, layers, cmdActive, noCombos, !state.live || sent, ev)) return;
-
-    // Live: the keyboard told us the stack; the key must be on it (combos included). A chord
-    // (⌘c, ⌃⇧a) first tries the legend spelled with its modifier glyphs.
-    if (state.live && !sent) {
-      const f = ev.flags || {};
-      const modsGlyph = ["cmd", "ctrl", "alt", "shift"].filter(m => f[m] && (m !== "shift" || f.cmd || f.ctrl || f.alt)).map(m => MOD_GLYPH[m]).join("");
-      const r = (modsGlyph && resolveOnStack(modsGlyph + token, layers, cmdActive)) || resolveOnStack(token, layers, cmdActive);
-      if (r) {
-        const extra = r.viaShift ? activatorsOf(r.layer) : [];
-        flash(r.hit.concat(extra), r.hit.length > 1 ? "combo" : null);
-        // The pill is remembered with the keys, so whatever supersedes this guess -- a macro's
-        // longer legend, or the positions arriving after it -- takes the pill down too.
-        let pill = null;
-        if (r.combo) pill = showCombo(r.hit, r.combo.key);
-        guess(remember(token, r.hit.concat(extra), pill, r.layer), r.hit, r.layer, ev);
-        touchLayer(r.layer);
-        afterKey();
-        return;
-      }
-      // Not on the real stack: a chord whose legend is a label or an icon (shortcut layers), or
-      // a legend the drawer spells differently. The keyboard is the only source, so guessing
-      // another layer would be wrong: remember the token for a possible macro and light nothing.
-      remember(token, []);
-      return;
-    }
-
-    const ex = extras();
-    const sticky = new Set(ex.sticky || []);
-    // 0. Typing goes through two alpha layers when the config names a secondary one: a letter
-    //    that is not a plain base-layer key comes from the sticky alpha2 layer (one shot).
-    if (ex.alpha2 && isLetter(token) && !cmdActive && !state.oneShot) {
-      const lower = token.toLowerCase();
-      const onBase = state.data.layers[base()].some(k => k.type !== "trans" && legendMatches(k.tap, lower));
-      const direct = state.data.layers[ex.alpha2].findIndex(k => k.type !== "trans" && legendMatches(k.tap, lower));
-      if (!onBase && direct >= 0) {
-        state.oneShot = ex.alpha2;
-        render();
-        const shiftLayer = (ex.sticky || []).find(l => /shift/i.test(l));
-        const extra = activatorsOf(ex.alpha2).concat(/^\p{Lu}$/u.test(token) && shiftLayer ? activatorsOf(shiftLayer) : []);
-        flash([direct].concat(extra));
-        guess(remember(token, [direct].concat(extra), null, ex.alpha2), [direct], ex.alpha2, ev);
-        afterKey();
-        return;
-      }
-    }
-    const search = ex.search || state.data.layer_order.filter(l => l !== base());
-    const order = isLetter(token)
-      ? search
-      : search.filter(l => !sticky.has(l)).concat(search.filter(l => sticky.has(l)));
-    const place = noCombos => {
-      // 1. the active stack, top first
-      const r = resolveOnStack(token, layers, cmdActive, noCombos);
-      if (r) {
-        const extra = r.viaShift ? activatorsOf(r.layer) : [];
-        flash(r.hit.concat(extra), r.hit.length > 1 ? "combo" : null);
-        let pill = null;
-        if (r.combo) pill = showCombo(r.hit, r.combo.key);
-        guess(remember(token, r.hit.concat(extra), pill, r.layer), r.hit, r.layer, ev);
-        touchLayer(r.layer);
-        afterKey();
-        return true;
-      }
-      // 2. any other layer → a momentary or one-shot activation the host could not see. Letters
-      //    most likely came from a sticky layer; anything else from a held one.
-      for (const layer of order) {
-        if (layers.includes(layer)) continue;
-        const found = findOnLayer(layer, token, cmdActive, noCombos);
-        if (found) {
-          const hit = found.hit;
-          if (sticky.has(layer)) state.oneShot = layer; else armMomentary(layer);
-          render();
-          flash(hit.concat(activatorsOf(layer)), hit.length > 1 ? "combo" : null);
-          let pill = null;
-          if (found.combo) pill = showCombo(hit, found.combo.key);
-          guess(remember(token, hit.concat(activatorsOf(layer)), pill, layer), hit, layer, ev);
-          afterKey();
-          return true;
-        }
-      }
-      return false;
-    };
-    // Without combos first; a combo only when nothing else on the keymap types this.
-    if (place(noCombos) || (noCombos && place(false))) return;
-    afterKey();
-  }
-
-  function touchLayer(layer) {
-    const m = state.momentary.find(x => x.layer === layer);
-    if (m) { m.until = Date.now() + T('momentary_ms'); return; }
-    // a key that resolved only in the base drops any inferred momentary layer
-    if (baseStack().includes(layer) && state.momentary.length) { state.momentary = []; render(); }
-  }
-
-  // A one-shot layer is consumed by the key, but stays on the banner long enough to be seen.
-  let oneShotTimer = null;
-  function afterKey() {
-    if (!state.oneShot) return;
-    clearTimeout(oneShotTimer);
-    oneShotTimer = setTimeout(() => { state.oneShot = null; render(); }, T('one_shot_ms'));
-  }
 
   // ---------- public API ----------
 
@@ -1867,9 +1547,12 @@
   function apply(out) {
     for (const said of out.said) if (said.say === "layers") { render(); fire("layers", said.ids); }
     for (const op of out._paint) paintOp(op);
+    armLedger();
     armKs(out.next);
     return out;
   }
+  // A guess's pill, by the id keystrokes.js gave it, while it may still be taken down early.
+  const pills = new Map();
   // What the page still draws itself of a keystroke (keystrokes.js _paint).
   function paintOp(op) {
     if (op.op === "down") {
@@ -1894,6 +1577,20 @@
       // the safety net that covers a lost release.
       for (const p of op.positions) { const e = state.keyEls[p]; if (e) e.classList.add("pressed", "combo"); }
       state.comboShown = showCombo(op.positions, op.key);
+    } else if (op.op === "flash") {
+      flash(op.idxs, op.cls);
+    } else if (op.op === "pill") {
+      for (const [id, p] of pills) if (op.t - p.t > T("combo_pill_ms") + 1000) pills.delete(id);   // long gone by itself
+      pills.set(op.id, { t: op.t, handle: showCombo(op.positions, op.key) });
+    } else if (op.op === "unlight") {
+      // A guess taken back: its keys and its pill go now.
+      for (const idx of op.idxs) {
+        const e = state.keyEls[idx];
+        if (e) { e.classList.remove("pressed", "combo", "combo-key"); clearTimeout(state.timers.get(idx)); }
+      }
+      if (op.pill !== null && pills.has(op.pill)) { pills.get(op.pill).handle.remove(); pills.delete(op.pill); }
+    } else if (op.op === "render") {
+      render();
     } else if (op.op === "up") {
       // The flash fades out from now.
       const e = state.keyEls[op.idx];
@@ -1926,11 +1623,6 @@
       state.pick = null; state.comboShown = null;
       // Keystrokes on the keymap going away are not followed by the next one's keys.
       state.strokes = []; state.lastStroke = null; state.lastOwnStroke = null;
-      // A board that draws its letters as capitals, as `keymap parse` does: there the legend is the
-      // keycap, not the character, so a lowercase letter placed from what was typed is its
-      // capital's key (tokenFor) -- the rule host/play.py spells text by.
-      const letters = (data.layers[data.base] || []).map(k => k.tap).filter(t => typeof t === "string" && isLetter(t));
-      state.capitals = letters.length > 0 && letters.every(t => t !== t.toLowerCase());
       // Heat outlives a reload (it fades in seconds anyway), but not on keys this layout lacks.
       for (const idx of [...state.heat.keys()]) if (idx >= data.layout.keys.length) state.heat.delete(idx);
       const fitNews = checkFit();   // a keyboard of another size, docked: does it still fit?
@@ -1962,12 +1654,6 @@
       // one's flash is the keyboard's state now, and this key resolves on it -- and whatever follows
       // the layers (touch.js) hears of them first.
       apply(ks._flush(now));
-      // A report can beat its own positions: they travel on separate channels. What the character
-      // drew for this keystroke was a guess the keyboard is replacing now -- take it down, pill
-      // and all, or the board shows the guess and the truth side by side (two pills for one
-      // chord). A guess older than the combo term was an earlier keystroke's, and fades by itself.
-      const term = comboTerm();
-      for (const r of recent) if (now - r.t <= term) unlight(r);
       apply(ks.read({ kind: "press", pos, sent: !!sent }, now));
     },
     // Leave live mode (tests, or a host that lost the keyboard).
@@ -1982,9 +1668,11 @@
     key(ev) {
       if (typeof ev === "string") ev = JSON.parse(ev);
       if (state.secure) return;   // nothing typed shows while it is a secret (setSecure)
-      statsKey(ev);   // before handleKey, which has nothing to do for it while positions are fresh
-      handleKey(ev);
-      if (window.keys) window.keys.key(stripEvent(ev));  // the typed-keys strip on the same page
+      statsKey(ev);   // first: what it typed counts even while positions place the keys
+      if (state.data && ev.type === "keyDown" && !ev.repeat) unpick();   // typing again: the board follows the keyboard
+      const out = apply(ks.read(ev.kind === "key" ? ev : Object.assign({ kind: "key" }, ev), Date.now()));
+      // The typed-keys strip on the same page, with the board's name for a key the feed cannot name.
+      if (window.keys) window.keys.key(out.label ? Object.assign({}, ev, { label: out.label }) : ev);
     },
     press(indices) { flash(indices); },
     // Any feed message, as a host sends it: the one dispatcher, for the WebSocket, the macOS panel
