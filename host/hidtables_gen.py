@@ -18,8 +18,9 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from hudfeed import (ALT_CHARS, ALTGR_CHARS, CHARS, CONTROL_CHARS, DEAD_KEY_MS,  # noqa: E402
-                     DEAD_KEY_SPECIAL, DEAD_KEYS, MOD_BITS, NAMED, RALT)
+from hudfeed import DEAD_KEY_MS  # noqa: E402
+from keynames import (ALT_CHARS, ALTGR_CHARS, CHARS, CONTROL_CHARS, DEAD_KEY_SPECIAL, DEAD_KEYS,  # noqa: E402
+                      MOD_BITS, NAMED, RALT)
 
 OUT = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "hud", "hidtables.js")
 
