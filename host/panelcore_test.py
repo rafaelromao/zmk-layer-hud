@@ -96,6 +96,21 @@ class PageMessages(Base):
         self.panel.page({"kind": "size", "width": 600, "height": 420})
         self.assertEqual([(600, 420)], self.window.named("resize"))
 
+    def test_a_size_no_layout_has_is_not_taken(self):
+        # The page's layout, 100..4000 wide and 50..4000 tall: a page mid-load or gone wrong says 0, or
+        # nonsense, and the panel would shrink to nothing or grow off every screen.
+        for w, h in [(600, 20), (600, 9000), (50, 420), (5000, 420), (600, None), ("wide", 420), (True, 420), (600, "tall")]:
+            self.panel.page({"kind": "size", "width": w, "height": h})
+        self.panel.page({"kind": "size", "height": 420})            # the width it has
+        self.assertEqual([(None, 420)], self.window.named("resize"))
+
+    def test_docked_and_minimized_it_is_a_bar(self):
+        self.panel.page({"kind": "size", "width": 600, "height": 30})
+        self.panel.set_dock(True)
+        self.panel.page({"kind": "size", "width": 600, "height": 30})
+        self.panel.page({"kind": "size", "width": 600, "height": 29})
+        self.assertEqual([(600, 30)], self.window.named("resize"))
+
     def test_close(self):
         self.panel.page("close")
         self.assertEqual([()], self.window.named("close"))

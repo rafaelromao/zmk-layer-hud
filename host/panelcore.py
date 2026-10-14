@@ -23,6 +23,9 @@ import dock as dock_mod
 import panelstate
 
 
+WIDTH_MIN, HEIGHT_MIN, SIZE_MAX = 100, 50, 4000     # the page's layout, in its pixels
+
+
 class Window:
     """What a platform's panel does for the panel, each a callable:
 
@@ -31,7 +34,7 @@ class Window:
         dock(on)        docked: placed along a screen's bottom -> the page's dock message, or None
                         with no screen to dock on; floating: placed back. Either way remembered
                         for the next start
-        resize(w, h)    the page's size, as it said it
+        resize(w, h)    the page's size, checked; w None: the width it has
         no_drag(rects)  where the page's controls are, checked: a press elsewhere moves the window
         open(url)       in the browser
         tell(msg)       a message for the page, kept for a page loaded afresh
@@ -100,7 +103,7 @@ class Panel:
             if from_page:
                 self.typing.hid(msg)
         elif kind == "size":
-            self.window.resize(msg.get("width"), msg.get("height"))
+            self.resize(msg.get("width"), msg.get("height"))
         elif kind == "attach":          # the banner's attach/detach: docked as a touch keyboard, or floating
             if isinstance(msg.get("on"), bool):
                 self.set_dock(msg["on"])
@@ -121,6 +124,15 @@ class Panel:
                                      and all(isinstance(v, (int, float)) for v in r)])
         elif self.said is not None:
             self.said(msg)
+
+    def resize(self, width, height):
+        """The page's layout, 100..4000 wide (or the width it has: None or 0) and 50..4000 tall --
+        docked and minimized, a bar dock.BAR_HEIGHT tall. Anything else is a page mid-load or gone
+        wrong, and would shrink the panel to nothing or grow it off every screen."""
+        def within(v, low):
+            return isinstance(v, (int, float)) and not isinstance(v, bool) and low <= v <= SIZE_MAX
+        if within(height, dock_mod.BAR_HEIGHT if self.docked else HEIGHT_MIN) and (width in (None, 0) or within(width, WIDTH_MIN)):
+            self.window.resize(width, height)
 
     def set_wpm(self, wpm):
         if isinstance(wpm, int) and wpm != self.wpm:

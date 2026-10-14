@@ -595,13 +595,12 @@ def main():
             w, h = int(width or size[0]), int(height or 0)
         except (ValueError, TypeError):
             return
-        if panel.docked:
-            if dock_mod.BAR_HEIGHT <= h <= 4000:   # minimized, a bar
-                want = dock_mod.height(h, dock_geo[0].height, pct)
-                if want != dock_h[0]:
-                    size_dock(want)
+        if panel.docked:            # within dock.BAR_HEIGHT..: minimized, a bar (panelcore checks)
+            want = dock_mod.height(h, dock_geo[0].height, pct)
+            if want != dock_h[0]:
+                size_dock(want)
             return
-        if not (100 <= w <= 4000 and 50 <= h <= 4000) or [w, h] == size:
+        if [w, h] == size:
             return
         size[:] = [w, h]
         hud.get_child().set_size_request(w, h)
