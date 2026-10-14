@@ -38,6 +38,13 @@ fixtures and the landing page draw them with no keymap-drawer and no network.
 `firmware/src/signal_frame.h` is the single definition of the wire format; the C and Python tests
 share its vectors, so a change on one side that is not mirrored on the other fails both.
 
+`host/keynames.py` is the single statement of the key vocabulary: every named key (its key name,
+usages, glyph, control character and the spellings drawings use for it), the modifiers, and the
+characters each key of a US layout types. `host/hiddecode.py` decodes the keyboard's reports with it,
+`host/uskeys.py` inverts it, the tools read a legend's named key from it (`name_of`), and the pages
+get it as `hud/keynames.js`, which `make keynames` writes and the host tests fail on when it is
+behind. Naming another key is one record there, then `make keynames` and `make site`.
+
 `make test-hud` sweeps the page: every key on every layer it can be shown on, every combo on every
 layer it is declared on and in four press orders, every press that must draw no combo, and the
 typed-keys strip against what a keyboard would have sent to type each legend. Over 5000 checks in

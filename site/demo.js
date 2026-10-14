@@ -4,7 +4,7 @@
  *
  * Both hand the HUD what a keyboard would, through hud.receive:
  *   Translator  browser key and input events -> {kind:"key", type, name, chars, flags, ...}, in the
- *               feed's own vocabulary (host/hudfeed.py key_message), so the page places them as it
+ *               feed's own vocabulary (host/hiddecode.py key_message), so the page places them as it
  *               places typing sent in.
  *   Player      a demo compiled by host/play.py ({timeline: [[wait_ms, message], ...], duration_ms})
  *               -> the same messages at the same moments, on a clock the tests can drive.
@@ -18,8 +18,8 @@
 
   // ---------- the translator ----------
 
-  // What the browser names a key -> [name, chars] as the feed sends it (hudfeed NAMED,
-  // CONTROL_CHARS). Tab is left out on purpose: it is how focus leaves the field.
+  // What the browser names a key -> [key name, chars] as the feed sends it (host/keynames.py NAMED,
+  // CONTROL_CHARS; keynames_test holds the two to each other). Tab is left out on purpose: it is how focus leaves the field.
   const NAMED = {
     Enter: ["return", "\r"], Escape: ["escape", "\x1b"], Backspace: ["delete", "\x7f"],
     Delete: ["forwarddelete", ""], ArrowRight: ["right", ""], ArrowLeft: ["left", ""],

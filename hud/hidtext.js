@@ -1,4 +1,4 @@
-/* zmk-layer-hud — what a key report types, in the page: hudfeed's SignalDecoder (host/hudfeed.py),
+/* zmk-layer-hud — what a key report types, in the page: the feed's SignalDecoder (host/hiddecode.py),
  * ported, and what a text-only keyboard does with it.
  *
  * The touch keyboard's engine sends what a keyboard sends: report snapshots, a modifier byte and the
@@ -104,7 +104,7 @@
     return { feed, flush, pending: () => (pending ? pending.down.chars : null) };
   }
 
-  // The named keys a text field knows, in a text sink's words; hudfeed's NAMED spells them.
+  // The named keys a text field knows, in a text sink's words, by their key names (keynames.js).
   const TEXT_KEYS = { "return": "enter", "delete": "backspace", "forwarddelete": "delete", "tab": "tab",
     "escape": "escape", "left": "left", "right": "right", "up": "up", "down": "down", "home": "home", "end": "end",
     "pageup": "pageup", "pagedown": "pagedown", "insert": "insert" };
