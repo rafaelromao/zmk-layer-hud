@@ -369,6 +369,19 @@ class StoreTest(Base):
         st.set_pref("theme", "sepia")
         self.assertEqual({"theme": "dark"}, st.message()["prefs"])
 
+    def test_what_a_page_says_goes_where_its_kind_says(self):
+        # The page's own panel (the macOS bridge) and the feed's socket (after its tally token) both
+        # hand over the same three kinds; anything else is not the session's.
+        st = self.store()
+        self.assertTrue(st.apply_said(batch(1, presses={"base": {"3": 2}})))
+        self.assertTrue(st.apply_said({"kind": "heatmap", "mode": "session"}))
+        self.assertTrue(st.apply_said({"kind": "pref", "name": "theme", "value": "dark"}))
+        self.assertFalse(st.apply_said({"kind": "hide"}))
+        st.flush()
+        self.assertEqual(2, self.active()["presses"]["base"]["3"])
+        self.assertEqual("session", self.sent[-1]["heatmap"])
+        self.assertEqual({"theme": "dark"}, self.sent[-1]["prefs"])
+
     def test_key_times_and_bigrams_are_kept(self):
         st = self.store()
         st.apply(batch(1, presses={"base": {"3": 2}}, ms={"base": {"3": 300}}, timed={"base": {"3": 2}}, sfb=1, bigrams=30))

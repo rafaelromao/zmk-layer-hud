@@ -241,17 +241,12 @@ class Bridge(NSObject):
             if isinstance(rects, list):
                 DragWebView.no_drag = [tuple(float(v) for v in r) for r in rects
                                        if isinstance(r, list) and len(r) == 4 and all(isinstance(v, (int, float)) for v in r)]
-        elif kind in ("tally", "heatmap", "pref"):
+        elif kind in session_mod.Store.SAID:
             store = Host.instance.feed.sessions if Host.instance and Host.instance.feed else None
             if store is None:
                 return
             try:
-                if kind == "tally":
-                    store.apply(msg)
-                elif kind == "heatmap":
-                    store.set_heatmap(msg.get("mode"))
-                else:
-                    store.set_pref(msg.get("name"), msg.get("value"))
+                store.apply_said(msg)
             except Exception as e:  # a count that could not be kept must not take the panel down
                 log(f"session: {type(e).__name__}: {e}")
 
