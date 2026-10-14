@@ -360,6 +360,23 @@ function checkModRings(data) {
   return fails;
 }
 
+/* A secret being typed takes what is on screen of the typing with it: the keys lit, and every pill
+ * -- a chord's, and a guess's that a report put up. */
+function checkSecretTakesThePills(data) {
+  const z = (data.combos || []).find(c => c.layers.includes(data.base) && c.key.tap === "z");
+  if (!z) return ["the fixture has no z combo on its base"];
+  const page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  page.clock.advance(1000);
+  page.hud.key({ type: "keyDown", name: "z", chars: "z", flags: {}, repeat: false, combos: true });
+  const pills = () => page.board.querySelectorAll(".combo-pill").length;
+  if (!pills()) return ["typed-in z with combos should put the z combo's pill up"];
+  page.clock.advance(5);
+  page.hud.receive({ kind: "secure", on: true });
+  return pills() ? [`a secret should take the guess's pill down; ${pills()} up`] : [];
+}
+
 /* A key held down is lit until it comes up, whatever else lights it meanwhile: a report placed on
  * it (a rehearsal's synthetic character, which no freshness guard holds back) flashes it, and must
  * neither put it out while it is still down nor cancel what catches a release that never comes. */
@@ -544,6 +561,12 @@ async function main() {
   const modFailures = checkModRings(data);
   if (modFailures.length) {
     for (const failure of modFailures) console.error(`FAIL mod-rings: ${failure}`);
+    process.exit(1);
+  }
+
+  const secretFailures = checkSecretTakesThePills(data);
+  if (secretFailures.length) {
+    for (const failure of secretFailures) console.error(`FAIL secret-takes-the-pills: ${failure}`);
     process.exit(1);
   }
 
