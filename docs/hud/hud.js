@@ -61,7 +61,7 @@
   let board = ks.read(null, Date.now()).board;
 
   // Modifier flags → the glyph a hold legend uses for them (home-row mods light while held).
-  const MOD_GLYPH = { shift: "⇧", ctrl: "⌃", alt: "⌥", cmd: "⌘" };
+  const MOD_GLYPH = window.ZmkKeyNames.MOD_GLYPHS;
   // Where the keys go and which legend each shows (hud/view.js), the same answers a native board draws from.
   const View = window.ZmkView;
 
