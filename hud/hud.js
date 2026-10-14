@@ -1,4 +1,4 @@
-/* zmk-layer-hud — renderer + keymap resolver.
+/* zmk-layer-hud — the page: the board drawn from the keymap, the keystrokes drawn on it and counted.
  *
  * The page carries no keymap: the host sends one, built by host/keymap.py from the HUD's config
  * and the definitions `zmk-layer-hud import` wrote beside it (physical layout, layers, combos, the
@@ -15,22 +15,25 @@
  *                                      (firmware `positions;`): the exact key lights while held,
  *                                      then fades; characters then only feed the strip. `sent`:
  *                                      a press sent in, lit the same and never counted in a session
- *   hud.press([idx...])                light keys directly (tests)
  *   hud.setHeatmap(mode)               what the keys glow with: live, session or off
  *   hud.receive(message)               any feed message (the WebSocket's dispatcher), including
  *                                      {"kind":"session"}: the host's active session, which the
  *                                      page reports the keyboard's own counts to
  *   hud.stats                          the counts behind the bar and the session heatmap (tests)
  *
- * Every keystroke drawn is also counted (the ledger, once nothing can take it back), and typing
- * is timed: the bar above the panel shows words per minute, accuracy and how the keys are used.
- *
- * Two modes:
+ * What the messages mean -- which layers are up, which keys and combos were struck, where a
+ * character typed with no position behind it goes, how long each stays lit -- is read by
+ * hud/keystrokes.js, which this page hands every message to and draws as it answers. It reads in
+ * two modes:
  *   live      after the first setLayers: the stack is exactly what the keyboard reports; a key is
  *             resolved on that stack (combos included). A key that cannot be placed there lights
  *             nothing: guessing another layer would be wrong.
  *   emulated  before any setLayers (firmware without the module): only the base layer is known
  *             and everything else is inferred from the typed characters, guided by `extras`.
+ *
+ * Every keystroke drawn is also counted, once keystrokes.js says nothing can take it back, and
+ * typing is timed: the bar above the panel shows words per minute, accuracy and how the keys are
+ * used.
  *
  * In a browser (http://) it accepts real key events and `?keymap=keymap.json` loads a dumped
  * message, so the page can be developed without a host. With `?embed` it is framed by another page
@@ -53,10 +56,9 @@
   const STAT_DEFAULTS = { wpm: true, session: true, accuracy: true, keys: true, layer: true, time: false,
     hands: false, sfb: false, slow: false, heatmap: true, theme: true, opacity: true };
   const statOn = name => (state.data && state.data.stats && state.data.stats[name] != null) ? !!state.data.stats[name] : STAT_DEFAULTS[name];
-  // What the keyboard's messages say was struck (keystrokes.js). Until the page is only its caller,
-  // what it has read is reached from here too (KS).
+  // What the keyboard's messages say was struck (keystrokes.js), and the board as it last said it.
   const ks = Keystrokes.create();
-  const KS = ks._s;
+  let board = ks.read(null, Date.now()).board;
 
   // Modifier flags → the glyph a hold legend uses for them (home-row mods light while held).
   const MOD_GLYPH = { shift: "⇧", ctrl: "⌃", alt: "⌥", cmd: "⌘" };
@@ -64,7 +66,8 @@
   const View = window.ZmkView;
 
   const state = {
-    data: null,                 // flag -> true while held
+    data: null,
+    posOf: [],                // drawer idx -> ZMK position (View.posOf)                 // flag -> true while held
     device: "",               // the keyboard's HID product name
     pick: null,               // a layer the viewer picked to look at (the stats' layer tile), until a keystroke
     keyEls: [],
@@ -103,16 +106,15 @@
     dock: null,               // docked along the bottom of the screen (setDock): {maxHeight, split, pxPerMm, width, fit}
     offsetX: 0,               // the board's left margin when docked: it is centred, not stretched
   };
-  // What keystrokes.js has read, reached as the page's own: the layers (live, baseLayers, the inferred
-  // momentary and oneShot, activatorOf, drawnSince, pendingLayers), the keys down (held, down), the
-  // modifiers and the keys that turned them on (mods, modSource), what waits to be settled (ledger,
-  // comboEntry) or told a tap from a hold (strokes), the last press and when a key last went down
-  // (lastPress, posAt, lastKeyAt), and each key's ZMK position (posOf).
-  for (const name of ["live", "baseLayers", "momentary", "oneShot", "activatorOf", "drawnSince", "pendingLayers",
-                      "held", "down", "mods", "modSource", "ledger", "comboEntry", "lastPress", "posAt", "lastKeyAt",
-                      "posOf", "strokes"]) {
-    Object.defineProperty(state, name, { get: () => KS[name], set: v => { KS[name] = v; }, enumerable: true });
-  }
+  // What the page's own tests read of the keystrokes, until they read the board, and touch.js of the
+  // keyboard's layers: read only.
+  Object.defineProperties(state, {
+    live: { get: () => board.live, enumerable: true },
+    held: { get: () => new Set(board.held), enumerable: true },
+    down: { get: () => ks.inside().down, enumerable: true },
+    strokes: { get: () => ks.inside().strokes, enumerable: true },
+    lastPress: { get: () => ks.inside().lastPress, enumerable: true },
+  });
   // What other scripts on the page hook into (hud.on): touch.js follows the keymap and the layers.
   const hooks = {};
   let attachOwn = null;      // a page's own attach and detach (hud.setAttach), else the panel's
@@ -132,7 +134,6 @@
 
   const $ = id => document.getElementById(id);
   const base = () => state.data ? state.data.base : null;
-  const extras = () => (state.data && state.data.extras) || {};
 
   // ---------- rendering ----------
 
@@ -197,6 +198,7 @@
       state.keyEls[idx] = e;
     });
     paintHeat();   // the glow lives by index, not on the elements just replaced
+    paintedAfresh();
     placeStats(g);
   }
 
@@ -282,14 +284,11 @@
   // ZMK layer id → keymap entry ({name, drawer, label, cls}); falls back to the YAML order.
   function zl(id) { return View.zl(state.data, id); }
 
-  // The live stack as drawer layer names, top first; the base layer is always last (keystrokes.js).
-  const liveStack = () => ks._liveStack();
-  const baseStack = () => ks._baseStack();
-
+  // The layers a key is drawn from, top first, the base last: the keyboard's as keystrokes.js reads
+  // them, or a layer picked to look at, drawn over the base alone until the next keystroke (unpick).
   function stack() {
-    // A layer picked to look at is drawn over the base alone, until the next keystroke (unpick).
     if (state.pick) return state.pick === base() ? [base()] : [state.pick, base()];
-    return ks._stack();
+    return board.layers;
   }
 
   // The binding that wins at idx, walking the stack through transparent keys.
@@ -354,35 +353,19 @@
     else if (text.length > 2) tapEl.classList.add("mid");
   }
 
-  // The drawer key at a reported ZMK position. A position the keymap does not place lights
-  // nothing: lighting the key that happens to share the number is worse than lighting none, and
-  // the feed already says so ("key position N is not in the keymap's … drawer keys"). A message
-  // with no map at all (a hand-written demo) still means position = index.
-  function idxAt(pos) {
-    const map = (state.data && state.data.positions) || {};
-    if (map[String(pos)] !== undefined) return map[String(pos)];
-    return Object.keys(map).length ? -1 : Number(pos);
-  }
+  // The drawer key at a reported ZMK position (-1: none).
+  const idxAt = pos => View.idxAt(state.data, pos);
 
-  function activatorsOf(layer) {
-    return state.data.activators.filter(a => a.layer === layer).map(a => a.idx);
-  }
+  // A key that carries a modifier: a home-row mod (hold legend) or the modifier key itself (tap).
+  const carries = (key, glyph) => !!key && ((key.hold && key.hold.includes(glyph)) || key.tap === glyph);
 
   function renderKeys() {
     const layers = stack();
-    const activators = new Set();
-    for (const m of state.momentary) for (const a of activatorsOf(m.layer)) activators.add(a);
-    if (state.oneShot) for (const a of activatorsOf(state.oneShot)) activators.add(a);
-    if (state.live) {
-      // The key that reached each live layer lights as its activator: the one pressed right
-      // before the layer appeared when positions are reported, else every key that can reach it.
-      for (const name of liveStack()) {
-        if (name === base()) continue;
-        if (state.activatorOf[name] !== undefined) { if (state.activatorOf[name] !== null) activators.add(state.activatorOf[name]); }
-        else for (const a of activatorsOf(name)) activators.add(a);
-      }
-    }
-    const heldMods = Object.keys(state.mods).filter(f => state.mods[f] && MOD_GLYPH[f]).map(f => ({ flag: f, glyph: MOD_GLYPH[f] }));
+    // The key that reached each layer up lights as its activator (keystrokes.js): the one pressed
+    // right before the layer appeared when positions are reported, else every key that can reach it.
+    const activators = new Set(board.activators);
+    const mods = board.mods, modSource = board.modSource;
+    const heldMods = Object.keys(mods).filter(f => mods[f] && MOD_GLYPH[f]).map(f => ({ flag: f, glyph: MOD_GLYPH[f] }));
     // Shift is a modifier, not a layer, so nothing else on the board would show it. Caps word and
     // caps line have their own drawn layer and arrive as a layer change; plain shift, held or
     // tapped as a one-shot, only ever reaches us as this flag. A single lowercase letter is the
@@ -391,7 +374,7 @@
     // A Shift latched on glass (touch.js: the report's modifier byte, either Shift) shifts the
     // legends as one held on the keyboard does.
     const touch = state.touch;
-    const shifting = !!state.mods.shift || !!(touch && touch.mods & View.SHIFT_BITS);
+    const shifting = !!mods.shift || !!(touch && touch.mods & View.SHIFT_BITS);
     const shiftLegend = t => View.shiftLegend(t, shifting);
     state.data.layout.keys.forEach((k, idx) => {
       const e = state.keyEls[idx];
@@ -411,8 +394,8 @@
       // A held modifier rings the key that turned it on (modSource): the home-row mod held, or the
       // sticky shift tapped. Without positions there is no telling which, so every key that
       // carries it is ringed.
-      if (heldMods.some(({ flag, glyph }) => state.modSource[flag] !== undefined
-        ? state.modSource[flag] === idx : carries(r.key, glyph))) e.classList.add("mod");
+      if (heldMods.some(({ flag, glyph }) => modSource[flag] !== undefined
+        ? modSource[flag] === idx : carries(r.key, glyph))) e.classList.add("mod");
       fit(e.querySelector(".tap"), shiftLegend(r.key.tap) || "", r.key.glyph);
       setLegend(e.querySelector(".hold"), r.key.hold, r.key.glyph_hold);
       setLegend(e.querySelector(".shifted"), r.key.shifted, r.key.glyph_shifted);
@@ -429,7 +412,7 @@
 
   // Live mode: the highest active layer names the banner; the sub line lists the whole set.
   function liveSummary() {
-    const ids = state.live.ids.slice().sort((a, b) => b - a);
+    const ids = board.live.ids.slice().sort((a, b) => b - a);
     const entries = ids.map(zl).filter(Boolean);
     const names = entries.map(z => z.name);
     if (!entries.length) return { name: layerLabel(base()), cls: "off", sub: "" };
@@ -442,15 +425,15 @@
     return { name: top.label, cls, sub };
   }
 
-  function baseSummary() { return state.live ? liveSummary() : codeSummary(); }
+  function baseSummary() { return board.live ? liveSummary() : codeSummary(); }
 
   // The name of the drawing on screen, as the banner says it: a layer with no drawing of its own
   // (the Diamond's MACOS, over its base) shows the one under it, and is what the viewer knows it
   // by -- so the highest active layer that is this drawing, or sits undrawn right above it.
   function drawingLabel(drawer) {
-    if (state.live && !state.oneShot && !state.momentary.length) {
+    if (board.live && !board.oneShot && !board.momentary.length) {
       let undrawn = null;
-      for (const z of state.live.ids.slice().sort((a, b) => b - a).map(zl).filter(Boolean)) {
+      for (const z of board.live.ids.slice().sort((a, b) => b - a).map(zl).filter(Boolean)) {
         if (z.drawer == null) { undrawn = undrawn || z; continue; }
         if (z.drawer === drawer) return (undrawn || z).label;
         undrawn = null;
@@ -469,10 +452,10 @@
     if (state.pick) return { name: layerLabel(state.pick), cls: state.pick === base() ? "off" : "momentary", sub: "picked · type to follow the keyboard" };
     if (state.touch && state.touch.ids) return touchSummary();
     const b = baseSummary();
-    const top = state.oneShot || (state.momentary.length ? state.momentary[state.momentary.length - 1].layer : null);
+    const top = board.oneShot || (board.momentary.length ? board.momentary[board.momentary.length - 1] : null);
     if (!top) return b;
     return { name: layerLabel(top), cls: "momentary",
-      sub: (state.oneShot ? "one shot" : "held") + (state.live ? " (inferred)" : "") + " · over " + b.name.toLowerCase() };
+      sub: (board.oneShot ? "one shot" : "held") + (board.live ? " (inferred)" : "") + " · over " + b.name.toLowerCase() };
   }
 
   function renderBanner() {
@@ -505,11 +488,7 @@
     apply(ks.read({ kind: "secure", on }, Date.now()));
     if (on) {
       if (window.keys && window.keys.clear) window.keys.clear();
-      for (const id of state.timers.values()) clearTimeout(id);
-      state.timers.clear();
       for (const e of state.keyEls) if (e) e.classList.remove("pressed", "combo", "combo-key");
-      for (const shown of [...livePills]) shown.handle.remove();   // a chord's pill, and a guess's
-      state.comboShown = null;
       state.heat.clear();
       paintHeat();
       // Nothing typed before it is counted or sent either: a key that slipped in as the secret
@@ -530,9 +509,9 @@
     // Only the two waiting states are worth a line; once the keyboard reports, say nothing.
     if (!state.data) { f.textContent = "waiting for the keymap…"; f.className = ""; return; }
     // A touch keyboard waits for no keyboard: there may be none plugged in.
-    const waiting = !state.live && !state.dock && !document.documentElement.classList.contains("touch");
+    const waiting = !board.live && !state.dock && !document.documentElement.classList.contains("touch");
     f.textContent = waiting ? "waiting for the keyboard's layers…" : "";
-    f.className = state.live ? "live" : "";
+    f.className = board.live ? "live" : "";
   }
 
   // Look at another layer: drawn over the base, the banner saying so, until a keystroke. null
@@ -1405,7 +1384,11 @@
   // A combo is drawn the way keymap-drawer draws it: a pill with the combo's legend, linked to
   // each of its keys, fading after a moment. The pill sits beside the chord rather than on it
   // (pillSpot): the keys flashing there are what it is there to explain.
-  function showCombo(positions, key) {
+  // A combo's pill beside its keys (keystrokes.js says which are up and for how long). Taken down
+  // when its time is up it fades; taken down early -- a bigger chord, a guess taken back, a secret --
+  // it goes at once.
+  function drawPill(p) {
+    const positions = p.positions, key = p.key;
     const board = $("board");
     const pill = el("div", "combo-pill");
     pill.appendChild(el("span", "combo-label", "combo"));
@@ -1436,103 +1419,40 @@
     }
     board.appendChild(svg);
     requestAnimationFrame(() => { pill.classList.add("show"); svg.classList.add("show"); });
-    for (const idx of positions) state.keyEls[idx].classList.add("combo-key");
-    const shown = { positions };
-    livePills.add(shown);
-    // A key is a combo's while a pill up names it: when this one goes, its keys stop being marked
-    // unless another pill still up names them too (the bigger combo that took this one's place).
-    const unmark = () => {
-      livePills.delete(shown);
-      for (const idx of positions) {
-        if (![...livePills].some(o => o.positions.includes(idx))) state.keyEls[idx].classList.remove("combo-key");
-      }
+    return {
+      until: p.until,
+      down(expired) {
+        if (!expired) { pill.remove(); svg.remove(); return; }
+        pill.classList.remove("show"); svg.classList.remove("show");
+        setTimeout(() => { pill.remove(); svg.remove(); }, 200);
+      },
     };
-    const timer = setTimeout(() => {
-      pill.classList.remove("show"); svg.classList.remove("show");
-      unmark();
-      setTimeout(() => { pill.remove(); svg.remove(); }, 200);
-    }, T('combo_pill_ms'));
-    // A handle to take the pill down early when a longer legend supersedes it: its time is over.
-    shown.handle = { remove() { if (!livePills.has(shown)) return; clearTimeout(timer); pill.remove(); svg.remove(); unmark(); } };
-    return shown.handle;
   }
-  const livePills = new Set();   // the pills up: {positions, handle}
-
-  // `held`: keys down at the time (keystrokes.js), lit until they come up and timed by their own.
-  function flash(indices, cls, held) {
-    for (const idx of indices) {
-      const e = state.keyEls[idx];
-      if (!e) continue;
-      e.classList.add("pressed");
-      if (cls) for (const c of cls.split(" ")) if (c) e.classList.add(c);
-      if (held && held.includes(idx)) continue;
-      clearTimeout(state.timers.get(idx));
-      state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo"), T('press_ms')));
-    }
-  }
-
-  // A key that carries a modifier: a home-row mod (hold legend) or the modifier key itself (tap).
-  const carries = (key, glyph) => !!key && ((key.hold && key.hold.includes(glyph)) || key.tap === glyph);
-
-  // ---------- public API ----------
 
   /* What keystrokes.js answered. The layers it applied go on the board, and to the scripts that
-   * follow them (touch.js); when it is waiting for something, it is asked again then. */
+   * follow them (touch.js); what it says was struck is counted; the board is drawn as it says, and
+   * when it is waiting for something, it is asked again then. */
   let ksTimer = null, ksDue = null;
+  const liveKey = b => (b.live ? b.live.ids.join(",") : "-");
   function apply(out) {
-    let counted = false;
+    const before = board;
+    board = out.board;
+    let counted = false, rendered = false;
     for (const said of out.said) {
-      if (said.say === "layers") { render(); fire("layers", said.ids); }
+      if (said.say === "layers") { render(); rendered = true; fire("layers", said.ids); }
+      else if (said.say === "down") bumpHeat(said.idx);      // a position is never taken back: it warms at once
       else if (!state.demo && count(said)) counted = true;   // a GIF still: drawn, never counted
     }
     if (counted) { state.viewCache = null; armTally(); paintSessionHeat(); renderStats(); }
-    for (const op of out._paint) paintOp(op);
+    if (state.data && !rendered) {
+      if (before.layers.join("\n") !== board.layers.join("\n") || liveKey(before) !== liveKey(board) ||
+          before.oneShot !== board.oneShot || before.momentary.join("\n") !== board.momentary.join("\n")) render();
+      else if (before.activators.join() !== board.activators.join() || JSON.stringify(before.mods) !== JSON.stringify(board.mods) ||
+               JSON.stringify(before.modSource) !== JSON.stringify(board.modSource)) renderKeys();
+    }
+    paintBoard(board, Date.now());
     armKs(out.next);
     return out;
-  }
-  // A guess's pill, by the id keystrokes.js gave it, while it may still be taken down early.
-  const pills = new Map();
-  // What the page still draws itself of a keystroke (keystrokes.js _paint).
-  function paintOp(op) {
-    if (op.op === "down") {
-      flash([op.idx]);
-      bumpHeat(op.idx);    // a position is never taken back, so it warms its key at once
-      // Stay lit until the release arrives (a safety timeout covers a lost report).
-      clearTimeout(state.timers.get(op.idx));
-      state.timers.set(op.idx, setTimeout(() => hud.releaseAt(op.pos), T('held_timeout_ms')));
-    } else if (op.op === "keys") {
-      renderKeys();
-    } else if (op.op === "group") {
-      state.comboShown = null;         // a new chord: the pill up is an earlier one's, and fades by itself
-    } else if (op.op === "combo") {
-      // A third key within the term makes a bigger combo: the smaller one's pill comes down.
-      if (state.comboShown) state.comboShown.remove();
-      // Not flash(): these keys are down, and it is their release that unlights them. flash's
-      // press_ms timer would replace the held timer each key got from its own press and take
-      // the chord out from under the user's fingers after a third of a second — along with
-      // the safety net that covers a lost release.
-      for (const p of op.positions) { const e = state.keyEls[p]; if (e) e.classList.add("pressed", "combo"); }
-      state.comboShown = showCombo(op.positions, op.key);
-    } else if (op.op === "flash") {
-      flash(op.idxs, op.cls, op.held);
-    } else if (op.op === "pill") {
-      for (const [id, p] of pills) if (op.t - p.t > T("combo_pill_ms") + 1000) pills.delete(id);   // long gone by itself
-      pills.set(op.id, { t: op.t, handle: showCombo(op.positions, op.key) });
-    } else if (op.op === "unlight") {
-      // A guess taken back: its keys and its pill go now.
-      for (const idx of op.idxs) {
-        const e = state.keyEls[idx];
-        if (e) { e.classList.remove("pressed", "combo"); clearTimeout(state.timers.get(idx)); }
-      }
-      if (op.pill !== null && pills.has(op.pill)) { pills.get(op.pill).handle.remove(); pills.delete(op.pill); }
-    } else if (op.op === "render") {
-      render();
-    } else if (op.op === "up") {
-      // The flash fades out from now.
-      const e = state.keyEls[op.idx];
-      clearTimeout(state.timers.get(op.idx));
-      state.timers.set(op.idx, setTimeout(() => e.classList.remove("pressed", "combo"), T('release_ms')));
-    }
   }
   function armKs(next) {
     if (next === ksDue) return;
@@ -1541,6 +1461,42 @@
     if (next === null) return;
     ksTimer = setTimeout(() => { ksTimer = null; ksDue = null; apply(ks.tick(Date.now())); }, Math.max(0, next - Date.now()));
   }
+
+  /* What is drawn of the board: the keys lit, and lit as a combo's; the pills up, and the keys they
+   * name. Drawn by what changed since the last answer, as the timers that drew it did, so what else
+   * marks a key -- a finger on it (touch.js) -- is left to its owner. */
+  let painted = { lit: new Map(), pills: new Map(), comboKeys: new Set() };
+  function paintBoard(b, now) {
+    const lit = new Map(b.lit.map(idx => [idx, b.chord.includes(idx)]));
+    for (const idx of painted.lit.keys()) {
+      if (!lit.has(idx)) { const e = state.keyEls[idx]; if (e) e.classList.remove("pressed", "combo"); }
+    }
+    for (const [idx, combo] of lit) {
+      const e = state.keyEls[idx];
+      if (!e) continue;
+      if (!painted.lit.has(idx)) e.classList.add("pressed");
+      if (combo !== painted.lit.get(idx)) e.classList.toggle("combo", combo);
+    }
+    const up = new Set(b.pills.map(p => p.id));
+    for (const [id, shown] of painted.pills) {
+      if (up.has(id)) continue;
+      painted.pills.delete(id);
+      if (shown) shown.down(now >= shown.until);
+    }
+    for (const p of b.pills) if (!painted.pills.has(p.id)) painted.pills.set(p.id, drawPill(p));
+    const named = new Set(b.pills.flatMap(p => p.positions));
+    for (const idx of painted.comboKeys) if (!named.has(idx)) { const e = state.keyEls[idx]; if (e) e.classList.remove("combo-key"); }
+    for (const idx of named) if (!painted.comboKeys.has(idx)) { const e = state.keyEls[idx]; if (e) e.classList.add("combo-key"); }
+    painted = { lit, pills: painted.pills, comboKeys: named };
+  }
+  // The board drawn afresh (buildBoard) has nothing on it: what was lit and up stays as it is told,
+  // and goes out, unseen, when it is told.
+  function paintedAfresh() {
+    painted = { lit: new Map(board.lit.map(idx => [idx, board.chord.includes(idx)])),
+                pills: new Map(board.pills.map(p => [p.id, null])), comboKeys: new Set(board.pills.flatMap(p => p.positions)) };
+  }
+
+  // ---------- public API ----------
 
   const hud = {
     // The keymap message. Re-sent by the host when a sync rewrites it: geometry and legends
@@ -1552,7 +1508,8 @@
       // Read now, answered once the board is built for it.
       const loaded = ks.read(data.kind === "keymap" ? data : Object.assign({ kind: "keymap" }, data), Date.now());
       applyPrefs();                 // the config's hud.dark, until the viewer chose
-      state.pick = null; state.comboShown = null;
+      state.pick = null;
+      state.posOf = View.posOf(data);   // a session is kept by ZMK position
       // Keystrokes on the keymap going away are not followed by the next one's keys.
       state.lastStroke = null; state.lastOwnStroke = null;
       // Heat outlives a reload (it fades in seconds anyway), but not on keys this layout lacks.
@@ -1581,12 +1538,8 @@
     pressAt(pos, sent) {
       if (!state.data || state.secure) return;
       unpick();                        // a key down: the board follows the keyboard again
-      const now = Date.now();
-      // A key going down is a keystroke of its own: a layer change held back for the previous
-      // one's flash is the keyboard's state now, and this key resolves on it -- and whatever follows
-      // the layers (touch.js) hears of them first.
-      apply(ks._flush(now));
-      apply(ks.read({ kind: "press", pos, sent: !!sent }, now));
+      // A layer change held back for the previous key's flash applies first (keystrokes.js).
+      apply(ks.read({ kind: "press", pos, sent: !!sent }, Date.now()));
     },
     // Leave live mode (tests, or a host that lost the keyboard).
     clearLayers() { apply(ks.read({ kind: "layers", ids: null }, Date.now())); render(); },
@@ -1606,7 +1559,6 @@
       // The typed-keys strip on the same page, with the board's name for a key the feed cannot name.
       if (window.keys) window.keys.key(out.label ? Object.assign({}, ev, { label: out.label }) : ev);
     },
-    press(indices) { flash(indices); },
     // Any feed message, as a host sends it: the one dispatcher, for the WebSocket, the macOS panel
     // (for what it has no call of its own for) and the demo. Kinds this page does not know are
     // left alone.
@@ -1639,7 +1591,7 @@
       const now = (view && view.down) || [];
       for (const idx of before) {
         // A finger lifted: its key goes dark, unless the keyboard itself is holding it.
-        if (!now.includes(idx) && state.keyEls[idx] && !state.held.has(idx)) state.keyEls[idx].classList.remove("pressed");
+        if (!now.includes(idx) && state.keyEls[idx] && !board.held.includes(idx)) state.keyEls[idx].classList.remove("pressed");
       }
       if (view && now.length) unpick();
       if (state.data) render();
@@ -1708,7 +1660,7 @@
     stats: {
       local: () => JSON.parse(JSON.stringify(state.local)),
       unsent: () => JSON.parse(JSON.stringify(state.unsent)),
-      pending: () => (state.demo ? 0 : state.ledger.length),
+      pending: () => (state.demo ? 0 : ks.inside().unsettled),
       wpm: () => Math.round(wpmOf(state.typing, Date.now())),
       view: () => JSON.parse(JSON.stringify(view())),   // what the bar shows
     },
