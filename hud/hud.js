@@ -2156,14 +2156,13 @@
       const prior = recentPos.slice(0, start).reverse().find(struck);
       const tooSoon = state.data.combo_idle > 0 && prior && recentPos[start].t - prior.t < state.data.combo_idle;
       if (pressedSet.length > 1 && !tooSoon) {
-        // The topmost active layer that defines a combo on these keys wins: the base layer is
-        // always in the stack and often has a different combo on the same keys.
+        // ZMK matches a combo against the highest active layer alone, as the layers stood when the
+        // chord's first key went down (combo.c): with a layer up that declares no combo on these
+        // keys they are typed one by one, whatever the layers below it declare. The first key's
+        // stack leaves out a layer that key itself brought up, which came after it.
         const samePositions = c => c.positions.length === pressedSet.length && c.positions.every(p => pressedSet.includes(p));
-        let combo = null, comboLayer = null;
-        for (const layer of stack()) {
-          combo = state.data.combos.find(c => c.layers.includes(layer) && samePositions(c));
-          if (combo) { comboLayer = layer; break; }
-        }
+        const comboLayer = recentPos[start].entry.stack[0];
+        const combo = state.data.combos.find(c => c.layers.includes(comboLayer) && samePositions(c)) || null;
         if (combo) {
           // A third key within the term makes a bigger combo: take the smaller one's pill down,
           // and its count with it -- one chord, one combo.
