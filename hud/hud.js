@@ -44,15 +44,20 @@
   // defaults in); these are only the fallbacks for a keymap message without it. What is left as a
   // constant (HEAT_TICK_MS, WPM_TICK_MS) is how often the page redraws, not anything a user would
   // notice.
-  const DEFAULTS = { opacity: 86, press_ms: 320, release_ms: 60, held_timeout_ms: 5000, momentary_ms: 700, combo_slack_ms: 20, activator_ms: 400,
-    positions_fresh_ms: 3000, combo_pill_ms: 1000, sequence_ms: 200, sequence_max: 6, one_shot_ms: 450, heatmap_ms: 3000,
-    wpm_window_ms: 10000, wpm_idle_ms: 3000, stats_bar: 1, dark: 0 };
+  // The keystrokes' own (press_ms, combo_slack_ms, ...) are keystrokes.js's.
+  const Keystrokes = window.ZmkKeystrokes;
+  const DEFAULTS = Object.assign({ opacity: 86, heatmap_ms: 3000, wpm_window_ms: 10000, wpm_idle_ms: 3000, stats_bar: 1, dark: 0 },
+                                 Keystrokes.DEFAULTS);
   const T = name => (state.data && state.data.hud && state.data.hud[name] != null) ? state.data.hud[name] : DEFAULTS[name];
   // The stats bar's chips, from the config's `stats:` section; again only the fallback.
   const STAT_DEFAULTS = { wpm: true, session: true, accuracy: true, keys: true, layer: true, time: false,
     hands: false, sfb: false, slow: false, heatmap: true, theme: true, opacity: true };
   const statOn = name => (state.data && state.data.stats && state.data.stats[name] != null) ? !!state.data.stats[name] : STAT_DEFAULTS[name];
-  const recentPos = [];
+  // What the keyboard's messages say was struck (keystrokes.js). Until the page is only its caller,
+  // what it has read is reached from here too (KS).
+  const ks = Keystrokes.create();
+  const KS = ks._s;
+  const recentPos = KS.recentPos;
 
   // Named keys → the legend text keymap-drawer keymaps usually use for them.
   const NAMED = {
@@ -76,19 +81,10 @@
 
   const state = {
     data: null,
-    baseLayers: [],           // emulated mode: just the base layer
-    live: null,               // {ids: [..], at} once the keyboard has reported its layers
-    momentary: [],            // [{layer, until}]  (inference only)
-    oneShot: null,            // layer name        (inference only)
     mods: {},                 // flag -> true while held
     device: "",               // the keyboard's HID product name
-    activatorOf: {},          // drawn layer -> the key idx that brought it in (positions)
     modSource: {},            // modifier flag -> the key idx that turned it on, null: none known (positions)
     pick: null,               // a layer the viewer picked to look at (the stats' layer tile), until a keystroke
-    drawnSince: {},           // drawn layer -> when it appeared (applyLayers)
-    pendingLayers: null,      // a layer change held back for a flash (setLayers)
-    pendingDue: null,         // ...and when it applies, fixed at the first drop
-    held: new Set(),          // key idx currently down, by reported position
     keyEls: [],
     keyBoxes: [],             // key idx -> {l, t, r, b}: its box on the board as drawn (buildBoard)
     keyUnit: 1,               // px: the smallest key's side, what a pill's distance is measured in
@@ -105,7 +101,6 @@
     touchNote: "",            // why the board that was asked to type cannot (touch.js setTouchNote)
     watched: null,            // what the feed says sees a secret being typed ([] = nothing); null until told
     demo: false,              // a GIF still (&demo=N): drawn as it always was, no heat, no counts
-    ledger: [],               // keystrokes drawn and not counted yet (see "ledger")
     ledgerTimer: null,
     ledgerDue: 0,
     comboEntry: null,         // the ledger's entry for the combo whose pill is up
@@ -132,6 +127,13 @@
     dock: null,               // docked along the bottom of the screen (setDock): {maxHeight, split, pxPerMm, width, fit}
     offsetX: 0,               // the board's left margin when docked: it is centred, not stretched
   };
+  // What keystrokes.js has read, reached as the page's own: the layers (live, baseLayers, the inferred
+  // momentary and oneShot, activatorOf, drawnSince, pendingLayers), the keys down (held), what waits
+  // to be counted (ledger) and when a key last went down (lastKeyAt).
+  for (const name of ["live", "baseLayers", "momentary", "oneShot", "activatorOf", "drawnSince", "pendingLayers",
+                      "held", "ledger", "lastKeyAt"]) {
+    Object.defineProperty(state, name, { get: () => KS[name], set: v => { KS[name] = v; }, enumerable: true });
+  }
   // What other scripts on the page hook into (hud.on): touch.js follows the keymap and the layers.
   const hooks = {};
   let attachOwn = null;      // a page's own attach and detach (hud.setAttach), else the panel's
@@ -301,32 +303,14 @@
   // ZMK layer id → keymap entry ({name, drawer, label, cls}); falls back to the YAML order.
   function zl(id) { return View.zl(state.data, id); }
 
-  // The live stack as drawer layer names, top first: higher ZMK ids win, undrawn layers are
-  // skipped, duplicates (two ids drawn by one layer) collapse; the base layer is always last.
-  function liveStack() { return View.drawnStack(state.data, state.live.ids.slice().sort((a, b) => b - a)); }
-
-  function baseStack() {
-    // top first
-    if (state.live) return liveStack();
-    const s = [];
-    for (let i = state.baseLayers.length - 1; i >= 0; i--) s.push(state.baseLayers[i]);
-    if (!s.includes(base())) s.push(base());
-    return s;
-  }
-
-  // The touch keyboard's layers, top first (touch.js: the engine's, which takes the keyboard's own
-  // while nothing on glass holds one), drawn as liveStack draws the keyboard's.
-  function touchStack() { return View.drawnStack(state.data, state.touch.ids); }
+  // The live stack as drawer layer names, top first; the base layer is always last (keystrokes.js).
+  const liveStack = () => ks._liveStack();
+  const baseStack = () => ks._baseStack();
 
   function stack() {
     // A layer picked to look at is drawn over the base alone, until the next keystroke (unpick).
     if (state.pick) return state.pick === base() ? [base()] : [state.pick, base()];
-    if (state.touch && state.touch.ids) return touchStack();
-    const s = [];
-    if (state.oneShot) s.push(state.oneShot);
-    for (let i = state.momentary.length - 1; i >= 0; i--) s.push(state.momentary[i].layer);
-    for (const name of baseStack()) if (!s.includes(name)) s.push(name);
-    return s;
+    return ks._stack();
   }
 
   // The binding that wins at idx, walking the stack through transparent keys.
@@ -965,19 +949,6 @@
     rec.guess = ledgerAdd({ kind: "guess", idxs: idxs.slice(), layer, t: now,
                             stack: [layer].concat(stack().filter(l => l !== layer)),
                             due: now + Math.max(comboTerm(), T("sequence_ms")), eligible: fromKeyboard(ev) });
-  }
-
-  /* ZMK sends a layer's frame after the key that decided its hold: a hold-tap turns into a hold
-   * when the next key goes down, and that key's position is sent first. Counted on the stack it
-   * went down on, the first key typed on every held layer would count on the one below. So when a
-   * layer comes up, a press still waiting that followed the key now holding it is moved onto the
-   * new stack. A layer going away moves nothing: the key before it was typed with it up. */
-  function recredit(gained, now) {
-    const term = comboTerm(), layers = stack();
-    for (const e of state.ledger) {
-      if (e.kind !== "press" || e.cancelled || now - e.t > term) continue;
-      if (gained.some(p => e.t > p.t && e.idx !== p.idx)) e.stack = layers;
-    }
   }
 
   // ---------- strokes ----------
@@ -1918,56 +1889,20 @@
 
   // ---------- public API ----------
 
-  function applyLayers(ids) {
-    // Which key brought each new drawn layer in: the position pressed just before (its own
-    // activator among the candidates), so an alternate activator elsewhere stays dark.
-    const now = Date.now();
-    const wasDrawn = state.live ? new Set(state.live.ids.map(id => (zl(id) || {}).drawer).filter(Boolean)) : new Set();
-    for (const id of ids) {
-      const name = (zl(id) || {}).drawer;
-      if (!name || wasDrawn.has(name)) continue;
-      state.drawnSince[name] = now;
-      if (state.activatorOf[name] != null) continue;
-      // Prefer a key the drawer marks as reaching this layer; else the key pressed right
-      // before the layer appeared is the one holding it (a thumb whose legend says otherwise).
-      const candidates = activatorsOf(name);
-      // Still down: a key that was tapped and let go is not what is holding this layer, even
-      // if it was the last thing pressed before the layer arrived.
-      const fresh = [...recentPos].reverse().filter(p => now - p.t < T('activator_ms') && state.held.has(p.idx));
-      const press = fresh.find(p => candidates.includes(p.idx)) || fresh[0];
-      if (press) {
-        state.activatorOf[name] = press.idx;
-        if (press.entry) press.entry.activator = true;     // brought a layer up: held, if another key went down (strokes)
-      }
-    }
-    const drawnNow = new Set(ids.map(id => (zl(id) || {}).drawer).filter(Boolean));
-    // The presses of the keys now holding a layer that just came up (recredit).
-    const gained = [];
-    for (const name of drawnNow) {
-      if (wasDrawn.has(name) || state.activatorOf[name] == null) continue;
-      const p = [...recentPos].reverse().find(q => q.idx === state.activatorOf[name]);
-      if (p) gained.push(p);
-    }
-    for (const name of Object.keys(state.activatorOf)) if (!drawnNow.has(name)) delete state.activatorOf[name];
-    for (const name of Object.keys(state.drawnSince)) if (!drawnNow.has(name)) delete state.drawnSince[name];
-    state.live = { ids, at: now };
-    state.momentary = []; state.oneShot = null;
-    if (gained.length) recredit(gained, now);
-    render();
-    fire("layers", ids);
+  /* What keystrokes.js answered. The layers it applied go on the board, and to the scripts that
+   * follow them (touch.js); when it is waiting for something, it is asked again then. */
+  let ksTimer = null, ksDue = null;
+  function apply(out) {
+    for (const said of out.said) if (said.say === "layers") { render(); fire("layers", said.ids); }
+    armKs(out.next);
+    return out;
   }
-
-  /* A layer change held back for a flash is the keyboard's word all the same, and the moment
-   * another key goes down it applies, so that key resolves on the layers really up. Held back
-   * any longer, a one-shot layer outlived its key for as long as typing went on: every keystroke
-   * within press_ms of the last re-armed the delay, and at 170 ms a key the chord after an Alpha 2
-   * letter drew Alpha 2's combo -- "wax" drew its x as "-", "quick" its k as a dead quote. */
-  function flushLayers() {
-    if (!state.pendingLayers) return;
-    const ids = state.pendingLayers;
-    state.pendingLayers = null; state.pendingDue = null;
-    clearTimeout(state.layersTimer);
-    applyLayers(ids);
+  function armKs(next) {
+    if (next === ksDue) return;
+    clearTimeout(ksTimer);
+    ksTimer = null; ksDue = next;
+    if (next === null) return;
+    ksTimer = setTimeout(() => { ksTimer = null; ksDue = null; apply(ks.tick(Date.now())); }, Math.max(0, next - Date.now()));
   }
 
   const hud = {
@@ -1980,12 +1915,12 @@
       // that one, whose layers and keys it names.
       if (state.data) ledgerCommit(Date.now(), true);
       state.data = data;
+      // Read now, answered once the board is built for it.
+      const loaded = ks.read(data.kind === "keymap" ? data : Object.assign({ kind: "keymap" }, data), Date.now());
       applyPrefs();                 // the config's hud.dark, until the viewer chose
-      state.momentary = []; state.oneShot = null;
-      state.activatorOf = {}; state.modSource = {}; state.pick = null; state.lastPress = null; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null;
+      state.modSource = {}; state.pick = null; state.lastPress = null; state.comboShown = null; state.comboEntry = null;
       // Keystrokes on the keymap going away are not followed by the next one's keys.
       state.down.clear(); state.strokes = []; state.lastStroke = null; state.lastOwnStroke = null;
-      state.baseLayers = [data.base];
       // A board that draws its letters as capitals, as `keymap parse` does: there the legend is the
       // keycap, not the character, so a lowercase letter placed from what was typed is its
       // capital's key (tokenFor) -- the rule host/play.py spells text by.
@@ -2005,47 +1940,15 @@
       renderTitle();
       postSize();
       render();
+      apply(loaded);
       fire("load", data);
     },
     // The keyboard's active ZMK layer ids (layer 0 omitted). Clears every inference: from now on
-    // the stack is what the keyboard says.
+    // the stack is what the keyboard says (keystrokes.js, which may hold a drop back for a flash).
     setLayers(ids) {
       if (typeof ids === "string") ids = JSON.parse(ids);
       if (!Array.isArray(ids)) return;
-      ids = ids.map(Number).filter(n => Number.isInteger(n) && n > 0);
-      // The change already held back, said again (a heartbeat, a re-assertion): it is on its way
-      // and keeps its deadline. Starting the wait over each time kept a dropped layer up for as
-      // long as the repeats kept coming.
-      const sameIds = (a, b) => a.length === b.length && a.every(x => b.includes(x));
-      if (state.pendingLayers && sameIds(state.pendingLayers, ids)) return;
-      clearTimeout(state.layersTimer);
-      // A one-shot layer leaves right after the key it served (and may enter another, undrawn
-      // one). Keep the board on the drawn layers while the key's flash is visible, otherwise the
-      // flash appears under the wrong legends. Layers that only appear apply at once.
-      const now = Date.now();
-      const since = now - (state.lastKeyAt || 0);
-      // A drop is due press_ms after the key it followed, and stays due then: a change arriving
-      // while it waits replaces what will apply, never when. Measured afresh each time, a run of
-      // changes a keystroke apart kept the first layer up for as long as the run lasted.
-      const due = state.pendingLayers ? state.pendingDue : now + T('press_ms') - since;
-      state.pendingLayers = null; state.pendingDue = null;
-      if (state.live && due > now) {
-        const drawn = set => new Set(set.map(id => (zl(id) || {}).drawer).filter(Boolean));
-        const before = drawn(state.live.ids), after = drawn(ids);
-        const losesDrawn = [...before].some(name => !after.has(name));
-        // Only a layer falling away is worth holding back. One that brings another drawn layer
-        // up means the next key is already on it -- ç on Alpha 2, then ão on the Ç extension --
-        // and holding the whole change back left the macro looking on Alpha 2, where it is not.
-        const gainsDrawn = [...after].some(name => !before.has(name));
-        if (losesDrawn && !gainsDrawn) {
-          // Held back for the flash only: the timer applies it outright rather than asking
-          // again, and the next key to go down applies it first (flushLayers).
-          state.pendingLayers = ids; state.pendingDue = due;
-          state.layersTimer = setTimeout(() => { state.pendingLayers = null; state.pendingDue = null; applyLayers(ids); }, due - now);
-          return;
-        }
-      }
-      applyLayers(ids);
+      apply(ks.read({ kind: "layers", ids }, Date.now()));
     },
     // Firmware `positions;`: the physical key at ZMK position `pos` was pressed. The one exact
     // source for what to light, whatever the key produced (chords, combos, macros, modifiers,
@@ -2059,7 +1962,7 @@
       const now = Date.now();
       // A key going down is a keystroke of its own: a layer change held back for the previous
       // one's flash is the keyboard's state now, and this key resolves on it.
-      flushLayers();
+      apply(ks._flush(now));
       // The keyboard's own combo term (config combo_term_ms) plus slack for the reports' travel.
       const term = ((state.data.combo_term || 50) + T('combo_slack_ms'));
       // A report can beat its own positions: they travel on separate channels. What the character
@@ -2182,7 +2085,7 @@
       }
     },
     // Leave live mode (tests, or a host that lost the keyboard).
-    clearLayers() { state.live = null; render(); },
+    clearLayers() { apply(ks.read({ kind: "layers", ids: null }, Date.now())); render(); },
     // The key at ZMK position `pos` went up: the flash fades out from now.
     releaseAt(pos) {
       if (!state.data) return;
@@ -2241,6 +2144,7 @@
     setTouchView(view) {
       const before = (state.touch && state.touch.down) || [];
       state.touch = view || null;
+      apply(ks.read({ kind: "touch", ids: view && view.ids ? view.ids : null }, Date.now()));
       const now = (view && view.down) || [];
       for (const idx of before) {
         // A finger lifted: its key goes dark, unless the keyboard itself is holding it.

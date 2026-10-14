@@ -47,6 +47,7 @@ test-hud: ## the HUD page: every key and combo, the heatmap, the strip, and ever
 	@if [ -z "$(NODE)" ]; then \
 	  echo "test-hud: node not found, skipping (brew install node)"; \
 	else \
+	  $(NODE) hud/tests/keystrokes_test.js && \
 	  $(NODE) hud/tests/hud_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
 	  $(NODE) hud/tests/stats_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/strip_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \

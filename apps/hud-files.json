@@ -1,5 +1,5 @@
 {
   "_": "The HUD files each app ships, from hud/, copied at build time and never into git (apps/apps_test.py checks these lists against hud/index.html and the build files).",
-  "android": ["index.html", "hud.css", "keys.js", "hidtables.js", "hidtext.js", "engine.js", "view.js", "hud.js", "touch.js"],
+  "android": ["index.html", "hud.css", "keys.js", "hidtables.js", "hidtext.js", "engine.js", "view.js", "keystrokes.js", "hud.js", "touch.js"],
   "ios": ["hidtables.js", "hidtext.js", "engine.js", "view.js", "kbd.js"]
 }
