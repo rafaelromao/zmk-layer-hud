@@ -1709,7 +1709,7 @@
    * activator_ms (a sticky shift tapped and let go). null: none known yet -- the position may still
    * be on its way, and pressAt takes it then. */
   function modSourceOf(glyph, now) {
-    const layers = stack();
+    const layers = ks._stack();          // the keyboard's, never a layer picked to look at
     const carrying = p => { const r = resolveBinding(p.idx, layers); return r && carries(r.key, glyph); };
     const latest = [...recentPos].reverse();
     const src = latest.find(p => state.held.has(p.idx) && carrying(p))
