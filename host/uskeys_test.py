@@ -12,7 +12,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import uskeys  # noqa: E402
-from hudfeed import SignalDecoder  # noqa: E402
+from hiddecode import SignalDecoder  # noqa: E402
 from keynames import ALT_CHARS, ALTGR_CHARS, CHARS, NAMED, RALT  # noqa: E402
 
 

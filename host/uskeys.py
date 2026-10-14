@@ -21,7 +21,7 @@ import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from hudfeed import SignalDecoder  # noqa: E402
+from hiddecode import SignalDecoder  # noqa: E402
 from keynames import (ALT_CHARS, ALTGR_CHARS, CHARS, DEAD_KEY_SPECIAL, DEAD_KEYS, NAMED, RALT,  # noqa: E402
                       name_of, spellings)
 
