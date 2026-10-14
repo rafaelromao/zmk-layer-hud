@@ -9,7 +9,7 @@ import JavaScriptCore
 /// the types of Model.swift. Not thread-safe: one keyboard, one thread (the main one).
 public final class JSKbd {
     /// The HUD's scripts it runs, in this order: each needs the ones before it.
-    public static let scripts = ["hidtables.js", "hidtext.js", "engine.js", "view.js", "kbd.js"]
+    public static let scripts = ["keynames.js", "hidtext.js", "engine.js", "view.js", "kbd.js"]
 
     public enum Failure: Error, Equatable {
         /// A script did not load: a build that copied the wrong files.

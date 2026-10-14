@@ -45,12 +45,13 @@
  * Nothing here keeps time: `now` is an argument, whatever is due at or before it runs first, and
  * `next` says when something will be. No DOM, no Date, no timers, no console, as in engine.js: the
  * same file runs in the page and under node's tests. Which layer a key resolves on comes from
- * view.js. Time is taken as given, never clamped: a GIF still dates a held key back (hud.js
+ * view.js; what a named key and a modifier are drawn as and spelled with, from keynames.js. Time is taken as given, never clamped: a GIF still dates a held key back (hud.js
  * demoFrame), and it is read as of then.
  */
 (function (root) {
   "use strict";
   const View = (typeof module === "object" && module.exports) ? require("./view.js") : root.ZmkView;
+  const Keys = (typeof module === "object" && module.exports) ? require("./keynames.js") : root.ZmkKeyNames;
 
   // The timings the reading uses, from the config's `hud:` section (host/keymap.py fills the
   // defaults in); these are only the fallbacks for a keymap message without it. hud.js takes them
@@ -104,7 +105,7 @@
     const activatorsOf = layer => s.data.activators.filter(a => a.layer === layer).map(a => a.idx);
     const resolve = (idx, layers) => View.resolve(s.data, idx, layers);
     // Modifier flags -> the glyph a hold legend uses for them.
-    const MOD_GLYPH = { shift: "⇧", ctrl: "⌃", alt: "⌥", cmd: "⌘" };
+    const MOD_GLYPH = Keys.MOD_GLYPHS;
     // A key that carries a modifier: a home-row mod (hold legend) or the modifier key itself (tap).
     const carries = (key, glyph) => !!key && ((key.hold && key.hold.includes(glyph)) || key.tap === glyph);
     // The drawer key's ZMK position, which is what a session is kept by; null for a key the keymap
@@ -216,34 +217,14 @@
     const fromKeyboard = ev => ev.sent !== true && typeof ev.combos !== "boolean" && !ev.synthetic;
     const isLetter = t => /^[\p{L}]$/u.test(t);
 
-    // Named keys -> the legend text keymap-drawer keymaps usually use for them.
-    const NAMED = {
-      space: "␣", return: "↵", escape: "⎋", delete: "⌫", forwarddelete: "⌦", tab: "⇥",
-      left: "←", right: "→", up: "↑", down: "↓", home: "⇱", end: "⇲",
-      pagedown: "⇟", pageup: "⇞", insert: "⎀", capslock: "⇪",
-      // Keyboard Cancel (K_CANCEL), what a cancel combo sends: without positions this is how its
-      // keys light and its pill shows.
-      cancel: "cancel",
-    };
-    // The function keys the decoder names (f1..f24): without them a keymap's F5 resolves to no
-    // token at all and the key never lights when the firmware reports no positions.
-    for (let i = 1; i <= 24; i++) NAMED["f" + i] = "F" + i;
+    // Named keys -> their glyphs, the legend text drawings usually use for them, and back; a
+    // legend's named key under any spelling (the key vocabulary, host/keynames.py). Cancel and the
+    // function keys among them: without them a cancel combo or a keymap's F5 resolves to no token at
+    // all, and never lights when the firmware reports no positions.
+    const NAMED = Keys.GLYPHS;
     const NAME_OF_GLYPH = {};
     for (const [name, glyph] of Object.entries(NAMED)) NAME_OF_GLYPH[glyph] = name;
-    // Every spelling a drawing uses for a named key, glyph or word, lowercased and without spaces
-    // (host/uskeys.py SPELLINGS): keymap-drawer's parse writes Tab, BSpace, Page Down. A drawing's
-    // Delete is the key that deletes forwards; the feed's `delete` is Backspace.
-    const SPELLINGS = {};
-    for (const [name, spelled] of [
-      ["space", "␣ spc space"], ["return", "↵ ⏎ ret enter return"], ["escape", "⎋ esc escape"],
-      ["delete", "⌫ bspc bspace backspace"], ["forwarddelete", "⌦ del delete"], ["tab", "⇥ ↹ tab"],
-      ["left", "← left"], ["right", "→ right"], ["up", "↑ up"], ["down", "↓ down"],
-      ["home", "⇱ home"], ["end", "⇲ end"], ["pageup", "⇞ pgup pageup"], ["pagedown", "⇟ pgdn pagedown"],
-      ["insert", "⎀ ins insert"], ["capslock", "⇪ caps capslock"], ["cancel", "cancel"]]) {
-      for (const sp of spelled.split(" ")) SPELLINGS[sp] = name;
-    }
-    for (let i = 1; i <= 24; i++) SPELLINGS["f" + i] = "f" + i;
-    const nameOf = legend => (typeof legend === "string" && SPELLINGS[legend.replace(/\s+/g, "").toLowerCase()]) || null;
+    const nameOf = Keys.nameOf;
 
     // ---------- what is due ----------
 
