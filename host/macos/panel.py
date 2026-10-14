@@ -7,6 +7,9 @@ poke`) is drawn on this page, marked as not the keyboard's.
 
     .venv/bin/python3 host/macos/panel.py            # or host/macos/start.sh
 
+What the page says and the command line asks are the panel's (host/panelcore.py); this is its
+window here: drawn, placed, moved and hidden with AppKit.
+
 The window opens on the screen that has keyboard focus, can be dragged anywhere, and remembers
 its position in ~/.config/zmk-layer-hud/state.json. Needs pyobjc-framework-Cocoa and
 pyobjc-framework-WebKit in the venv (make venv installs them on macOS). The first run asks for

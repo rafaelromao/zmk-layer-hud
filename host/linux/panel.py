@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """zmk-layer-hud Linux host: transparent Wayland (layer-shell) surfaces, layer HUD with the
-typed-keys strip below it, plus hudfeed.py for layers, keys and daemon decisions.
+typed-keys strip below it, plus hudfeed.py for layers, keys and daemon decisions. What the page
+says and the command line asks are the panel's (host/panelcore.py); these surfaces are its window
+here.
 
 By default the HUD is an overlay: it floats over whatever is on screen and takes no room from
 it, which is what a HUD should do to a session you are working in.
