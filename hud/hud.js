@@ -508,7 +508,8 @@
       for (const id of state.timers.values()) clearTimeout(id);
       state.timers.clear();
       for (const e of state.keyEls) if (e) e.classList.remove("pressed", "combo", "combo-key");
-      if (state.comboShown) { state.comboShown.remove(); state.comboShown = null; }
+      for (const shown of [...livePills]) shown.handle.remove();   // a chord's pill, and a guess's
+      state.comboShown = null;
       state.heat.clear();
       paintHeat();
       // Nothing typed before it is counted or sent either: a key that slipped in as the secret
@@ -1452,9 +1453,10 @@
       setTimeout(() => { pill.remove(); svg.remove(); }, 200);
     }, T('combo_pill_ms'));
     // A handle to take the pill down early when a longer legend supersedes it: its time is over.
-    return { remove() { if (!livePills.has(shown)) return; clearTimeout(timer); pill.remove(); svg.remove(); unmark(); } };
+    shown.handle = { remove() { if (!livePills.has(shown)) return; clearTimeout(timer); pill.remove(); svg.remove(); unmark(); } };
+    return shown.handle;
   }
-  const livePills = new Set();   // the pills up: {positions}
+  const livePills = new Set();   // the pills up: {positions, handle}
 
   // `held`: keys down at the time (keystrokes.js), lit until they come up and timed by their own.
   function flash(indices, cls, held) {
