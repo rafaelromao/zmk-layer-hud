@@ -360,6 +360,38 @@ function checkModRings(data) {
   return fails;
 }
 
+/* A third key inside the combo term makes a bigger combo, and its pill takes the smaller one's
+ * place. The smaller pill is gone, and so is what it had to say about its keys: the bigger pill's
+ * keys stay marked as a combo's for as long as the bigger pill is up, not as long as the smaller
+ * one would have been. */
+function checkSupersededPill(data) {
+  const onBase = c => c.layers.includes(data.base);
+  const big = (data.combos || []).find(c => onBase(c) && c.positions.length === 3 &&
+    (data.combos || []).some(s => onBase(s) && s.positions.length === 2 && s.positions.every(p => c.positions.includes(p))));
+  const small = big && data.combos.find(s => onBase(s) && s.positions.length === 2 && s.positions.every(p => big.positions.includes(p)));
+  const posOf = idx => Object.entries(data.positions || {}).find(([, i]) => Number(i) === idx);
+  if (!big || !big.positions.every(posOf)) return ["the fixture has no positioned three-key base combo over a two-key one"];
+  const third = big.positions.find(p => !small.positions.includes(p));
+  const pillMs = Number((data.hud && data.hud.combo_pill_ms) || 1000);
+  const page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  page.clock.advance(1000);
+  const marked = () => page.hud.state.keyEls.flatMap((el, i) => (el.classList.contains("combo-key") ? [i] : []));
+  for (const p of small.positions) page.hud.pressAt(Number(posOf(p)[0]));
+  page.clock.advance(5);
+  page.hud.pressAt(Number(posOf(third)[0]));
+  const want = big.positions.slice().sort((a, b) => a - b).join();
+  page.clock.advance(pillMs - 5 + 1);           // past the smaller pill's time, inside the bigger one's
+  const during = marked().sort((a, b) => a - b).join();
+  page.clock.advance(10);                        // past the bigger one's too
+  const after = marked();
+  const fails = [];
+  if (during !== want) fails.push(`the bigger pill's keys [${want}] should stay marked while it is up; marked [${during}]`);
+  if (after.length) fails.push(`and nothing after it; marked [${after}]`);
+  return fails;
+}
+
 /* The layer and the key that brought it up are two reports, in no promised order. Until the key
  * comes, every key that can reach the layer is marked as its activator; once its position says
  * which one did, that one alone is -- at once, not at the next redraw. */
@@ -488,6 +520,12 @@ async function main() {
   const modFailures = checkModRings(data);
   if (modFailures.length) {
     for (const failure of modFailures) console.error(`FAIL mod-rings: ${failure}`);
+    process.exit(1);
+  }
+
+  const supersededFailures = checkSupersededPill(data);
+  if (supersededFailures.length) {
+    for (const failure of supersededFailures) console.error(`FAIL superseded-pill: ${failure}`);
     process.exit(1);
   }
 
