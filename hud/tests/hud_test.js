@@ -360,6 +360,29 @@ function checkModRings(data) {
   return fails;
 }
 
+/* The board drawn again under a held key -- resized, docked, back from minimized -- shows what is lit
+ * and up as it was, and a chord finished on it is drawn whole: every key of it lit as a combo's. */
+function checkRebuiltBoard(data) {
+  const combo = (data.combos || []).find(c => c.layers.includes(data.base) && c.positions.length === 2);
+  const posOf = idx => Object.entries(data.positions || {}).find(([, i]) => Number(i) === idx);
+  if (!combo || !combo.positions.every(posOf)) return ["the fixture has no positioned two-key combo on its base"];
+  const [a, b] = combo.positions;
+  const page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  page.clock.advance(1000);
+  const has = (idx, cls) => page.hud.state.keyEls[idx].classList.contains(cls);
+  page.hud.pressAt(Number(posOf(a)[0]));
+  page.dispatch("resize", {});
+  const fails = [];
+  if (!has(a, "pressed")) fails.push(`key ${a}, still down, should stay lit on the board drawn again`);
+  page.hud.pressAt(Number(posOf(b)[0]));
+  for (const idx of [a, b]) {
+    for (const cls of ["pressed", "combo", "combo-key"]) if (!has(idx, cls)) fails.push(`the chord finished after it: key ${idx} should be ${cls}`);
+  }
+  return fails;
+}
+
 /* A secret being typed takes what is on screen of the typing with it: the keys lit, and every pill
  * -- a chord's, and a guess's that a report put up. */
 function checkSecretTakesThePills(data) {
@@ -561,6 +584,12 @@ async function main() {
   const modFailures = checkModRings(data);
   if (modFailures.length) {
     for (const failure of modFailures) console.error(`FAIL mod-rings: ${failure}`);
+    process.exit(1);
+  }
+
+  const rebuiltFailures = checkRebuiltBoard(data);
+  if (rebuiltFailures.length) {
+    for (const failure of rebuiltFailures) console.error(`FAIL rebuilt-board: ${failure}`);
     process.exit(1);
   }
 
