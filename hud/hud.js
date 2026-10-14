@@ -1579,10 +1579,6 @@
     return { remove() { pill.remove(); svg.remove(); } };
   }
 
-  function comboFor(layer, token) {
-    return state.data.combos.find(c => c.layers.includes(layer) && legendMatches(c.key.tap, token)) || null;
-  }
-
   function flash(indices, cls) {
     for (const idx of indices) {
       const e = state.keyEls[idx];
@@ -1617,6 +1613,8 @@
   // when `extras.letter_combos_on` is set: outside those layers they are ignored, so a typed
   // letter missing from the base is attributed to the secondary alpha layer instead.
   // `noCombos`: typing whose sender says combos are not how it is typed (handleKey).
+  // Returns {hit, combo}: the keys that type it, and the combo they are when they are one -- the
+  // combo found here, so its pill names what is lit -- or null.
   function findOnLayer(layer, token, commandLayersActive, noCombos) {
     const keys = state.data.layers[layer];
     if (!keys) return null;
@@ -1625,12 +1623,12 @@
     // key -- h, or v right after a vowel -- while a combo drawn "v" always types v, so from a v
     // alone the combo is the likelier and the adaptive key the fallback.
     for (const exact of [true, false]) {
-      for (let i = 0; i < keys.length; i++) if (keys[i].type !== "trans" && legendMatches(keys[i].tap, token, exact)) return [i];
+      for (let i = 0; i < keys.length; i++) if (keys[i].type !== "trans" && legendMatches(keys[i].tap, token, exact)) return { hit: [i], combo: null };
       if (noCombos) continue;
       for (const c of state.data.combos) {
         if (!c.layers.includes(layer) || !legendMatches(c.key.tap, token, exact)) continue;
         if (gate && gate.length && isLetter(token) && layer === base() && !commandLayersActive) continue;
-        return c.positions.slice();
+        return { hit: c.positions.slice(), combo: c };
       }
     }
     return null;
@@ -1660,7 +1658,7 @@
     if (state.momentary.length !== before) render();
   }
 
-  // Resolve a typed token on the given stack (top first). Returns {hit, layer} or null.
+  // Resolve a typed token on the given stack (top first). Returns {hit, combo, layer, viaShift} or null.
   // An uppercase letter may live on a shifted layer the config names among the sticky ones.
   function resolveOnStack(token, layers, commandLayersActive, noCombos) {
     const shiftLayers = (extras().sticky || []).filter(l => /shift/i.test(l) && !layers.includes(l));
@@ -1670,8 +1668,8 @@
     // Caps word's K was drawn as Shift · Alpha 2's key and that layer's activator.
     const searchStack = /^\p{Lu}$/u.test(token) ? [...layers, ...shiftLayers] : layers;
     for (const layer of searchStack) {
-      const hit = findOnLayer(layer, token, commandLayersActive, noCombos);
-      if (hit) return { hit, layer, viaShift: shiftLayers.includes(layer) };
+      const found = findOnLayer(layer, token, commandLayersActive, noCombos);
+      if (found) return { hit: found.hit, combo: found.combo, layer, viaShift: shiftLayers.includes(layer) };
     }
     return null;
   }
@@ -1709,7 +1707,7 @@
       for (const p of parts) unlight(p);
       flash(r.hit, r.hit.length > 1 ? "combo" : null);
       let pill = null;
-      if (r.hit.length > 1) { const c = comboFor(r.layer, seq); if (c) pill = showCombo(r.hit, c.key); }
+      if (r.combo) pill = showCombo(r.hit, r.combo.key);
       // Keep the tokens: a still longer legend may follow (";" after "()", "⏎" after "do {").
       guess(remember(token, r.hit, pill, r.layer), r.hit, r.layer, ev);
       afterKey();
@@ -1830,7 +1828,7 @@
         // The pill is remembered with the keys, so whatever supersedes this guess -- a macro's
         // longer legend, or the positions arriving after it -- takes the pill down too.
         let pill = null;
-        if (r.hit.length > 1) { const c = comboFor(r.layer, token); if (c) pill = showCombo(r.hit, c.key); }
+        if (r.combo) pill = showCombo(r.hit, r.combo.key);
         guess(remember(token, r.hit.concat(extra), pill, r.layer), r.hit, r.layer, ev);
         touchLayer(r.layer);
         afterKey();
@@ -1873,7 +1871,7 @@
         const extra = r.viaShift ? activatorsOf(r.layer) : [];
         flash(r.hit.concat(extra), r.hit.length > 1 ? "combo" : null);
         let pill = null;
-        if (r.hit.length > 1) { const c = comboFor(r.layer, token); if (c) pill = showCombo(r.hit, c.key); }
+        if (r.combo) pill = showCombo(r.hit, r.combo.key);
         guess(remember(token, r.hit.concat(extra), pill, r.layer), r.hit, r.layer, ev);
         touchLayer(r.layer);
         afterKey();
@@ -1883,13 +1881,14 @@
       //    most likely came from a sticky layer; anything else from a held one.
       for (const layer of order) {
         if (layers.includes(layer)) continue;
-        const hit = findOnLayer(layer, token, cmdActive, noCombos);
-        if (hit) {
+        const found = findOnLayer(layer, token, cmdActive, noCombos);
+        if (found) {
+          const hit = found.hit;
           if (sticky.has(layer)) state.oneShot = layer; else armMomentary(layer);
           render();
           flash(hit.concat(activatorsOf(layer)), hit.length > 1 ? "combo" : null);
           let pill = null;
-          if (hit.length > 1) { const c = comboFor(layer, token); if (c) pill = showCombo(hit, c.key); }
+          if (found.combo) pill = showCombo(hit, found.combo.key);
           guess(remember(token, hit.concat(activatorsOf(layer)), pill, layer), hit, layer, ev);
           afterKey();
           return true;

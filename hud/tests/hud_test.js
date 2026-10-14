@@ -278,6 +278,26 @@ function checkCapitals() {
   return fails;
 }
 
+/* Two combos on one layer can both answer a typed character: one drawn "ŵ|ŷ", which types ŵ only
+ * sometimes (an adaptive key), and one drawn "ŵ", which always does. Typing ŵ lights the one that
+ * always does, and its pill must name it: the pill is the combo whose keys are lit, not the first
+ * combo whose legend would do. */
+function checkComboPill(data) {
+  const d = JSON.parse(JSON.stringify(data));
+  const combo = (tap, positions) => ({ key: { tap, hold: "", shifted: "", type: "key" }, layers: [d.base], positions });
+  d.combos = d.combos.concat([combo("ŵ|ŷ", [2, 3]), combo("ŵ", [6, 7])]);
+  const page = loadPage();
+  page.hud.load(d);
+  page.hud.setLayers([]);
+  page.hud.key({ type: "keyDown", name: "ŵ", chars: "ŵ", flags: {}, repeat: false, combos: true });
+  const lit = page.hud.state.keyEls.flatMap((el, i) => (el.classList.contains("pressed") ? [i] : []));
+  const pills = page.board.querySelectorAll(".combo-pill").map(p => p.querySelector(".combo-tap").textContent);
+  const fails = [];
+  if (lit.join() !== "6,7") fails.push(`typed-in ŵ should light the ŵ combo's keys [6,7]; lit [${lit}]`);
+  if (pills.join() !== "ŵ") fails.push(`its pill should say ŵ; pills [${pills.map(p => JSON.stringify(p))}]`);
+  return fails;
+}
+
 /* A modifier rings the key that turned it on, not every key that carries it: the home-row Shift
  * held, or a Shift whose report came before its position. With no positions from the firmware
  * there is no telling which, and every key carrying it is ringed. */
@@ -408,6 +428,12 @@ async function main() {
   const capitalFailures = checkCapitals();
   if (capitalFailures.length) {
     for (const failure of capitalFailures) console.error(`FAIL capitals: ${failure}`);
+    process.exit(1);
+  }
+
+  const pillFailures = checkComboPill(data);
+  if (pillFailures.length) {
+    for (const failure of pillFailures) console.error(`FAIL combo-pill: ${failure}`);
     process.exit(1);
   }
 
