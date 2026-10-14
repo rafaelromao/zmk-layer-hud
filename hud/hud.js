@@ -1855,7 +1855,7 @@
         const shiftLayer = (ex.sticky || []).find(l => /shift/i.test(l));
         const extra = activatorsOf(ex.alpha2).concat(/^\p{Lu}$/u.test(token) && shiftLayer ? activatorsOf(shiftLayer) : []);
         flash([direct].concat(extra));
-        guess(remember(token, [direct], null, ex.alpha2), [direct], ex.alpha2, ev);
+        guess(remember(token, [direct].concat(extra), null, ex.alpha2), [direct], ex.alpha2, ev);
         afterKey();
         return;
       }
