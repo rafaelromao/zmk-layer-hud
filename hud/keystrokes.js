@@ -6,8 +6,10 @@
  * typed and where -- the reading of the messages lives here, and hud.js paints what it says.
  *
  *   const ks = ZmkKeystrokes.create();
- *   ks.read(message, now)    a feed message: keymap, layers (ids; null: no longer reported), touch
- *                            (the touch keyboard's layer ids; null: off). Other kinds are ignored.
+ *   ks.read(message, now)    a feed message: keymap, layers (ids; null: no longer reported), press
+ *                            and release (pos, and `sent` for a press sent in), key (a modifier
+ *                            change, flagsChanged), touch (the touch keyboard's layer ids; null: off).
+ *                            Other kinds are ignored.
  *   ks.tick(now)             nothing new: only what has come due by now
  *       -> { board, said, label, next }
  *          board  what the board shows as read: { ready, layers (top first, the base last), live
@@ -52,14 +54,46 @@
       recentPos: [],            // the presses of the last activator_ms or so: {idx, t, entry}
       ledger: [],               // keystrokes drawn and not counted yet
       lastKeyAt: 0,             // when the last key went down, by position or report
+      posAt: 0,                 // when the last position went down
+      lastPress: null,          // the last press, for a keystroke the feed cannot name
+      comboEntry: null,         // the ledger's entry for the combo whose pill is up
+      down: new Map(),          // key idx -> the ledger entry of its press, while it is down
+      posOf: [],                // drawer idx -> ZMK position
+      mods: {},                 // modifier flag -> true while held
+      modSource: {},            // modifier flag -> the key idx that turned it on, null: none known (positions)
     };
     let said = [];
+    // What hud.js still draws itself, in order, until the board says it: a key down, the keys
+    // drawn again, a new chord group, a combo, a key up.
+    let paint = [];
 
     const T = name => (s.data && s.data.hud && s.data.hud[name] != null) ? s.data.hud[name] : DEFAULTS[name];
     const base = () => (s.data ? s.data.base : null);
     const zl = id => View.zl(s.data, id);
     const comboTerm = () => (s.data.combo_term || 50) + T("combo_slack_ms");
     const activatorsOf = layer => s.data.activators.filter(a => a.layer === layer).map(a => a.idx);
+    const resolve = (idx, layers) => View.resolve(s.data, idx, layers);
+    // Modifier flags -> the glyph a hold legend uses for them.
+    const MOD_GLYPH = { shift: "⇧", ctrl: "⌃", alt: "⌥", cmd: "⌘" };
+    // A key that carries a modifier: a home-row mod (hold legend) or the modifier key itself (tap).
+    const carries = (key, glyph) => !!key && ((key.hold && key.hold.includes(glyph)) || key.tap === glyph);
+    // The drawer key's ZMK position, which is what a session is kept by; null for a key the keymap
+    // places nowhere the firmware could report.
+    const zmkPos = idx => (s.posOf[idx] !== undefined ? s.posOf[idx] : null);
+    const comboKey = idxs => idxs.map(zmkPos).sort((a, b) => a - b).join(",");
+    // A keystroke drawn, to be counted once nothing can take it back (hud.js counts it).
+    const ledgerAdd = entry => { s.ledger.push(entry); return entry; };
+
+    // The drawer key at a reported ZMK position. A position the keymap does not place lights
+    // nothing: lighting the key that happens to share the number is worse than lighting none, and
+    // the feed already says so. A message with no map at all (a hand-written demo) still means
+    // position = index.
+    function idxAt(pos) {
+      const map = (s.data && s.data.positions) || {};
+      if (map[String(pos)] !== undefined) return map[String(pos)];
+      return Object.keys(map).length ? -1 : Number(pos);
+    }
+    const onBoard = idx => idx >= 0 && idx < s.data.layout.keys.length;
 
     // ---------- what is due ----------
 
@@ -215,6 +249,167 @@
       applyLayers(ids, now);
     }
 
+    // ---------- the positions ----------
+
+    // Firmware `positions;`: the physical key at ZMK position `pos` went down. The one exact source
+    // for what to light, whatever the key produced (chords, combos, macros, modifiers, layer keys).
+    // Two or more positions within a combo term that form a combo draw its pill. `sent`: a press
+    // sent in, lit the same and never counted into a session.
+    function press(pos, sent, now) {
+      const idx = idxAt(pos);
+      // A key going down is a keystroke of its own: a layer change held back for the previous
+      // one's flash is the keyboard's state now, and this key resolves on it.
+      flushLayers(now);
+      // The keyboard's own combo term (config combo_term_ms) plus slack for the reports' travel.
+      const term = comboTerm();
+      // A guess still waiting to be counted is not: with positions coming, this keystroke counts by
+      // its position, and so does the one the guess was for.
+      for (const e of s.ledger) if (e.kind === "guess") e.cancelled = true;
+      s.posAt = now; s.lastKeyAt = now;
+      if (!onBoard(idx)) return;
+      s.held.add(idx);
+      const entry = { kind: "press", idx, pos: Number(pos), t: now, due: now + term, stack: stack(), eligible: !sent };
+      s.lastPress = entry;              // for a keystroke the feed cannot name (stripEvent)
+      // The layer set and the key that brought it up are two reports, in no promised order. When
+      // the key comes second, setLayers had nothing to attribute the layer to: if the drawer says
+      // this key reaches a live layer and nothing is recorded as holding it, this is what did --
+      // if the layer appeared at the same moment. One already up (a one-shot tapped earlier) came
+      // with an earlier keystroke, and this press belongs to whatever chord it arrives in: with
+      // Alpha 2 waiting, the 0 chord that uses Alpha 2's own key drew nothing.
+      let redraw = false;
+      if (s.live) {
+        for (const name of liveStack()) {
+          if (name === base() || s.activatorOf[name] != null) continue;
+          if (now - (s.drawnSince[name] || 0) > term) continue;
+          if (activatorsOf(name).includes(idx)) {
+            s.activatorOf[name] = idx;
+            entry.activator = true;
+            redraw = true;                // marked as what brought it up, its alternates no longer
+            // It went down on the layers below the one it brought up, and counts there.
+            entry.stack = entry.stack.filter(l => l !== name);
+          }
+        }
+      }
+      // Whether it is a keystroke of its own is for its release to say, if it can be held (strokes).
+      const r = resolve(idx, entry.stack);
+      entry.holder = !!(r && r.key.hold) || (s.data.activators || []).some(a => a.idx === idx);
+      for (const d of s.down.values()) d.overlapped = true;      // down under another key: maybe held (strokeKind)
+      s.down.set(idx, entry);
+      ledgerAdd(entry);
+      paint.push({ op: "down", idx, pos: Number(pos), t: now });
+      // Older presses stay in the list for the activator lookup (setLayers); the combo group is
+      // the trailing run of presses that started within the term of this one.
+      const keepMs = Math.max(T("activator_ms"), s.data.combo_idle || 0);   // the idle rule below looks back this far
+      while (s.recentPos.length && now - s.recentPos[0].t > keepMs) s.recentPos.shift();
+      s.recentPos.push({ idx, t: now, entry });
+      // A modifier reported before the key that turned it on: this is that key, if it carries it.
+      for (const f of Object.keys(s.modSource)) {
+        if (s.modSource[f] === null && r && carries(r.key, MOD_GLYPH[f])) { s.modSource[f] = idx; redraw = true; }
+      }
+      if (redraw) paint.push({ op: "keys" });
+      // The keyboard has already decided. A key still down that is what brought one of the live
+      // layers up was treated by ZMK as a layer hold, not as part of a chord — had it been half
+      // of a combo, the combo would have fired and the layer would not have changed. So the group
+      // stops there, however recently it was pressed. Without this the thumb joins the burst and
+      // the chord after it is either missed or drawn as whichever larger combo happens to contain
+      // that thumb: holding Alpha 2 and chording backspace drew Tab ([4,5] became [4,5,22]).
+      // …but only a key pressed before this burst. ZMK releases a combo's captured positions
+      // together, so they arrive in the same report and share a timestamp; a key that a combo
+      // both holds a layer with and uses as one of its own (a sticky layer's own key) is still
+      // part of the chord it arrived with.
+      const holdsALayer = i => s.held.has(i) && Object.values(s.activatorOf).includes(i);
+      // ...and a key already let go ends it too. ZMK cancels a combo whose key comes up before the
+      // combo is complete and types the keys one by one, which is what a fast roll across a combo's
+      // keys is: the first key is up before the next goes down. Drawn by timing alone, every such
+      // roll was a pill, and a combo in the counts.
+      const recentPos = s.recentPos;
+      let start = recentPos.length - 1;
+      while (start > 0) {
+        const prev = recentPos[start - 1];
+        if (now - prev.t > term || !s.held.has(prev.idx) || (prev.t < now && holdsALayer(prev.idx))) break;
+        start--;
+      }
+      if (start === recentPos.length - 1) { s.comboEntry = null; paint.push({ op: "group" }); } // a new group begins
+      // Only presses within the keymap's combo term form a combo: ZMK's combo module releases the
+      // captured positions together when a combo completes, so they arrive within the term. A key
+      // pressed later while a layer is held is that layer's key, never a combo with the holder.
+      const pressedSet = recentPos.slice(start).map(p => p.idx);
+      // A keymap that asks for idle before a combo (ZMK require-prior-idle-ms, data.combo_idle)
+      // gets none from a chord that starts sooner than that after another key was struck: ZMK
+      // types it as its keys. ZMK times it from the last key that typed something, so a key that
+      // brought a layer in, and one held down as a modifier for the chord, do not count.
+      const MODS = Object.values(MOD_GLYPH);
+      const struck = p => {
+        if (Object.values(s.activatorOf).includes(p.idx)) return false;
+        if (!s.held.has(p.idx)) return true;
+        const b = resolve(p.idx, stack());
+        return !(b && ((b.key.hold && MODS.some(g => b.key.hold.includes(g))) || MODS.includes(b.key.tap)));
+      };
+      const prior = recentPos.slice(0, start).reverse().find(struck);
+      const tooSoon = s.data.combo_idle > 0 && prior && recentPos[start].t - prior.t < s.data.combo_idle;
+      if (pressedSet.length > 1 && !tooSoon) {
+        // ZMK matches a combo against the highest active layer alone, as the layers stood when the
+        // chord's first key went down (combo.c): with a layer up that declares no combo on these
+        // keys they are typed one by one, whatever the layers below it declare. The first key's
+        // stack leaves out a layer that key itself brought up, which came after it.
+        const samePositions = c => c.positions.length === pressedSet.length && c.positions.every(p => pressedSet.includes(p));
+        const comboLayer = recentPos[start].entry.stack[0];
+        const combo = s.data.combos.find(c => c.layers.includes(comboLayer) && samePositions(c)) || null;
+        if (combo) {
+          // A third key within the term makes a bigger combo: take the smaller one's pill down,
+          // and its count with it -- one chord, one combo.
+          if (s.comboEntry) s.comboEntry.cancelled = true;
+          s.comboEntry = ledgerAdd({ kind: "combo", layer: comboLayer, key: comboKey(combo.positions), t: now,
+                                     due: now + term, eligible: !sent });
+          for (const p of recentPos.slice(start)) if (p.entry) p.entry.chord = true;   // one keystroke (strokes)
+          entry.combo = combo.key;      // what this keystroke is, for the strip (stripEvent)
+          paint.push({ op: "combo", positions: combo.positions, key: combo.key });
+        }
+      }
+    }
+
+    // The key at ZMK position `pos` went up: a tap or a hold, now that it is up; and any key still
+    // down that went down before it had a key go down and up inside it (strokes).
+    function release(pos, now) {
+      const idx = idxAt(pos);
+      if (!onBoard(idx)) return;
+      s.held.delete(idx);
+      for (const name of Object.keys(s.activatorOf)) if (s.activatorOf[name] === idx) s.activatorOf[name] = null;
+      const press = s.down.get(idx);
+      if (press) {
+        s.down.delete(idx);
+        press.upAt = now;
+        for (const d of s.down.values()) if (d.t < press.t) d.nested = true;
+      }
+      paint.push({ op: "up", idx, t: now, stroke: !!press });
+    }
+
+    /* Which key turned a modifier on, when positions say which keys went down: one still held that
+     * carries it (a home-row mod, a sticky shift still down), else the latest such key pressed within
+     * activator_ms (a sticky shift tapped and let go). null: none known yet -- the position may still
+     * be on its way, and press takes it then. */
+    function modSourceOf(glyph, now) {
+      const layers = stack();
+      const carrying = p => { const b = resolve(p.idx, layers); return b && carries(b.key, glyph); };
+      const latest = [...s.recentPos].reverse();
+      const src = latest.find(p => s.held.has(p.idx) && carrying(p))
+        || latest.find(p => now - p.t < T("activator_ms") && carrying(p));
+      return src ? src.idx : null;
+    }
+
+    function setMods(flags, now) {
+      const positions = s.posAt && now - s.posAt < T("positions_fresh_ms");
+      for (const f of Object.keys(MOD_GLYPH)) {
+        if (!flags[f]) delete s.modSource[f];
+        else if (!s.mods[f] || s.modSource[f] === undefined) {
+          if (positions) s.modSource[f] = modSourceOf(MOD_GLYPH[f], now);
+          else delete s.modSource[f];
+        }
+      }
+      s.mods = flags;
+      paint.push({ op: "keys" });
+    }
+
     // The keymap message. Re-sent by the host when a sync rewrites it: the live layer set is kept,
     // what was read on the keymap going away is not.
     function load(data) {
@@ -222,7 +417,16 @@
       s.data = data;
       s.momentary = []; s.oneShot = null;
       s.activatorOf = {}; s.drawnSince = {}; s.held.clear();
+      s.modSource = {}; s.lastPress = null; s.comboEntry = null;
+      // Keystrokes on the keymap going away are not followed by the next one's keys.
+      s.down.clear();
       s.baseLayers = [data.base];
+      // A session is kept by ZMK position: each drawer key's, inverted from the message's map (a
+      // message with none is a keymap in the firmware's own order, where they are the same).
+      const map = data.positions || {};
+      s.posOf = [];
+      for (const [pos, idx] of Object.entries(map)) s.posOf[idx] = Number(pos);
+      if (!Object.keys(map).length) data.layout.keys.forEach((k, idx) => { s.posOf[idx] = idx; });
     }
 
     // ---------- the answer ----------
@@ -232,8 +436,8 @@
       return { ready: true, layers: stack(), live: s.live, oneShot: s.oneShot, momentary: s.momentary.map(m => m.layer) };
     }
     function answer() {
-      const out = { board: board(), said, label: null, next: nextAt() };
-      said = [];
+      const out = { board: board(), said, label: null, next: nextAt(), _paint: paint };
+      said = []; paint = [];
       return out;
     }
 
@@ -243,6 +447,11 @@
       if (m && typeof m === "object") {
         if (m.kind === "keymap") load(m);
         else if (m.kind === "touch") s.touch = Array.isArray(m.ids) ? m.ids.slice() : null;
+        else if (m.kind === "press" && s.data) press(m.pos, m.sent === true, now);
+        else if (m.kind === "release" && s.data) release(m.pos, now);
+        else if (m.kind === "key" && s.data) {
+          if (m.type === "flagsChanged" && m.flags && typeof m.flags === "object" && !Array.isArray(m.flags)) setMods(m.flags, now);
+        }
         else if (m.kind === "layers" && s.data) {
           if (m.ids === null) s.live = null;          // the keyboard's layers are no longer reported
           else if (Array.isArray(m.ids)) setLayers(m.ids, now);
