@@ -1165,10 +1165,21 @@ def inputs(config_path, repo=None, keyboard=None):
     except Exception:
         cfg = None                        # saved half-edited: the config alone, until it reads again
     if isinstance(cfg, dict):
-        named = [cfg.get("keymap"), cfg.get("drawer_config")]
-        if isinstance(cfg.get("layout"), dict):
-            named += [cfg["layout"].get(k) for k in ("qmk_info_json", "dts_layout")]
-        files += [keymap_mod.resolve(p, config_path) for p in named if isinstance(p, str) and "://" not in p]
+        local = [p for p in (cfg.get("keymap"), cfg.get("drawer_config")) if isinstance(p, str) and "://" not in p]
+        files += [keymap_mod.resolve(p, config_path) for p in local]
+        if isinstance(cfg.get("keymap"), str):
+            # The drawing's own layout files: read with it, and as much the board's.
+            drawing = keymap_mod.resolve(cfg["keymap"], config_path)
+            try:
+                doc = keymap_mod.load_yaml(drawing)
+            except Exception:
+                doc = None                # not there yet, or saved half-edited: watched for when it reads
+            layout = keymap_mod.layout_files(doc.get("layout"), drawing) if isinstance(doc, dict) else None
+        else:
+            # Drawn from the ZMK keymap: the config's own layout, the one layout_for_keymap reads.
+            layout = keymap_mod.layout_files(cfg.get("layout"), config_path)
+        if isinstance(layout, dict):
+            files += [layout[k] for k in keymap_mod.LAYOUT_FILES if isinstance(layout.get(k), str)]
     if repo and os.path.isdir(repo):
         try:
             keymap_path = find_keymap(repo, keyboard)

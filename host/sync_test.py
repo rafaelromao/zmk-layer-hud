@@ -775,6 +775,22 @@ class Watch(unittest.TestCase):
         self.assertIn(os.path.join(repo, "config", "defs.dtsi"), files)
         self.assertNotIn(self.defs, files)                                  # what it writes, never
 
+    def test_a_drawings_layout_file_is_watched_and_an_unused_layout_is_not(self):
+        # The Diamond's drawing names its layout from its repo's root; saving that JSON changes the
+        # board as much as saving the drawing does. The config's own layout: is read only when the
+        # drawing is made from the ZMK keymap, so with keymap: set it is not the board's.
+        os.makedirs(os.path.join(self.d, "docs"))
+        write(self.d, "docs/layout.json", "{}")
+        write(self.d, "drawings/board.yaml", "layout: {qmk_info_json: docs/layout.json}\nlayers: {}\n")
+        write(self.d, "config.yaml", "keymap: drawings/board.yaml\nlayout: {dts_layout: unused.dtsi}\n")
+        files = sync.inputs(self.config)
+        self.assertIn(os.path.join(self.d, "docs", "layout.json"), files)
+        self.assertNotIn(os.path.join(self.d, "unused.dtsi"), files)
+
+    def test_without_a_drawing_the_configs_layout_is_watched(self):
+        write(self.d, "config.yaml", "layout: {dts_layout: shape.dtsi}\n")
+        self.assertIn(os.path.join(self.d, "shape.dtsi"), sync.inputs(self.config))
+
     def test_a_repo_by_url_is_not_watched(self):
         with mock.patch.object(sync, "recorded", return_value=("https://github.com/you/zmk-config", None)):
             with self.assertRaisesRegex(sync.SyncError, "cannot be watched"):
