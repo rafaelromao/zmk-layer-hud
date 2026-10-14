@@ -360,6 +360,30 @@ function checkModRings(data) {
   return fails;
 }
 
+/* A key held down is lit until it comes up, whatever else lights it meanwhile: a report placed on
+ * it (a rehearsal's synthetic character, which no freshness guard holds back) flashes it, and must
+ * neither put it out while it is still down nor cancel what catches a release that never comes. */
+function checkHeldThroughAGuess(data) {
+  const e = (data.layers[data.base] || []).findIndex(k => k.tap === "e");
+  const pos = Object.entries(data.positions || {}).find(([, i]) => Number(i) === e);
+  if (e < 0 || !pos) return ["the fixture has no positioned e on its base"];
+  const T = name => Number((data.hud && data.hud[name]) || { press_ms: 320, held_timeout_ms: 5000, release_ms: 60 }[name]);
+  const page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  page.clock.advance(1000);
+  const lit = () => page.hud.state.keyEls[e].classList.contains("pressed");
+  page.hud.pressAt(Number(pos[0]));
+  page.clock.advance(5);
+  page.hud.key({ type: "keyDown", name: "e", chars: "e", code: 8, flags: {}, synthetic: true });
+  page.clock.advance(T("press_ms") + 1);
+  const fails = [];
+  if (!lit()) fails.push(`e is still down: lit past press_ms after a report flashed it`);
+  page.clock.advance(T("held_timeout_ms") + T("release_ms"));
+  if (lit() || page.hud.state.held.size) fails.push(`its release never came: let go after held_timeout_ms (lit ${lit()}, ${page.hud.state.held.size} held)`);
+  return fails;
+}
+
 /* A third key inside the combo term makes a bigger combo, and its pill takes the smaller one's
  * place. The smaller pill is gone, and so is what it had to say about its keys: the bigger pill's
  * keys stay marked as a combo's for as long as the bigger pill is up, not as long as the smaller
@@ -520,6 +544,12 @@ async function main() {
   const modFailures = checkModRings(data);
   if (modFailures.length) {
     for (const failure of modFailures) console.error(`FAIL mod-rings: ${failure}`);
+    process.exit(1);
+  }
+
+  const heldFailures = checkHeldThroughAGuess(data);
+  if (heldFailures.length) {
+    for (const failure of heldFailures) console.error(`FAIL held-through-a-guess: ${failure}`);
     process.exit(1);
   }
 

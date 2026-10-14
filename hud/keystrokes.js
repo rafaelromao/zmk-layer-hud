@@ -553,7 +553,9 @@
 
     // What the page draws of a guess: keys lit for press_ms, a combo's pill. The pill has an id, by
     // which a guess taken back takes it down.
-    const flash = (idxs, cls) => paint.push({ op: "flash", idxs: idxs.slice(), cls: cls || null });
+    // A key held down stays lit until it comes up, whatever else lights it meanwhile, and its own
+    // timer is what catches a lost release: a flash and a guess taken back leave it alone.
+    const flash = (idxs, cls) => paint.push({ op: "flash", idxs: idxs.slice(), cls: cls || null, held: idxs.filter(i => s.held.has(i)) });
     function showPill(positions, key, now) {
       const id = ++pillSeq;
       paint.push({ op: "pill", id, positions: positions.slice(), key, t: now });
@@ -690,7 +692,7 @@
       return false;
     }
     function unlight(entry) {
-      paint.push({ op: "unlight", idxs: entry.lit.slice(), pill: entry.pill });
+      paint.push({ op: "unlight", idxs: entry.lit.filter(i => !s.held.has(i)), pill: entry.pill });
       if (entry.guess) entry.guess.cancelled = true;   // taken back before it was counted
       entry.lit = []; entry.pill = null;
     }
