@@ -228,9 +228,22 @@
     // The function keys the decoder names (f1..f24): without them a keymap's F5 resolves to no
     // token at all and the key never lights when the firmware reports no positions.
     for (let i = 1; i <= 24; i++) NAMED["f" + i] = "F" + i;
-    // Alternative spellings a drawer file may use for the same named key.
-    const ALIASES = { "␣": ["space", "spc", "SPACE"], "↵": ["⏎", "enter", "ret", "RET"], "⎋": ["esc", "ESC"],
-      "⌫": ["bspc", "BSPC", "backspace"], "⌦": ["del", "DEL"], "⇥": ["tab", "TAB", "↹"] };
+    const NAME_OF_GLYPH = {};
+    for (const [name, glyph] of Object.entries(NAMED)) NAME_OF_GLYPH[glyph] = name;
+    // Every spelling a drawing uses for a named key, glyph or word, lowercased and without spaces
+    // (host/uskeys.py SPELLINGS): keymap-drawer's parse writes Tab, BSpace, Page Down. A drawing's
+    // Delete is the key that deletes forwards; the feed's `delete` is Backspace.
+    const SPELLINGS = {};
+    for (const [name, spelled] of [
+      ["space", "␣ spc space"], ["return", "↵ ⏎ ret enter return"], ["escape", "⎋ esc escape"],
+      ["delete", "⌫ bspc bspace backspace"], ["forwarddelete", "⌦ del delete"], ["tab", "⇥ ↹ tab"],
+      ["left", "← left"], ["right", "→ right"], ["up", "↑ up"], ["down", "↓ down"],
+      ["home", "⇱ home"], ["end", "⇲ end"], ["pageup", "⇞ pgup pageup"], ["pagedown", "⇟ pgdn pagedown"],
+      ["insert", "⎀ ins insert"], ["capslock", "⇪ caps capslock"], ["cancel", "cancel"]]) {
+      for (const sp of spelled.split(" ")) SPELLINGS[sp] = name;
+    }
+    for (let i = 1; i <= 24; i++) SPELLINGS["f" + i] = "f" + i;
+    const nameOf = legend => (typeof legend === "string" && SPELLINGS[legend.replace(/\s+/g, "").toLowerCase()]) || null;
 
     // ---------- what is due ----------
 
@@ -597,7 +610,7 @@
     // ---------- the reports ----------
 
 
-    // A legend matches a typed token exactly, through the alias table, or as one side of an
+    // A legend matches a typed token exactly, as another spelling of the same named key, or as one side of an
     // "a|b" legend (a key that produces either). A multi-key sequence (a macro) matches when its
     // printable core equals the legend's: motion keys the macro types (End, arrows) and the
     // glyphs the legend uses to hint at them (⇥ → ⇲ …) are ignored on both sides.
@@ -608,8 +621,8 @@
       if (!legend) return false;
       if (legend === token) return true;
       if (!exact && legend.includes("|") && legend.split("|").some(part => part.trim() === token)) return true;
-      const alts = ALIASES[token];
-      if (alts && alts.includes(legend)) return true;
+      const named = NAME_OF_GLYPH[token];
+      if (named && nameOf(legend) === named) return true;
       if (token.length > 1) { const c = core(token); return c.length > 1 && c === core(legend); }
       return false;
     }

@@ -72,7 +72,7 @@ class Named(unittest.TestCase):
     def test_every_named_key_the_decoder_knows_has_a_legend(self):
         # A named key the decoder can report but no legend spells is a key the strip would show
         # as a bare name; the tables have to stay in step.
-        spelled = set(uskeys.NAME_FOR_LEGEND.values())
+        spelled = set(uskeys.SPELLINGS.values())
         missing = {n for n in NAMED.values() if n not in spelled}
         self.assertEqual(missing, {"printscreen", "scrolllock", "pause", "menu"},
                          "a named key gained or lost a legend spelling")
@@ -82,6 +82,30 @@ class Named(unittest.TestCase):
                              ("⌫", "delete"), ("⇥", "tab"), ("↹", "tab"), ("→", "right"),
                              ("⎀", "insert"), ("F5", "f5"), ("F13", "f13"), ("cancel", "cancel")]:
             self.assertEqual(typed(legend)[0][1], name, legend)
+
+    def test_a_word_reaches_its_named_key_in_any_case_and_spacing(self):
+        # keymap-drawer's parse spells named keys as words (example-3x5: Tab, BSpace, Page Down),
+        # and a drawing by hand in capitals (SPACE, RET, BSPC): one rule reads them all.
+        for legend, name in [("Tab", "tab"), ("Esc", "escape"), ("BSpace", "delete"), ("BSPC", "delete"),
+                             ("SPACE", "space"), ("RET", "return"), ("Enter", "return"), ("Page Down", "pagedown"),
+                             ("Pg Dn", "pagedown"), ("Caps Lock", "capslock"), ("Ins", "insert"), ("f5", "f5"),
+                             ("Cancel", "cancel")]:
+            self.assertEqual(uskeys.name_of(legend), name, legend)
+            self.assertEqual(typed(legend)[0][1], name, legend)
+
+    def test_a_drawings_delete_deletes_forwards(self):
+        # The feed's `delete` is Backspace; a drawing's Delete is ZMK's DEL, the forward one.
+        self.assertEqual(uskeys.name_of("Delete"), "forwarddelete")
+        self.assertEqual(uskeys.name_of("Del"), "forwarddelete")
+        self.assertEqual(uskeys.name_of("⌫"), "delete")
+
+    def test_a_word_that_names_no_key_is_none(self):
+        for legend in ("Print Scrn", "vim", "e", "", "Tab Prev"):
+            self.assertIsNone(uskeys.name_of(legend), legend)
+
+    def test_every_spelling_of_a_key_is_accepted_for_it(self):
+        self.assertTrue({"⇥", "↹", "tab"} <= set(uskeys.spellings("tab")))
+        self.assertEqual(uskeys.spellings("printscreen"), [])
 
     def test_cancel_is_named(self):
         # K_CANCEL (0x9B) is what a cancel combo sends on Linux, where the keyboard's positions may
