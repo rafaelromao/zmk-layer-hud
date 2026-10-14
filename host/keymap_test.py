@@ -568,6 +568,17 @@ class Runtime(unittest.TestCase):
         with open(self.defs, "w", encoding="utf-8") as f:
             json.dump(dict({"version": km.DEFINITIONS_VERSION, "source": "board.yaml"}, **made, **extra), f)
 
+    def test_a_config_asked_for_that_is_not_there_is_said_never_another(self):
+        # `--config typo.yaml` must not quietly draw $ZMKHUD_CONFIG's board, or the user's own.
+        missing = os.path.join(self.tmp, "typo.yaml")
+        with mock.patch.dict(os.environ, {"ZMKHUD_CONFIG": self.config}):
+            with self.assertRaises(km.KeymapError) as e:
+                km.find_config(missing)
+            self.assertIn("typo.yaml", str(e.exception))
+            with self.assertRaises(km.KeymapError):
+                km.KeymapSource(missing)
+            self.assertEqual(self.config, km.find_config())       # asked for none: the one it is told of
+
     def test_only_the_config_and_the_definitions_are_opened(self):
         self.write_definitions()
         opened, real = [], open
