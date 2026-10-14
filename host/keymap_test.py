@@ -283,6 +283,12 @@ class Settings(unittest.TestCase):
         self.assertEqual(km.expand("/abs/x.yaml", "/a/b/config"), "/abs/x.yaml")
         self.assertTrue(km.expand("~/x.yaml", "/a").startswith(os.path.expanduser("~")))
 
+    def test_a_path_is_resolved_from_the_file_that_names_it(self):
+        self.assertEqual("/a/b/examples/x.yaml", km.resolve("../examples/x.yaml", "/a/b/config/hud.yaml"))
+        self.assertEqual("/abs/x.yaml", km.resolve("/abs/x.yaml", "/a/b/config/hud.yaml"))
+        self.assertTrue(km.resolve("~/x.yaml", "/a/hud.yaml").startswith(os.path.expanduser("~")))
+        self.assertIsNone(km.resolve(None, "/a/hud.yaml"))
+
     def test_layout_files_are_found_from_the_yaml_up(self):
         # keymap-drawer reads them from where it runs, a drawer repo's root; the HUD runs anywhere.
         with tempfile.TemporaryDirectory() as root:

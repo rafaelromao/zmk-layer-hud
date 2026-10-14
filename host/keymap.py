@@ -205,29 +205,39 @@ def expand(path, base_dir=None):
     return p
 
 
+def resolve(path, named_in, walk_up=False):
+    """A path one of the HUD's files names, as the HUD finds it: ~ and $VARS expanded, an absolute
+    one as it is, a relative one from the directory of the file that names it (`named_in`).
+    `walk_up`, for layout files: from there up through its parents, the first that has it -- a
+    drawer repo names them from its root, where keymap-drawer runs, and the HUD runs anywhere. A
+    layout file found nowhere is left as written, for keymap-drawer's error to name."""
+    if not isinstance(path, str):
+        return path
+    p = expand(path)
+    if os.path.isabs(p):
+        return p
+    d = os.path.dirname(os.path.abspath(named_in))
+    if not walk_up:
+        return os.path.normpath(os.path.join(d, p))
+    while True:
+        if os.path.exists(os.path.join(d, p)):
+            return os.path.normpath(os.path.join(d, p))
+        if os.path.dirname(d) == d:
+            return p
+        d = os.path.dirname(d)
+
+
+LAYOUT_FILES = ("qmk_info_json", "dts_layout")      # a keymap-drawer layout's keys that name a file
+
+
 def layout_files(layout, yaml_path):
-    """A drawer YAML's `layout` with its qmk_info_json / dts_layout file found. keymap-drawer reads
-    a relative one from the directory it runs in, which for a drawer repo is its root; the HUD runs
-    anywhere, so it looks from the YAML's directory up through its parents and takes the first that
-    has the file. A file found nowhere is left as written, for keymap-drawer's error to name."""
+    """A drawer YAML's `layout` with its qmk_info_json / dts_layout file found (resolve, walking up)."""
     if not isinstance(layout, dict):
         return layout
     out = dict(layout)
-    for key in ("qmk_info_json", "dts_layout"):
-        p = expand(out.get(key))
-        if not isinstance(p, str):
-            continue
-        out[key] = p
-        if os.path.isabs(p):
-            continue
-        d = os.path.dirname(os.path.abspath(yaml_path))
-        while True:
-            if os.path.exists(os.path.join(d, p)):
-                out[key] = os.path.normpath(os.path.join(d, p))
-                break
-            if os.path.dirname(d) == d:
-                break
-            d = os.path.dirname(d)
+    for key in LAYOUT_FILES:
+        if isinstance(out.get(key), str):
+            out[key] = resolve(out[key], yaml_path, walk_up=True)
     return out
 
 

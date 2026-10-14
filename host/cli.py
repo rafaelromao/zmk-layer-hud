@@ -1924,8 +1924,7 @@ def sync_due():
         path = keymap_mod.find_config()
         defs = keymap_mod.definitions_path(path)
         cfg = keymap_mod.load_yaml(path)
-        base = os.path.dirname(os.path.abspath(path))
-        sources = [keymap_mod.expand(cfg[k], base) for k in ("keymap", "drawer_config") if cfg.get(k)]
+        sources = [keymap_mod.resolve(cfg[k], path) for k in ("keymap", "drawer_config") if cfg.get(k)]
         with open(defs, encoding="utf-8") as f:
             repo = (json.load(f).get("sources") or {}).get("repo")
         repo = repo and os.path.expanduser(repo)

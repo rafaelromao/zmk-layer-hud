@@ -757,7 +757,7 @@ class Watch(unittest.TestCase):
         repo = os.path.join(self.d, "repo")
         keymap = write(repo, "config/b.keymap", '#include "defs.dtsi"\n' + KEYMAP)
         write(repo, "config/defs.dtsi", "#define X 1\n")
-        files = sync.watched(self.config, repo, "b")
+        files = sync.inputs(self.config, repo, "b")
         self.assertIn(os.path.join(self.d, "board.yaml"), files)
         self.assertIn(os.path.expanduser("~/nowhere/drawer.yaml"), files)   # watched for when it appears
         self.assertIn(keymap, files)
