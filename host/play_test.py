@@ -86,6 +86,16 @@ class Spelling(unittest.TestCase):
         self.assertTrue(chord.strokes[0]["combo"])
         self.assertEqual([[]], [m["ids"] for m in of(chord, "layers")])
 
+    def test_a_chord_is_the_combo_of_the_highest_layer_up_alone(self):
+        # k's keys on the Diamond are the base's combo. With the Ç extension up, which declares
+        # none there, ZMK types them one by one: combo.c matches the highest active layer alone.
+        k = next(c for c in DIAMOND["combos"] if c["key"]["tap"] == "k" and DIAMOND["base"] in c["layers"])
+        zmk = {int(i): int(p) for p, i in DIAMOND["positions"].items()}
+        strike = [zmk[i] for i in k["positions"]]
+        ext = next(int(i) for i, z in DIAMOND["zmk_layers"].items() if z and z["drawer"] == "ç-extension")
+        self.assertTrue(play.combo_on(DIAMOND, strike, []))
+        self.assertFalse(play.combo_on(DIAMOND, strike, [ext]))
+
     def test_a_character_only_a_combo_types_is_that_combo(self):
         by = {}
         for case in ways.cases(ways.Keymap(DIAMOND)):

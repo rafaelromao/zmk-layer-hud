@@ -268,6 +268,25 @@ function main() {
     }
   }
 
+  // A base combo's keys struck with a layer up that declares none on them: ZMK matches a combo
+  // against the highest active layer alone, so the chord is its keys, one by one -- each lit and
+  // counted on its own, and no pill.
+  const positionsOnly = { positions: true };
+  for (const u of rows.filter(r => r.kind === "unfired")) {
+    checks += 2;
+    const c = { ...u, held: [], held_zmk: [], combo: false };
+    const p = fresh(km, { layers: true }, c);
+    c.zmk.forEach((pos, i) => { if (i) p.clock.advance(CHORD_MS); p.hud.pressAt(pos); });
+    const seen = observe(p);
+    const problems = [];
+    if (!sameSet(seen.lit, new Set(c.keys))) problems.push(`lit ${list(seen.lit)}, struck ${list(c.keys)}`);
+    if (seen.pills.length) problems.push(`pills ${show(seen.pills)}, want none: ${u.layer} declares no combo here`);
+    release(p, c);
+    p.clock.advance(settle);
+    problems.push(...countProblems(km, c, positionsOnly, p));
+    if (problems.length) fail.push({ what: `${list(c.keys)} (the base's ${JSON.stringify(u.below)}) on ${u.layer}`, ch: "positions only", problems });
+  }
+
   // Typing sent in, once per legend: a report cannot say which way it was struck, so every way of
   // a legend is the same message here.
   const firstOf = new Map();
@@ -371,7 +390,8 @@ function main() {
   }
   const legends = new Set(cases.map(c => c.legend)).size;
   console.log(`${cases.length} ways to type ${legends} legends and ${new Set(words.map(w => w.word)).size} words ` +
-              `(${words.length} spellings), ${CHANNELS.length} channels from the keyboard and ${SENT.length} typed in: ` +
+              `(${words.length} spellings), ${CHANNELS.length} channels from the keyboard and ${SENT.length} typed in, ` +
+              `${rows.filter(r => r.kind === "unfired").length} chords no layer up fires: ` +
               `${checks} checks, ${fail.length} failures (${Date.now() - t0} ms)`);
   process.exit(fail.length ? 1 : 0);
 }
