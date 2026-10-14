@@ -1001,9 +1001,13 @@ def touch_actions(cfg, drawing, layers, zmk_layers, pos_to_idx, base, extras, co
         return {"v": actions_mod.ACTIONS_VERSION, "error": f"{type(e).__name__}: {e}"}
 
 
-def build_message(cfg, drawing, source=""):
-    """Everything the page needs, from the parsed config -- with what was imported folded in
-    (merge_imported) -- and the definitions' drawing. Pure: no file, no keymap-drawer, no network."""
+def build_message(cfg, definitions):
+    """Everything the page needs, from the parsed config and its definitions: their drawing, the
+    file it came from (`source`), and what import took from the keyboard's keymap (`zmk`), a floor
+    under the config (_merge_imported). Pure: no file, no keymap-drawer, no network, and the config
+    is left as it was."""
+    cfg = _merge_imported(dict(cfg), definitions.get("zmk"))
+    drawing, source = definitions["drawing"], definitions.get("source") or ""
     layout, layers, layer_names = drawing["layout"], drawing["layers"], list(drawing["layer_order"])
     n = len(layout["keys"])
     # A copy: an override below changes a combo's layers, and the definitions are not the config's.
@@ -1154,7 +1158,7 @@ def read_definitions(path):
     return got
 
 
-def merge_imported(cfg, imported):
+def _merge_imported(cfg, imported):
     """Fold what `zmk-layer-hud import` took out of the keyboard's own keymap into the config.
 
     It is a floor, never a ceiling: the config is where a human writes things down, so anything set
@@ -1246,8 +1250,7 @@ class KeymapSource:
                               "`zmk-layer-hud import <your zmk-config>`, or name your keymap-drawer YAML "
                               "as `keymap:` and run `zmk-layer-hud import`")
         definitions = read_definitions(path)
-        merge_imported(cfg, definitions.get("zmk"))
-        self.message = build_message(cfg, definitions["drawing"], source=definitions.get("source") or "")
+        self.message = build_message(cfg, definitions)
         self.definitions = definitions
         self.mtimes = seen
         return self.message

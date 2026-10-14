@@ -1091,8 +1091,7 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
     # Built before anything is written: definitions that would not load are not written, so a sync
     # can never leave the HUD without a keymap it had.
     try:
-        message = keymap_mod.build_message(keymap_mod.merge_imported(dict(cfg), definitions.get("zmk")),
-                                           definitions["drawing"], source=short)
+        message = keymap_mod.build_message(cfg, definitions)
     except keymap_mod.KeymapError as e:
         raise SyncError(f"the definitions would not load, so nothing was written: {e}")
     wrote = write_if_changed(defs_path, json.dumps(definitions, ensure_ascii=False, indent=1) + "\n")
