@@ -72,8 +72,8 @@ class HudFiles(unittest.TestCase):
         with open(os.path.join(build.REPO, "hud", "index.html"), encoding="utf-8") as f:
             names = build.hud_files(f.read())
         self.assertEqual(names[0], "index.html")
-        self.assertEqual(sorted(names[1:]), ["engine.js", "hidtables.js", "hidtext.js", "hud.css", "hud.js",
-                                             "keys.js", "keystrokes.js", "touch.js", "view.js"])
+        self.assertEqual(sorted(names[1:]), ["engine.js", "hidtext.js", "hud.css", "hud.js",
+                                             "keynames.js", "keys.js", "keystrokes.js", "touch.js", "view.js"])
         for name in names:
             self.assertTrue(os.path.isfile(os.path.join(build.REPO, "hud", name)), name)
 
@@ -183,8 +183,8 @@ class WholeBuild(unittest.TestCase):
                     with open(os.path.join(out, b["demo"]), encoding="utf-8") as f:
                         self.assertTrue(json.load(f)["timeline"])
             self.assertEqual(sorted(os.listdir(os.path.join(out, "hud"))),
-                             ["engine.js", "hidtables.js", "hidtext.js", "hud.css", "hud.js", "index.html", "keys.js",
-                              "keystrokes.js", "touch.js", "view.js"])
+                             ["engine.js", "hidtext.js", "hud.css", "hud.js", "index.html", "keynames.js",
+                              "keys.js", "keystrokes.js", "touch.js", "view.js"])
             # The landing page does not type: its boards carry no touch keyboard.
             for b in built:
                 with open(os.path.join(out, b["keymap"]), encoding="utf-8") as f:
