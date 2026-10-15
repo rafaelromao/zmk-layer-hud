@@ -20,6 +20,10 @@ whoever serves the socket keeps it in $STATE/token, readable by this user alone,
 poke` reads it from there. A browser page on another origin, or another user on the machine, has
 no way to it.
 
+What everything that reports on the HUD reads is hud(): panel.json taken only when a HUD panel
+stands behind it, which copy of zmk-layer-hud that panel runs from, the feed, remote mode. `status
+--json` prints it for what cannot import this (the Omarchy bar).
+
 Stdlib only, and Python 3.9: `status` runs under Apple's python before any venv exists, and the
 Linux panel runs under the system one.
 """
