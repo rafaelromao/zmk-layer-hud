@@ -105,6 +105,7 @@
     ledgerTimer: null,
     ledgerDue: 0,
     comboEntry: null,         // the ledger's entry for the combo whose pill is up
+    comboHeld: null,          // the combo last drawn, until one of its keys comes up (holdCombo)
     down: new Map(),          // key idx -> the ledger entry of its press, while it is down
     strokes: [],              // counted keystrokes not yet known to be taps or holds (see "strokes")
     lastStroke: null,         // the keystroke before, for the time a key takes and same-finger bigrams
@@ -351,7 +352,7 @@
       // sticky shift tapped. Without positions there is no telling which, so every key that
       // carries it is ringed.
       if (heldMods.some(({ flag, glyph }) => state.modSource[flag] !== undefined
-        ? state.modSource[flag] === idx : carries(r.key, glyph))) e.classList.add("mod");
+        ? [].concat(state.modSource[flag]).includes(idx) : carries(r.key, glyph))) e.classList.add("mod");
       fit(e.querySelector(".tap"), shiftLegend(r.key.tap) || "", r.key.glyph);
       setLegend(e.querySelector(".hold"), r.key.hold, r.key.glyph_hold);
       setLegend(e.querySelector(".shifted"), r.key.shifted, r.key.glyph_shifted);
@@ -1414,13 +1415,44 @@
     board.appendChild(svg);
     requestAnimationFrame(() => { pill.classList.add("show"); svg.classList.add("show"); });
     for (const idx of positions) state.keyEls[idx].classList.add("combo-key");
-    setTimeout(() => {
+    const fade = () => {
       pill.classList.remove("show"); svg.classList.remove("show");
       for (const idx of positions) state.keyEls[idx].classList.remove("combo-key");
       setTimeout(() => { pill.remove(); svg.remove(); }, 200);
-    }, T('combo_pill_ms'));
-    // A handle to take the pill down early when a longer legend supersedes it.
-    return { remove() { pill.remove(); svg.remove(); } };
+    };
+    let timer = setTimeout(fade, T('combo_pill_ms')), held = false;
+    // A handle to take the pill down early when a longer legend supersedes it, and to say the
+    // combo was held for its hold (holdCombo): the pill then reads the hold, and stays up for as
+    // long as the chord is down rather than fading on its timer.
+    return {
+      remove() { clearTimeout(timer); pill.remove(); svg.remove(); },
+      hold(legend) {
+        clearTimeout(timer); held = true;
+        pill.classList.add("held");
+        setLegend(tapEl, legend);
+        const sub = pill.querySelector(".combo-sub");
+        if (sub) sub.remove();
+      },
+      letGo() { if (held) { held = false; fade(); } },
+    };
+  }
+
+  /* A combo can be a hold-tap of its own: the Diamond's q chord types q tapped and is Ctrl+Alt
+   * held, and its drawing says only q. The keyboard says which it was: a modifier that comes on
+   * while every key of the chord is still down is the chord's hold (setMods, pressAt). The pill
+   * then reads the hold -- the drawing's hold legend when it names one of these modifiers or a
+   * meh or hyper, else the modifiers themselves -- and the chord's keys ring as their source. */
+  const HOLD_ORDER = ["ctrl", "alt", "shift", "cmd"];
+  function heldCombo() {
+    const c = state.comboHeld;
+    return c && c.positions.every(i => state.held.has(i)) ? c : null;
+  }
+  function holdCombo(c) {
+    const on = HOLD_ORDER.filter(f => state.mods[f] && state.modSource[f] === c.positions);
+    if (!on.length) return;
+    const glyphs = on.map(f => MOD_GLYPH[f]);
+    const named = c.key.hold && (glyphs.some(g => c.key.hold.includes(g)) || /\b(meh|hyper)\b/i.test(c.key.hold));
+    c.pill.hold(named ? c.key.hold : glyphs.join(""));
   }
 
   function comboFor(layer, token) {
@@ -1581,11 +1613,19 @@
 
   /* Which key turned a modifier on, when positions say which keys went down: one still held that
    * carries it (a home-row mod, a sticky shift still down), else the latest such key pressed within
-   * activator_ms (a sticky shift tapped and let go). null: none known yet -- the position may still
-   * be on its way, and pressAt takes it then. */
+   * activator_ms (a sticky shift tapped and let go). A combo still held is the source when no key
+   * that carries the modifier went down after it: its keys typed nothing of their own, so the
+   * modifier is the chord's hold (holdCombo), and the answer is the chord's positions. null: none
+   * known yet -- the position may still be on its way, and pressAt takes it then. */
   function modSourceOf(glyph, now) {
     const layers = stack();
     const carrying = p => { const r = resolveBinding(p.idx, layers); return r && carries(r.key, glyph); };
+    const c = heldCombo();
+    if (c) {
+      const at = recentPos.findIndex(p => p.entry === c.entry);   // gone from the list: held long
+      const after = at >= 0 ? recentPos.slice(at + 1) : recentPos.filter(p => p.t > c.entry.t);
+      if (!after.some(p => state.held.has(p.idx) && carrying(p))) return c.positions;
+    }
     const latest = [...recentPos].reverse();
     const src = latest.find(p => state.held.has(p.idx) && carrying(p))
       || latest.find(p => now - p.t < T('activator_ms') && carrying(p));
@@ -1603,6 +1643,8 @@
       }
     }
     state.mods = flags;
+    const c = heldCombo();
+    if (c) holdCombo(c);
     renderKeys();
   }
 
@@ -1826,7 +1868,7 @@
       state.data = data;
       applyPrefs();                 // the config's hud.dark, until the viewer chose
       state.momentary = []; state.oneShot = null;
-      state.activatorOf = {}; state.modSource = {}; state.pick = null; state.lastPress = null; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null;
+      state.activatorOf = {}; state.modSource = {}; state.pick = null; state.lastPress = null; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null; state.comboHeld = null;
       // Keystrokes on the keymap going away are not followed by the next one's keys.
       state.down.clear(); state.strokes = []; state.lastStroke = null; state.lastOwnStroke = null;
       state.baseLayers = [data.base];
@@ -2020,6 +2062,16 @@
           // the safety net that covers a lost release.
           for (const p of combo.positions) { const e = state.keyEls[p]; if (e) e.classList.add("pressed", "combo"); }
           state.comboShown = showCombo(combo.positions, combo.key);
+          // A modifier reported before the chord's positions, or taken just now by one of its keys
+          // for a home-row mod of its own (above): the chord fired, so its keys' own bindings did
+          // not, and the modifier is its hold.
+          state.comboHeld = { positions: combo.positions, key: combo.key, pill: state.comboShown, entry };
+          let held = false;
+          for (const f of Object.keys(state.modSource)) {
+            const src = state.modSource[f];
+            if (src === null || combo.positions.includes(src)) { state.modSource[f] = combo.positions; held = true; }
+          }
+          if (held) { holdCombo(state.comboHeld); renderKeys(); }
         }
       }
     },
@@ -2032,6 +2084,7 @@
       const e = state.keyEls[idx];
       if (!e) return;
       state.held.delete(idx);
+      if (state.comboHeld && state.comboHeld.positions.includes(idx)) { state.comboHeld.pill.letGo(); state.comboHeld = null; }
       for (const name of Object.keys(state.activatorOf)) if (state.activatorOf[name] === idx) state.activatorOf[name] = null;
       clearTimeout(state.timers.get(idx));
       state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo"), T('release_ms')));

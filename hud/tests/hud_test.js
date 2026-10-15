@@ -317,6 +317,78 @@ function checkModRings(data) {
   return fails;
 }
 
+/* A combo that is a hold-tap of its own -- the Diamond's q chord, Ctrl+Alt held -- is drawn as q
+ * whatever it does. Held, the keyboard reports the modifiers while both its keys are down: the pill
+ * then reads the hold and stays up while the chord is, and the chord's keys ring as the modifiers'
+ * source, not the home-row ⌃ and ⌥ each key has of its own. Tapped, it is still q. A drawn hold
+ * naming meh is what the pill reads for a meh chord. The strip says nothing for the hold alone. */
+function checkComboHold(data) {
+  const posOf = idx => Number(Object.entries(data.positions || {}).find(([, i]) => Number(i) === idx)[0]);
+  const find = (positions, layer) => (data.combos || []).find(c => c.layers.includes(layer)
+    && c.positions.length === positions.length && c.positions.every(p => positions.includes(p)));
+  const q = find([7, 8], data.base);
+  if (!q || q.key.tap !== "q") return ["the fixture's base has no q chord on keys 7 and 8"];
+  const pills = page => page.board.querySelectorAll(".combo-pill")
+    .filter(p => p.classList.contains("show")).map(p => p.querySelector(".combo-tap").textContent);
+  const ringed = page => page.hud.state.keyEls.flatMap((el, i) => (el.classList.contains("mod") ? [i] : []));
+  const flags = (page, f) => page.hud.key({ type: "flagsChanged", flags: f });
+  const pillMs = Number(data.hud.combo_pill_ms || 1000);
+  const fails = [];
+  const fresh = () => {
+    const page = loadPage();
+    page.hud.load(data);
+    page.hud.setLayers([]);
+    page.clock.advance(1);       // requestAnimationFrame shows the pill
+    return page;
+  };
+  const press = (page, idxs) => { for (const i of idxs) page.hud.pressAt(posOf(i)); page.clock.advance(20); };
+  const release = (page, idxs) => { for (const i of idxs) page.hud.releaseAt(posOf(i)); };
+
+  for (const flagsFirst of [false, true]) {
+    const how = flagsFirst ? "with the modifiers reported before the positions" : "";
+    const page = fresh();
+    if (flagsFirst) {
+      press(page, [0]); release(page, [0]);           // positions fresh: the report waits for its key
+      page.clock.advance(Number(data.hud.activator_ms || 400) + 1);
+      flags(page, { ctrl: true, alt: true });
+    }
+    press(page, [7, 8]);
+    if (!flagsFirst) { flags(page, { ctrl: true }); flags(page, { ctrl: true, alt: true }); }
+    if (pills(page).join() !== "⌃⌥") fails.push(`q chord held ${how}: the pill should read ⌃⌥; reads [${pills(page)}]`);
+    if (ringed(page).join() !== "7,8") fails.push(`q chord held ${how}: keys 7 and 8 should ring; ringed [${ringed(page)}]`);
+    page.clock.advance(pillMs + 100);
+    if (pills(page).join() !== "⌃⌥") fails.push(`q chord held ${how}: the pill should stay up while held; reads [${pills(page)}]`);
+    release(page, [7, 8]);
+    flags(page, {});
+    page.clock.advance(300);
+    if (page.board.querySelectorAll(".combo-pill").length) fails.push(`q chord let go ${how}: the pill should go`);
+    if (ringed(page).length) fails.push(`q chord let go ${how}: nothing should ring; ringed [${ringed(page)}]`);
+    const chips = page.document.getElementById("keys").textContent;
+    if (chips) fails.push(`q chord held alone ${how}: the strip should say nothing; says ${JSON.stringify(chips)}`);
+  }
+
+  let page = fresh();                                  // tapped: still q
+  press(page, [7, 8]);
+  release(page, [7, 8]);
+  page.hud.key({ type: "keyDown", name: "q", chars: "q", code: 12, flags: {} });
+  if (pills(page).join() !== "q") fails.push(`q chord tapped: the pill should read q; reads [${pills(page)}]`);
+  if (ringed(page).length) fails.push(`q chord tapped: nothing should ring; ringed [${ringed(page)}]`);
+  page.clock.advance(pillMs + 300);
+  if (page.board.querySelectorAll(".combo-pill").length) fails.push("q chord tapped: the pill should fade on its timer");
+
+  const meh = (data.combos || []).find(c => /\bmeh\b/.test(c.key.hold || "") && c.positions.length === 3
+    && c.positions.every(i => data.layers[data.base][i]));
+  const mehLayer = meh && Object.keys(data.zmk_layers || {}).find(id => meh.layers.includes(data.zmk_layers[id].drawer));
+  if (!meh || mehLayer === undefined) return fails.concat(["the fixture has no meh chord to hold"]);
+  page = fresh();
+  if (!meh.layers.includes(data.base)) page.hud.setLayers([Number(mehLayer)]);
+  page.clock.advance(1000);
+  press(page, meh.positions);
+  flags(page, { ctrl: true, alt: true, shift: true });
+  if (pills(page).join() !== meh.key.hold) fails.push(`meh chord held: the pill should read ${meh.key.hold}; reads [${pills(page)}]`);
+  return fails;
+}
+
 /* A layer picked from the stats' layer tile is drawn until the next keystroke, from the firmware's
  * positions or the keyboard's reports alike; then the board follows the keyboard again. */
 function checkLayerPick(data) {
@@ -402,6 +474,12 @@ async function main() {
   const modFailures = checkModRings(data);
   if (modFailures.length) {
     for (const failure of modFailures) console.error(`FAIL mod-rings: ${failure}`);
+    process.exit(1);
+  }
+
+  const holdFailures = checkComboHold(data);
+  if (holdFailures.length) {
+    for (const failure of holdFailures) console.error(`FAIL combo-hold: ${failure}`);
     process.exit(1);
   }
 
