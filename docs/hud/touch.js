@@ -287,11 +287,16 @@
     return out;
   }
 
-  // A page going away (a reload, the panel hidden, a tablet locked) lets everything go.
+  // A page going away (a reload, the panel hidden, a tablet locked, a tablet's field left) lets
+  // everything go: what is held and latched, and a dead key waiting for its letter, which would
+  // otherwise be typed when its time is up -- into whatever field is open by then.
   function releaseAll() {
     if (!driver) return;
     pointers.clear();
     driver.releaseAll();
+    clearTimeout(deadTimer);
+    deadTimer = null;
+    decoder = HidText.decoder({ altgr: !!(data && data.altgr) });
     show();
   }
   document.addEventListener("visibilitychange", () => { if (document.hidden) releaseAll(); });

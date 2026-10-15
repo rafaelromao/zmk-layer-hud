@@ -17,6 +17,15 @@ public enum KeymapFile {
         case refused(String)
     }
 
+    /// A keymap file's bytes, but no more of them than it takes to know it is too large (`limit`, and
+    /// one more): what Files, AirDrop or "Open in" hands the app may be any size, and is never read
+    /// whole first. `check` refuses one longer than the limit.
+    public static func read(_ url: URL, limit: Int = maxBytes) throws -> Data {
+        let handle = try FileHandle(forReadingFrom: url)
+        defer { try? handle.close() }
+        return try handle.read(upToCount: limit + 1) ?? Data()
+    }
+
     public static func check(_ data: Data) -> Checked {
         if data.count > maxBytes { return .refused("this file is too large to be a keymap") }
         guard let any = try? JSONSerialization.jsonObject(with: data), let m = any as? [String: Any] else {
