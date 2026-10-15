@@ -39,10 +39,11 @@ class Window:
         open(url)       in the browser
         tell(msg)       a message for the page, kept for a page loaded afresh
         typing_access() `zmk-layer-hud typing setup`: ask the system for leave to type
+        let_go()        the page lets go of the keys its touch keyboard holds (hiding)
         close()         the page's ✕
     """
 
-    NAMES = ("show", "front", "dock", "resize", "no_drag", "open", "tell", "typing_access", "close")
+    NAMES = ("show", "front", "dock", "resize", "no_drag", "open", "tell", "typing_access", "close", "let_go")
 
     def __init__(self, **calls):
         missing = [n for n in self.NAMES if n not in calls]
@@ -99,8 +100,8 @@ class Panel:
         if not isinstance(body, dict):
             return
         msg, kind = body, body.get("kind")
-        if kind == "hid":               # the touch keyboard: keys to press (docs/touch.md)
-            if from_page:
+        if kind == "hid":               # the touch keyboard: keys to press (docs/touch.md); none while hidden
+            if from_page and self.shown:
                 self.typing.hid(msg)
         elif kind == "size":
             self.resize(msg.get("width"), msg.get("height"))
@@ -154,7 +155,10 @@ class Panel:
         if shown != self.shown:
             self.shown = shown
             if not shown:
-                self.typing.release()   # a hidden HUD holds no key down
+                # A hidden HUD holds no key down: the page lets go too, or the next of its heartbeats
+                # would press again what it holds -- a locked modifier, system-wide, unseen.
+                self.window.let_go()
+                self.typing.release()
             self.window.show(shown)
         self.write()
 

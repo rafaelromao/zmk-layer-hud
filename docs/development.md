@@ -253,6 +253,21 @@ and the iPad app (`MARKETING_VERSION`). Merging it tags `vX.Y.Z` and makes the G
 `install.sh` and `update` take; the Android keyboard's APK is then built from the tag and attached.
 A `Release-As: x.y.z` footer in a commit's body asks for a version outright.
 
+**The Android release key.** Every release's APK is signed with one key, so each installs over the
+one before: Android takes an update only from the key that signed what is installed, and a CI run's
+own debug key is new every time. The key is the maintainer's, made once and kept safe -- lose it and
+the next release cannot update anyone's installed app:
+
+```bash
+keytool -genkeypair -v -keystore zmkhud-release.jks -alias zmkhud -keyalg RSA -keysize 4096 -validity 10000
+```
+
+It goes to the repository's secrets as `ANDROID_KEYSTORE_BASE64` (`base64 -i zmkhud-release.jks`),
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`zmkhud`) and `ANDROID_KEY_PASSWORD`. The release
+workflow decodes it onto the runner for the build and removes it after; without the secrets it
+attaches no APK and says so. The same four, as environment variables (`ZMKHUD_KEYSTORE` the
+keystore's path), sign `gradle :app:assembleRelease` on a machine of your own.
+
 Two repository settings it needs: *Settings › Actions › General › Workflow permissions* allowing
 GitHub Actions to create and approve pull requests, or the release pull request cannot be opened.
 And a pull request opened with the workflow's own token starts no workflow, so CI does not run on

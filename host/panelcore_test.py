@@ -30,7 +30,7 @@ class FakeWindow:
             return call
         return panelcore.Window(
             show=rec("show"), front=rec("front"), resize=rec("resize"), no_drag=rec("no_drag"),
-            open=rec("open"), tell=rec("tell"), typing_access=rec("typing_access"), close=rec("close"),
+            open=rec("open"), tell=rec("tell"), typing_access=rec("typing_access"), close=rec("close"), let_go=rec("let_go"),
             dock=rec("dock", lambda: dict(DOCK_MSG) if self.dockable and self.calls[-1][1] else None))
 
     def named(self, name):
@@ -85,6 +85,19 @@ class PageMessages(Base):
         self.assertEqual([([(1.0, 2.0, 3.0, 4.0), (0.0, 0.5, 10.0, 20.0)],)], self.window.named("no_drag"))
         self.panel.page({"kind": "nodrag", "rects": "all"})
         self.assertEqual(1, len(self.window.named("no_drag")))
+
+    def test_hiding_lets_the_page_go_of_its_keys_and_takes_none_while_hidden(self):
+        # The page sends its report again every 500 ms: a hidden HUD whose page still held a locked
+        # modifier would press it again, unseen, system-wide (touch-keyboard 86d97d9).
+        msg = {"kind": "hid", "page": 7, "id": 4, "down": True}
+        self.panel.page({"kind": "hide"})
+        self.assertEqual([()], self.window.named("let_go"))
+        self.assertLess(self.typing.calls.index(("release",)), len(self.typing.calls))
+        self.panel.page(msg)
+        self.assertNotIn(("hid", msg), self.typing.calls)
+        self.panel.set_shown(True)
+        self.panel.page(msg)
+        self.assertIn(("hid", msg), self.typing.calls)
 
     def test_the_touch_keyboards_keys_only_from_the_page(self):
         msg = {"kind": "hid", "page": 7, "id": 4, "down": True}

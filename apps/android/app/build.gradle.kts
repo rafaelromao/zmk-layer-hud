@@ -12,6 +12,13 @@ plugins {
 val appVersion = "1.2.0" // x-release-please-version
 val (major, minor, patch) = appVersion.split(".").map { it.toInt() }
 
+// Releases are signed with one key, kept by whoever makes them (docs/development.md): Android installs
+// an APK over the one before only when the same key signed both. The keystore and its passwords come
+// from the environment -- the release workflow takes them from the repository's secrets -- and
+// without them a release build is left unsigned; a debug build is signed with this machine's debug
+// key, as always.
+val releaseKeystore = System.getenv("ZMKHUD_KEYSTORE")?.takeIf { it.isNotBlank() }
+
 android {
     namespace = "io.github.rafaelromao.zmkhud"
     compileSdk = 36
@@ -22,6 +29,23 @@ android {
         targetSdk = 36
         versionCode = major * 10000 + minor * 100 + patch
         versionName = appVersion
+    }
+
+    signingConfigs {
+        if (releaseKeystore != null) {
+            create("release") {
+                storeFile = file(releaseKeystore)
+                storePassword = System.getenv("ZMKHUD_KEYSTORE_PASSWORD")
+                keyAlias = System.getenv("ZMKHUD_KEY_ALIAS")
+                keyPassword = System.getenv("ZMKHUD_KEY_PASSWORD")
+            }
+        }
+    }
+
+    buildTypes {
+        getByName("release") {
+            if (releaseKeystore != null) signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     compileOptions {
