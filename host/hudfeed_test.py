@@ -11,6 +11,7 @@ import re
 import shutil
 import sys
 import tempfile
+import threading
 import termios
 import types
 import unittest
@@ -919,6 +920,40 @@ class ReaderLoop(unittest.TestCase):
         r.find = mock.Mock(side_effect=[OSError("bus"), []])
         r._scan_loop()
         self.assertEqual(["hudfeed: cannot list devices: OSError: bus", "hudfeed: no fake keyboard"], self.said)
+
+
+class BleReading(unittest.TestCase):
+    """The BLE reader's session and loop with a client that connects at once and is let go when the
+    test says: bleak's interface as hudfeed uses it, no adapter."""
+
+    def reader(self, rescan=2.0):
+        import hudfeed
+        self.said, self.out = [], []
+        return hudfeed.BleReader(self.out.append, log=self.said.append, rescan=rescan)
+
+    @staticmethod
+    def client(drop_after):
+        class Client:
+            def __init__(self, device, disconnected_callback):
+                self.gone = disconnected_callback
+
+            async def __aenter__(self):
+                asyncio.get_running_loop().call_later(drop_after, self.gone, self)
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def start_notify(self, uuid, callback):
+                pass
+        return Client
+
+    def test_a_keyboard_that_disconnects_is_said_gone(self):
+        r = self.reader()
+        device = types.SimpleNamespace(name="Diamond", address="AA")
+        self.assertIsNone(asyncio.run(r._session(self.client(0.05), device)))
+        self.assertIn("hudfeed: reading Diamond over BLE", self.said)
+        self.assertTrue(any("Diamond over BLE gone" in s for s in self.said), self.said)
 
 
 class HidKeys(unittest.TestCase):

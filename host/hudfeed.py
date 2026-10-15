@@ -556,6 +556,8 @@ class BleReader:
                         await asyncio.wait_for(gone.wait(), timeout=self.dead_key_ms / 1000)
                     except asyncio.TimeoutError:
                         stream.idle(int(time.monotonic() * 1000))
+                if gone.is_set() and not self._stop.is_set():
+                    self.log(f"hudfeed: {name} over BLE gone")
         except Exception as e:
             if reading:
                 self.log(f"hudfeed: {name} over BLE ({type(e).__name__}: {e})")
