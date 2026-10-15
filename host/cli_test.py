@@ -278,11 +278,34 @@ class ShowHide(unittest.TestCase):
             time.sleep(0.02)
         return proc
 
-    def run_cli(self, *argv, pids=()):
-        with mock.patch.object(cli, "panel_pids", lambda: list(pids)), \
+    def run_cli(self, *argv, pids=(), tree=ROOT):
+        # The processes running: `pids` as HUD panels run from `tree` (this copy, unless the test
+        # says another), and no feed.
+        procs = lambda pattern: ({p: f"/usr/bin/python3 {tree}/host/linux/panel.py" for p in pids}   # noqa: E731
+                                 if "panel" in pattern else {})
+        with mock.patch.object(cli, "processes", procs), \
                 contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
             code = cli.main(list(argv))
         return code, out.getvalue() + err.getvalue()
+
+    def test_a_hud_from_another_copy_is_named_and_left_as_it_is(self):
+        # A HUD run from another clone writes to the same $STATE: `hide` here cannot stop or start
+        # it, but must not call it gone and throw away the word it keeps on itself either.
+        proc = self.start_panel()
+        code, said = self.run_cli("hide", pids=[proc.pid], tree="/opt/other-copy")
+        self.assertEqual(1, code, said)
+        self.assertIn("a HUD from /opt/other-copy is running", said)
+        self.assertTrue(cli.panelstate.read(self.tmp.name)["shown"])          # still there, still its own
+
+    def test_power_starts_no_second_hud_beside_another_copys(self):
+        proc = self.start_panel()
+        with mock.patch.object(cli, "reexec_into_venv"), mock.patch.object(cli, "cmd_start") as start, \
+                mock.patch.object(cli, "cmd_stop") as stop:
+            code, said = self.run_cli("power", pids=[proc.pid], tree="/opt/other-copy")
+        self.assertEqual(1, code, said)
+        start.assert_not_called()
+        stop.assert_not_called()
+        self.assertIn("a HUD from /opt/other-copy is running", said)
 
     def test_hide_show_and_toggle_are_done_and_said(self):
         proc = self.start_panel()
@@ -388,8 +411,12 @@ class Remote(unittest.TestCase):
         self.addCleanup(proc.kill)
         return proc
 
-    def run_cli(self, *argv, pids=()):
-        with mock.patch.object(cli, "panel_pids", lambda: list(pids)), \
+    def run_cli(self, *argv, pids=(), tree=ROOT):
+        # The processes running: `pids` as HUD panels run from `tree` (this copy, unless the test
+        # says another), and no feed.
+        procs = lambda pattern: ({p: f"/usr/bin/python3 {tree}/host/linux/panel.py" for p in pids}   # noqa: E731
+                                 if "panel" in pattern else {})
+        with mock.patch.object(cli, "processes", procs), \
                 contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
             code = cli.main(list(argv))
         return code, out.getvalue() + err.getvalue()
@@ -970,7 +997,7 @@ class Update(unittest.TestCase):
         args = cli.build_parser().parse_args(["update"])
         with mock.patch.object(cli, "ROOT", root), mock.patch.object(cli, "in_clone", lambda: False), \
                 mock.patch.object(cli, "fetch_tree", fetch), mock.patch.object(cli, "latest_release", lambda: "v1.1.0"), \
-                mock.patch.object(cli, "panel_pids", lambda: []), mock.patch.object(cli, "venv_ok", lambda: False), \
+                mock.patch.object(cli, "processes", lambda pattern: {}), mock.patch.object(cli, "venv_ok", lambda: False), \
                 mock.patch.object(cli, "plugin_dir", lambda: os.path.join(tmp.name, "no-plugin")), \
                 mock.patch.dict(os.environ, {"ZMKHUD_REF": ""}), contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertEqual(0, cli.cmd_update(args))
