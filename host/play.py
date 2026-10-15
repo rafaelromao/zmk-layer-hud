@@ -228,7 +228,7 @@ def repeats(km, idx, live, evs):
         if z and z.get("drawer"):
             top = z["drawer"]
             break
-    _, key = km.binding(idx, km.stack(top or km.base))
+    _, key = km.resolve(idx, km.layer_stack(top or km.base))
     return bool(key and key.get("shifted") == "repeat" and len(evs) == 1 and not evs[0].get("composed"))
 
 
@@ -343,7 +343,7 @@ def compile(script, keymap, speed=1.0, combos=None):
     one_shot_shift = marked_key(data, km, "⇧", "sticky")
     repeat_idx = marked_key(data, km, "↻", "repeat") if script.get("repeat") else None
     chained = chained_layers(data)
-    chained_ids = {i for layer in chained.values() for i in km.ids_of.get(layer, [])}
+    chained_ids = {i for layer in chained.values() for i in km.ids_of(layer)}
     speller = Speller(km, ways.cases(km), one_shot_shift is not None, chained)
     altgr = bool(data.get("altgr"))
     shift_idx = shift_key(data, km)
@@ -476,9 +476,9 @@ def compile(script, keymap, speed=1.0, combos=None):
                 if one_shot:
                     board.shift(end + SETTLE_MS, False)
                 chain = chained.get((way["layer"], way["keys"][0])) if not way["combo"] and len(way["keys"]) == 1 else None
-                if chain and km.ids_of.get(chain):
+                if chain and km.ids_of(chain):
                     # The key typed and left its layer on for the next one (ç, then the ç extension).
-                    board.set_layers(end + SETTLE_MS, sorted(set(background) | {km.ids_of[chain][0]}))
+                    board.set_layers(end + SETTLE_MS, sorted(set(background) | {km.ids_of(chain)[0]}))
                 elif sticky or chained_before:
                     board.set_layers(end + SETTLE_MS, background)   # a one-shot layer serves one key
                 prev = (utext, way, one_shot)
