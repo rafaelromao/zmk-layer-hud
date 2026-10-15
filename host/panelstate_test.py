@@ -269,8 +269,7 @@ class Hud(unittest.TestCase):
     def test_the_macos_panel_runs_the_feed(self):
         self.panel(os.getpid(), os_="macos")
         panelstate.write(self.d, True)
-        with mock.patch.object(sys, "platform", "darwin"):
-            self.assertEqual("in the panel", self.hud()["feed"])
+        self.assertEqual("in the panel", self.hud()["feed"])
 
     def test_the_feed_run_on_its_own(self):
         self.feeds[7] = "/usr/bin/python3 /home/me/.local/bin/zmk-layer-hud feed --raw"

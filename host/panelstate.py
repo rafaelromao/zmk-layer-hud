@@ -328,10 +328,10 @@ def hud(d=None, root=None, procs=processes):
         wpm_choice   which WPM the icons show
 
     `procs(pattern)` -> {pid: command line}: the processes, which a test stands in for."""
-    import sys
     d = d or default_dir()
     root = os.path.realpath(root) if root else None
-    panels = {pid: tree_of(cmd) for pid, cmd in procs(PANEL_PROCESS).items()}
+    commands = procs(PANEL_PROCESS)
+    panels = {pid: tree_of(cmd) for pid, cmd in commands.items()}
     st = read(d)
     said = bool(st) and st["pid"] in panels
     if said:
@@ -346,8 +346,8 @@ def hud(d=None, root=None, procs=processes):
     feeds = {p: tree_of(cmd) for p, cmd in procs(FEED_PROCESS).items()}
     if any(tree in (None, where or root) for tree in feeds.values()):   # None: the shim, `zmk-layer-hud feed`
         out["feed"] = "running"
-    elif pid is not None and sys.platform == "darwin":
-        out["feed"] = "in the panel"
+    elif pid is not None and "/host/macos/" in commands.get(pid, ""):
+        out["feed"] = "in the panel"         # the macOS panel runs the feed in-process
     else:
         out["feed"] = "stopped"
     try:

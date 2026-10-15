@@ -732,6 +732,16 @@ class Status(unittest.TestCase):
         self.assertIn("panel: running, shown", said)
         self.assertIn("feed:  in the panel", said)
 
+    def test_json_is_the_huds_state_in_one_object(self):
+        cli.panelstate.write(self.tmp.name, False, wpm=55, extra={"dock": True, "typing": "ok"})
+        procs = {"panel": {os.getpid(): f"python3 {ROOT}/host/linux/panel.py"}}
+        with mock.patch.object(cli, "processes", lambda pattern: procs.get("panel" if "panel" in pattern else "feed", {})), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(0, cli.main(["status", "--json"]))
+        h = json.loads(out.getvalue())
+        self.assertEqual((True, True, True, False, 55, True, "ok", "stopped", {}),
+                         (h["running"], h["said"], h["ours"], h["shown"], h["wpm"], h["dock"], h["typing"], h["feed"], h["remote"]))
+
     def test_a_feed_run_on_its_own_is_running(self):
         said = self.status({"feed": {77: "/usr/bin/python3 /home/me/.local/bin/zmk-layer-hud feed"}})
         self.assertIn("panel: stopped", said)

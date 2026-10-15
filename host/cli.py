@@ -16,6 +16,7 @@ verbs that do need the venv re-exec into it first; see `NEEDS_VENV` and `needs_v
 """
 
 import argparse
+import json
 import datetime
 import os
 import platform
@@ -599,6 +600,11 @@ def hypr_surfaces():
 
 def cmd_status(args):
     h = hud_now()
+    if getattr(args, "json", False):
+        # What the Omarchy bar reads (host/linux/omarchy): the same answer every verb and the macOS
+        # icon get, rather than a reading of panel.json of its own.
+        print(json.dumps(h, ensure_ascii=False))
+        return 0
     where = "" if h["ours"] or not h["running"] else f" (from {h['where']})"
     print("panel: " + ("stopped" if not h["running"] else
                        "running, shown" if h["said"] and h["shown"] else
@@ -2296,7 +2302,11 @@ def build_parser():
     add("hide", "take the HUD off screen; it goes on running and counting").set_defaults(func=cmd_hide)
     add("toggle", "show the HUD if it is hidden, hide it if it is shown").set_defaults(func=cmd_toggle)
 
-    add("status", "is it running, and what is it reading").set_defaults(func=cmd_status)
+    s = add("status", "is it running, and what is it reading")
+    s.add_argument("--json", action="store_true",
+                   help="the HUD's state as one JSON object, for a bar or a script: running, shown, the WPMs, "
+                        "docked, typing, the feed, remote mode")
+    s.set_defaults(func=cmd_status)
 
     s = add("typing", "the touch keyboard's leave to type: whether it has it, and getting it")
     s.add_argument("action", nargs="?", default="status", choices=("status", "setup"),
