@@ -80,7 +80,7 @@ import keymap as keymap_mod  # noqa: E402  (host/keymap.py)
 import panelstate  # noqa: E402  (host/panelstate.py)
 import session as session_mod  # noqa: E402  (host/session.py)
 import signal_frame  # noqa: E402  (host/signal_frame.py)
-from hiddecode import DEAD_KEY_MS, SignalDecoder, flags_of, key_message  # noqa: E402
+from hiddecode import DEAD_KEY_MS, SignalDecoder  # noqa: E402
 
 ZMK_VID, ZMK_PID = 0x1D50, 0x615E
 
@@ -93,8 +93,9 @@ BLE_RETRY_MAX_S = 60  # longest gap between scans while none of them find anythi
 
 
 class Stream:
-    """One open connection: the bytes a carrier delivers in, the pages' messages out. Both readers
-    share it, because a BLE notification and a run of serial bytes decode the same way."""
+    """One open connection: what a carrier delivers in, the pages' messages out. Every reader shares
+    it: a BLE notification and a run of serial bytes decode the same way, and a HID report the
+    host reads itself arrives in the same shape (message)."""
 
     def __init__(self, emit, device, dead_key_ms=DEAD_KEY_MS, raw=False, log=print, altgr=False):
         # `raw` logs every decoded message: True, or a callable asked at each one, which is how the
@@ -125,11 +126,13 @@ class Stream:
             self._emit(out)
 
     def close(self):
-        """The keyboard went away: whatever was held is released."""
-        flags = flags_of(0)
-        for k in self.decoder.held:
-            self._emit(key_message(k, False, flags))
-        self.decoder.held = []
+        """The keyboard went away: a dead key waiting for its letter is the plain key it was, and
+        then everything held comes up, modifiers too -- as the report a keyboard sends when every
+        key is let go, so the decoder says it the way it says any release."""
+        for out in self.decoder.flush():
+            self._emit(out)
+        for out in self.decoder.feed({"kind": "keys", "mods": 0, "keys": []}):
+            self._emit(out)
 
     def resync(self):
         """Forget what the pages were last told about the layers.

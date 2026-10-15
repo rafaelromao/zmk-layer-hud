@@ -100,6 +100,21 @@ class StreamTest(unittest.TestCase):
         self.assertEqual([(m["type"], m["chars"], m["device"]) for m in self.out],
                          [("keyUp", "a", "Diamond")])
 
+    def test_closing_lets_a_held_modifier_go(self):
+        # Shift held as the keyboard was unplugged: the page draws it held until it is told otherwise.
+        self.stream.message({"kind": "keys", "mods": 0x02, "keys": []}, 0)
+        self.out.clear()
+        self.stream.close()
+        self.assertEqual([("flagsChanged", False)], [(m["type"], m["flags"]["shift"]) for m in self.out])
+
+    def test_closing_types_a_dead_key_that_was_waiting_for_its_letter(self):
+        # ' held back for the letter that would make it an accent: the keyboard went away instead,
+        # so it is the plain key it was -- down, then up -- never an up with no down.
+        self.stream.message({"kind": "keys", "mods": 0, "keys": [0x34]}, 0)
+        self.assertEqual([], self.out)
+        self.stream.close()
+        self.assertEqual([("keyDown", "'"), ("keyUp", "'")], [(m["type"], m["chars"]) for m in self.out])
+
 
 class Reports(unittest.TestCase):
     """The HID reports the host reads for the strip, split into what the decoder wants."""
