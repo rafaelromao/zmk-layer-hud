@@ -817,6 +817,44 @@ class PortTaken(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
+class SerialScan(unittest.TestCase):
+    """The serial reader's scan with a pyserial that lists what each round says."""
+
+    def scan(self, *rounds):
+        said = []
+        reader = SerialReader(lambda m: None, log=said.append)
+        left = list(rounds)
+
+        def comports():
+            got = left[0]
+            if isinstance(got, Exception):
+                raise got
+            return got
+        list_ports = types.SimpleNamespace(comports=comports)
+        serial = types.ModuleType("serial")
+        tools = types.ModuleType("serial.tools")
+        tools.list_ports = list_ports
+        serial.tools = tools
+
+        def next_round(_s):
+            left.pop(0)
+            if not left:
+                reader._stop.set()
+        with mock.patch.dict(sys.modules, {"serial": serial, "serial.tools": tools, "serial.tools.list_ports": list_ports}), \
+                mock.patch.object(reader._stop, "wait", side_effect=next_round):
+            reader._scan_loop()
+        return said
+
+    def test_no_port_is_said_once_and_not_every_rescan(self):
+        said = self.scan([], [], [])
+        self.assertEqual(1, len(said), said)
+        self.assertIn("no serial port 1d50:615e", said[0])
+
+    def test_a_port_that_cannot_be_listed_is_said_once_per_change(self):
+        said = self.scan(OSError("busy"), OSError("busy"), OSError("busy"))
+        self.assertEqual(1, len([s for s in said if "cannot list serial ports" in s]), said)
+
+
 class HidrawReading(unittest.TestCase):
     """The hidraw reader's loop on a pipe: what /dev/hidrawN is to it, one report per read."""
 

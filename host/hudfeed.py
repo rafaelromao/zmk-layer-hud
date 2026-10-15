@@ -163,6 +163,15 @@ def take_port(dev, log):
         log(f"hudfeed: could not take the port for this process alone ({e})")
 
 
+def serial_scan_note(vid, pid, name=None, port=None):
+    """The line to log for a serial scan that found no port to read the layer signal from. Without
+    one the board follows no layer and lights no key by its position -- silently, as hid_scan_note
+    says of the HID readers, unless something says so. Over BLE alone that is as it should be."""
+    which = port or (f"{vid:04x}:{pid:04x}" + (f" whose product name contains {name!r}" if name else ""))
+    return (f"hudfeed: no serial port {which} to read layers and positions from; the board follows "
+            "none until there is one (expected while the keyboard is on BLE alone)")
+
+
 class SerialReader:
     """Reads the keyboard's CDC-ACM interface on a thread and calls emit(message) for each decoded
     message. Rescans every `rescan` seconds, so unplugging and replugging just works.
@@ -219,12 +228,19 @@ class SerialReader:
         except ImportError:
             self.log("hudfeed: pyserial is required (make venv, or pip install pyserial)")
             return
+        said = None
         while not self._stop.is_set():
             try:
                 ports = self._ports(list_ports)
+                note = None if ports else serial_scan_note(self.vid, self.pid, self.name, self.port)
             except Exception as e:  # a port vanishing mid-enumeration
-                self.log(f"hudfeed: cannot list serial ports: {type(e).__name__}: {e}")
+                note = f"hudfeed: cannot list serial ports: {type(e).__name__}: {e}"
                 ports = []
+            # Said on each change rather than every rescan, as the HID readers' notes are.
+            if note != said:
+                said = note
+                if note:
+                    self.log(note)
             live = {path for path, _ in ports}
             for path in [p for p in self._quiet if p not in live]:
                 del self._quiet[path]  # unplugged: worth trying again when it returns
