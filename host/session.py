@@ -863,6 +863,11 @@ def keys_of(msg):
     msg = msg if isinstance(msg, dict) else {}
     positions = msg.get("positions") if isinstance(msg.get("positions"), dict) else {}
     at = {str(pos): i for pos, i in positions.items() if isinstance(i, int) and not isinstance(i, bool) and i >= 0}
+    keys = (msg.get("layout") or {}).get("keys") if isinstance(msg.get("layout"), dict) else None
+    if not positions and isinstance(keys, list):
+        # No map: a keymap in the firmware's own order, position = index, as the page reads it
+        # (keymap_message.KeymapMessage.idx_at, view.js idxAt).
+        at = {str(i): i for i in range(len(keys))}
     fingers = msg.get("fingers") if isinstance(msg.get("fingers"), list) else []
     by_pos = {pos: fingers[i] for pos, i in at.items() if i < len(fingers) and isinstance(fingers[i], str)}
     legends = {}
