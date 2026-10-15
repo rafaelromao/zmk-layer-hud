@@ -394,6 +394,74 @@ FAKE_REMOTE = textwrap.dedent('''
 ''')
 
 
+class Status(unittest.TestCase):
+    """`status`, read through panelstate.hud, with the processes the test says are running."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        for target, value in (("STATE", self.tmp.name), ("login_line", lambda: "off"), ("hypr_surfaces", lambda: None)):
+            p = mock.patch.object(cli, target, value)
+            p.start()
+            self.addCleanup(p.stop)
+        env = mock.patch.dict(os.environ, {"ZMKHUD_STATE": self.tmp.name})   # the sessions too, never the user's
+        env.start()
+        self.addCleanup(env.stop)
+
+    def status(self, procs, system="Linux"):
+        with mock.patch.object(cli, "processes", lambda pattern: procs.get("panel" if "panel" in pattern else "feed", {})), \
+                mock.patch.object(cli.platform, "system", lambda: system), \
+                mock.patch.object(sys, "platform", "darwin" if system == "Darwin" else "linux"), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            cli.cmd_status(None)
+        return out.getvalue()
+
+    def test_the_macos_feed_is_said_to_run_in_the_panel(self):
+        cli.panelstate.write(self.tmp.name, True)
+        said = self.status({"panel": {os.getpid(): f"python3 {ROOT}/host/macos/panel.py"}}, system="Darwin")
+        self.assertIn("panel: running, shown", said)
+        self.assertIn("feed:  in the panel", said)
+
+    def test_json_is_the_huds_state_in_one_object(self):
+        cli.panelstate.write(self.tmp.name, False, wpm=55, extra={"dock": True, "typing": "ok"})
+        procs = {"panel": {os.getpid(): f"python3 {ROOT}/host/linux/panel.py"}}
+        with mock.patch.object(cli, "processes", lambda pattern: procs.get("panel" if "panel" in pattern else "feed", {})), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(0, cli.main(["status", "--json"]))
+        h = json.loads(out.getvalue())
+        self.assertEqual((True, True, True, False, 55, True, "ok", "stopped", {}),
+                         (h["running"], h["said"], h["ours"], h["shown"], h["wpm"], h["dock"], h["typing"], h["feed"], h["remote"]))
+
+    def test_a_feed_run_on_its_own_is_running(self):
+        said = self.status({"feed": {77: "/usr/bin/python3 /home/me/.local/bin/zmk-layer-hud feed"}})
+        self.assertIn("panel: stopped", said)
+        self.assertIn("feed:  running", said)
+
+
+class TypingLine(unittest.TestCase):
+    """`typing status` takes the running HUD's word only when a HUD panel stands behind panel.json."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        p = mock.patch.object(cli, "STATE", self.tmp.name)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_a_pid_handed_out_again_is_no_hud_to_take_the_word_of(self):
+        # panel.json left by a HUD that died, its pid now this test's process: alive, and no panel.
+        cli.panelstate.write(self.tmp.name, True, extra={"typing": "ok"})
+        with mock.patch.object(cli, "processes", lambda pattern: {}), \
+                mock.patch.object(cli.platform, "system", lambda: "Darwin"):
+            self.assertNotEqual("can type", cli.typing_line())
+
+    def test_a_running_hud_is_taken_at_its_word(self):
+        cli.panelstate.write(self.tmp.name, True, extra={"typing": "ok"})
+        here = {os.getpid(): f"python3 {ROOT}/host/macos/panel.py"}
+        with mock.patch.object(cli, "processes", lambda pattern: here if "panel" in pattern else {}):
+            self.assertEqual("can type", cli.typing_line())
+
+
 class Remote(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
@@ -702,74 +770,6 @@ def desktop_exec(text):
     entry.read_string(text)
     value = entry["Desktop Entry"]["Exec"].replace("\\\\", "\\")
     return [a.replace("%%", "%") for a in shlex.split(value)]
-
-
-class Status(unittest.TestCase):
-    """`status`, read through panelstate.hud, with the processes the test says are running."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        for target, value in (("STATE", self.tmp.name), ("login_line", lambda: "off"), ("hypr_surfaces", lambda: None)):
-            p = mock.patch.object(cli, target, value)
-            p.start()
-            self.addCleanup(p.stop)
-        env = mock.patch.dict(os.environ, {"ZMKHUD_STATE": self.tmp.name})   # the sessions too, never the user's
-        env.start()
-        self.addCleanup(env.stop)
-
-    def status(self, procs, system="Linux"):
-        with mock.patch.object(cli, "processes", lambda pattern: procs.get("panel" if "panel" in pattern else "feed", {})), \
-                mock.patch.object(cli.platform, "system", lambda: system), \
-                mock.patch.object(sys, "platform", "darwin" if system == "Darwin" else "linux"), \
-                contextlib.redirect_stdout(io.StringIO()) as out:
-            cli.cmd_status(None)
-        return out.getvalue()
-
-    def test_the_macos_feed_is_said_to_run_in_the_panel(self):
-        cli.panelstate.write(self.tmp.name, True)
-        said = self.status({"panel": {os.getpid(): f"python3 {ROOT}/host/macos/panel.py"}}, system="Darwin")
-        self.assertIn("panel: running, shown", said)
-        self.assertIn("feed:  in the panel", said)
-
-    def test_json_is_the_huds_state_in_one_object(self):
-        cli.panelstate.write(self.tmp.name, False, wpm=55, extra={"dock": True, "typing": "ok"})
-        procs = {"panel": {os.getpid(): f"python3 {ROOT}/host/linux/panel.py"}}
-        with mock.patch.object(cli, "processes", lambda pattern: procs.get("panel" if "panel" in pattern else "feed", {})), \
-                contextlib.redirect_stdout(io.StringIO()) as out:
-            self.assertEqual(0, cli.main(["status", "--json"]))
-        h = json.loads(out.getvalue())
-        self.assertEqual((True, True, True, False, 55, True, "ok", "stopped", {}),
-                         (h["running"], h["said"], h["ours"], h["shown"], h["wpm"], h["dock"], h["typing"], h["feed"], h["remote"]))
-
-    def test_a_feed_run_on_its_own_is_running(self):
-        said = self.status({"feed": {77: "/usr/bin/python3 /home/me/.local/bin/zmk-layer-hud feed"}})
-        self.assertIn("panel: stopped", said)
-        self.assertIn("feed:  running", said)
-
-
-class TypingLine(unittest.TestCase):
-    """`typing status` takes the running HUD's word only when a HUD panel stands behind panel.json."""
-
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        p = mock.patch.object(cli, "STATE", self.tmp.name)
-        p.start()
-        self.addCleanup(p.stop)
-
-    def test_a_pid_handed_out_again_is_no_hud_to_take_the_word_of(self):
-        # panel.json left by a HUD that died, its pid now this test's process: alive, and no panel.
-        cli.panelstate.write(self.tmp.name, True, extra={"typing": "ok"})
-        with mock.patch.object(cli, "processes", lambda pattern: {}), \
-                mock.patch.object(cli.platform, "system", lambda: "Darwin"):
-            self.assertNotEqual("can type", cli.typing_line())
-
-    def test_a_running_hud_is_taken_at_its_word(self):
-        cli.panelstate.write(self.tmp.name, True, extra={"typing": "ok"})
-        here = {os.getpid(): f"python3 {ROOT}/host/macos/panel.py"}
-        with mock.patch.object(cli, "processes", lambda pattern: here if "panel" in pattern else {}):
-            self.assertEqual("can type", cli.typing_line())
 
 
 class Doctor(unittest.TestCase):
