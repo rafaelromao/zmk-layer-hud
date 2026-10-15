@@ -32,7 +32,8 @@ BarWidget {
   readonly property string command: installedCommand.charAt(0) === "/"
     ? installedCommand : home + "/.local/bin/zmk-layer-hud"
   readonly property string stateDir: installedState.charAt(0) === "/"
-    ? installedState : (Quickshell.env("XDG_STATE_HOME") || home + "/.local/state") + "/zmk-layer-hud"
+    ? installedState : Quickshell.env("ZMKHUD_STATE")
+      || (Quickshell.env("XDG_STATE_HOME") || home + "/.local/state") + "/zmk-layer-hud"
   // What a start runs through (uwsm-app --), so a HUD the bar started outlives a shell restart.
   readonly property var startWith: installedStartWith.indexOf("__") === 0
     ? [] : installedStartWith.split(" ").filter(w => w.length)
@@ -56,9 +57,13 @@ BarWidget {
   readonly property color popupText: Color.popups.text
   readonly property string fontName: root.bar ? root.bar.fontFamily : Style.font.family
 
+  // panel.json, watched: what the HUD shows and its numbers, the moment it says them. Whether a HUD
+  // stands behind it is the command line's to say (readHud).
   function read(text) {
+    const before = root.pid
     try {
       const st = JSON.parse(text)
+      if (typeof st.pid !== "number" || typeof st.shown !== "boolean") { root.stopped(); return }
       root.pid = st.pid
       root.wpm = typeof st.wpm === "number" ? st.wpm : 0
       root.avgWpm = typeof st.avg_wpm === "number" ? st.avg_wpm : null
@@ -71,7 +76,26 @@ BarWidget {
     } catch (e) {
       root.stopped()
     }
+    // A HUD that has just come (or a new one): asked now, not at the next tick. Every number it
+    // writes is not -- the WPM alone rewrites the file while typing.
+    if (root.pid !== before) root.askStatus()
   }
+  // `zmk-layer-hud status --json`, as $STATE/hud.json: the HUD as the command line and the macOS
+  // icon read it (panelstate.hud). A panel.json no HUD panel stands behind -- one left by a HUD that
+  // died, its pid handed out again -- is a stopped HUD, and remote mode is on only while its server
+  // lives.
+  function readHud(text) {
+    try {
+      const h = JSON.parse(text)
+      root.remoteOn = !!(h.remote && h.remote.serving === true)
+      if (!h.running || !h.said) { root.stopped(); return }
+      root.docked = h.dock === true
+      root.typing = typeof h.typing === "string" ? h.typing : ""
+    } catch (e) {
+      root.remoteOn = false
+    }
+  }
+  function askStatus() { if (!statusRun.running) statusRun.running = true }
   function takeRows(rows) {
     const text = JSON.stringify(rows)
     if (text !== root.rowsText) { root.rowsText = text; root.rows = rows }
@@ -137,14 +161,12 @@ BarWidget {
     onLoadFailed: root.stopped()
   }
 
-  // Remote mode says what it is doing in a file of its own, gone when it stops.
   FileView {
-    id: remoteFile
-    path: root.stateDir + "/remote.live.json"
+    id: hudFile
+    path: root.stateDir + "/hud.json"
     watchChanges: true
     onFileChanged: reload()
-    onLoaded: { try { root.remoteOn = JSON.parse(text()).serving === true } catch (e) { root.remoteOn = false } }
-    onLoadFailed: root.remoteOn = false
+    onLoaded: root.readHud(text())
   }
 
   FileView {
@@ -172,11 +194,13 @@ BarWidget {
     onLoadFailed: root.wpmChoice = "current"
   }
 
-  // A HUD that died without a word leaves its panel.json behind: its pid says whether it lives.
+  // The command line's word on the HUD, written whole into hud.json for hudFile to read -- this
+  // user's alone, as everything in $STATE is: it carries the WPM and the session's name.
   Process {
-    id: alive
-    command: ["kill", "-0", String(root.pid)]
-    onExited: (code, status) => { if (code !== 0) root.stopped() }
+    id: statusRun
+    command: ["env", "ZMKHUD_STATE=" + root.stateDir, "sh", "-c",
+              'umask 077 && "$1" status --json > "$2/hud.json.tmp" && mv "$2/hud.json.tmp" "$2/hud.json"',
+              "sh", root.command, root.stateDir]
   }
 
   Timer {
@@ -186,7 +210,7 @@ BarWidget {
     onTriggered: {
       panelFile.reload()
       choiceFile.reload()     // written by a rename too, and maybe not there when the watch began
-      if (root.pid > 0 && !alive.running) alive.running = true
+      root.askStatus()
     }
   }
 
