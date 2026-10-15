@@ -171,7 +171,7 @@ def activator(data, km, way):
     the key (a sticky layer). None when the drawing names none (the layer is only said)."""
     if not way["live"]:
         return None
-    layer = ((data.get("zmk_layers") or {}).get(str(min(way["live"]))) or {}).get("drawer")
+    layer = km.drawer_of(min(way["live"]))
     acts = [a for a in data.get("activators") or [] if a.get("layer") == layer and a.get("idx") not in way["keys"]]
     for kind in ("hold", "sticky", "auto-sticky"):
         a = next((a for a in acts if a.get("kind") == kind), None)
@@ -257,16 +257,12 @@ def combo_on(data, strike, ids):
     on exactly those keys, as ZMK's combo.c matches it and the page draws it (hud.js pressAt). A
     combo the layers below declare does not fire. A modifier held with a key is a chord of another
     kind, and draws no pill."""
-    at = [KeymapMessage(data).idx_at(p) for p in strike]
+    msg = KeymapMessage(data)
+    at = [msg.idx_at(p) for p in strike]
     if None in at:                  # a position the keymap does not place: no key, so no combo
         return False
     idxs = sorted(at)
-    stack = []
-    for zid in sorted(ids, reverse=True):
-        z = (data.get("zmk_layers") or {}).get(str(zid))
-        if z and z.get("drawer") and z["drawer"] not in stack:
-            stack.append(z["drawer"])
-    stack.append(data.get("base"))
+    stack = msg.stack(sorted(ids, reverse=True))
     return len(idxs) > 1 and any(sorted(c["positions"]) == idxs and stack[0] in c["layers"]
                                  for c in data.get("combos") or [])
 

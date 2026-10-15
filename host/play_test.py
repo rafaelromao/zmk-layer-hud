@@ -105,6 +105,19 @@ class Spelling(unittest.TestCase):
         zmk = {int(i): int(p) for p, i in DIAMOND["positions"].items()}
         self.assertFalse(play.combo_on(DIAMOND, [0, zmk[1]], []))
 
+    def test_a_layer_the_table_leaves_out_is_the_drawers_layer_of_that_number(self):
+        # A hand-written message may name only ZMK layer 0; the page draws layer 1 as the drawer's
+        # second layer (view.js zl), and play reads it so too: nav up, the base's combo does not fire,
+        # and nav's held key is what brings it up.
+        data = {"base": "base", "layer_order": ["base", "nav"], "zmk_layers": {"0": {"drawer": "base"}},
+                "layers": {"base": [{"tap": "a"}, {"tap": "b"}, {"tap": "c"}], "nav": [{"tap": "←"}] * 3},
+                "combos": [{"positions": [0, 1], "layers": ["base"], "key": {"tap": "x"}}],
+                "activators": [{"layer": "nav", "idx": 2, "kind": "hold"}]}
+        self.assertTrue(play.combo_on(data, [0, 1], []))
+        self.assertFalse(play.combo_on(data, [0, 1], [1]))
+        km = ways.Keymap(data)
+        self.assertEqual({"pos": 2, "held": True}, play.activator(data, km, {"live": [1], "keys": [0]}))
+
     def test_a_character_only_a_combo_types_is_that_combo(self):
         by = {}
         for case in ways.cases(ways.Keymap(DIAMOND)):
