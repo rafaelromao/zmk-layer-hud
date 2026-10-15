@@ -29,6 +29,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import keynames  # noqa: E402
+from keymap_message import KeymapMessage  # noqa: E402
 import uskeys  # noqa: E402
 import ways  # noqa: E402
 
@@ -256,8 +257,10 @@ def combo_on(data, strike, ids):
     on exactly those keys, as ZMK's combo.c matches it and the page draws it (hud.js pressAt). A
     combo the layers below declare does not fire. A modifier held with a key is a chord of another
     kind, and draws no pill."""
-    positions = data.get("positions") or {}
-    idxs = sorted(positions.get(str(p), p) if positions else p for p in strike)
+    at = [KeymapMessage(data).idx_at(p) for p in strike]
+    if None in at:                  # a position the keymap does not place: no key, so no combo
+        return False
+    idxs = sorted(at)
     stack = []
     for zid in sorted(ids, reverse=True):
         z = (data.get("zmk_layers") or {}).get(str(zid))

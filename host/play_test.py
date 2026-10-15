@@ -96,6 +96,15 @@ class Spelling(unittest.TestCase):
         self.assertTrue(play.combo_on(DIAMOND, strike, []))
         self.assertFalse(play.combo_on(DIAMOND, strike, [ext]))
 
+    def test_a_position_the_keymap_does_not_place_is_no_key_of_a_combo(self):
+        # A frame's press names ZMK positions. One off the board's map is no key, as on the page
+        # (view.js idxAt), never the key that happens to share its number.
+        # The base's combo on keys 0 and 1; ZMK position 0 is not on the Diamond's map.
+        self.assertTrue(any(sorted(c["positions"]) == [0, 1] and DIAMOND["base"] in c["layers"] for c in DIAMOND["combos"]))
+        self.assertNotIn("0", DIAMOND["positions"])
+        zmk = {int(i): int(p) for p, i in DIAMOND["positions"].items()}
+        self.assertFalse(play.combo_on(DIAMOND, [0, zmk[1]], []))
+
     def test_a_character_only_a_combo_types_is_that_combo(self):
         by = {}
         for case in ways.cases(ways.Keymap(DIAMOND)):
