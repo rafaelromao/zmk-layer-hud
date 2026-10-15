@@ -28,6 +28,7 @@ from collections import Counter
 
 import keynames
 import uskeys
+from keymap_message import KeymapMessage
 import zmk_expr
 import zmk_tables as T
 
@@ -372,10 +373,10 @@ class Legends:
         self.typing = {base} | self.sticky
         self.sticky_label, self.toggle_label = sticky_label, toggle_label
         self.altgr = altgr
-        self.ids_of = {}
-        for zid, z in sorted((zmk_layers or {}).items(), key=lambda kv: int(kv[0])):
-            if z and z.get("drawer"):
-                self.ids_of.setdefault(z["drawer"], int(zid))
+        # Each drawer layer by its lowest ZMK layer: the one a layer key of the drawing brings up.
+        read = KeymapMessage({"zmk_layers": zmk_layers or {}})
+        drawers = {z["drawer"] for z in (zmk_layers or {}).values() if z and z.get("drawer")}
+        self.ids_of = {layer: read.ids_of(layer)[0] for layer in drawers}
         letters = [k.get("tap") for k in layers.get(base) or [] if len(k.get("tap") or "") == 1 and k["tap"].isalpha()]
         self.capitals = bool(letters) and all(t.isupper() for t in letters)
 
@@ -590,10 +591,7 @@ def _combos(keymap, compiler, legends, drawn, zmk_layers, pos_to_idx, combo_term
     """The combos as the engine fires them: ZMK positions, ZMK layer ids (None: every layer), the
     action, and `drawn`, the index of the drawn combo whose legend a chip shows."""
     idx_to_pos = {int(idx): int(pos) for pos, idx in pos_to_idx.items()}
-    ids_of = {}
-    for zid, z in (zmk_layers or {}).items():
-        if z and z.get("drawer"):
-            ids_of.setdefault(z["drawer"], []).append(int(zid))
+    ids_of = KeymapMessage({"zmk_layers": zmk_layers or {}}).ids_of
     drawn_at = {}
     for i, c in enumerate(drawn or []):
         ps = [idx_to_pos.get(int(p)) for p in c.get("positions") or []]
@@ -623,7 +621,7 @@ def _combos(keymap, compiler, legends, drawn, zmk_layers, pos_to_idx, combo_term
         positions = [idx_to_pos.get(int(p)) for p in c.get("positions") or []]
         if None in positions:
             continue
-        layer_ids = sorted({zid for name in c.get("layers") or [] for zid in ids_of.get(name, [])})
+        layer_ids = sorted({zid for name in c.get("layers") or [] for zid in ids_of(name)})
         if layer_ids:
             layer_ids = sorted(set(layer_ids) | set(undrawn))
         out.append({"positions": sorted(positions), "layers": layer_ids or None,

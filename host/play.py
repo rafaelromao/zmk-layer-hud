@@ -556,16 +556,12 @@ def _kept(data, km, press, target, nxt):
         return set()
     after = set(int(i) for i in nxt.get("layers") or [])
     nxt_press = set(int(p) for p in nxt.get("press") or [])
-    ids_of = {}
-    for zid, z in (data.get("zmk_layers") or {}).items():
-        if z and z.get("drawer"):
-            ids_of.setdefault(z["drawer"], set()).add(int(zid))
     keep = set()
     for a in data.get("activators") or []:
         if a.get("kind") != "hold":
             continue
         pos = km.zmk(a["idx"])
-        ids = ids_of.get(a.get("layer"), set())
+        ids = set(km.ids_of(a.get("layer")))
         if pos in press and pos in nxt_press and ids & set(target) and ids & after:
             keep.add(pos)
     return keep
