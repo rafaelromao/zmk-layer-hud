@@ -215,5 +215,67 @@ class PanelState(unittest.TestCase):
             self.assertEqual(os.path.join("/x", "zmk-layer-hud"), panelstate.default_dir())
 
 
+class Hud(unittest.TestCase):
+    """The HUD read once (panelstate.hud), with the processes the test says are running."""
+
+    ROOT = "/opt/zmk-layer-hud"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.d = self.tmp.name
+        self.panels, self.feeds = {}, {}
+
+    def procs(self, pattern):
+        return self.feeds if "hudfeed" in pattern else self.panels
+
+    def hud(self, root=ROOT):
+        return panelstate.hud(self.d, root, procs=self.procs)
+
+    def panel(self, pid, tree=ROOT, os_="linux"):
+        self.panels[pid] = f"/usr/bin/python3 {tree}/host/{os_}/panel.py"
+
+    def test_nothing_running(self):
+        h = self.hud()
+        self.assertEqual((False, False, False, None, "stopped"), (h["running"], h["said"], h["ours"], h["pid"], h["feed"]))
+        self.assertIsNone(h["shown"])
+
+    def test_a_panel_of_this_copy_that_said_so(self):
+        self.panel(os.getpid())
+        self.feeds[99] = f"python3 {self.ROOT}/host/hudfeed.py"
+        panelstate.write(self.d, False, wpm=40, extra={"typing": "ok"})
+        h = self.hud()
+        self.assertEqual((True, True, True, os.getpid()), (h["running"], h["said"], h["ours"], h["pid"]))
+        self.assertEqual((False, 40, "ok", "running"), (h["shown"], h["wpm"], h["typing"], h["feed"]))
+
+    def test_a_pid_handed_out_again_is_not_a_panel(self):
+        # panel.json names a live process -- this test's -- that is no HUD panel.
+        panelstate.write(self.d, True)
+        h = self.hud()
+        self.assertEqual((False, False, None), (h["running"], h["said"], h["shown"]))
+
+    def test_a_panel_from_another_copy_is_running_but_not_ours(self):
+        self.panel(os.getpid(), tree="/home/me/src/zmk-layer-hud")
+        panelstate.write(self.d, True)
+        h = self.hud()
+        self.assertEqual((True, True, False), (h["running"], h["said"], h["ours"]))
+        self.assertEqual(os.path.realpath("/home/me/src/zmk-layer-hud"), h["where"])
+
+    def test_a_panel_of_this_copy_that_has_said_nothing_yet(self):
+        self.panel(4242)
+        h = self.hud()
+        self.assertEqual((True, False, True, 4242), (h["running"], h["said"], h["ours"], h["pid"]))
+
+    def test_the_macos_panel_runs_the_feed(self):
+        self.panel(os.getpid(), os_="macos")
+        panelstate.write(self.d, True)
+        with mock.patch.object(sys, "platform", "darwin"):
+            self.assertEqual("in the panel", self.hud()["feed"])
+
+    def test_the_feed_run_on_its_own(self):
+        self.feeds[7] = "/usr/bin/python3 /home/me/.local/bin/zmk-layer-hud feed --raw"
+        self.assertEqual("running", self.hud()["feed"])
+
+
 if __name__ == "__main__":
     unittest.main()

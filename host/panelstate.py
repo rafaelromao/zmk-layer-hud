@@ -275,3 +275,85 @@ def wpm_shown(st, choice):
     if not st:
         return None
     return {"current": st.get("wpm"), "average": st.get("avg_wpm"), "top": st.get("top_wpm")}.get(choice)
+
+
+# ---------- the HUD, read once ----------
+
+# A HUD panel's process: either host's panel.py, from whichever copy of zmk-layer-hud it runs in.
+PANEL_PROCESS = r"/host/(macos|linux)/panel\.py"
+# The feed run on its own: the Linux panel's child, or `zmk-layer-hud feed` (cli.py runs it in-process).
+FEED_PROCESS = r"/host/hudfeed\.py|/host/cli\.py feed( |$)|zmk-layer-hud feed( |$)"
+
+
+def processes(pattern):
+    """{pid: command line} of this user's processes whose command line matches `pattern`. pgrep
+    prints the command line with -l on macOS and -a on Linux (where -l is the name alone)."""
+    import subprocess
+    import sys
+    flag = "-lf" if sys.platform == "darwin" else "-af"
+    try:
+        out = subprocess.run(["pgrep", flag, pattern], capture_output=True, text=True).stdout
+    except OSError:
+        return {}
+    found = {}
+    for line in out.splitlines():
+        pid, _, command = line.strip().partition(" ")
+        if pid.isdigit():
+            found[int(pid)] = command
+    return found
+
+
+def tree_of(command):
+    """The copy of zmk-layer-hud a panel's or the feed's command line runs from, or None."""
+    for word in command.split():
+        if "/host/" in word:
+            return os.path.realpath(word[:word.index("/host/")])
+    return None
+
+
+def hud(d=None, root=None, procs=processes):
+    """The HUD as everything that reports on it reads it -- `status` and the other verbs, both
+    menubar icons (the Omarchy one through `status --json`) -- so they cannot disagree:
+
+        running   a HUD panel is running for this state: one whose panel.json is here, or one of
+                  this copy's that has not written it (still starting, or older than it)
+        said      panel.json speaks for it: its pid is alive and is a HUD panel, never a pid handed
+                  out again since -- what a verb that signals it needs
+        ours      it runs from this copy (`root`), which `stop` and `start` act on
+        pid, where   the panel's pid and the copy it runs from
+        shown, wpm, avg_wpm, top_wpm, session, stats, dock, dock_note, dock_at, typing
+                  what it last said, when `said`
+        feed      "running", "in the panel" (macOS: the panel runs it), or "stopped"
+        remote    what the remote-mode server last said, while it is alive (remote.live_now)
+        wpm_choice   which WPM the icons show
+
+    `procs(pattern)` -> {pid: command line}: the processes, which a test stands in for."""
+    import sys
+    d = d or default_dir()
+    root = os.path.realpath(root) if root else None
+    panels = {pid: tree_of(cmd) for pid, cmd in procs(PANEL_PROCESS).items()}
+    st = read(d)
+    said = bool(st) and st["pid"] in panels
+    if said:
+        pid = st["pid"]
+    else:
+        pid = next((p for p, tree in sorted(panels.items()) if root and tree == root), None)
+    where = panels.get(pid)
+    out = {"dir": d, "running": pid is not None, "said": said, "ours": pid is not None and where == root,
+           "pid": pid, "where": where}
+    fields = ("shown", "wpm", "avg_wpm", "top_wpm", "session", "stats", "dock", "dock_note", "dock_at", "typing")
+    out.update({k: (st.get(k) if said else None) for k in fields})
+    feeds = {p: tree_of(cmd) for p, cmd in procs(FEED_PROCESS).items()}
+    if any(tree in (None, where or root) for tree in feeds.values()):   # None: the shim, `zmk-layer-hud feed`
+        out["feed"] = "running"
+    elif pid is not None and sys.platform == "darwin":
+        out["feed"] = "in the panel"
+    else:
+        out["feed"] = "stopped"
+    try:
+        import remote
+        out["remote"] = remote.live_now(d)
+    except ImportError:
+        out["remote"] = {}
+    out["wpm_choice"] = wpm_choice(d)
+    return out
