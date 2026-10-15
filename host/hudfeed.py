@@ -172,9 +172,164 @@ def serial_scan_note(vid, pid, name=None, port=None):
             "none until there is one (expected while the keyboard is on BLE alone)")
 
 
-class SerialReader:
-    """Reads the keyboard's CDC-ACM interface on a thread and calls emit(message) for each decoded
-    message. Rescans every `rescan` seconds, so unplugging and replugging just works.
+class Reader:
+    """One kind of connection to the keyboard, read: found every `rescan` seconds, so unplugging and
+    replugging just works; each found device opened and read on a thread of its own, through a
+    Stream that decodes it and releases what it held when it goes. A device that could not be opened
+    -- or, for the signal, never produced a frame -- is not tried again until it goes away and comes
+    back. The loop is one; what differs per transport is the hooks below.
+
+        available()           its library is there (said once, and the reader does nothing if not)
+        find()                [(path, product)] of every device that could be the keyboard
+        note(found)           the line to say for a scan, or None; said on each change
+        open(path, product)   a connection, or raises OpenFailed(lines to say)
+        read(conn, timeout)   bytes off a signal carrier, a decoded keys dict, or None for nothing
+        close(conn)
+        on_signal(conn)       the first frame came: the device is the signal (serial takes the port)
+
+    `signal`: the device carries the layer signal (frames), so it is announced on its first frame,
+    and given up after `probe_s` seconds without one; a HID keyboard is announced when opened."""
+
+    kind, devices = "reader", "devices"
+    signal = False
+
+    def __init__(self, emit, rescan=2.0, log=print, raw=False, dead_key_ms=DEAD_KEY_MS, altgr=False):
+        self.emit, self.rescan, self.log, self.raw = emit, rescan, log, raw
+        self.dead_key_ms, self.altgr = dead_key_ms, altgr
+        self.probe_s = None
+        # The scan thread and every read thread share these: the lock keeps one from iterating a
+        # table another is changing, which used to end the scan for good.
+        self._lock = threading.Lock()
+        self._open = {}         # path -> connection, while it is read
+        self._failed = {}       # path -> why it is not tried again until it goes away
+        self._streams = set()   # live Streams, for resync()
+        self._stop = threading.Event()
+
+    def start(self):
+        threading.Thread(target=self._scan_loop, name=f"{self.kind}-scan", daemon=True).start()
+
+    def stop(self):
+        self._stop.set()
+
+    def resync(self):
+        with self._lock:
+            streams = list(self._streams)
+        for stream in streams:
+            stream.resync()
+
+    # ---------- the transport's ----------
+
+    def available(self):
+        return True
+
+    def note(self, found):
+        return None
+
+    def on_signal(self, conn):
+        pass
+
+    def close(self, conn):
+        conn.close()
+
+    # ---------- the loop ----------
+
+    def _scan_loop(self):
+        if not self.available():
+            return
+        said = None
+        while not self._stop.is_set():
+            try:
+                found = self.find()
+                note = self.note(len(found))
+            except Exception as e:  # a device vanishing mid-enumeration
+                found, note = [], f"hudfeed: cannot list {self.devices}: {type(e).__name__}: {e}"
+            # Said on each change rather than every rescan: a keyboard that is not there is no more
+            # absent for being mentioned every two seconds.
+            if note != said:
+                said = note
+                if note:
+                    self.log(note)
+            live = {path for path, _ in found}
+            with self._lock:
+                for path in [p for p in self._failed if p not in live]:
+                    del self._failed[path]   # unplugged: worth trying again when it returns
+            for path, product in found:
+                with self._lock:
+                    if path in self._open or path in self._failed:
+                        continue
+                try:
+                    conn = self.open(path, product)
+                except OpenFailed as e:
+                    for line in e.lines:
+                        self.log(line)
+                    with self._lock:
+                        self._failed[path] = e.lines[0]
+                    continue
+                with self._lock:
+                    self._open[path] = conn
+                if not self.signal:
+                    self.log(f"hudfeed: reading what is typed on {product} ({self.where(path)})")
+                threading.Thread(target=self._read_loop, args=(path, conn, product),
+                                 name=f"{self.kind}-read", daemon=True).start()
+            self._stop.wait(self.rescan)
+
+    def _read_loop(self, path, conn, product):
+        import time
+        stream = Stream(self.emit, product, self.dead_key_ms, self.raw, self.log, self.altgr)
+        with self._lock:
+            self._streams.add(stream)
+        announced = False
+        started = time.monotonic()
+        try:
+            while not self._stop.is_set():
+                # Wake early while a dead key waits, so it is released on time when no letter follows.
+                got = self.read(conn, self.dead_key_ms / 1000 if stream.decoder.pending else 0.5)
+                now = int(time.monotonic() * 1000)
+                if not got:
+                    stream.idle(now)
+                    if self.signal and not stream.frames_seen and time.monotonic() - started > self.probe_s:
+                        with self._lock:
+                            self._failed[path] = "no frames"
+                        self.log(f"hudfeed: {product} ({path}) is not the layer signal; leaving it alone")
+                        return
+                    continue
+                if isinstance(got, dict):
+                    stream.message(got, now)
+                else:
+                    stream.feed(got, now)
+                if self.signal and stream.frames_seen and not announced:
+                    announced = True
+                    self.log(f"hudfeed: reading {product} on {path}")
+                    self.emit({"kind": "device", "name": product})
+                    self.on_signal(conn)
+        except Exception as e:  # an unplug, and anything else a read or a report throws
+            if not self._stop.is_set():
+                self.log(f"hudfeed: {product} gone ({type(e).__name__}: {e})")
+        finally:
+            try:
+                self.close(conn)
+            except Exception:
+                pass
+            with self._lock:
+                self._open.pop(path, None)
+                self._streams.discard(stream)
+            stream.close()
+
+    @staticmethod
+    def where(path):
+        return path.decode("utf-8", "replace") if isinstance(path, bytes) else str(path)
+
+
+class OpenFailed(Exception):
+    """A device that could not be opened, with the lines that say why and what to do about it."""
+
+    def __init__(self, *lines):
+        super().__init__(lines[0])
+        self.lines = lines
+
+
+class SerialReader(Reader):
+    """Reads the keyboard's CDC-ACM interface: the layer signal's frames.
 
     A composite ZMK device can expose more than one CDC interface (ZMK Studio, USB logging), and
     they are indistinguishable from their descriptors. So the port is not chosen, it is tried: a
@@ -182,28 +337,26 @@ class SerialReader:
     away and comes back. The firmware announces on boot and beats every heartbeat-ms, so silence
     that long is decisive."""
 
+    kind, devices, signal = "serial", "serial ports", True
+
     def __init__(self, emit, vid=ZMK_VID, pid=ZMK_PID, name=None, port=None, rescan=2.0, log=print,
                  raw=False, dead_key_ms=DEAD_KEY_MS, probe_s=8.0, altgr=False):
-        self.emit, self.vid, self.pid, self.name, self.port = emit, vid, pid, name, port
-        self.rescan, self.log, self.raw = rescan, log, raw
-        self.dead_key_ms, self.probe_s, self.altgr = dead_key_ms, probe_s, altgr
-        self._open = {}   # device path -> serial.Serial
-        self._streams = set()  # live Streams, for resync()
-        self._quiet = {}  # device path -> why we stopped reading it
-        self._stop = threading.Event()
+        super().__init__(emit, rescan, log, raw, dead_key_ms, altgr)
+        self.vid, self.pid, self.name, self.port = vid, pid, name, port
+        self.probe_s = probe_s
 
-    def start(self):
-        threading.Thread(target=self._scan_loop, name="serial-scan", daemon=True).start()
+    def available(self):
+        try:
+            import serial  # noqa: F401
+            from serial.tools import list_ports  # noqa: F401
+        except ImportError:
+            self.log("hudfeed: pyserial is required (make venv, or pip install pyserial)")
+            return False
+        return True
 
-    def stop(self):
-        self._stop.set()
-
-    def resync(self):
-        for stream in list(self._streams):
-            stream.resync()
-
-    def _ports(self, list_ports):
+    def find(self):
         """(device path, product name) of every port that could be the keyboard."""
+        from serial.tools import list_ports
         out = []
         for info in list_ports.comports():
             if self.port is not None:
@@ -221,92 +374,34 @@ class SerialReader:
             out.append((info.device, info.product or "?"))
         return out
 
-    def _scan_loop(self):
-        try:
-            import serial  # noqa: F401
-            from serial.tools import list_ports
-        except ImportError:
-            self.log("hudfeed: pyserial is required (make venv, or pip install pyserial)")
-            return
-        said = None
-        while not self._stop.is_set():
-            try:
-                ports = self._ports(list_ports)
-                note = None if ports else serial_scan_note(self.vid, self.pid, self.name, self.port)
-            except Exception as e:  # a port vanishing mid-enumeration
-                note = f"hudfeed: cannot list serial ports: {type(e).__name__}: {e}"
-                ports = []
-            # Said on each change rather than every rescan, as the HID readers' notes are.
-            if note != said:
-                said = note
-                if note:
-                    self.log(note)
-            live = {path for path, _ in ports}
-            for path in [p for p in self._quiet if p not in live]:
-                del self._quiet[path]  # unplugged: worth trying again when it returns
-            for path, product in ports:
-                if path in self._open or path in self._quiet:
-                    continue
-                self._start(path, product)
-            self._stop.wait(self.rescan)
+    def note(self, found):
+        return None if found else serial_scan_note(self.vid, self.pid, self.name, self.port)
 
-    def _start(self, path, product):
+    def open(self, path, product):
         import serial
         try:
-            dev = serial.Serial(path, timeout=0.5, exclusive=False)
+            return serial.Serial(path, timeout=0.5, exclusive=False)
         except (OSError, serial.SerialException, ValueError) as e:
-            self._quiet[path] = str(e)
-            self.log(f"hudfeed: cannot open {product} ({path}): {e}")
+            lines = [f"hudfeed: cannot open {product} ({path}): {e}"]
             if sys.platform != "darwin":
-                self.log("hudfeed: check tty permissions (contrib/udev/60-zmk-layer-hud.rules, "
-                         "or add yourself to the dialout group)")
-            return
-        self._open[path] = dev
-        threading.Thread(target=self._read_loop, args=(path, dev, product),
-                         name="serial-read", daemon=True).start()
+                lines.append("hudfeed: check tty permissions (contrib/udev/60-zmk-layer-hud.rules, "
+                             "or add yourself to the dialout group)")
+            raise OpenFailed(*lines)
 
-    def _read_loop(self, path, dev, product):
-        import time
-        stream = Stream(self.emit, product, self.dead_key_ms, self.raw, self.log, self.altgr)
-        self._streams.add(stream)
-        announced = False
-        started = time.monotonic()
-        try:
-            while not self._stop.is_set():
-                # Block on the first byte, then take whatever else has landed: read(n) would wait
-                # out the whole timeout for a full buffer and put that latency on every keystroke.
-                dev.timeout = self.dead_key_ms / 1000 if stream.decoder.pending else 0.5
-                chunk = dev.read(1)
-                if chunk:
-                    waiting = dev.in_waiting
-                    if waiting:
-                        chunk += dev.read(waiting)
-                now = int(time.monotonic() * 1000)
-                if not chunk:
-                    stream.idle(now)
-                    if not stream.frames_seen and time.monotonic() - started > self.probe_s:
-                        self._quiet[path] = "no frames"
-                        self.log(f"hudfeed: {product} ({path}) is not the layer signal; "
-                                 "leaving it alone")
-                        return
-                    continue
-                stream.feed(chunk, now)
-                if stream.frames_seen and not announced:
-                    announced = True
-                    self.log(f"hudfeed: reading {product} on {path}")
-                    self.emit({"kind": "device", "name": product})
-                    take_port(dev, self.log)
-        except Exception as e:  # SerialException on unplug, and anything else the port throws
-            if not self._stop.is_set():
-                self.log(f"hudfeed: {product} gone ({type(e).__name__}: {e})")
-        finally:
-            try:
-                dev.close()
-            except Exception:
-                pass
-            self._open.pop(path, None)
-            self._streams.discard(stream)
-            stream.close()
+    def read(self, dev, timeout):
+        # Block on the first byte, then take whatever else has landed: read(n) would wait out the
+        # whole timeout for a full buffer and put that latency on every keystroke.
+        dev.timeout = timeout
+        chunk = dev.read(1)
+        if chunk:
+            waiting = dev.in_waiting
+            if waiting:
+                chunk += dev.read(waiting)
+        return chunk or None
+
+    def on_signal(self, dev):
+        take_port(dev, self.log)
+
 
 
 class BleReader:
@@ -519,7 +614,7 @@ def hidraw_match(uevent, vid, pid, name=None):
     return product
 
 
-class HidrawReader:
+class HidrawReader(Reader):
     """Reads what is typed straight from /dev/hidrawN. Linux only, and no hidapi.
 
     hidapi has two Linux backends and the wheel decides which, silently. The PyPI wheel bundles
@@ -533,26 +628,14 @@ class HidrawReader:
     so split_report and the decoder below it are untouched. It is opened read-only, which is less
     than hidapi asks for and exactly what contrib/udev/60-zmk-layer-hud.rules grants."""
 
+    kind, devices = "hidraw", "hidraw nodes"
+
     def __init__(self, emit, vid=ZMK_VID, pid=ZMK_PID, name=None, report_id=KEYBOARD_REPORT_ID,
                  rescan=2.0, log=print, raw=False, dead_key_ms=DEAD_KEY_MS, sysfs=HIDRAW_SYSFS, altgr=False):
-        self.emit, self.vid, self.pid, self.name = emit, vid, pid, name
-        self.report_id, self.rescan, self.log = report_id, rescan, log
-        self.raw = raw  # debug only: dumps every report, i.e. also what you type
-        self.dead_key_ms, self.sysfs, self.altgr = dead_key_ms, sysfs, altgr
-        self._open = {}
-        self._streams = set()
-        self._stop = threading.Event()
+        super().__init__(emit, rescan, log, raw, dead_key_ms, altgr)   # raw: debug only, dumps what you type
+        self.vid, self.pid, self.name, self.report_id, self.sysfs = vid, pid, name, report_id, sysfs
 
-    def start(self):
-        threading.Thread(target=self._scan_loop, name="hidraw-scan", daemon=True).start()
-
-    def stop(self):
-        self._stop.set()
-
-    def resync(self):
-        pass  # holds no layer state: it only ever reports keys
-
-    def _paths(self):
+    def find(self):
         """(node, product name) of every hidraw node that is this keyboard."""
         out = []
         try:
@@ -569,69 +652,31 @@ class HidrawReader:
                 out.append((f"/dev/{node}", product))
         return out
 
-    def _scan_loop(self):
-        said = None
-        while not self._stop.is_set():
-            paths = self._paths()
-            note = hid_scan_note(len(paths), self.vid, self.pid, self.name)
-            if note != said:
-                said = note
-                if note:
-                    self.log(note)
-            live = {p for p, _ in paths}
-            for gone in [p for p, fd in self._open.items() if fd is None and p not in live]:
-                del self._open[gone]
-            for path, product in paths:
-                if path in self._open:
-                    continue
-                try:
-                    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK)
-                except OSError as e:
-                    self.log(f"hudfeed: cannot read what is typed on {product} ({path}): {e}")
-                    self.log(f"hudfeed: `ls -l {path}` and `getfacl {path}` say who may read it; the "
+    def note(self, found):
+        return hid_scan_note(found, self.vid, self.pid, self.name)
+
+    def open(self, path, product):
+        try:
+            return os.open(path, os.O_RDONLY | os.O_NONBLOCK)
+        except OSError as e:
+            raise OpenFailed(f"hudfeed: cannot read what is typed on {product} ({path}): {e}",
+                             f"hudfeed: `ls -l {path}` and `getfacl {path}` say who may read it; the "
                              "uaccess tag in contrib/udev/60-zmk-layer-hud.rules grants it to the "
                              "active seat's user, and applies to nodes created after the rule, so "
                              "replug the keyboard")
-                    self._open[path] = None  # do not retry every scan
-                    continue
-                self._open[path] = fd
-                self.log(f"hudfeed: reading what is typed on {product} ({path})")
-                threading.Thread(target=self._read_loop, args=(path, fd, product),
-                                 name="hidraw-read", daemon=True).start()
-            self._stop.wait(self.rescan)
 
-    def _read_loop(self, path, fd, product):
+    def read(self, fd, timeout):
         import select
-        import time
-        stream = Stream(self.emit, product, self.dead_key_ms, self.raw, self.log, self.altgr)
-        self._streams.add(stream)
-        try:
-            while not self._stop.is_set():
-                # Wake early while a dead key waits, so it is released on time when no letter follows.
-                timeout = (self.dead_key_ms if stream.decoder.pending else 500) / 1000
-                ready, _, _ = select.select([fd], [], [], timeout)
-                now = int(time.monotonic() * 1000)
-                if not ready:
-                    stream.idle(now)
-                    continue
-                report = os.read(fd, 64)  # hidraw hands over exactly one report per read
-                if not report:
-                    continue
-                parts = split_report(report, self.report_id)
-                if parts is None:
-                    continue  # a consumer or mouse report: not ours
-                stream.message({"kind": "keys", "mods": parts[0], "keys": list(parts[1])}, now)
-        except Exception as e:  # OSError on unplug, and anything else a read or a report throws
-            if not self._stop.is_set():
-                self.log(f"hudfeed: {product} gone ({type(e).__name__}: {e})")
-        finally:
-            try:
-                os.close(fd)
-            except OSError:
-                pass
-            self._open.pop(path, None)
-            self._streams.discard(stream)
-            stream.close()
+        ready, _, _ = select.select([fd], [], [], timeout)
+        if not ready:
+            return None
+        report = os.read(fd, 64)  # hidraw hands over exactly one report per read
+        parts = split_report(report, self.report_id) if report else None
+        # A consumer or mouse report is not ours: nothing, as far as the keys go.
+        return {"kind": "keys", "mods": parts[0], "keys": list(parts[1])} if parts else None
+
+    def close(self, fd):
+        os.close(fd)
 
 
 def hid_scan_note(found, vid, pid, name=None, platform=None):
@@ -655,7 +700,7 @@ def hid_scan_note(found, vid, pid, name=None, platform=None):
     return note
 
 
-class HidKeysReader:
+class HidKeysReader(Reader):
     """Reads what is being typed from the keyboard's HID reports, with hidapi.
 
     The firmware sent this itself for a while, and it dropped keys. The snapshot could only be
@@ -677,45 +722,23 @@ class HidKeysReader:
     The cost is the permission the other channel does not need: Input Monitoring on macOS, and a
     keyboard Karabiner-Elements modifies is seized by it and gives us no reports."""
 
+    kind, devices = "hid", "HID devices"
+
     def __init__(self, emit, vid=ZMK_VID, pid=ZMK_PID, name=None, report_id=KEYBOARD_REPORT_ID,
                  rescan=2.0, log=print, raw=False, dead_key_ms=DEAD_KEY_MS, altgr=False):
-        self.emit, self.vid, self.pid, self.name = emit, vid, pid, name
-        self.report_id, self.rescan, self.log = report_id, rescan, log
-        self.raw = raw  # debug only: dumps every report, i.e. also what you type
-        self.dead_key_ms, self.altgr = dead_key_ms, altgr
-        self._open = {}
-        self._streams = set()
-        self._stop = threading.Event()
+        super().__init__(emit, rescan, log, raw, dead_key_ms, altgr)   # raw: debug only, dumps what you type
+        self.vid, self.pid, self.name, self.report_id = vid, pid, name, report_id
+        self.hid = None
 
-    def start(self):
-        threading.Thread(target=self._scan_loop, name="hid-scan", daemon=True).start()
-
-    def stop(self):
-        self._stop.set()
-
-    def resync(self):
-        pass  # holds no layer state: it only ever reports keys
-
-    def _paths(self, hid):
-        seen, out = set(), []
-        for info in hid.enumerate(self.vid, self.pid):
-            if self.name and self.name.lower() not in (info.get("product_string") or "").lower():
-                continue
-            path = info["path"]
-            if path in seen:  # macOS lists one entry per usage pair, all with the same path
-                continue
-            seen.add(path)
-            out.append((path, info.get("product_string") or "?"))
-        return out
-
-    def _scan_loop(self):
+    def available(self):
         try:
             import hid
         except ImportError:
             self.log("hudfeed: hidapi is required for the typed-keys strip (make venv, or pip "
                      "install hidapi; macOS also brew install hidapi). Pass --no-hid-keys to run "
                      "without it: layers and positions still work.")
-            return
+            return False
+        self.hid = hid
         if sys.platform == "darwin":
             # Since hidapi 0.12 the macOS backend opens devices exclusively (seizing them), which
             # macOS refuses for a keyboard it is using: "open failed" although IOHIDDeviceOpen
@@ -726,79 +749,49 @@ class HidKeysReader:
                 ctypes.CDLL(hid.__file__).hid_darwin_set_open_exclusive(0)
             except (OSError, AttributeError) as e:
                 self.log(f"hudfeed: could not disable hidapi's exclusive open ({e}); opens may fail")
-        said = None
-        while not self._stop.is_set():
-            paths = self._paths(hid)
-            # Said on each transition rather than every rescan, the way the BLE reader does it: a
-            # keyboard that is not there is no more absent for being mentioned every two seconds.
-            note = hid_scan_note(len(paths), self.vid, self.pid, self.name)
-            if note != said:
-                said = note
-                if note:
-                    self.log(note)
-            # A path that failed is not retried every scan, but it is forgotten once the device
-            # goes away, so replugging after fixing a permission is enough -- the same bargain
-            # SerialReader makes with _quiet.
-            live = {p for p, _ in paths}
-            for gone in [p for p, d in self._open.items() if d is None and p not in live]:
-                del self._open[gone]
-            for path, product in paths:
-                if path in self._open:
-                    continue
-                try:
-                    dev = hid.device()
-                    dev.open_path(path)
-                except (OSError, IOError, ValueError) as e:
-                    # The node, not just the product name: hidapi reports an unreadable device with
-                    # an empty name, so "cannot read what is typed on ?" named nothing anyone could
-                    # go and look at, and "open failed" is all the reason it ever gives.
-                    where = path.decode("utf-8", "replace") if isinstance(path, bytes) else str(path)
-                    self.log(f"hudfeed: cannot read what is typed on {product} ({where}): {e}")
-                    if sys.platform == "darwin":
-                        self.log("hudfeed: on macOS this means the app running Python (your terminal, or "
-                                 "Hammerspoon) lacks Input Monitoring (System Settings > Privacy & Security), "
+        return True
+
+    def find(self):
+        seen, out = set(), []
+        for info in self.hid.enumerate(self.vid, self.pid):
+            if self.name and self.name.lower() not in (info.get("product_string") or "").lower():
+                continue
+            path = info["path"]
+            if path in seen:  # macOS lists one entry per usage pair, all with the same path
+                continue
+            seen.add(path)
+            out.append((path, info.get("product_string") or "?"))
+        return out
+
+    def note(self, found):
+        return hid_scan_note(found, self.vid, self.pid, self.name)
+
+    def open(self, path, product):
+        try:
+            dev = self.hid.device()
+            dev.open_path(path)
+            return dev
+        except (OSError, IOError, ValueError) as e:
+            # The node, not just the product name: hidapi reports an unreadable device with an empty
+            # name, so "cannot read what is typed on ?" named nothing anyone could go and look at,
+            # and "open failed" is all the reason it ever gives.
+            where = self.where(path)
+            first = f"hudfeed: cannot read what is typed on {product} ({where}): {e}"
+            if sys.platform == "darwin":
+                raise OpenFailed(first, "hudfeed: on macOS this means the app running Python (your terminal, "
+                                 "or Hammerspoon) lacks Input Monitoring (System Settings > Privacy & Security), "
                                  "or Karabiner-Elements modifies this keyboard's events and has seized it "
                                  "(Karabiner > Devices: untick it)")
-                    else:
-                        self.log(f"hudfeed: hidapi opens it read-write, so read alone is not enough. "
-                                 f"`ls -l {where}` and `getfacl {where}` say who may; the uaccess tag in "
-                                 "contrib/udev/60-zmk-layer-hud.rules grants it to the active seat's user "
-                                 "and applies to nodes created after the rule, so replug the keyboard")
-                    self._open[path] = None  # do not retry every scan
-                    continue
-                self._open[path] = dev
-                self.log(f"hudfeed: reading what is typed on {product}")
-                threading.Thread(target=self._read_loop, args=(path, dev, product),
-                                 name="hid-read", daemon=True).start()
-            self._stop.wait(self.rescan)
+            raise OpenFailed(first, f"hudfeed: hidapi opens it read-write, so read alone is not enough. "
+                             f"`ls -l {where}` and `getfacl {where}` say who may; the uaccess tag in "
+                             "contrib/udev/60-zmk-layer-hud.rules grants it to the active seat's user "
+                             "and applies to nodes created after the rule, so replug the keyboard")
 
-    def _read_loop(self, path, dev, product):
-        import time
-        stream = Stream(self.emit, product, self.dead_key_ms, self.raw, self.log, self.altgr)
-        self._streams.add(stream)
-        try:
-            while not self._stop.is_set():
-                # Wake early while a dead key waits, so it is released on time when no letter follows.
-                report = dev.read(64, timeout_ms=self.dead_key_ms if stream.decoder.pending else 500)
-                now = int(time.monotonic() * 1000)
-                if not report:
-                    stream.idle(now)
-                    continue
-                parts = split_report(report, self.report_id)
-                if parts is None:
-                    continue  # a consumer or mouse report: not ours
-                stream.message({"kind": "keys", "mods": parts[0], "keys": list(parts[1])}, now)
-        except Exception as e:  # OSError on unplug, and anything else a read or a report throws
-            if not self._stop.is_set():
-                self.log(f"hudfeed: {product} gone ({type(e).__name__}: {e})")
-        finally:
-            try:
-                dev.close()
-            except Exception:
-                pass
-            self._open.pop(path, None)
-            self._streams.discard(stream)
-            stream.close()
+    def read(self, dev, timeout):
+        report = dev.read(64, timeout_ms=int(timeout * 1000))
+        parts = split_report(report, self.report_id) if report else None
+        # A consumer or mouse report is not ours: nothing, as far as the keys go.
+        return {"kind": "keys", "mods": parts[0], "keys": list(parts[1])} if parts else None
 
 
 # ---------- keymap (the config + its definitions, live reload) ----------

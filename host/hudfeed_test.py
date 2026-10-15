@@ -805,7 +805,7 @@ class PortTaken(unittest.TestCase):
         with mock.patch("fcntl.ioctl") as ioctl:
             self.read_once([b"\x00\x01\x02 not a frame"], reader)
         ioctl.assert_not_called()
-        self.assertEqual("no frames", reader._quiet.get("/dev/cu.test"))
+        self.assertEqual("no frames", reader._failed.get("/dev/cu.test"))
 
     def test_a_port_that_cannot_be_taken_is_still_read(self):
         said = []
@@ -852,6 +852,112 @@ class SerialScan(unittest.TestCase):
     def test_a_port_that_cannot_be_listed_is_said_once_per_change(self):
         said = self.scan(OSError("busy"), OSError("busy"), OSError("busy"))
         self.assertEqual(1, len([s for s in said if "cannot list serial ports" in s]), said)
+
+
+class ReaderLoop(unittest.TestCase):
+    """The one loop every keyboard connection is read by (hudfeed.Reader), on a transport that finds
+    what each scan says and reads what it is given."""
+
+    class Fake:
+        def __init__(self, reports):
+            self.reports, self.closed = list(reports), False
+
+        def close(self):
+            self.closed = True
+
+    def reader(self, rounds, refuse=(), reports=()):
+        import hudfeed
+        test = self
+
+        class Fake(hudfeed.Reader):
+            kind = "fake"
+
+            def find(self):
+                return [(p, "Board") for p in rounds[0]]
+
+            def note(self, found):
+                return None if found else "hudfeed: no fake keyboard"
+
+            def open(self, path, product):
+                test.opened.append(path)
+                if path in refuse:
+                    raise hudfeed.OpenFailed(f"hudfeed: cannot open {path}", "hudfeed: replug it")
+                return test.Fake(reports)
+
+            def read(self, conn, timeout):
+                return conn.reports.pop(0) if conn.reports else self.stop()
+        self.opened, self.said, self.out = [], [], []
+        r = Fake(self.out.append, log=self.said.append, dead_key_ms=20)
+
+        def next_round(_s):
+            rounds.pop(0)
+            if not rounds:
+                r._stop.set()
+        r._stop.wait = next_round
+        return r
+
+    def test_a_device_that_would_not_open_is_tried_again_once_it_comes_back(self):
+        r = self.reader([["a"], ["a"], [], ["a"]], refuse=("a",))
+        r._scan_loop()
+        self.assertEqual(["a", "a"], self.opened)                   # not every scan: after the replug
+        self.assertEqual(["hudfeed: cannot open a", "hudfeed: replug it", "hudfeed: no fake keyboard",
+                          "hudfeed: cannot open a", "hudfeed: replug it"], self.said)
+
+    def test_a_keyboard_is_read_said_and_its_keys_released_when_it_ends(self):
+        r = self.reader([["a"]], reports=[{"kind": "keys", "mods": 0x02, "keys": [0x04]}])
+        conn = self.Fake([{"kind": "keys", "mods": 0x02, "keys": [0x04]}])
+        with r._lock:
+            r._open["a"] = conn
+        r._read_loop("a", conn, "Board")
+        self.assertTrue(conn.closed)
+        self.assertNotIn("a", r._open)
+        said = [(m["type"], m["chars"] if m["type"] != "flagsChanged" else m["flags"]["shift"]) for m in self.out]
+        self.assertEqual([("flagsChanged", True), ("keyDown", "A"), ("flagsChanged", False), ("keyUp", "a")], said)
+
+    def test_a_listing_that_fails_is_said_and_the_scan_goes_on(self):
+        r = self.reader([["a"], ["a"]])
+        r.find = mock.Mock(side_effect=[OSError("bus"), []])
+        r._scan_loop()
+        self.assertEqual(["hudfeed: cannot list devices: OSError: bus", "hudfeed: no fake keyboard"], self.said)
+
+
+class HidKeys(unittest.TestCase):
+    """The HID keys reader (hidapi, macOS) with a hid module that answers as the test says."""
+
+    def module(self, opens=True):
+        dev = mock.Mock()
+        if not opens:
+            dev.open_path.side_effect = OSError("open failed")
+        dev.read.side_effect = [[1, 0, 0, 0x04, 0, 0, 0, 0, 0], []]
+        return types.SimpleNamespace(device=lambda: dev, __file__="/nowhere/hid.so",
+                                     enumerate=lambda vid, pid: [{"path": b"DevSrvsID:1", "product_string": "Diamond"},
+                                                                 {"path": b"DevSrvsID:1", "product_string": "Diamond"},
+                                                                 {"path": b"DevSrvsID:2", "product_string": "Other"}]), dev
+
+    def test_one_path_per_keyboard_its_name_matched(self):
+        import hudfeed
+        r = hudfeed.HidKeysReader(lambda m: None, name="diamond", log=lambda *a: None)
+        r.hid, _ = self.module()
+        self.assertEqual([(b"DevSrvsID:1", "Diamond")], r.find())
+
+    def test_a_report_is_what_is_typed(self):
+        import hudfeed
+        r = hudfeed.HidKeysReader(lambda m: None, log=lambda *a: None)
+        r.hid, dev = self.module()
+        conn = r.open(b"DevSrvsID:1", "Diamond")
+        self.assertEqual({"kind": "keys", "mods": 0, "keys": [0x04, 0, 0, 0, 0, 0]}, r.read(conn, 0.5))
+        self.assertIsNone(r.read(conn, 0.5))
+        dev.read.assert_called_with(64, timeout_ms=500)
+
+    def test_a_keyboard_it_may_not_open_says_where_and_why(self):
+        import hudfeed
+        r = hudfeed.HidKeysReader(lambda m: None, log=lambda *a: None)
+        r.hid, _ = self.module(opens=False)
+        with mock.patch.object(hudfeed.sys, "platform", "darwin"):
+            with self.assertRaises(hudfeed.OpenFailed) as e:
+                r.open(b"DevSrvsID:1", "Diamond")
+        self.assertIn("(DevSrvsID:1)", e.exception.lines[0])
+        self.assertIn("Input Monitoring", e.exception.lines[1])
 
 
 class HidrawReading(unittest.TestCase):
