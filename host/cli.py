@@ -598,15 +598,12 @@ def hypr_surfaces():
 
 
 def cmd_status(args):
-    host_dir = re.escape(os.path.join(ROOT, "host"))
-    pids = panel_pids()
-    st = panelstate.read(STATE)
-    said = st if st and st["pid"] in pids else None
-    print("panel: " + ("stopped" if not pids else
-                       "running, shown" if said and said["shown"] else
-                       "running, hidden (zmk-layer-hud show)" if said else "running"))
-    print("feed:  " + ("running" if pgrep(host_dir + r"/hudfeed\.py")
-                       else "stopped (the macOS panel runs it in-process)"))
+    h = hud_now()
+    where = "" if h["ours"] or not h["running"] else f" (from {h['where']})"
+    print("panel: " + ("stopped" if not h["running"] else
+                       "running, shown" if h["said"] and h["shown"] else
+                       "running, hidden (zmk-layer-hud show)" if h["said"] else "running") + where)
+    print("feed:  " + h["feed"])
     # What it last managed to open says more than whether it is alive: the layer signal and the
     # typed-keys strip are separate grants and either can be the one that is missing.
     text = feed_log_text()
