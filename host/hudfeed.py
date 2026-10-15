@@ -516,7 +516,7 @@ class BleReader:
                 if note != said:
                     said = note
                     self.log(f"hudfeed: {note}")
-                await asyncio.sleep(wait)
+                await self._pause(wait)
                 wait = min(wait * 2, BLE_RETRY_MAX_S)
                 continue
 
@@ -529,8 +529,13 @@ class BleReader:
             if failed != said:
                 said = failed
                 self.log(f"hudfeed: {failed}")
-            await asyncio.sleep(wait)
+            await self._pause(wait)
             wait = min(wait * 2, BLE_RETRY_MAX_S)
+
+    async def _pause(self, seconds):
+        """A backoff that `stop` ends at once: up to a minute between scans is a long time for a
+        feed asked to stop to go on running."""
+        await asyncio.to_thread(self._stop.wait, seconds)
 
     async def _session(self, BleakClient, device):
         """Reads one connection until it drops. -> None once it has been read, else why not."""
@@ -551,9 +556,12 @@ class BleReader:
                 self.log(f"hudfeed: reading {name} over BLE")
                 self.emit({"kind": "device", "name": name})
                 while not gone.is_set() and not self._stop.is_set():
-                    # bleak has no idle callback, so the dead-key window is closed on a timer.
+                    # bleak has no idle callback, so a dead key's window is closed on a timer -- woken
+                    # that early only while one waits, as the wired readers' reads are; otherwise
+                    # twice a second, to see a stop.
+                    timeout = self.dead_key_ms / 1000 if stream.decoder.pending else 0.5
                     try:
-                        await asyncio.wait_for(gone.wait(), timeout=self.dead_key_ms / 1000)
+                        await asyncio.wait_for(gone.wait(), timeout=timeout)
                     except asyncio.TimeoutError:
                         stream.idle(int(time.monotonic() * 1000))
                 if gone.is_set() and not self._stop.is_set():

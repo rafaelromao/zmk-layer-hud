@@ -955,6 +955,27 @@ class BleReading(unittest.TestCase):
         self.assertIn("hudfeed: reading Diamond over BLE", self.said)
         self.assertTrue(any("Diamond over BLE gone" in s for s in self.said), self.said)
 
+    def test_a_connection_with_nothing_to_wait_for_is_not_woken_every_few_milliseconds(self):
+        import hudfeed
+        r = self.reader()
+        device = types.SimpleNamespace(name="Diamond", address="AA")
+        with mock.patch.object(hudfeed.Stream, "idle") as idle:
+            asyncio.run(r._session(self.client(0.4), device))
+        self.assertLessEqual(idle.call_count, 1)          # not once every dead_key_ms (60) for 400 ms
+
+    def test_stop_ends_a_backoff_at_once(self):
+        import time
+        r = self.reader(rescan=3.0)
+
+        async def nothing():
+            return None
+        r._find = nothing
+        threading.Timer(0.1, r.stop).start()
+        started = time.monotonic()
+        with mock.patch.dict(sys.modules, {"bleak": types.SimpleNamespace(BleakClient=None)}):
+            asyncio.run(r._loop())
+        self.assertLess(time.monotonic() - started, 1.0)       # not the 3 s backoff
+
 
 class HidKeys(unittest.TestCase):
     """The HID keys reader (hidapi, macOS) with a hid module that answers as the test says."""
