@@ -519,7 +519,10 @@ def main():
         if want != shown[0]:
             shown[0] = want
             if not want:
-                typing.release()        # a hidden HUD holds no key down
+                # A hidden HUD holds no key down: the page lets go too, or the next of its heartbeats
+                # would press again what it holds -- a locked modifier, system-wide, unseen.
+                run_js("window.hud && hud.touch && hud.touch.releaseAll()")
+                typing.release()
             for window, css in ((hud, hud_css), (keys, keys_css)):
                 if want:
                     css.remove_style_sheet(HIDE_SHEET)
@@ -542,8 +545,9 @@ def main():
             kind = msg.get("kind")
         except (ValueError, AttributeError):
             return
-        if kind == "hid":       # the touch keyboard: keys to press (docs/touch.md)
-            typing.hid(msg)
+        if kind == "hid":       # the touch keyboard: keys to press (docs/touch.md); none while hidden
+            if shown[0]:
+                typing.hid(msg)
         elif kind == "attach":  # the banner's attach/detach: docked as a touch keyboard, or floating
             if isinstance(msg.get("on"), bool):
                 set_dock(msg["on"])

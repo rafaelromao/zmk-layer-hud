@@ -339,6 +339,27 @@ function page(opts) {
   check(right() <= 400, `the column shown, no key reaches under it: ${right()}`);
 })();
 
+(function aDeadKeyIsForgottenWhenTheKeyboardLetsGo() {
+  // A text sink (a tablet's keyboard): ' is a dead key on US-International, typed alone when its
+  // time is up -- unless the keyboard let go first (a field left), or it would land in the next one.
+  const msg = JSON.parse(JSON.stringify(MSG));
+  msg.actions.table[0] = kp(0x34);
+  const p = loadPage();
+  p.hud.load(msg);
+  const sent = [];
+  p.hud.setTouch({ output: "text", repeat: "synthetic", send: (m) => sent.push(m) });
+  const tap = () => { p.hud.state.keyEls[0].fire("pointerdown", { pointerId: 1 }); p.clock.advance(30); p.hud.state.keyEls[0].fire("pointerup", { pointerId: 1 }); };
+  const typed = () => sent.filter((m) => m.kind === "ops").flatMap((m) => m.ops);
+  tap();
+  p.clock.advance(1000);
+  check(typed().some((o) => o.text === "'"), `alone, a dead key is typed when its time is up: ${JSON.stringify(typed())}`);
+  sent.length = 0;
+  tap();
+  p.hud.touch.releaseAll();
+  p.clock.advance(1000);
+  check(typed().length === 0, `let go first, nothing is typed later: ${JSON.stringify(typed())}`);
+})();
+
 (function aTouchKeyboardWaitsForNoKeyboard() {
   const p = page();
   check(!/waiting for the keyboard/.test(p.document.getElementById("feed").textContent),

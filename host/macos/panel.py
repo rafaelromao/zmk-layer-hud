@@ -219,8 +219,8 @@ class Bridge(NSObject):
         if kind == "hid":           # the touch keyboard: keys to press (docs/touch.md)
             # From the page itself only: its main frame, loaded from disk.
             frame = message.frameInfo()
-            if frame.isMainFrame() and str(frame.securityOrigin().protocol()) == "file":
-                Host.instance.typing.hid(msg)
+            if frame.isMainFrame() and str(frame.securityOrigin().protocol()) == "file" and Host.instance.shown:
+                Host.instance.typing.hid(msg)       # none while hidden
         elif kind == "size":
             Host.instance.resize(msg.get("width"), msg.get("height"))
         elif kind == "attach":      # the banner's attach/detach: docked as a touch keyboard, or floating
@@ -604,7 +604,11 @@ class Host:
         if shown != self.shown:
             self.shown = shown
             if not shown:
-                self.typing.release()       # a hidden HUD holds no key down
+                # A hidden HUD holds no key down: the page lets go too, or the next of its heartbeats
+                # would press again what it holds -- a locked modifier, system-wide, unseen.
+                if self.ready:
+                    self.web.evaluateJavaScript_completionHandler_("window.hud && hud.touch && hud.touch.releaseAll()", None)
+                self.typing.release()
             self.panel.setAlphaValue_(1.0 if shown else 0.0)
             if self.ready:          # otherwise page_ready puts the style in, with the page
                 self.web.evaluateJavaScript_completionHandler_(SHOW_JS if shown else HIDE_JS, None)
