@@ -817,6 +817,28 @@ class PortTaken(unittest.TestCase):
 
 
 @unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
+class HidrawReading(unittest.TestCase):
+    """The hidraw reader's loop on a pipe: what /dev/hidrawN is to it, one report per read."""
+
+    def setUp(self):
+        import hudfeed
+        self.out, self.said = [], []
+        self.reader = hudfeed.HidrawReader(self.out.append, log=self.said.append, dead_key_ms=20)
+        self.rfd, self.wfd = os.pipe()
+        self.addCleanup(lambda: [os.close(fd) for fd in (self.wfd,) if fd is not None])
+
+    def test_an_error_reading_ends_the_connection_and_is_said(self):
+        # OSError is the unplug; anything else the read raises must end the connection the same way
+        # -- said, the node closed and forgotten so a replug opens it -- not as a thread's traceback.
+        import hudfeed
+        os.write(self.wfd, bytes([1, 0x02, 0, 0x04, 0, 0, 0, 0, 0]))
+        self.reader._open["/dev/hidraw9"] = self.rfd
+        with mock.patch.object(hudfeed, "split_report", side_effect=ValueError("a report it cannot take")):
+            self.reader._read_loop("/dev/hidraw9", self.rfd, "Diamond")
+        self.assertTrue(any("Diamond gone" in s for s in self.said), self.said)
+        self.assertNotIn("/dev/hidraw9", self.reader._open)
+
+
 class ReaderSettings(unittest.TestCase):
     """Which keyboard to read, on which port, and with which timings is the config's own business.
     A keymap that does not convert -- a drawer file that moved, a config with no `keymap:` yet --

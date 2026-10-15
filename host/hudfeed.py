@@ -605,9 +605,9 @@ class HidrawReader:
                 if parts is None:
                     continue  # a consumer or mouse report: not ours
                 stream.message({"kind": "keys", "mods": parts[0], "keys": list(parts[1])}, now)
-        except OSError as e:
+        except Exception as e:  # OSError on unplug, and anything else a read or a report throws
             if not self._stop.is_set():
-                self.log(f"hudfeed: {product} gone ({e})")
+                self.log(f"hudfeed: {product} gone ({type(e).__name__}: {e})")
         finally:
             try:
                 os.close(fd)
@@ -772,9 +772,9 @@ class HidKeysReader:
                 if parts is None:
                     continue  # a consumer or mouse report: not ours
                 stream.message({"kind": "keys", "mods": parts[0], "keys": list(parts[1])}, now)
-        except (OSError, IOError, ValueError) as e:
+        except Exception as e:  # OSError on unplug, and anything else a read or a report throws
             if not self._stop.is_set():
-                self.log(f"hudfeed: {product} gone ({e})")
+                self.log(f"hudfeed: {product} gone ({type(e).__name__}: {e})")
         finally:
             try:
                 dev.close()
