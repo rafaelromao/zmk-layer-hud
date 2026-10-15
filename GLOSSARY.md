@@ -41,6 +41,31 @@ The typed-keys strip below the board: what was typed, as chips.
 **Strip label**:
 The board's name for a key the feed cannot name, or a combo's legend, shown on the strip.
 
+### Keys
+
+**Named key**:
+A key that types no character of its own and is known by its name: Return, Escape, F5, Cancel.
+_Avoid_: special key, control key
+
+**Key name**:
+The feed's word for a named key. `delete` is Backspace, the key that deletes backwards;
+`forwarddelete` is the one that deletes forwards.
+_Avoid_: key code, keysym
+
+**Glyph**:
+The symbol the HUD draws for a named key or a modifier: ↵ for Return, ⌘ for Command.
+_Avoid_: icon, symbol
+
+**Spelling**:
+One way a drawing writes a named key's legend, as a glyph or a word: ↵, `ret`, `Enter`. A drawing's
+`Delete` is the key that deletes forwards.
+_Avoid_: alias
+
+**Key vocabulary**:
+Every named key and modifier with its key name, glyph and spellings, and the characters each key
+types: one statement of it, which the feed, the pages and the tools all read.
+_Avoid_: key table, key map
+
 ### Layers
 
 **Drawer layer**:
@@ -51,6 +76,18 @@ _Avoid_: page layer
 **ZMK layer**:
 A layer as the firmware numbers it, reported by its id.
 _Avoid_: firmware layer, layer id (when the layer itself is meant)
+
+### Panels
+
+**Panel**:
+The native window that hosts the HUD page on a desktop: floating where it was put, or docked along
+the bottom of a screen as a touch keyboard.
+_Avoid_: overlay window, host window
+
+**Page message**:
+What the HUD page tells its panel: that it was hidden, how big it is, where its controls are, its
+stats, that it wants to be docked or floating, the keys its touch keyboard pressed.
+_Avoid_: bridge message, script message
 
 ### Keymaps
 
