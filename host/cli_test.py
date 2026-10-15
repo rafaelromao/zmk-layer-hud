@@ -704,6 +704,30 @@ def desktop_exec(text):
     return [a.replace("%%", "%") for a in shlex.split(value)]
 
 
+class TypingLine(unittest.TestCase):
+    """`typing status` takes the running HUD's word only when a HUD panel stands behind panel.json."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        p = mock.patch.object(cli, "STATE", self.tmp.name)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_a_pid_handed_out_again_is_no_hud_to_take_the_word_of(self):
+        # panel.json left by a HUD that died, its pid now this test's process: alive, and no panel.
+        cli.panelstate.write(self.tmp.name, True, extra={"typing": "ok"})
+        with mock.patch.object(cli, "processes", lambda pattern: {}), \
+                mock.patch.object(cli.platform, "system", lambda: "Darwin"):
+            self.assertNotEqual("can type", cli.typing_line())
+
+    def test_a_running_hud_is_taken_at_its_word(self):
+        cli.panelstate.write(self.tmp.name, True, extra={"typing": "ok"})
+        here = {os.getpid(): f"python3 {ROOT}/host/macos/panel.py"}
+        with mock.patch.object(cli, "processes", lambda pattern: here if "panel" in pattern else {}):
+            self.assertEqual("can type", cli.typing_line())
+
+
 class Doctor(unittest.TestCase):
     """What the doctor says of secure input: the feed's own report of its probes, one row for what
     sees a secret being typed and one per probe that should and does not."""

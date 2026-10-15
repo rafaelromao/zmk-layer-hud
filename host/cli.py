@@ -361,10 +361,10 @@ def uinput_probe():
 
 def typing_line():
     """One line on whether the touch keyboard can type: the running panel's word when there is
-    one, else what this machine allows."""
-    st = panelstate.read(STATE)
-    if st and st.get("typing"):
-        return TYPING_SAID[st["typing"]] + ("" if st["typing"] in ("ok", "off") else " -- zmk-layer-hud typing setup")
+    one (panelstate.hud: a HUD panel stands behind it), else what this machine allows."""
+    typing = hud_now()["typing"]
+    if typing:
+        return TYPING_SAID[typing] + ("" if typing in ("ok", "off") else " -- zmk-layer-hud typing setup")
     if platform.system() == "Linux":
         probe = uinput_probe()
         return {"ok": "this user may make a virtual keyboard (/dev/uinput)",
@@ -396,13 +396,13 @@ def cmd_typing(args):
     if platform.system() == "Darwin":
         print("==> the touch keyboard types by posting key events, which macOS asks you to allow")
         print("    System Settings > Privacy & Security > Accessibility: ZMK Layer HUD (or the terminal it runs from)")
-        pids = panel_pids()
-        st = panelstate.read(STATE)
-        if not (st and st["pid"] in pids):
-            print("    the HUD is not running: `zmk-layer-hud start`, and it asks when it first types")
+        h = hud_now()
+        if not (h["said"] and h["ours"]):
+            print(f"    {another_copy(h)}" if h["said"] else
+                  "    the HUD is not running: `zmk-layer-hud start`, and it asks when it first types")
             return 0
         panelstate.request(STATE, "typing", "request")
-        os.kill(st["pid"], panelstate.SIGNAL)
+        os.kill(h["pid"], panelstate.SIGNAL)
         print("    asked the running HUD to ask macOS: allow it there, and it types within seconds")
         return 0
     raise Fail("the touch keyboard types on macOS and Linux only")
