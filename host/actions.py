@@ -633,7 +633,7 @@ def _combos(keymap, compiler, legends, drawn, zmk_layers, pos_to_idx, combo_term
 def from_message(m):
     """The actions of a keymap message that has none -- a fixture made before them -- built from its
     legends, as build_message would for a drawing with no keymap behind it."""
-    return build(m["layers"], m["zmk_layers"], m["positions"], m["base"], m.get("extras") or {}, None,
+    return build(m["layers"], m["zmk_layers"], m["positions"], KeymapMessage(m).base, m.get("extras") or {}, None,
                  m.get("combos") or [], m.get("combo_term", 50), "sticky", bool(m.get("altgr")))
 
 

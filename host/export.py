@@ -67,7 +67,7 @@ def levels(session, message, mode="session"):
                 if idx is not None:
                     total[idx] = total.get(idx, 0) + c
         steps = _log_steps(total)
-        return {message["base"]: steps} if steps else {}
+        return {msg.base: steps} if steps else {}
     for layer in layers:
         if mode == "session":
             counts = {}

@@ -49,12 +49,12 @@ KEY_GAP_MS = 170
 # ---------- the keymap message ----------
 
 class Keymap(KeymapMessage):
-    """The keymap message as the oracle reads it (host/keymap_message.py), and what the oracle states
-    for itself: a layer's own stack, which layers are for typing, and below, how a legend is typed."""
+    """The keymap message as every Python reader reads it (host/keymap_message.py), and what the
+    oracle states for itself: a layer's own stack, which layers are for typing, and below, how a
+    legend is typed."""
 
     def __init__(self, data):
         super().__init__(data)
-        self.base = data.get("base") or data["layer_order"][0]
         self.sticky = set((data.get("extras") or {}).get("sticky") or [])
 
     def zmk(self, idx):

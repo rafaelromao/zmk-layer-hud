@@ -67,6 +67,16 @@ class Read(unittest.TestCase):
         self.assertEqual("base", KeymapMessage(dict(DATA, base=None)).base)            # ZMK layer 0's
         self.assertEqual("base", KeymapMessage(dict(DATA, base=None, zmk_layers={})).base)   # the first
 
+    def test_every_reader_takes_the_same_base(self):
+        # A message with no base said: ZMK layer 0's drawer layer, as build_message picks it, for
+        # the oracle and the export alike -- not the first drawn layer, not a KeyError.
+        import export
+        import ways
+        data = dict(DATA, base=None, layer_order=["sym", "base", "nav"], layout={"keys": [{}] * 3})
+        self.assertEqual("base", ways.Keymap(data).base)
+        session = {"presses": {"base": {"10": 4}}}
+        self.assertEqual(["base"], list(export.levels(session, data, "physical")))
+
     def test_the_diamond(self):
         with open(os.path.join(FIXTURES, "diamond.json"), encoding="utf-8") as f:
             data = json.load(f)
