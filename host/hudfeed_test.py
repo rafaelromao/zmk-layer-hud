@@ -816,7 +816,6 @@ class PortTaken(unittest.TestCase):
         self.assertTrue(any("reading Test Board" in s for s in said), said)
 
 
-@unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
 class SerialScan(unittest.TestCase):
     """The serial reader's scan with a pyserial that lists what each round says."""
 
@@ -877,6 +876,7 @@ class HidrawReading(unittest.TestCase):
         self.assertNotIn("/dev/hidraw9", self.reader._open)
 
 
+@unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
 class ReaderSettings(unittest.TestCase):
     """Which keyboard to read, on which port, and with which timings is the config's own business.
     A keymap that does not convert -- a drawer file that moved, a config with no `keymap:` yet --
