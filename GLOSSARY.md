@@ -76,3 +76,31 @@ _Avoid_: page layer
 **ZMK layer**:
 A layer as the firmware numbers it, reported by its id.
 _Avoid_: firmware layer, layer id (when the layer itself is meant)
+
+### Panels
+
+**Panel**:
+The native window that hosts the HUD page on a desktop: floating where it was put, or docked along
+the bottom of a screen as a touch keyboard.
+_Avoid_: overlay window, host window
+
+**Page message**:
+What the HUD page tells its panel: that it was hidden, how big it is, where its controls are, its
+stats, that it wants to be docked or floating, the keys its touch keyboard pressed.
+_Avoid_: bridge message, script message
+
+### Keymaps
+
+**Config**:
+The user's YAML file: which keyboard, how it is drawn, and the HUD's settings for it.
+_Avoid_: settings file
+
+**Definitions**:
+What `import` and `sync` take from the keyboard's repo and its drawing, kept beside the config, so
+the HUD runs with neither keymap-drawer nor the repo at hand.
+_Avoid_: cache, imported file
+
+**Keymap message**:
+Everything the page needs to draw a keyboard and type on it: its layers, combos and layout, made
+from the config and its definitions.
+_Avoid_: keymap JSON
