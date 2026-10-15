@@ -385,7 +385,9 @@ class Legends:
         typing = layer in self.typing if typing is None else typing
         kind = key.get("type") or "key"
         # The key holding the layer falls through to what holds it; a "held alternate" one types its
-        # own legend on the layer (the Diamond's nav thumb is ⎀ there).
+        # own legend on the layer (the Diamond's nav thumb is ⎀ there). The other readers of the
+        # message (keymap_message.resolve, the page) draw a held key as its layer's own: that is what
+        # it shows, while here it is what it types, which is the key holding the layer.
         if kind == "trans" or kind == "held" or (kind.startswith("held") and not key.get("tap")):
             return {"op": "trans"}
         # A ghost key is drawn faint, not absent: the Diamond's caps-word layer draws its capitals so.
