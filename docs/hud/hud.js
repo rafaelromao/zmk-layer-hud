@@ -1939,6 +1939,11 @@
       if (!state.data || state.secure) return;
       unpick();                        // a key down: the board follows the keyboard again
       const idx = idxAt(pos);
+      // A key already down cannot go down again before it comes up: this is the same press, told
+      // twice. A keyboard plugged in by USB and paired by BLE at once is read on both, and every
+      // position arrives once on each. Taken as a second press, the copy counted the key twice and
+      // looked like a later key held -- which took a held chord's modifiers (modSourceOf) from it.
+      if (state.held.has(idx)) return;
       const now = Date.now();
       // A key going down is a keystroke of its own: a layer change held back for the previous
       // one's flash is the keyboard's state now, and this key resolves on it.

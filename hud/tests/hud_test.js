@@ -367,6 +367,33 @@ function checkComboHold(data) {
     if (chips) fails.push(`q chord held alone ${how}: the strip should say nothing; says ${JSON.stringify(chips)}`);
   }
 
+  // Plugged in by USB and paired by BLE, the Diamond is read on both: every position comes twice.
+  // The order is a recording of the q chord held: the copies must not look like n and s pressed
+  // again, which would take the modifiers back from the chord, nor count the keys twice.
+  {
+    const page = fresh();
+    const before = page.hud.stats.local();
+    const p7 = posOf(7), p8 = posOf(8);
+    page.hud.pressAt(p7); page.hud.pressAt(p8); page.hud.pressAt(p7); page.hud.pressAt(p8);
+    page.clock.advance(200);
+    flags(page, { ctrl: true }); flags(page, { ctrl: true, alt: true });
+    if (pills(page).join() !== "⌃⌥") fails.push(`q chord held, told twice: the pill should read ⌃⌥; reads [${pills(page)}]`);
+    if (ringed(page).join() !== "7,8") fails.push(`q chord held, told twice: keys 7 and 8 should ring; ringed [${ringed(page)}]`);
+    page.hud.releaseAt(p8); flags(page, { alt: true }); page.hud.releaseAt(p7); flags(page, {});
+    page.hud.releaseAt(p8); page.hud.releaseAt(p7);
+    page.clock.advance(6000);
+    const after = page.hud.stats.local();
+    const grew = JSON.stringify(after) !== JSON.stringify(before);
+    const twice = loadPage();                           // the same chord told once, for the counts
+    twice.hud.load(data); twice.hud.setLayers([]); twice.clock.advance(1);
+    const once0 = twice.hud.stats.local();
+    twice.hud.pressAt(p7); twice.hud.pressAt(p8); twice.clock.advance(200);
+    twice.hud.releaseAt(p8); twice.hud.releaseAt(p7); twice.clock.advance(6000);
+    const once = twice.hud.stats.local();
+    if (!grew || JSON.stringify(after) !== JSON.stringify(once) || JSON.stringify(before) !== JSON.stringify(once0))
+      fails.push(`q chord told twice should count as told once: ${JSON.stringify(after)} vs ${JSON.stringify(once)}`);
+  }
+
   let page = fresh();                                  // tapped: still q
   press(page, [7, 8]);
   release(page, [7, 8]);
