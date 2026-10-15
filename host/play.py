@@ -222,14 +222,8 @@ def altgr_spelled(evs):
 
 def repeats(km, idx, live, evs):
     """Whether the repeat key types these reports again with these layers up: it is the repeat key
-    on the layer that is up (or seen through it), and what it repeats is a single plain keycode."""
-    top = None
-    for lid in sorted(live, reverse=True):
-        z = (km.data.get("zmk_layers") or {}).get(str(lid))
-        if z and z.get("drawer"):
-            top = z["drawer"]
-            break
-    _, key = km.resolve(idx, km.layer_stack(top or km.base))
+    on the layers that are up (or seen through them), and what it repeats is a single plain keycode."""
+    _, key = km.resolve(idx, km.stack(sorted(live, reverse=True)))
     return bool(key and key.get("shifted") == "repeat" and len(evs) == 1 and not evs[0].get("composed"))
 
 

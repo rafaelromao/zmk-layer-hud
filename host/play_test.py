@@ -200,6 +200,15 @@ class OneShots(unittest.TestCase):
         self.assertEqual([[26], [33], [30]], [s["strike"] for s in c.strokes])
         self.assertEqual([["numbers"], []], self.layer_names(c))
 
+    def test_the_repeat_key_is_found_through_every_layer_up(self):
+        # sym on top of nav, transparent there: the key is nav's repeat key, as the keyboard and the
+        # page resolve it through every live layer, not the top one and the base alone.
+        data = {"base": "base", "layer_order": ["base", "nav", "sym"],
+                "zmk_layers": {"0": {"drawer": "base"}, "1": {"drawer": "nav"}, "2": {"drawer": "sym"}},
+                "layers": {"base": [{"tap": "a"}], "nav": [{"tap": "↻", "shifted": "repeat"}], "sym": [{"type": "trans"}]}}
+        ev = [{"chars": "a", "name": "a"}]
+        self.assertTrue(play.repeats(ways.Keymap(data), 0, [1, 2], ev))
+
     def test_an_accent_is_never_repeated(self):
         self.assertEqual([[18], [18]], [s["strike"] for s in self.romak("éé", repeat=True).strokes])
 
