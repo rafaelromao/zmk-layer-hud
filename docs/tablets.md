@@ -32,9 +32,10 @@ useless. On a network you do not trust, serve it on your Tailscale address inste
 ## Android
 
 **Download.** Each [release](https://github.com/rafaelromao/zmk-layer-hud/releases) has the app,
-`zmk-layer-hud-vX.Y.Z-android.apk`: a debug build, for sideloading. Each is signed with its own
-build's key, so Android may refuse to install one over another: uninstall the older first, then
-import the keymap again. Or build it yourself:
+`zmk-layer-hud-vX.Y.Z-android.apk`, for sideloading. Every release is signed with the project's one
+release key, so each installs over the one before and keeps your keymap and settings. One you build
+yourself is signed with your own debug key: Android will not install it over a release, or a release
+over it, without uninstalling first. Or build it yourself:
 
 **Build.** You need the Android SDK (Android Studio installs it; or the command-line tools with
 `platforms;android-36` and `build-tools`), a JDK 17 or newer, and Gradle 9.7 or newer. Point the
