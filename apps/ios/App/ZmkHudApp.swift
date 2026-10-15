@@ -77,7 +77,7 @@ enum Keymaps {
     }
 
     static func current() -> String {
-        guard let url = container?.appendingPathComponent(KeymapFile.name), let data = try? Data(contentsOf: url),
+        guard let url = container?.appendingPathComponent(KeymapFile.name), let data = try? KeymapFile.read(url),
               case let .ok(title, _) = KeymapFile.check(data) else { return "No keymap yet: import one." }
         return "Keymap: \(title)"
     }
@@ -86,7 +86,7 @@ enum Keymaps {
     static func importFile(_ url: URL) -> String {
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        guard let data = try? Data(contentsOf: url) else { return "That file could not be read." }
+        guard let data = try? KeymapFile.read(url) else { return "That file could not be read." }
         return keep(data)
     }
 

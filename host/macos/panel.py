@@ -331,7 +331,7 @@ class Host:
             panelcore.Window(show=self.show_window, front=lambda: self.panel.orderFrontRegardless(),
                              dock=self.dock_window, resize=self.resize, no_drag=self.set_no_drag,
                              open=self.open_url, tell=self.deliver, typing_access=self.request_typing,
-                             close=self.close),
+                             close=self.close, let_go=self.let_go),
             RUN, self.typing, self.settings, said=self.said, shown=not HIDDEN, log=log)
 
         frame = initial_frame()
@@ -559,6 +559,10 @@ class Host:
             handle["live"] = False
         return cgevent.CGBackend(schedule=schedule, cancel=cancel,
                                  delay=float(NSEvent.keyRepeatDelay()), interval=float(NSEvent.keyRepeatInterval()))
+
+    def let_go(self):
+        if self.ready:
+            self.web.evaluateJavaScript_completionHandler_("window.hud && hud.touch && hud.touch.releaseAll()", None)
 
     def show_window(self, shown):
         """Drawn, or drawn as nothing (HIDE_JS); the page goes on as before either way."""

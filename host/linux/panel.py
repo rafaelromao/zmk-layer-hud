@@ -621,7 +621,8 @@ def main():
     panel = panelcore.Panel(
         panelcore.Window(show=show_window, front=to_front, dock=dock_window, resize=follow_page,
                          no_drag=lambda rects: no_drag.__setitem__(slice(None), rects), open=open_url,
-                         tell=tell_page, typing_access=typing_access, close=lambda: quit_host()),
+                         tell=tell_page, typing_access=typing_access, close=lambda: quit_host(),
+                         let_go=lambda: run_js("window.hud && hud.touch && hud.touch.releaseAll()")),
         RUN, typing, lambda: settings, shown=not HIDDEN,
         log=lambda msg: print(f"panel: {msg}", file=sys.stderr, flush=True))
 

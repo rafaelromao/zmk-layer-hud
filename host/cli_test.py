@@ -244,7 +244,7 @@ FAKE_PANEL = textwrap.dedent('''
 
     nothing = lambda *a: None
     window = panelcore.Window(show=nothing, front=nothing, resize=nothing, no_drag=nothing, open=nothing,
-                              tell=nothing, typing_access=nothing, close=nothing,
+                              tell=nothing, typing_access=nothing, close=nothing, let_go=nothing,
                               dock=lambda on: {"kind": "dock", "on": True} if on else None)
     panel = panelcore.Panel(window, d, Typing(), lambda: SETTINGS, log=nothing)
 
