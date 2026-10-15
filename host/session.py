@@ -36,6 +36,8 @@ import tempfile
 import threading
 import time
 
+import panelstate  # noqa: E402  (host/panelstate.py: where $STATE is)
+
 VERSION = 1
 # What the keys glow with: what was just typed; the session's presses on the layer on screen;
 # its presses on every layer, by where the fingers went; the time each key takes; nothing.
@@ -78,9 +80,7 @@ def _warn(msg):
 
 
 def default_dir():
-    state = os.environ.get("ZMKHUD_STATE") or os.path.join(
-        os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "zmk-layer-hud")
-    return os.path.join(state, "sessions")
+    return os.path.join(panelstate.default_dir(), "sessions")
 
 
 def check_name(name):

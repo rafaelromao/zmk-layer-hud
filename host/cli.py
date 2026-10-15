@@ -35,8 +35,7 @@ VENV_PYTHON = os.path.join(ROOT, ".venv", "bin", "python3")
 
 # Logs live outside the tree because `update` replaces the tree wholesale, and the directory the
 # logs are in cannot be the directory being swapped. The host scripts read the same variable.
-STATE = os.environ.get("ZMKHUD_STATE") or os.path.join(
-    os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "zmk-layer-hud")
+STATE = panelstate.default_dir()
 
 CONFIG_DIR = os.path.expanduser("~/.config/zmk-layer-hud")
 CONFIG = os.path.join(CONFIG_DIR, "config.yaml")
