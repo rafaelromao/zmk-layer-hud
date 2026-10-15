@@ -42,7 +42,6 @@ except ImportError:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import panelstate  # noqa: E402  (host/panelstate.py)
-import remote  # noqa: E402  (host/remote.py)
 import shortcuts  # noqa: E402  (host/shortcuts.py)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -224,7 +223,10 @@ class Icon(NSObject):
     def refresh_(self, timer):
         if timer is not None:
             self.reshortcut()
-        st, choice = panelstate.read(RUN), panelstate.wpm_choice(RUN)
+        # The HUD as the command line reads it (panelstate.hud): a panel.json whose pid is no HUD
+        # panel's -- one handed out again since -- is no running HUD here either.
+        h = panelstate.hud(RUN, ROOT, procs=self.processes)
+        st, choice = (h if h["said"] else None), h["wpm_choice"]
         self.st, self.choice = st, choice   # the menu's numbers, kept even when the button stays as it is
         n = panelstate.wpm_shown(st, choice)
         look = (st is not None, bool(st and st["shown"]), n)
@@ -242,6 +244,18 @@ class Icon(NSObject):
         button.setToolTip_("zmk-layer-hud: " + ("click to hide it (it keeps counting)" if st and st["shown"] else
                                                 "hidden and counting: click to show it" if st else
                                                 "not running: click to start it"))
+
+    @objc.python_method
+    def processes(self, pattern):
+        """panelstate.processes, asked again every few seconds rather than at every refresh: the
+        icon refreshes twice a second, and a panel's process does not come and go that often."""
+        import time
+        now = time.monotonic()
+        cache = getattr(self, "_procs", {})
+        if pattern not in cache or now - cache[pattern][0] > 3.0:
+            cache[pattern] = (now, panelstate.processes(pattern))
+            self._procs = cache
+        return cache[pattern][1]
 
     @objc.python_method
     def run(self, *argv):
@@ -278,7 +292,7 @@ class Icon(NSObject):
              ("Float HUD" if self.st.get("dock") else "Dock HUD to Type on It", "dock", "dock")] + \
             ([("Allow Typing…", "typing setup", None)] if self.st.get("typing") == "denied" else []) + \
             [  # A tablet's browser as the touch keyboard (host/remote.py).
-                ("Stop Remote Typing", "remote off", None) if remote.live_now(RUN).get("serving") else
+                ("Stop Remote Typing", "remote off", None) if (self.st.get("remote") or {}).get("serving") else
                 ("Pair a Tablet…", "pair", None)] + \
             [("Quit HUD", "stop", "power")]
         for title, verb, shortcut in items:
