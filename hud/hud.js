@@ -106,6 +106,7 @@
     ledgerDue: 0,
     comboEntry: null,         // the ledger's entry for the combo whose pill is up
     comboHeld: null,          // the combo last fired, until one of its keys comes up (drawCombo)
+    heldPills: [],            // the pills reading a hold, each until one of its chord's keys comes up
     keysSeen: false,          // what the keyboard types reaches this page (a combo's pill waits for it)
     typedAt: 0,               // when it last did
     typed: null,              // and what: its token, for a chord whose positions came after it
@@ -447,6 +448,10 @@
       state.held.clear();
       for (const e of state.keyEls) if (e) e.classList.remove("pressed", "combo", "combo-key");
       if (state.comboShown) { state.comboShown.remove(); state.comboShown = null; }
+      // A chord waiting to be told tapped or held would draw its pill once told (drawCombo).
+      if (state.comboHeld) { clearTimeout(state.comboHeld.timer); state.comboHeld = null; }
+      for (const h of state.heldPills) h.pill.remove();
+      state.heldPills = [];
       recent.length = 0;
       state.heat.clear();
       paintHeat();
@@ -1465,11 +1470,16 @@
   }
   // The chord has said what it was (or had its time): its pill, the hold's when it was held.
   function drawCombo(c) {
-    if (state.comboHeld !== c) return;
+    if (state.comboHeld !== c || state.secure) return;
     clearTimeout(c.timer);
     if (!c.pill) c.pill = state.comboShown = showCombo(c.positions, c.key);
     const hold = heldCombo() === c && holdLegend(c);
-    if (hold) c.pill.hold(hold);
+    if (hold) {
+      c.pill.hold(hold);
+      // Its fade waits for the chord's release now, which a chord fired after it (held q, then
+      // the z chord) must not take from it: each held pill is let go by its own keys (releaseAt).
+      if (!state.heldPills.some(h => h.pill === c.pill)) state.heldPills.push({ positions: c.positions, pill: c.pill });
+    }
   }
   // It typed something: a tap, or a macro whose modifiers were its own, not a hold.
   function comboTyped(c) {
@@ -1899,7 +1909,9 @@
       state.data = data;
       applyPrefs();                 // the config's hud.dark, until the viewer chose
       state.momentary = []; state.oneShot = null;
-      state.activatorOf = {}; state.modSource = {}; state.pick = null; state.lastPress = null; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null; state.comboHeld = null;
+      state.activatorOf = {}; state.modSource = {}; state.pick = null; state.lastPress = null; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null;
+      if (state.comboHeld) clearTimeout(state.comboHeld.timer);
+      state.comboHeld = null; state.heldPills = [];
       // Keystrokes on the keymap going away are not followed by the next one's keys.
       state.down.clear(); state.strokes = []; state.lastStroke = null; state.lastOwnStroke = null;
       state.baseLayers = [data.base];
@@ -2130,7 +2142,9 @@
       if (!e) return;
       state.held.delete(idx);
       const c = state.comboHeld;
-      if (c && c.positions.includes(idx)) { drawCombo(c); c.pill.letGo(); state.comboHeld = null; }
+      if (c && c.positions.includes(idx)) { drawCombo(c); state.comboHeld = null; }
+      for (const h of state.heldPills.filter(h => h.positions.includes(idx))) h.pill.letGo();
+      state.heldPills = state.heldPills.filter(h => !h.positions.includes(idx));
       for (const name of Object.keys(state.activatorOf)) if (state.activatorOf[name] === idx) state.activatorOf[name] = null;
       clearTimeout(state.timers.get(idx));
       state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo"), T('release_ms')));

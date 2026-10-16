@@ -477,6 +477,35 @@ function checkComboHold(data) {
   if (ringed(page).length) fails.push(`a chord's macro ⌘ should ring nothing once it is over; ringed [${ringed(page)}]`);
   release(page, [7, 8]); page.clock.advance(6000);
 
+  // Secure input begins while a chord waits to be told what it was: its pill never comes.
+  page = typing();
+  press(page, [7, 8]);
+  page.hud.receive({ kind: "secure", on: true });
+  page.clock.advance(decide + 100);
+  if (page.board.querySelectorAll(".combo-pill").length) fails.push("a chord waiting as secure input began should draw no pill");
+  page.hud.receive({ kind: "secure", on: false });
+  release(page, [7, 8]); page.clock.advance(6000);
+
+  // Held q, then another chord on top of it: q's pill is still let go by q's own keys.
+  const z = find([10, 11], data.base);
+  if (z) {
+    page = typing();
+    press(page, [7, 8]);
+    page.clock.advance(230);
+    flags(page, { ctrl: true, alt: true });
+    page.clock.advance(80);
+    press(page, [10, 11]);
+    page.hud.key({ type: "keyDown", name: z.key.tap, chars: z.key.tap, code: 0, flags: { ctrl: true, alt: true } });
+    page.clock.advance(50);
+    release(page, [10, 11]);
+    page.clock.advance(pillMs + 300);
+    if (pills(page).join() !== "⌃⌥") fails.push(`held q under a ${z.key.tap} chord: q's pill should still be up; reads [${pills(page)}]`);
+    release(page, [7, 8]); flags(page, {});
+    page.clock.advance(300);
+    if (page.board.querySelectorAll(".combo-pill").length) fails.push(`held q under a ${z.key.tap} chord: q's pill should go when q is let go`);
+    page.clock.advance(6000);
+  }
+
   page = typing();                                     // nothing seen: its legend after the wait
   press(page, [7, 8]);
   page.clock.advance(decide - 30);
