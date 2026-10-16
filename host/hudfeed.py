@@ -346,7 +346,12 @@ class Carriers:
     (`gone`, from Stream.close). USB is preferred and takes over from BLE as soon as no key is down
     on either, so that no key goes down on one carrier and comes up on the other. Not by time: the
     firmware's heartbeat is off by default, so a quiet carrier is not a gone one. Messages without
-    a device (the readers' `device` announcements) pass. Pure: take() says whether to forward."""
+    a device (the readers' `device` announcements) pass. Pure: take() says whether to forward.
+
+    The carrier set aside still decodes, and its decoder only speaks of a layer set that changed:
+    one it heard first is never said again while it stays. So when the owner goes, the other
+    carrier takes over at once, and its last layer set is handed on (drain()) if the pages were
+    told another -- or they stay on the old layers until the next change."""
 
     PREFERRED = "usb"
 
@@ -354,11 +359,20 @@ class Carriers:
         self.log = log
         self.owner = {}   # device -> the carrier its signal is taken from
         self.held = {}    # (carrier, device) -> positions down on that carrier
+        self.layers = {}  # (carrier, device) -> the last layers message it decoded, forwarded or not
+        self.told = {}    # device -> the layer ids the pages were last given
+        self.queue = []   # messages handed on at a takeover (drain)
         self.lock = threading.Lock()   # the serial reader's thread and BLE's loop both call take()
 
     def take(self, carrier, msg):
         with self.lock:
             return self._take(carrier, msg)
+
+    def drain(self):
+        """What a takeover has to say: the new owner's layer set, if the pages were told another."""
+        with self.lock:
+            out, self.queue = self.queue, []
+            return out
 
     def _take(self, carrier, msg):
         device, kind = msg.get("device"), msg.get("kind")
@@ -367,8 +381,16 @@ class Carriers:
         link = (carrier, device)
         if kind == "gone":
             self.held.pop(link, None)
+            self.layers.pop(link, None)
             if self.owner.get(device) == carrier:
                 del self.owner[device]
+                rest = [c for (c, d) in self.held if d == device]
+                if rest:
+                    self.owner[device] = rest[0]
+                    last = self.layers.get((rest[0], device))
+                    if last is not None and last.get("ids") != self.told.get(device):
+                        self.told[device] = last.get("ids")
+                        self.queue.append(dict(last))
             return False
         held = self.held.setdefault(link, set())
         owner = self.owner.get(device)
@@ -381,6 +403,10 @@ class Carriers:
             held.add(msg.get("pos"))
         elif kind == "release":
             held.discard(msg.get("pos"))
+        elif kind == "layers":
+            self.layers[link] = dict(msg)
+            if owner == carrier:
+                self.told[device] = msg.get("ids")
         return owner == carrier
 
 
@@ -1378,6 +1404,8 @@ class Feed:
         """A signal reader's message: forwarded if its carrier is the one this keyboard is read on."""
         if self.carriers.take(carrier, msg):
             self._emit(msg)
+        for m in self.carriers.drain():    # a takeover: the new owner's layers (Carriers)
+            self._emit(m)
 
     def _emit(self, msg):
         if msg["kind"] == "gone":

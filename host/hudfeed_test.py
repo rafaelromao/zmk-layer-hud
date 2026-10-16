@@ -319,6 +319,38 @@ class CarriersTest(unittest.TestCase):
         self.assertTrue(carriers.take("usb", self.press(6)))
         self.assertFalse(carriers.take("ble", self.press(6)))
 
+    def test_a_layer_change_heard_only_on_the_other_carrier_is_handed_on(self):
+        # BLE decoded the new layers first and was set aside; USB went before it said them, and
+        # BLE's decoder will not say an unchanged set again: the takeover says it.
+        carriers = Carriers()
+        layers = lambda ids: {"kind": "layers", "ids": ids, "device": "Diamond"}
+        self.assertTrue(carriers.take("usb", layers([1])))
+        self.assertFalse(carriers.take("ble", layers([1])))
+        self.assertFalse(carriers.take("ble", layers([1, 3])))
+        self.assertEqual([], carriers.drain())
+        self.assertFalse(carriers.take("usb", {"kind": "gone", "device": "Diamond"}))
+        self.assertEqual([layers([1, 3])], carriers.drain())
+        self.assertEqual([], carriers.drain())
+        self.assertTrue(carriers.take("ble", self.press(4)))      # BLE is read at once
+        # The same set as the pages have: nothing to say.
+        carriers = Carriers()
+        carriers.take("usb", layers([2])); carriers.take("ble", layers([2]))
+        carriers.take("usb", {"kind": "gone", "device": "Diamond"})
+        self.assertEqual([], carriers.drain())
+
+    def test_the_feed_says_the_takeovers_layers(self):
+        told = []
+        with mock.patch("hudfeed.carbon_probe", return_value=None), mock.patch("hudfeed.terminal_probe", return_value=None), \
+             mock.patch("hudfeed.sessionlock.probe", return_value=None), tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("keyboard: {name: Diamond}\nserial: {port: /dev/cu.test}\n")
+            feed = Feed(told.append, log=lambda *a: None, config=path, sessions=False, keymap=False, hid_keys=False)
+        feed.reader.emit({"kind": "layers", "ids": [1], "device": "Diamond"})
+        feed.ble.emit({"kind": "layers", "ids": [1, 3], "device": "Diamond"})
+        feed.reader.emit({"kind": "gone", "device": "Diamond"})
+        self.assertEqual([[1], [1, 3]], [m["ids"] for m in told if m["kind"] == "layers"])
+
     def test_two_keyboards_are_read_apart(self):
         carriers = Carriers()
         self.assertTrue(carriers.take("ble", self.press(1)))
