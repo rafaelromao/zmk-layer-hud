@@ -2122,10 +2122,12 @@
           }
           if (held) renderKeys();
           // What it typed may have beaten its positions here: they travel on separate channels, and
-          // a Shift held for it may have gone down between the two. Anything typed within the
-          // term, or the chord's own legend within activator_ms, was this chord's.
+          // a Shift held for it may have gone down between the two. Only with evidence it was this
+          // chord's: typed once its first key was down, or its own legend within activator_ms. An
+          // `a` typed just before the q chord was held is the a key's, not the chord's tap.
           const tok = state.typed, ownLegend = tok && (legendMatches(combo.key.tap, tok) || legendMatches(combo.key.tap, tok.toLowerCase()));
-          if (state.keysSeen && (now - state.typedAt <= term || (ownLegend && now - state.typedAt <= T('activator_ms')))) comboTyped(c);
+          const sinceChord = state.typedAt >= recentPos[start].t;
+          if (state.keysSeen && (sinceChord || (ownLegend && now - state.typedAt <= T('activator_ms')))) comboTyped(c);
           else if (!state.keysSeen) drawCombo(c);
           else c.timer = setTimeout(() => drawCombo(c), T('combo_decide_ms'));
           if (held) comboModifier(c);

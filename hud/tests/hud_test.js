@@ -477,6 +477,18 @@ function checkComboHold(data) {
   if (ringed(page).length) fails.push(`a chord's macro ⌘ should ring nothing once it is over; ringed [${ringed(page)}]`);
   release(page, [7, 8]); page.clock.advance(6000);
 
+  // An a typed just before the q chord is held is the a key's: the chord still shows its hold.
+  page = typing();
+  page.clock.advance(1000);
+  page.hud.key({ type: "keyDown", name: "a", chars: "a", code: 0, flags: {} });
+  page.clock.advance(10);
+  press(page, [7, 8]);
+  page.clock.advance(230);
+  flags(page, { ctrl: true, alt: true });
+  page.clock.advance(80);
+  if (pills(page).join() !== "⌃⌥") fails.push(`q chord held just after an a: the pill should read ⌃⌥; reads [${pills(page)}]`);
+  release(page, [7, 8]); flags(page, {}); page.clock.advance(6000);
+
   // Secure input begins while a chord waits to be told what it was: its pill never comes.
   page = typing();
   press(page, [7, 8]);
