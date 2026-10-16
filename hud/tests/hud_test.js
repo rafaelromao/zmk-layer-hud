@@ -353,6 +353,7 @@ function checkComboHold(data) {
       flags(page, { ctrl: true, alt: true });
     }
     press(page, [7, 8]);
+    page.clock.advance(230);                           // the tapping term: the hold comes after it
     if (!flagsFirst) { flags(page, { ctrl: true }); flags(page, { ctrl: true, alt: true }); }
     if (pills(page).join() !== "⌃⌥") fails.push(`q chord held ${how}: the pill should read ⌃⌥; reads [${pills(page)}]`);
     if (ringed(page).join() !== "7,8") fails.push(`q chord held ${how}: keys 7 and 8 should ring; ringed [${ringed(page)}]`);
@@ -375,7 +376,7 @@ function checkComboHold(data) {
     const before = page.hud.stats.local();
     const p7 = posOf(7), p8 = posOf(8);
     page.hud.pressAt(p7); page.hud.pressAt(p8); page.hud.pressAt(p7); page.hud.pressAt(p8);
-    page.clock.advance(200);
+    page.clock.advance(250);
     flags(page, { ctrl: true }); flags(page, { ctrl: true, alt: true });
     if (pills(page).join() !== "⌃⌥") fails.push(`q chord held, told twice: the pill should read ⌃⌥; reads [${pills(page)}]`);
     if (ringed(page).join() !== "7,8") fails.push(`q chord held, told twice: keys 7 and 8 should ring; ringed [${ringed(page)}]`);
@@ -411,8 +412,77 @@ function checkComboHold(data) {
   if (!meh.layers.includes(data.base)) page.hud.setLayers([Number(mehLayer)]);
   page.clock.advance(1000);
   press(page, meh.positions);
+  page.clock.advance(230);
   flags(page, { ctrl: true, alt: true, shift: true });
   if (pills(page).join() !== meh.key.hold) fails.push(`meh chord held: the pill should read ${meh.key.hold}; reads [${pills(page)}]`);
+
+  /* Where what the keyboard types reaches the page (the panel), a chord's pill waits to be told
+   * what it was: held, it never says q first; tapped, it says q when its q comes; a chord whose
+   * macro sends ⌘ and then a key is that macro, not a ⌘ hold; a plain chord's pill comes with its
+   * character; and one that types nothing the page sees is drawn after combo_decide_ms. */
+  const typing = () => {
+    const page = fresh();
+    page.hud.key({ type: "keyDown", name: "a", chars: "a", code: 0, flags: {} });   // the keyboard's typing arrives
+    page.clock.advance(6000);
+    return page;
+  };
+  const decide = Number(data.hud.combo_decide_ms || 300);
+  page = typing();
+  press(page, [7, 8]);
+  for (let t = 0; t < 230; t += 10) {
+    if (pills(page).length) { fails.push(`q chord held, typing seen: a pill before it decided, at ${t + 20} ms: [${pills(page)}]`); break; }
+    page.clock.advance(10);
+  }
+  flags(page, { ctrl: true }); flags(page, { ctrl: true, alt: true });
+  page.clock.advance(80);
+  if (pills(page).join() !== "⌃⌥") fails.push(`q chord held, typing seen: the pill should read ⌃⌥; reads [${pills(page)}]`);
+  release(page, [7, 8]); flags(page, {}); page.clock.advance(6000);
+
+  page = typing();                                     // tapped: q when the q comes, at its release
+  press(page, [7, 8]);
+  page.clock.advance(60);
+  if (pills(page).length) fails.push(`q chord tapped, typing seen: no pill before it is let go; reads [${pills(page)}]`);
+  release(page, [8]);
+  page.hud.key({ type: "keyDown", name: "q", chars: "q", code: 12, flags: {} });
+  release(page, [7]);
+  page.clock.advance(1);
+  if (pills(page).join() !== "q") fails.push(`q chord tapped, typing seen: the pill should read q; reads [${pills(page)}]`);
+  page.clock.advance(6000);
+
+  const plain = (data.combos || []).find(c => c.layers.includes(data.base) && c.positions.length === 2
+    && /^[a-z]$/.test(c.key.tap) && !(c.positions[0] === 7 && c.positions[1] === 8));
+  if (plain) {
+    page = typing();
+    press(page, plain.positions);
+    page.hud.key({ type: "keyDown", name: plain.key.tap, chars: plain.key.tap, code: 0, flags: {} });
+    page.clock.advance(1);
+    if (pills(page).join() !== plain.key.tap) fails.push(`${plain.key.tap} chord, typing seen: its pill should come with its ${plain.key.tap}; reads [${pills(page)}]`);
+    release(page, plain.positions); page.clock.advance(6000);
+
+    page = typing();                                   // its character beat its positions
+    page.hud.key({ type: "keyDown", name: plain.key.tap, chars: plain.key.tap, code: 0, flags: {} });
+    press(page, plain.positions);
+    page.clock.advance(1);
+    if (pills(page).join() !== plain.key.tap) fails.push(`${plain.key.tap} chord, its character first: the pill should read ${plain.key.tap}; reads [${pills(page)}]`);
+    release(page, plain.positions); page.clock.advance(6000);
+  }
+
+  page = typing();                                     // a macro's ⌘ then its key: the macro
+  press(page, [7, 8]);
+  flags(page, { cmd: true });
+  page.hud.key({ type: "keyDown", name: "s", chars: "s", code: 1, flags: { cmd: true } });
+  flags(page, {});
+  page.clock.advance(400);
+  if (pills(page).join() !== "q") fails.push(`a chord whose macro sends ⌘S should read its own legend, not ⌘; reads [${pills(page)}]`);
+  if (ringed(page).length) fails.push(`a chord's macro ⌘ should ring nothing once it is over; ringed [${ringed(page)}]`);
+  release(page, [7, 8]); page.clock.advance(6000);
+
+  page = typing();                                     // nothing seen: its legend after the wait
+  press(page, [7, 8]);
+  page.clock.advance(decide - 30);
+  if (pills(page).length) fails.push(`a chord that typed nothing yet: no pill before combo_decide_ms; reads [${pills(page)}]`);
+  page.clock.advance(20);
+  if (pills(page).join() !== "q") fails.push(`a chord that typed nothing: its legend after combo_decide_ms; reads [${pills(page)}]`);
   return fails;
 }
 
@@ -517,7 +587,10 @@ async function main() {
   }
 
   const started = Date.now();
-  const r = await cases.sweep(nodeDriver(page), data, opt);
+  // A page of its own: the checks above typed on theirs, and a page that has seen the keyboard's
+  // typing holds a combo's pill until the chord says what it was (hud.js drawCombo). The sweep
+  // gives positions alone, which is what a page without typing draws a pill from at once.
+  const r = await cases.sweep(nodeDriver(loadPage()), data, opt);
   const ms = Date.now() - started;
 
   // The same sweep runs in a real browser (hud/tests/browser.js). Comparing the two by this

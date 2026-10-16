@@ -45,7 +45,7 @@
   // constant (HEAT_TICK_MS, WPM_TICK_MS) is how often the page redraws, not anything a user would
   // notice.
   const DEFAULTS = { opacity: 86, press_ms: 320, release_ms: 60, held_timeout_ms: 5000, momentary_ms: 700, combo_slack_ms: 20, activator_ms: 400,
-    positions_fresh_ms: 3000, combo_pill_ms: 1000, sequence_ms: 200, sequence_max: 6, one_shot_ms: 450, heatmap_ms: 3000,
+    positions_fresh_ms: 3000, combo_pill_ms: 1000, combo_decide_ms: 300, sequence_ms: 200, sequence_max: 6, one_shot_ms: 450, heatmap_ms: 3000,
     wpm_window_ms: 10000, wpm_idle_ms: 3000, stats_bar: 1, dark: 0 };
   const T = name => (state.data && state.data.hud && state.data.hud[name] != null) ? state.data.hud[name] : DEFAULTS[name];
   // The stats bar's chips, from the config's `stats:` section; again only the fallback.
@@ -105,7 +105,10 @@
     ledgerTimer: null,
     ledgerDue: 0,
     comboEntry: null,         // the ledger's entry for the combo whose pill is up
-    comboHeld: null,          // the combo last drawn, until one of its keys comes up (holdCombo)
+    comboHeld: null,          // the combo last fired, until one of its keys comes up (drawCombo)
+    keysSeen: false,          // what the keyboard types reaches this page (a combo's pill waits for it)
+    typedAt: 0,               // when it last did
+    typed: null,              // and what: its token, for a chord whose positions came after it
     down: new Map(),          // key idx -> the ledger entry of its press, while it is down
     strokes: [],              // counted keystrokes not yet known to be taps or holds (see "strokes")
     lastStroke: null,         // the keystroke before, for the time a key takes and same-finger bigrams
@@ -1438,21 +1441,49 @@
   }
 
   /* A combo can be a hold-tap of its own: the Diamond's q chord types q tapped and is Ctrl+Alt
-   * held, and its drawing says only q. The keyboard says which it was: a modifier that comes on
-   * while every key of the chord is still down is the chord's hold (setMods, pressAt). The pill
-   * then reads the hold -- the drawing's hold legend when it names one of these modifiers or a
-   * meh or hyper, else the modifiers themselves -- and the chord's keys ring as their source. */
+   * held, and its drawing says only q. The keyboard says which it was, so where what it types
+   * reaches this page the pill waits to be told (pressAt), and is drawn by the first of:
+   *   - what the chord types (hud.key): q, or the ⌘S of a save macro -- the tap's legend;
+   *   - one of its keys coming up (releaseAt): tapped;
+   *   - a modifier still on, while every key is down, once the chord's own reports are in (the
+   *     combo term past it, so a macro's ⌘ before its S is not taken for a hold): held. The pill
+   *     reads the drawing's hold legend when it names those modifiers or a meh or hyper, else the
+   *     modifiers themselves, stays up while the chord is down, and its keys ring as their source;
+   *   - none of these within combo_decide_ms (just past the keymap's tapping term): the tap's.
+   * A page that is not told what is typed (the tests' sweep, the demos) draws the pill at once. */
   const HOLD_ORDER = ["ctrl", "alt", "shift", "cmd"];
   function heldCombo() {
     const c = state.comboHeld;
     return c && c.positions.every(i => state.held.has(i)) ? c : null;
   }
-  function holdCombo(c) {
-    const on = HOLD_ORDER.filter(f => state.mods[f] && state.modSource[f] === c.positions);
-    if (!on.length) return;
+  function holdLegend(c) {
+    const on = c.typed ? [] : HOLD_ORDER.filter(f => state.mods[f] && state.modSource[f] === c.positions);
+    if (!on.length || Date.now() - c.t < comboTerm()) return null;
     const glyphs = on.map(f => MOD_GLYPH[f]);
     const named = c.key.hold && (glyphs.some(g => c.key.hold.includes(g)) || /\b(meh|hyper)\b/i.test(c.key.hold));
-    c.pill.hold(named ? c.key.hold : glyphs.join(""));
+    return named ? c.key.hold : glyphs.join("");
+  }
+  // The chord has said what it was (or had its time): its pill, the hold's when it was held.
+  function drawCombo(c) {
+    if (state.comboHeld !== c) return;
+    clearTimeout(c.timer);
+    if (!c.pill) c.pill = state.comboShown = showCombo(c.positions, c.key);
+    const hold = heldCombo() === c && holdLegend(c);
+    if (hold) c.pill.hold(hold);
+  }
+  // It typed something: a tap, or a macro whose modifiers were its own, not a hold.
+  function comboTyped(c) {
+    c.typed = true;
+    for (const f of Object.keys(state.modSource)) if (state.modSource[f] === c.positions) state.modSource[f] = null;
+    drawCombo(c);
+    renderKeys();
+  }
+  // A modifier the chord holds: looked at again once the chord's own reports are in.
+  function comboModifier(c) {
+    if (c.typed || !HOLD_ORDER.some(f => state.mods[f] && state.modSource[f] === c.positions)) return;
+    const wait = c.t + comboTerm() - Date.now();
+    if (wait > 0) setTimeout(() => drawCombo(c), wait + 1);
+    else drawCombo(c);
   }
 
   function comboFor(layer, token) {
@@ -1621,7 +1652,7 @@
     const layers = stack();
     const carrying = p => { const r = resolveBinding(p.idx, layers); return r && carries(r.key, glyph); };
     const c = heldCombo();
-    if (c) {
+    if (c && !c.typed) {
       const at = recentPos.findIndex(p => p.entry === c.entry);   // gone from the list: held long
       const after = at >= 0 ? recentPos.slice(at + 1) : recentPos.filter(p => p.t > c.entry.t);
       if (!after.some(p => state.held.has(p.idx) && carrying(p))) return c.positions;
@@ -1644,7 +1675,7 @@
     }
     state.mods = flags;
     const c = heldCombo();
-    if (c) holdCombo(c);
+    if (c) comboModifier(c);
     renderKeys();
   }
 
@@ -2066,17 +2097,26 @@
           // the chord out from under the user's fingers after a third of a second — along with
           // the safety net that covers a lost release.
           for (const p of combo.positions) { const e = state.keyEls[p]; if (e) e.classList.add("pressed", "combo"); }
-          state.comboShown = showCombo(combo.positions, combo.key);
+          // Its pill waits to be told whether the chord was tapped or held (drawCombo).
+          if (state.comboHeld) clearTimeout(state.comboHeld.timer);
+          const c = state.comboHeld = { positions: combo.positions, key: combo.key, entry, t: now, pill: null, typed: false, timer: null };
           // A modifier reported before the chord's positions, or taken just now by one of its keys
           // for a home-row mod of its own (above): the chord fired, so its keys' own bindings did
           // not, and the modifier is its hold.
-          state.comboHeld = { positions: combo.positions, key: combo.key, pill: state.comboShown, entry };
           let held = false;
           for (const f of Object.keys(state.modSource)) {
             const src = state.modSource[f];
             if (src === null || combo.positions.includes(src)) { state.modSource[f] = combo.positions; held = true; }
           }
-          if (held) { holdCombo(state.comboHeld); renderKeys(); }
+          if (held) renderKeys();
+          // What it typed may have beaten its positions here: they travel on separate channels, and
+          // a Shift held for it may have gone down between the two. Anything typed within the
+          // term, or the chord's own legend within activator_ms, was this chord's.
+          const tok = state.typed, ownLegend = tok && (legendMatches(combo.key.tap, tok) || legendMatches(combo.key.tap, tok.toLowerCase()));
+          if (state.keysSeen && (now - state.typedAt <= term || (ownLegend && now - state.typedAt <= T('activator_ms')))) comboTyped(c);
+          else if (!state.keysSeen) drawCombo(c);
+          else c.timer = setTimeout(() => drawCombo(c), T('combo_decide_ms'));
+          if (held) comboModifier(c);
         }
       }
     },
@@ -2089,7 +2129,8 @@
       const e = state.keyEls[idx];
       if (!e) return;
       state.held.delete(idx);
-      if (state.comboHeld && state.comboHeld.positions.includes(idx)) { state.comboHeld.pill.letGo(); state.comboHeld = null; }
+      const c = state.comboHeld;
+      if (c && c.positions.includes(idx)) { drawCombo(c); c.pill.letGo(); state.comboHeld = null; }
       for (const name of Object.keys(state.activatorOf)) if (state.activatorOf[name] === idx) state.activatorOf[name] = null;
       clearTimeout(state.timers.get(idx));
       state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo"), T('release_ms')));
@@ -2109,6 +2150,13 @@
       if (typeof ev === "string") ev = JSON.parse(ev);
       if (state.secure) return;   // nothing typed shows while it is a secret (setSecure)
       statsKey(ev);   // before handleKey, which has nothing to do for it while positions are fresh
+      // What the keyboard typed, not typing sent in or a rehearsal's: a combo's pill waits for it.
+      if (ev.type === "keyDown" && !ev.repeat && fromKeyboard(ev)) {
+        state.keysSeen = true; state.typedAt = Date.now(); state.typed = tokenFor(ev);
+        const c = state.comboHeld;
+        // ...as what the chord typed, unless another key went down since: that key typed it.
+        if (c && !c.typed && recentPos.length && recentPos[recentPos.length - 1].entry === c.entry) comboTyped(c);
+      }
       handleKey(ev);
       if (window.keys) window.keys.key(stripEvent(ev));  // the typed-keys strip on the same page
     },
