@@ -259,9 +259,8 @@ class StreamTest(unittest.TestCase):
         self.stream.message({"kind": "keys", "mods": 0, "keys": [0x04]}, 0)
         self.out.clear()
         self.stream.close()
-        self.assertEqual([(m["type"], m["chars"], m["device"]) for m in self.out if m["kind"] == "key"],
-                         [("keyUp", "a", "Diamond")])
-        self.assertEqual(self.out[-1], {"kind": "gone", "device": "Diamond"})   # for Carriers
+        self.assertEqual([(m["type"], m["chars"], m["device"]) for m in self.out],
+                         [("keyUp", "a", "Diamond")])   # no `gone`: no signal frame came on it (Carriers)
 
 
 class CarriersTest(unittest.TestCase):
@@ -326,6 +325,21 @@ class CarriersTest(unittest.TestCase):
         other = {"kind": "press", "pos": 1, "device": "Romak"}
         self.assertTrue(carriers.take("usb", other))
         self.assertFalse(carriers.take("ble", dict(other)))
+
+    def test_a_ble_keyboard_without_a_name_takes_the_configured_one(self):
+        # Found by its address, BLE may give no name: the configured one keeps it one keyboard.
+        from hudfeed import BleReader
+        dev = mock.Mock(address="AA:BB:CC:DD:EE:FF")
+        dev.name = None
+        named = mock.Mock(address="AA:BB:CC:DD:EE:FF")
+        named.name = "Diamond"
+        reader = mock.Mock()
+        reader.name = "Diamond"                          # keyboard: {name: Diamond}
+        self.assertEqual("Diamond", BleReader._label(reader, dev))
+        reader.name = None
+        self.assertEqual("AA:BB:CC:DD:EE:FF", BleReader._label(reader, dev))
+        reader.name = "Dia"
+        self.assertEqual("Diamond", BleReader._label(reader, named))
 
     def test_what_names_no_keyboard_passes(self):
         carriers = Carriers()
@@ -1033,10 +1047,13 @@ class PortTaken(unittest.TestCase):
         self.assertTrue(dev.closed)
 
     def test_a_port_that_is_not_the_signal_is_left_as_it_was(self):
-        reader = SerialReader(lambda m: None, log=lambda *a: None)
+        emitted = []
+        reader = SerialReader(emitted.append, log=lambda *a: None)
         with mock.patch("fcntl.ioctl") as ioctl:
             self.read_once([b"\x00\x01\x02 not a frame"], reader)
         ioctl.assert_not_called()
+        # ...nor is its closing said: it shares the signal port's carrier and name (Carriers).
+        self.assertEqual([], emitted)
         self.assertEqual("no frames", reader._quiet.get("/dev/cu.test"))
 
     def test_a_port_that_cannot_be_taken_is_still_read(self):

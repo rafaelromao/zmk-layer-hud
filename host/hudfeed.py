@@ -312,12 +312,15 @@ class Stream:
     def close(self):
         """The keyboard went away: whatever was held is released, and the feed is told this
         connection is over (`gone`, which goes no further: Carriers hands the keyboard to the other
-        carrier, if one is reading it)."""
+        carrier, if one is reading it). Only a connection that carried the signal says so: a
+        composite board's other CDC ports are tried too and closed when no frame comes, and they
+        share the signal port's carrier and name -- their `gone` would end the live port's turn."""
         flags = flags_of(0)
         for k in self.decoder.held:
             self._emit(key_message(k, False, flags))
         self.decoder.held = []
-        self.emit({"kind": "gone", "device": self.device})
+        if self.frames_seen:
+            self.emit({"kind": "gone", "device": self.device})
 
     def resync(self):
         """Forget what the pages were last told about the layers.
@@ -654,9 +657,16 @@ class BleReader:
             await asyncio.sleep(wait)
             wait = min(wait * 2, BLE_RETRY_MAX_S)
 
+    def _label(self, device):
+        """The keyboard's name as its messages carry it: the one BLE gives, else the configured
+        keyboard name, before the address. Its USB copy is named by the product string, the same
+        name in ZMK; an address would make it two keyboards to Carriers, and both copies would go
+        on (and the address would title the HUD)."""
+        return device.name or self.name or str(device.address)
+
     async def _session(self, BleakClient, device):
         """Reads one connection until it drops. -> None once it has been read, else why not."""
-        name = device.name or str(device.address)
+        name = self._label(device)
         reading = False
         stream = Stream(self.emit, name, self.dead_key_ms, self.raw, self.log, self.altgr)
         self._streams.add(stream)
