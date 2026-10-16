@@ -62,6 +62,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import functools
 import hmac
 import http
 import json
@@ -309,11 +310,14 @@ class Stream:
             self._emit(out)
 
     def close(self):
-        """The keyboard went away: whatever was held is released."""
+        """The keyboard went away: whatever was held is released, and the feed is told this
+        connection is over (`gone`, which goes no further: Carriers hands the keyboard to the other
+        carrier, if one is reading it)."""
         flags = flags_of(0)
         for k in self.decoder.held:
             self._emit(key_message(k, False, flags))
         self.decoder.held = []
+        self.emit({"kind": "gone", "device": self.device})
 
     def resync(self):
         """Forget what the pages were last told about the layers.
@@ -327,6 +331,54 @@ class Stream:
     def _emit(self, msg):
         msg["device"] = self.device  # which keyboard this came from
         self.emit(msg)
+
+
+class Carriers:
+    """One keyboard, one carrier. Plugged in by USB and paired by BLE at once, the keyboard sends
+    its signal on both, and each carrier's reader decodes it: every layer change and every key
+    position would reach the pages twice. A page takes the copy of a press as a second press --
+    each key counted twice, and a held chord's modifiers credited to its keys pressed "again".
+
+    So each keyboard's signal comes from one carrier: the first heard, until its connection goes
+    (`gone`, from Stream.close). USB is preferred and takes over from BLE as soon as no key is down
+    on either, so that no key goes down on one carrier and comes up on the other. Not by time: the
+    firmware's heartbeat is off by default, so a quiet carrier is not a gone one. Messages without
+    a device (the readers' `device` announcements) pass. Pure: take() says whether to forward."""
+
+    PREFERRED = "usb"
+
+    def __init__(self, log=None):
+        self.log = log
+        self.owner = {}   # device -> the carrier its signal is taken from
+        self.held = {}    # (carrier, device) -> positions down on that carrier
+        self.lock = threading.Lock()   # the serial reader's thread and BLE's loop both call take()
+
+    def take(self, carrier, msg):
+        with self.lock:
+            return self._take(carrier, msg)
+
+    def _take(self, carrier, msg):
+        device, kind = msg.get("device"), msg.get("kind")
+        if device is None:
+            return kind != "gone"
+        link = (carrier, device)
+        if kind == "gone":
+            self.held.pop(link, None)
+            if self.owner.get(device) == carrier:
+                del self.owner[device]
+            return False
+        held = self.held.setdefault(link, set())
+        owner = self.owner.get(device)
+        if owner is None or (carrier == self.PREFERRED and owner != carrier
+                             and not held and not self.held.get((owner, device))):
+            if owner is not None and self.log:
+                self.log(f"hudfeed: {device} on {carrier.upper()} too: its {owner.upper()} copy is set aside")
+            self.owner[device] = owner = carrier
+        if kind == "press":
+            held.add(msg.get("pos"))
+        elif kind == "release":
+            held.discard(msg.get("pos"))
+        return owner == carrier
 
 
 def take_port(dev, log):
@@ -1260,15 +1312,17 @@ class Feed:
         # keystroke is, so that nothing is logged while a secret is being typed (self.secure is
         # made below and read when a message arrives).
         raw_log = (lambda: self.secure is None or not self.secure.check()) if raw else False
+        # Both carriers may read the one keyboard: its signal is taken from one (Carriers).
+        self.carriers = Carriers(log)
         self.reader = SerialReader(
-            self._emit, log=log, raw=raw_log, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
+            functools.partial(self._from, "usb"), log=log, raw=raw_log, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
             vid=vid if vid is not None else int(kb.get("vid", ZMK_VID)),
             pid=pid if pid is not None else int(kb.get("pid", ZMK_PID)),
             name=kb_name, port=port if port is not None else ser.get("port"),
             probe_s=float(ser.get("probe_s", 8.0)))
         self.ble = None
         if ble and bt.get("enabled", True):
-            self.ble = BleReader(self._emit, log=log, raw=raw_log, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
+            self.ble = BleReader(functools.partial(self._from, "ble"), log=log, raw=raw_log, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
                                  address=ble_address if ble_address is not None else bt.get("address"),
                                  name=kb_name)
         # What is typed comes from the keyboard's HID reports, not from the signal channel: one
@@ -1310,7 +1364,14 @@ class Feed:
             if probes:
                 self.secure = SecureInput(emit, any_of(list(probes.values())), log=log, watched=self.watched)
 
+    def _from(self, carrier, msg):
+        """A signal reader's message: forwarded if its carrier is the one this keyboard is read on."""
+        if self.carriers.take(carrier, msg):
+            self._emit(msg)
+
     def _emit(self, msg):
+        if msg["kind"] == "gone":
+            return                            # a connection over: Carriers' business, not the pages'
         # --no-keys: layers only. The positions go with the keys: with the keymap they are the typing.
         if not self.keys and msg["kind"] in ("key", "press", "release"):
             return
