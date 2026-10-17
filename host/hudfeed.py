@@ -1430,7 +1430,9 @@ class HubThread:
 
 
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    # prog as argv[0] says (`zmk-layer-hud feed` through the CLI and its reference): from Python 3.14
+    # on, argparse's own default follows how __main__ was run instead, `python -m ...` under -m.
+    p = argparse.ArgumentParser(prog=os.path.basename(sys.argv[0]), description=__doc__.split("\n\n")[0])
     p.add_argument("--config", help=f"zmk-layer-hud config (default: $ZMKHUD_CONFIG or {keymap_mod.DEFAULT_CONFIG})")
     p.add_argument("--stdout", action="store_true", help="print messages as JSON lines (macOS host)")
     p.add_argument("--no-ws", action="store_true", help="do not serve the WebSocket")
