@@ -475,16 +475,18 @@ def dts_layouts(path):
         return {}
 
 
+def given_layout(cfg, config_path):
+    """The config's `layout:` with its files found, or None when it says none: then the layout a
+    drawing made from the ZMK keymap is drawn on is looked for in the keyboard's own files."""
+    return keymap_mod.layout_files(cfg["layout"], config_path) if cfg.get("layout") else None
+
+
 def layout_for_keymap(cfg, config_path, root, keymap_path, parsed):
     """The keymap-drawer layout spec a drawing made from the ZMK keymap is drawn on: the config's
     `layout:`; else a zmk,physical-layout node in the keyboard's own files -- the one the keymap or
     the board chooses, else the one with as many keys as the keymap has bindings; else ZMK's shared
     layout the board includes; else keymap-drawer's guess from the keyboard's name."""
-    if cfg.get("layout"):
-        spec = dict(cfg["layout"])
-        for key in keymap_mod.LAYOUT_FILES:
-            if isinstance(spec.get(key), str):
-                spec[key] = keymap_mod.resolve(spec[key], config_path, walk_up=True)
+    if spec := given_layout(cfg, config_path):
         return spec
     guess = parsed.get("layout") or {}
     bindings = len(next(iter((parsed.get("layers") or {}).values()), []))
@@ -1155,10 +1157,11 @@ def is_url(repo):
 def inputs(config_path, repo=None, keyboard=None):
     """The files a config's definitions are made from, where they are: the config, the keymap-drawer
     YAML, the drawer config and the layout files it names, and in a working copy, the keyboard's
-    keymap, everything it includes, and the files its physical layout can be in. What `sync --watch`
-    watches, and what doctor looks at for a sync that is due."""
+    keymap, everything it includes, and, when its physical layout is looked for there, the files it
+    can be in. What `sync --watch` watches, and what doctor looks at for a sync that is due."""
     config_path = os.path.abspath(config_path)
     files = [config_path]
+    searched = False                      # the keyboard's own files read for its physical layout
     try:
         cfg = keymap_mod.load_yaml(config_path)
     except Exception:
@@ -1175,8 +1178,10 @@ def inputs(config_path, repo=None, keyboard=None):
                 doc = None                # not there yet, or saved half-edited: watched for when it reads
             layout = keymap_mod.layout_files(doc.get("layout"), drawing) if isinstance(doc, dict) else None
         else:
-            # Drawn from the ZMK keymap: the config's own layout, the one layout_for_keymap reads.
-            layout = keymap_mod.layout_files(cfg.get("layout"), config_path)
+            # Drawn from the ZMK keymap: the config's own layout, the one layout_for_keymap reads,
+            # and without one, the keyboard's files it looks in.
+            layout = given_layout(cfg, config_path)
+            searched = layout is None
         if isinstance(layout, dict):
             files += [layout[k] for k in keymap_mod.LAYOUT_FILES if isinstance(layout.get(k), str)]
     if repo and os.path.isdir(repo):
@@ -1185,8 +1190,10 @@ def inputs(config_path, repo=None, keyboard=None):
         except SyncError:
             keymap_path = None
         if keymap_path:
-            own, beside = boards_files(repo, keymap_path)
-            files += [path for path, _ in reachable(keymap_path)] + own + beside
+            files += [path for path, _ in reachable(keymap_path)]
+            if searched:
+                own, beside = boards_files(repo, keymap_path)
+                files += own + beside
     return sorted({os.path.abspath(f) for f in files})
 
 

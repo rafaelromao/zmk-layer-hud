@@ -800,6 +800,18 @@ class Watch(unittest.TestCase):
         write(self.d, "config.yaml", "layout: {dts_layout: shape.dtsi}\n")
         self.assertIn(os.path.join(self.d, "shape.dtsi"), sync.inputs(self.config))
 
+    def test_the_keyboards_files_are_watched_only_when_its_layout_is_searched_for(self):
+        # A sync looks for the physical layout in the keyboard's own files only when the drawing is
+        # made from the ZMK keymap and the config says no layout: of its own.
+        repo = os.path.join(self.d, "repo")
+        write(repo, "config/b.keymap", KEYMAP)
+        overlay = write(repo, "config/b.overlay", "/ { };\n")
+        self.assertNotIn(overlay, sync.inputs(self.config, repo, "b"))
+        write(self.d, "config.yaml", "layout: {dts_layout: shape.dtsi}\n")
+        self.assertNotIn(overlay, sync.inputs(self.config, repo, "b"))
+        write(self.d, "config.yaml", "title: T\n")
+        self.assertIn(overlay, sync.inputs(self.config, repo, "b"))
+
     def test_a_repo_by_url_is_not_watched(self):
         with mock.patch.object(sync, "recorded", return_value=("https://github.com/you/zmk-config", None)):
             with self.assertRaisesRegex(sync.SyncError, "cannot be watched"):

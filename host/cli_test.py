@@ -680,6 +680,7 @@ class SyncDue(unittest.TestCase):
             "docs/layout.json": "{}",
             "repo/config/b.keymap": '#include "defs.dtsi"\n' + __import__("sync_test").KEYMAP,
             "repo/config/defs.dtsi": "#define X 1\n",
+            "repo/config/b.overlay": "/ { };\n",
             "hud.definitions.json": json.dumps({"version": 1, "drawing": {}, "sources": {"repo": repo, "keyboard": "b"}}),
         }
         for name, text in self.files.items():
@@ -706,6 +707,12 @@ class SyncDue(unittest.TestCase):
     def test_a_file_the_keymap_includes_newer_is_a_sync_due(self):
         self.touch("repo/config/defs.dtsi")
         self.assertEqual("defs.dtsi", cli.sync_due())
+
+    def test_a_board_file_the_drawing_is_not_made_from_is_not_a_sync_due(self):
+        # With keymap: naming a drawing, the physical layout is the drawing's: the keyboard's
+        # .overlay is never read, and a sync would leave the definitions as they are.
+        self.touch("repo/config/b.overlay")
+        self.assertIsNone(cli.sync_due())
 
     def test_the_config_alone_is_not(self):
         # Its settings are read by the HUD as they are; only what it names is synced.
