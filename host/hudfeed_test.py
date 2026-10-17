@@ -94,13 +94,6 @@ class StreamTest(unittest.TestCase):
         plain.message({"kind": "layers", "ids": [1]}, 2)
         self.assertEqual(2, len(said))
 
-    def test_closing_releases_what_was_held(self):
-        self.stream.message({"kind": "keys", "mods": 0, "keys": [0x04]}, 0)
-        self.out.clear()
-        self.stream.close()
-        self.assertEqual([(m["type"], m["chars"], m["device"]) for m in self.out],
-                         [("keyUp", "a", "Diamond")])
-
     def test_closing_lets_a_held_modifier_go(self):
         # Shift held as the keyboard was unplugged: the page draws it held until it is told otherwise.
         self.stream.message({"kind": "keys", "mods": 0x02, "keys": []}, 0)
@@ -130,6 +123,13 @@ class StreamTest(unittest.TestCase):
         self.assertEqual([], self.out)
         self.stream.close()
         self.assertEqual([("keyDown", "'"), ("keyUp", "'")], [(m["type"], m["chars"]) for m in self.out])
+
+    def test_closing_releases_what_was_held(self):
+        self.stream.message({"kind": "keys", "mods": 0, "keys": [0x04]}, 0)
+        self.out.clear()
+        self.stream.close()
+        self.assertEqual([(m["type"], m["chars"], m["device"]) for m in self.out],
+                         [("keyUp", "a", "Diamond")])
 
 
 class Reports(unittest.TestCase):
