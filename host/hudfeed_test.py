@@ -11,6 +11,7 @@ import re
 import shutil
 import sys
 import tempfile
+import threading
 import termios
 import types
 import unittest
@@ -19,7 +20,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import signal_frame  # noqa: E402
-from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SerialReader, any_of, probe_report,  # noqa: E402
+from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Carriers, Feed, Hub, HubThread, SecureInput, SerialReader, any_of, probe_report,  # noqa: E402
                      SignalDecoder, Stream, asks_secret, hid_scan_note, hidraw_match, sent_in, serve_hub,
                      split_report, terminal_probe)
 
@@ -260,7 +261,228 @@ class StreamTest(unittest.TestCase):
         self.out.clear()
         self.stream.close()
         self.assertEqual([(m["type"], m["chars"], m["device"]) for m in self.out],
-                         [("keyUp", "a", "Diamond")])
+                         [("keyUp", "a", "Diamond")])   # no `gone`: no signal frame came on it (Carriers)
+
+
+class CarriersTest(unittest.TestCase):
+    """A keyboard plugged in by USB and paired by BLE sends its signal on both: one is read."""
+
+    def press(self, pos):
+        return {"kind": "press", "pos": pos, "device": "Diamond"}
+
+    def release(self, pos):
+        return {"kind": "release", "pos": pos, "device": "Diamond"}
+
+    def both(self, carriers, msgs, first="ble"):
+        """Each message as both carriers deliver it, `first` a little ahead: what goes on."""
+        second = "usb" if first == "ble" else "ble"
+        out = []
+        for m in msgs:
+            for carrier in (first, second):
+                if carriers.take(carrier, dict(m)):
+                    out.append((carrier, m["kind"], m.get("pos")))
+        return out
+
+    def test_a_chord_on_two_carriers_is_one_chord(self):
+        # The q chord held, as the Diamond on USB and BLE recorded it: each position came twice.
+        msgs = [self.press(11), self.press(12), self.release(12), self.release(11)]
+        out = self.both(Carriers(), msgs)
+        self.assertEqual([("ble", "press", 11), ("ble", "press", 12), ("ble", "release", 12), ("ble", "release", 11)], out)
+
+    def test_the_first_carrier_keeps_it_while_both_are_up(self):
+        carriers = Carriers()
+        self.assertTrue(carriers.take("ble", self.press(11)))     # BLE heard first: BLE's
+        self.assertFalse(carriers.take("usb", self.press(11)))
+        self.assertTrue(carriers.take("ble", self.release(11)))
+        self.assertFalse(carriers.take("usb", self.release(11)))
+        self.assertTrue(carriers.take("ble", self.press(12)))     # idle, and still BLE's
+        self.assertFalse(carriers.take("usb", self.press(12)))
+        out = self.both(Carriers(), [self.press(3), self.release(3), self.press(3), self.release(3)], first="usb")
+        self.assertEqual({"usb"}, {c for c, _, _ in out})
+        self.assertEqual(4, len(out))
+
+    def test_a_lagging_copy_of_a_tap_is_not_sent_again(self):
+        # BLE delivers a quick tap before USB's copy of it starts: both look idle when USB's press
+        # comes. Handed over there, the tap would go out twice.
+        carriers = Carriers()
+        self.assertTrue(carriers.take("ble", self.press(5)))
+        self.assertTrue(carriers.take("ble", self.release(5)))
+        self.assertFalse(carriers.take("usb", self.press(5)))
+        self.assertFalse(carriers.take("usb", self.release(5)))
+
+    def clocked(self):
+        now = [0.0]
+        return Carriers(clock=lambda: now[0]), now
+
+    def test_two_keyboards_with_one_name_are_both_read(self):
+        # Another keyboard called Diamond on BLE: its presses are never the owner's.
+        carriers, now = self.clocked()
+        self.assertTrue(carriers.take("usb", self.press(1)))
+        for i, pos in enumerate([20, 21, 22, 23]):
+            now[0] += 1.0
+            carriers.take("ble", self.press(pos))
+        self.assertIn("Diamond", carriers.split)
+        self.assertTrue(carriers.take("ble", self.press(24)))
+        self.assertTrue(carriers.take("usb", self.press(2)))
+
+    def test_two_keyboards_gone_leave_the_name_to_be_judged_again(self):
+        carriers, now = self.clocked()
+        carriers.take("usb", self.press(1))
+        for pos in [20, 21, 22, 23]:
+            now[0] += 1.0
+            carriers.take("ble", self.press(pos))
+        self.assertIn("Diamond", carriers.split)
+        carriers.take("usb", {"kind": "gone", "device": "Diamond"})
+        self.assertIn("Diamond", carriers.split)            # one of them is still there
+        carriers.take("ble", {"kind": "gone", "device": "Diamond"})
+        self.assertNotIn("Diamond", carriers.split)
+        # One of them back on both carriers: one carrier read again.
+        self.assertTrue(carriers.take("usb", self.press(3)))
+        self.assertFalse(carriers.take("ble", self.press(3)))
+
+    def test_a_copy_ahead_or_behind_is_a_copy(self):
+        carriers, now = self.clocked()
+        for pos in range(12):
+            now[0] += 1.0
+            carriers.take("usb", self.press(pos))
+            now[0] += 0.1
+            carriers.take("ble", self.press(pos))           # behind the owner
+            now[0] += 1.0
+            carriers.take("ble", self.press(pos + 100))    # ahead of the owner
+            now[0] += 0.1
+            carriers.take("usb", self.press(pos + 100))
+        self.assertNotIn("Diamond", carriers.split)
+
+    def test_one_frame_the_owner_lost_does_not_split_it(self):
+        carriers, now = self.clocked()
+        carriers.take("usb", self.press(1))
+        now[0] += 0.05
+        carriers.take("ble", self.press(1))
+        now[0] += 1.0
+        carriers.take("ble", self.press(9))                 # the owner dropped this one
+        for pos in range(2, 8):
+            now[0] += 1.0
+            carriers.take("usb", self.press(pos))
+            now[0] += 0.05
+            carriers.take("ble", self.press(pos))
+        self.assertNotIn("Diamond", carriers.split)
+
+    def test_the_other_carrier_takes_over_when_one_goes(self):
+        carriers = Carriers()
+        self.assertTrue(carriers.take("usb", {"kind": "layers", "ids": [1], "device": "Diamond"}))
+        self.assertFalse(carriers.take("ble", {"kind": "layers", "ids": [1], "device": "Diamond"}))
+        self.assertFalse(carriers.take("usb", {"kind": "gone", "device": "Diamond"}))   # unplugged
+        self.assertTrue(carriers.take("ble", self.press(5)))
+        self.assertTrue(carriers.take("ble", self.release(5)))
+        # Plugged in again: BLE keeps it while it lasts.
+        self.assertFalse(carriers.take("usb", self.press(6)))
+        self.assertTrue(carriers.take("ble", self.press(6)))
+
+    def test_a_layer_change_heard_only_on_the_other_carrier_is_handed_on(self):
+        # BLE decoded the new layers first and was set aside; USB went before it said them, and
+        # BLE's decoder will not say an unchanged set again: the takeover says it.
+        carriers = Carriers()
+        layers = lambda ids: {"kind": "layers", "ids": ids, "device": "Diamond"}
+        self.assertTrue(carriers.take("usb", layers([1])))
+        self.assertFalse(carriers.take("ble", layers([1])))
+        self.assertFalse(carriers.take("ble", layers([1, 3])))
+        self.assertEqual([], carriers.drain())
+        self.assertFalse(carriers.take("usb", {"kind": "gone", "device": "Diamond"}))
+        self.assertEqual([layers([1, 3])], carriers.drain())
+        self.assertEqual([], carriers.drain())
+        self.assertTrue(carriers.take("ble", self.press(4)))      # BLE is read at once
+        # The same set as the pages have: nothing to say.
+        carriers = Carriers()
+        carriers.take("usb", layers([2])); carriers.take("ble", layers([2]))
+        carriers.take("usb", {"kind": "gone", "device": "Diamond"})
+        self.assertEqual([], carriers.drain())
+
+    def test_the_feed_says_the_takeovers_layers(self):
+        told = []
+        with mock.patch("hudfeed.carbon_probe", return_value=None), mock.patch("hudfeed.terminal_probe", return_value=None), \
+             mock.patch("hudfeed.sessionlock.probe", return_value=None), tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("keyboard: {name: Diamond}\nserial: {port: /dev/cu.test}\n")
+            feed = Feed(told.append, log=lambda *a: None, config=path, sessions=False, keymap=False, hid_keys=False)
+        feed.reader.emit({"kind": "layers", "ids": [1], "device": "Diamond"})
+        feed.ble.emit({"kind": "layers", "ids": [1, 3], "device": "Diamond"})
+        feed.reader.emit({"kind": "gone", "device": "Diamond"})
+        self.assertEqual([[1], [1, 3]], [m["ids"] for m in told if m["kind"] == "layers"])
+
+    def test_a_takeover_goes_out_before_the_other_thread_says_anything(self):
+        # USB goes on its reader's thread while BLE has a newer layer set on its own: the takeover
+        # must be out before BLE's message is decided, or the older set would follow the newer.
+        told, order = [], []
+        with mock.patch("hudfeed.carbon_probe", return_value=None), mock.patch("hudfeed.terminal_probe", return_value=None), \
+             mock.patch("hudfeed.sessionlock.probe", return_value=None), tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("keyboard: {name: Diamond}\nserial: {port: /dev/cu.test}\n")
+            feed = Feed(told.append, log=lambda *a: None, config=path, sessions=False, keymap=False, hid_keys=False)
+        feed.reader.emit({"kind": "layers", "ids": [1], "device": "Diamond"})
+        feed.ble.emit({"kind": "layers", "ids": [1, 3], "device": "Diamond"})
+        taken, ble_sent = threading.Event(), threading.Event()
+        real_take = feed.carriers.take
+
+        def slow_take(carrier, msg):
+            out = real_take(carrier, msg)
+            if msg.get("kind") == "gone":
+                taken.set()
+                ble_sent.wait(0.3)      # BLE's newer set tries to get in between take and drain
+            return out
+        feed.carriers.take = slow_take
+        ble = threading.Thread(target=lambda: (taken.wait(2), feed.ble.emit({"kind": "layers", "ids": [1, 3, 4], "device": "Diamond"}), ble_sent.set()))
+        ble.start()
+        feed.reader.emit({"kind": "gone", "device": "Diamond"})
+        ble.join(3)
+        self.assertEqual([[1], [1, 3], [1, 3, 4]], [m["ids"] for m in told if m["kind"] == "layers"])
+
+    def test_two_keyboards_are_read_apart(self):
+        carriers = Carriers()
+        self.assertTrue(carriers.take("ble", self.press(1)))
+        other = {"kind": "press", "pos": 1, "device": "Romak"}
+        self.assertTrue(carriers.take("usb", other))
+        self.assertFalse(carriers.take("ble", dict(other)))
+
+    def test_a_ble_keyboard_without_a_name_takes_the_configured_one(self):
+        # Found by its address, BLE may give no name: the configured one keeps it one keyboard.
+        from hudfeed import BleReader
+        dev = mock.Mock(address="AA:BB:CC:DD:EE:FF")
+        dev.name = None
+        named = mock.Mock(address="AA:BB:CC:DD:EE:FF")
+        named.name = "Diamond"
+        reader = mock.Mock()
+        reader.name = "Diamond"                          # keyboard: {name: Diamond}
+        self.assertEqual("Diamond", BleReader._label(reader, dev))
+        reader.name = None
+        self.assertEqual("AA:BB:CC:DD:EE:FF", BleReader._label(reader, dev))
+        reader.name = "Dia"
+        self.assertEqual("Diamond", BleReader._label(reader, named))
+
+    def test_what_names_no_keyboard_passes(self):
+        carriers = Carriers()
+        self.assertTrue(carriers.take("ble", {"kind": "device", "name": "Diamond"}))
+        self.assertTrue(carriers.take("usb", {"kind": "device", "name": "Diamond"}))
+        self.assertFalse(carriers.take("usb", {"kind": "gone"}))
+
+    def test_the_feed_forwards_one_copy(self):
+        told = []
+        with mock.patch("hudfeed.carbon_probe", return_value=None), mock.patch("hudfeed.terminal_probe", return_value=None), \
+             mock.patch("hudfeed.sessionlock.probe", return_value=None), tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("keyboard: {name: Diamond}\nserial: {port: /dev/cu.test}\n")
+            feed = Feed(told.append, log=lambda *a: None, config=path, sessions=False, keymap=False, hid_keys=False)
+        self.assertIsNotNone(feed.ble)
+        for m in [self.press(11), self.press(12), self.release(12), self.release(11)]:
+            feed.ble.emit(dict(m))
+            feed.reader.emit(dict(m))
+        feed.reader.emit({"kind": "gone", "device": "Diamond"})
+        feed.ble.emit({"kind": "gone", "device": "Diamond"})
+        self.assertEqual([("press", 11), ("press", 12), ("release", 12), ("release", 11)],
+                         [(m["kind"], m["pos"]) for m in told if m["kind"] in ("press", "release")])
+        self.assertNotIn("gone", [m["kind"] for m in told])
 
 
 class Reports(unittest.TestCase):
@@ -938,15 +1160,19 @@ class PortTaken(unittest.TestCase):
         with mock.patch("fcntl.ioctl") as ioctl:
             dev = self.read_once([self.frame(signal_frame.KIND_LAYERS, (0b110).to_bytes(4, "little"))], reader)
         ioctl.assert_called_once_with(42, termios.TIOCEXCL)
-        self.assertEqual([{"kind": "layers", "ids": [1, 2]}, {"kind": "device", "name": "Test Board"}],
+        # ...and `gone` when the port closes, for the feed's Carriers (it goes no further).
+        self.assertEqual([{"kind": "layers", "ids": [1, 2]}, {"kind": "device", "name": "Test Board"}, {"kind": "gone"}],
                          [{k: v for k, v in m.items() if k != "device"} if m["kind"] != "device" else m for m in emitted])
         self.assertTrue(dev.closed)
 
     def test_a_port_that_is_not_the_signal_is_left_as_it_was(self):
-        reader = SerialReader(lambda m: None, log=lambda *a: None)
+        emitted = []
+        reader = SerialReader(emitted.append, log=lambda *a: None)
         with mock.patch("fcntl.ioctl") as ioctl:
             self.read_once([b"\x00\x01\x02 not a frame"], reader)
         ioctl.assert_not_called()
+        # ...nor is its closing said: it shares the signal port's carrier and name (Carriers).
+        self.assertEqual([], emitted)
         self.assertEqual("no frames", reader._quiet.get("/dev/cu.test"))
 
     def test_a_port_that_cannot_be_taken_is_still_read(self):
