@@ -325,6 +325,21 @@ class CarriersTest(unittest.TestCase):
         self.assertTrue(carriers.take("ble", self.press(24)))
         self.assertTrue(carriers.take("usb", self.press(2)))
 
+    def test_two_keyboards_gone_leave_the_name_to_be_judged_again(self):
+        carriers, now = self.clocked()
+        carriers.take("usb", self.press(1))
+        for pos in [20, 21, 22, 23]:
+            now[0] += 1.0
+            carriers.take("ble", self.press(pos))
+        self.assertIn("Diamond", carriers.split)
+        carriers.take("usb", {"kind": "gone", "device": "Diamond"})
+        self.assertIn("Diamond", carriers.split)            # one of them is still there
+        carriers.take("ble", {"kind": "gone", "device": "Diamond"})
+        self.assertNotIn("Diamond", carriers.split)
+        # One of them back on both carriers: one carrier read again.
+        self.assertTrue(carriers.take("usb", self.press(3)))
+        self.assertFalse(carriers.take("ble", self.press(3)))
+
     def test_a_copy_ahead_or_behind_is_a_copy(self):
         carriers, now = self.clocked()
         for pos in range(12):

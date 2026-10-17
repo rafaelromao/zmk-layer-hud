@@ -397,6 +397,13 @@ class Carriers:
         if kind == "gone":
             self.links.discard(link)
             self.layers.pop(link, None)
+            if not any(d == device for (_, d) in self.links):
+                # Its last connection: whatever comes next under the name is judged afresh (one
+                # keyboard on both carriers again, after two that shared it).
+                self.split.discard(device)
+                for seen in (self.strays, self.ahead, self.behind, self.owner):
+                    seen.pop(device, None)
+                return False
             if self.owner.get(device) == carrier:
                 del self.owner[device]
                 self.ahead.pop(device, None)
