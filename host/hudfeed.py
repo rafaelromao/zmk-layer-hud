@@ -125,13 +125,15 @@ class Stream:
         for out in self.decoder.flush(now_ms):
             self._emit(out)
 
-    def close(self):
+    def close(self, held_elsewhere=0):
         """The keyboard went away: a dead key waiting for its letter is the plain key it was, and
         then everything held comes up, modifiers too -- as the report a keyboard sends when every
-        key is let go, so the decoder says it the way it says any release."""
+        key is let go, so the decoder says it the way it says any release. All but the modifiers
+        another keyboard still holds (`held_elsewhere`): the pages' modifiers are every keyboard's,
+        and that one says them again only when it lets them go."""
         for out in self.decoder.flush():
             self._emit(out)
-        for out in self.decoder.feed({"kind": "keys", "mods": 0, "keys": []}):
+        for out in self.decoder.feed({"kind": "keys", "mods": held_elsewhere, "keys": []}):
             self._emit(out)
 
     def resync(self):
@@ -310,10 +312,13 @@ class Reader:
                 self.close(conn)
             except Exception:
                 pass
+            held_elsewhere = 0   # the modifiers the keyboards still read hold
             with self._lock:
                 self._open.pop(path, None)
                 self._streams.discard(stream)
-            stream.close()
+                for other in self._streams:
+                    held_elsewhere |= other.decoder.mods
+            stream.close(held_elsewhere)
 
     @staticmethod
     def where(path):

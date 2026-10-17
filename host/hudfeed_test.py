@@ -108,6 +108,21 @@ class StreamTest(unittest.TestCase):
         self.stream.close()
         self.assertEqual([("flagsChanged", False)], [(m["type"], m["flags"]["shift"]) for m in self.out])
 
+    def test_closing_leaves_held_a_modifier_another_keyboard_holds(self):
+        # Shift held on both keyboards, one unplugged: the other still holds it, and will not say
+        # so again until it lets it go -- so the pages are not told it came up.
+        self.stream.message({"kind": "keys", "mods": 0x02, "keys": [0x04]}, 0)
+        self.out.clear()
+        self.stream.close(held_elsewhere=0x02)
+        self.assertEqual([("keyUp", "A")], [(m["type"], m["chars"]) for m in self.out])
+        # Ctrl and Shift here, Shift there: Ctrl comes up, Shift stays.
+        stream = Stream(self.out.append, "Diamond")
+        stream.message({"kind": "keys", "mods": 0x03, "keys": []}, 0)
+        self.out.clear()
+        stream.close(held_elsewhere=0x02)
+        self.assertEqual([("flagsChanged", False, True)],
+                         [(m["type"], m["flags"]["ctrl"], m["flags"]["shift"]) for m in self.out])
+
     def test_closing_types_a_dead_key_that_was_waiting_for_its_letter(self):
         # ' held back for the letter that would make it an accent: the keyboard went away instead,
         # so it is the plain key it was -- down, then up -- never an up with no down.
@@ -914,6 +929,17 @@ class ReaderLoop(unittest.TestCase):
         self.assertNotIn("a", r._open)
         said = [(m["type"], m["chars"] if m["type"] != "flagsChanged" else m["flags"]["shift"]) for m in self.out]
         self.assertEqual([("flagsChanged", True), ("keyDown", "A"), ("flagsChanged", False), ("keyUp", "a")], said)
+
+    def test_a_keyboard_that_ends_leaves_held_what_another_still_holds(self):
+        import hudfeed
+        r = self.reader([["a"]])
+        other = hudfeed.Stream(lambda m: None, "Other")
+        other.message({"kind": "keys", "mods": 0x02, "keys": []}, 0)   # Shift, on the other keyboard
+        r._streams.add(other)
+        conn = self.Fake([{"kind": "keys", "mods": 0x02, "keys": [0x04]}])
+        r._read_loop("a", conn, "Board")
+        said = [(m["type"], m["chars"] if m["type"] != "flagsChanged" else m["flags"]["shift"]) for m in self.out]
+        self.assertEqual([("flagsChanged", True), ("keyDown", "A"), ("keyUp", "A")], said)
 
     def test_a_listing_that_fails_is_said_and_the_scan_goes_on(self):
         r = self.reader([["a"], ["a"]])
