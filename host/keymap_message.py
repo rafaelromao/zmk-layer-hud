@@ -31,12 +31,13 @@ class KeymapMessage:
         z0 = self.zmk_layers.get("0") or {}
         # As build_message picks it: the message's word, else what ZMK layer 0 draws, else the first.
         self.base = data.get("base") or z0.get("drawer") or (self.order[0] if self.order else None)
+        # drawer_of read backwards, over every id the message can carry: the table's, and those the
+        # drawer's order draws when the table leaves them out.
         self._ids = {}
-        for zid, z in self.zmk_layers.items():
-            if z and z.get("drawer"):
-                self._ids.setdefault(z["drawer"], []).append(int(zid))
-        for ids in self._ids.values():
-            ids.sort()
+        for zid in sorted({int(z) for z in self.zmk_layers} | set(range(len(self.order)))):
+            d = self.drawer_of(zid)
+            if d:
+                self._ids.setdefault(d, []).append(zid)
 
     def drawer_of(self, zid):
         """The drawer layer a ZMK layer is drawn as; one the table leaves out is the drawer's layer

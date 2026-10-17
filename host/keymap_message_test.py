@@ -42,6 +42,30 @@ class Read(unittest.TestCase):
         self.assertEqual("sym", m.drawer_of(2))
         self.assertIsNone(m.drawer_of(9))
 
+    def test_a_layer_stands_for_every_id_drawn_as_it_named_or_left_out(self):
+        # ZMK layer 1 is left out and drawn as nav, the drawer's layer 1; 2 is named nav, so it is
+        # not sym, and sym stands for none. ids_of is drawer_of read backwards, over every id the
+        # message can carry: the table's and the drawer's order.
+        m = KeymapMessage(dict(DATA, zmk_layers={"0": {"drawer": "base"}, "2": {"drawer": "nav"}}))
+        self.assertEqual([0], m.ids_of("base"))
+        self.assertEqual([1, 2], m.ids_of("nav"))
+        self.assertEqual([], m.ids_of("sym"))
+        for msg in (m, self.m, KeymapMessage(dict(DATA, zmk_layers={}))):
+            for layer in msg.order:
+                for zid in range(10):
+                    self.assertEqual(msg.drawer_of(zid) == layer, zid in msg.ids_of(layer), (layer, zid))
+
+    def test_the_oracle_types_through_a_layer_the_table_leaves_out(self):
+        # A table with only the base in it: every other layer is drawn by its number, as the page
+        # draws it, so the oracle finds the same ways as with the whole table written out.
+        import ways
+        with open(os.path.join(FIXTURES, "example-3x5.json"), encoding="utf-8") as f:
+            data = json.load(f)
+        whole = ways.ways(ways.Keymap(data))
+        partial = ways.ways(ways.Keymap(dict(data, zmk_layers={"0": data["zmk_layers"]["0"]})))
+        self.assertEqual(sorted(json.dumps(w, sort_keys=True) for w in whole),
+                         sorted(json.dumps(w, sort_keys=True) for w in partial))
+
     def test_positions(self):
         self.assertEqual((0, 2, None), (self.m.idx_at(10), self.m.idx_at(12), self.m.idx_at(13)))
         self.assertEqual((10, None), (self.m.pos_of(0), self.m.pos_of(5)))
