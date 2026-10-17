@@ -80,6 +80,7 @@ HUD_DEFAULTS = {
     "release_ms": 60,          # how long a key stays lit after its reported release
     "held_timeout_ms": 5000,   # a held key is released on the HUD after this if its release report is lost
     "combo_pill_ms": 1000,     # how long a combo's pill stays up
+    "combo_decide_ms": 300,    # how long a combo's pill waits to see whether it was tapped or held
     "combo_slack_ms": 20,      # added to combo_term_ms for the reports' travel time
     "activator_ms": 400,       # a key pressed this recently before a layer appeared is its activator
     "one_shot_ms": 450,        # an inferred one-shot layer stays on the banner this long (no positions)
