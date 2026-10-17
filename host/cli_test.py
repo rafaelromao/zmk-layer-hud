@@ -698,6 +698,12 @@ class OmarchyPlugin(unittest.TestCase):
         self.assertIn(f'moduleName: "{cli.OMARCHY_ID}"', qml)
         self.assertNotIn("id: state", qml)                # every Item has a `state` of its own
 
+    def test_the_bar_reads_another_copys_hud_as_the_macos_icon_does(self):
+        # panelstate.hud's "icon", through `status --json`: the word both icons take it by.
+        with open(os.path.join(self.SRC, "BarWidget.qml"), encoding="utf-8") as f:
+            qml = f.read()
+        self.assertIn('h.icon === "another copy"', qml)
+
     def test_without_omarchy_nothing_is_copied(self):
         code, said, _ = self.run_cli("menubar", "enable", which=lambda n: None)
         self.assertEqual(1, code)

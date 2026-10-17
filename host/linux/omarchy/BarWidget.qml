@@ -8,7 +8,9 @@ import qs.Ui
 // while it is hidden (still counting); the glyph crossed out when it is not running. The WPM is the
 // live one, or the session's average or top, as the menu picked. A click shows or hides the HUD, or
 // starts it. A right-click offers the three WPMs, each with its number now, then the same and Quit,
-// each beside its global shortcut. Resting the pointer on it opens the HUD's stats column, laid out
+// each beside its global shortcut. A HUD from another copy of zmk-layer-hud is that copy's to show,
+// hide or stop, which this copy's command line refuses: the glyph stays dimmed, and the menu says
+// where it runs and offers nothing for it. Resting the pointer on it opens the HUD's stats column, laid out
 // across: the same tiles the HUD shows (`stats:` in its config), in the shell's own popout.
 //
 // The shortcuts are Hyprland binds that `zmk-layer-hud start` writes (host/shortcuts.py); their
@@ -38,7 +40,8 @@ BarWidget {
   readonly property var startWith: installedStartWith.indexOf("__") === 0
     ? [] : installedStartWith.split(" ").filter(w => w.length)
 
-  property string hud: "stopped"      // shown | hidden | stopped
+  property string hud: "stopped"      // shown | hidden | stopped | elsewhere (another copy's)
+  property string elsewhere: ""       // the copy a HUD runs from, when it is another copy's
   property var keys: ({})             // {"toggle": "Ctrl+Alt+L", "power": "Ctrl+Alt+Super+L"}
   property int pid: 0
   property int wpm: 0
@@ -72,7 +75,7 @@ BarWidget {
       root.takeRows(Array.isArray(st.stats) ? st.stats : [])
       root.docked = st.dock === true
       root.typing = typeof st.typing === "string" ? st.typing : ""
-      root.hud = st.shown ? "shown" : "hidden"
+      root.hud = root.elsewhere ? "elsewhere" : st.shown ? "shown" : "hidden"
     } catch (e) {
       root.stopped()
     }
@@ -88,7 +91,9 @@ BarWidget {
     try {
       const h = JSON.parse(text)
       root.remoteOn = !!(h.remote && h.remote.serving === true)
-      if (!h.running || !h.said) { root.stopped(); return }
+      if (!h.running || !h.said) { root.elsewhere = ""; root.stopped(); return }
+      if (h.icon === "another copy") { root.elsewhere = h.where || "another copy"; root.hud = "elsewhere"; return }
+      if (root.elsewhere) { root.elsewhere = ""; panelFile.reload() }
       root.docked = h.dock === true
       root.typing = typeof h.typing === "string" ? h.typing : ""
     } catch (e) {
@@ -137,7 +142,8 @@ BarWidget {
   // has left both the icon and the panel. Never over the menu, and only for a HUD that runs and has
   // said what its column shows.
   readonly property bool pointerIn: button.tooltipHovered || hoverCard.containsMouse
-  readonly property bool canHover: root.hud !== "stopped" && root.rows.length > 0 && !root.menuOpen
+  readonly property bool canHover: (root.hud === "shown" || root.hud === "hidden") && root.rows.length > 0
+    && !root.menuOpen
   onPointerInChanged: { hoverTimer.interval = root.pointerIn ? 400 : 150; hoverTimer.restart() }
   onCanHoverChanged: if (!root.canHover) root.hoverOpen = false
 
@@ -229,12 +235,13 @@ BarWidget {
     // While the HUD runs the hover panel says it all. The tooltip says how to start it, or, for a
     // HUD from before it said its stats, what a click does.
     tooltipText: root.hud === "stopped" ? "ZMK layer HUD is not running: click to start it"
+      : root.hud === "elsewhere" ? "ZMK layer HUD: the one running is " + root.elsewhere + "'s to show, hide or stop"
       : root.rows.length ? ""
       : root.hud === "shown" ? "ZMK layer HUD: click to hide it (it keeps counting)"
       : "ZMK layer HUD, hidden and counting: click to show it"
     onPressed: (mouseButton) => {
       root.hoverOpen = false
-      if (mouseButton === Qt.RightButton) {
+      if (mouseButton === Qt.RightButton || root.hud === "elsewhere") {
         root.menuOpen = !root.menuOpen
       } else if (mouseButton === Qt.LeftButton) {
         root.run(root.hud === "stopped" ? "start" : "toggle")
@@ -260,7 +267,7 @@ BarWidget {
 
     Text {
       anchors.verticalCenter: parent.verticalCenter
-      visible: root.hud !== "stopped"
+      visible: root.hud === "shown" || root.hud === "hidden"
       text: root.wpmOf(root.wpmChoice)
       color: root.bar ? root.bar.barForeground : "white"
       font.family: root.fontName
@@ -286,7 +293,9 @@ BarWidget {
 
   // The right-click menu, drawn as the tray draws its menus. Its rows change only with the HUD's
   // state; the numbers in them follow the HUD while it is open.
-  readonly property var menuRows: root.hud === "stopped"
+  readonly property var menuRows: root.hud === "elsewhere"
+    ? [{ kind: "note", text: "HUD running from " + root.elsewhere }]
+    : root.hud === "stopped"
     ? [{ kind: "item", text: "Start HUD", verb: "start", shortcut: "power" }]
     : [{ kind: "wpm", text: "Current WPM", choice: "current" },
        { kind: "wpm", text: "Average WPM", choice: "average" },
@@ -399,7 +408,7 @@ BarWidget {
             id: rowMouse
             anchors.fill: parent
             hoverEnabled: true
-            enabled: !menuRow.separator
+            enabled: !menuRow.separator && menuRow.modelData.kind !== "note"
             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: {
               const row = menuRow.modelData

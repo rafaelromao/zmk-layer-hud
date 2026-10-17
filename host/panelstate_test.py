@@ -261,6 +261,22 @@ class Hud(unittest.TestCase):
         self.assertEqual((True, True, False), (h["running"], h["said"], h["ours"]))
         self.assertEqual(os.path.realpath("/home/me/src/zmk-layer-hud"), h["where"])
 
+    def test_another_copys_hud_is_one_the_icons_offer_nothing_for(self):
+        # This copy's show, hide and stop refuse it (cli.another_copy): an icon that offered them
+        # would do nothing at a click, and say nothing either.
+        self.panel(os.getpid(), tree="/home/me/src/zmk-layer-hud")
+        panelstate.write(self.d, True)
+        self.assertEqual("another copy", self.hud()["icon"])
+
+    def test_the_icons_show_this_copys_hud_as_it_said_it_is(self):
+        self.assertEqual("stopped", self.hud()["icon"])
+        self.panel(os.getpid())
+        self.assertEqual("stopped", self.hud()["icon"])     # still starting: nothing to show or hide yet
+        panelstate.write(self.d, True)
+        self.assertEqual("shown", self.hud()["icon"])
+        panelstate.write(self.d, False)
+        self.assertEqual("hidden", self.hud()["icon"])
+
     def test_a_panel_of_this_copy_that_has_said_nothing_yet(self):
         self.panel(4242)
         h = self.hud()

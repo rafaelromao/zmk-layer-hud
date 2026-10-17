@@ -161,6 +161,7 @@ class Icon(NSObject):
     def init(self):
         self = objc.super(Icon, self).init()
         self.st = None
+        self.elsewhere = None           # the copy a HUD runs from, when it is another copy's
         self.choice = "current"         # which WPM the icon shows (panelstate.wpm_choice)
         self.look = None                # what the button shows, to set it again only when that changes
         self.item = NSStatusBar.systemStatusBar().statusItemWithLength_(NSVariableStatusItemLength)
@@ -211,6 +212,8 @@ class Icon(NSObject):
 
     @objc.python_method
     def hotkey(self, name):
+        if self.elsewhere:              # another copy's HUD: this copy's verbs refuse it
+            return
         if name == "power":
             self.run("power")
         elif self.st is None:           # nothing to show, hide or dock
@@ -224,12 +227,15 @@ class Icon(NSObject):
         if timer is not None:
             self.reshortcut()
         # The HUD as the command line reads it (panelstate.hud): a panel.json whose pid is no HUD
-        # panel's -- one handed out again since -- is no running HUD here either.
+        # panel's -- one handed out again since -- is no running HUD here either. Another copy's HUD
+        # is that copy's to show, hide or stop, and this copy's command line refuses to: the icon
+        # says where it runs and offers nothing for it.
         h = panelstate.hud(RUN, ROOT, procs=self.processes)
-        st, choice = (h if h["said"] else None), h["wpm_choice"]
+        st, choice = (h if h["icon"] in ("shown", "hidden") else None), h["wpm_choice"]
         self.st, self.choice = st, choice   # the menu's numbers, kept even when the button stays as it is
+        self.elsewhere = h["where"] if h["icon"] == "another copy" else None
         n = panelstate.wpm_shown(st, choice)
-        look = (st is not None, bool(st and st["shown"]), n)
+        look = (h["icon"], self.elsewhere, n)
         if look == self.look and timer is not None:
             return
         self.look = look
@@ -237,11 +243,13 @@ class Icon(NSObject):
         button.setAppearsDisabled_(not (st and st["shown"]))
         text = (f"{n} " if n is not None else "— ") if st else ""
         if self.image is not None:
-            button.setImage_(self.image if st else self.stopped_image)
+            button.setImage_(self.image if st or self.elsewhere else self.stopped_image)
             button.setTitle_(text)
         else:
             button.setTitle_(text + "⌨")
-        button.setToolTip_("zmk-layer-hud: " + ("click to hide it (it keeps counting)" if st and st["shown"] else
+        button.setToolTip_("zmk-layer-hud: " + (f"the HUD running is {self.elsewhere}'s to show, hide or stop"
+                                                if self.elsewhere else
+                                                "click to hide it (it keeps counting)" if st and st["shown"] else
                                                 "hidden and counting: click to show it" if st else
                                                 "not running: click to start it"))
 
@@ -268,6 +276,8 @@ class Icon(NSObject):
         if event is not None and (event.type() == NSEventTypeRightMouseUp
                                   or event.modifierFlags() & NSEventModifierFlagControl):
             self.pop_menu()
+        elif self.elsewhere:            # nothing to do here: the menu says where it runs
+            self.pop_menu()
         else:
             self.run("start" if self.st is None else "toggle")
 
@@ -286,7 +296,12 @@ class Icon(NSObject):
                 self.menu.addItem_(item)
             self.menu.addItem_(NSMenuItem.separatorItem())
         # The third of each is the shortcut that does the same, drawn beside it by the menu.
-        items = [("Start HUD", "start", "power")] if self.st is None else \
+        if self.elsewhere:
+            line = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+                f"HUD running from {self.elsewhere}", None, "")
+            line.setEnabled_(False)
+            self.menu.addItem_(line)
+        items = [] if self.elsewhere else [("Start HUD", "start", "power")] if self.st is None else \
             [("Hide HUD" if self.st["shown"] else "Show HUD", "hide" if self.st["shown"] else "show", "toggle"),
              # The touch keyboard: docked along the bottom of the screen, typing where it is clicked.
              ("Float HUD" if self.st.get("dock") else "Dock HUD to Type on It", "dock", "dock")] + \

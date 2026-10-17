@@ -329,6 +329,9 @@ def hud(d=None, root=None, procs=processes):
                   what it last said, when `said`
         feed      "running", "in the panel" (macOS: the panel runs it), or "stopped"
         remote    what the remote-mode server last said, while it is alive (remote.live_now)
+        icon      what both icons make of it: "shown", "hidden", "stopped" (nothing has said it runs,
+                  so a click starts it), or "another copy" -- a HUD from `where`, which this copy's
+                  show, hide and stop refuse, so the icon says where it runs and offers nothing for it
         wpm_choice   which WPM the icons show
 
     `procs(pattern)` -> {pid: command line}: the processes, which a test stands in for."""
@@ -360,4 +363,6 @@ def hud(d=None, root=None, procs=processes):
     except ImportError:
         out["remote"] = {}
     out["wpm_choice"] = wpm_choice(d)
+    out["icon"] = ("stopped" if not said else "another copy" if not out["ours"] else
+                   "shown" if out["shown"] else "hidden")
     return out
