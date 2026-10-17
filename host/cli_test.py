@@ -48,7 +48,8 @@ class Parser(unittest.TestCase):
     def test_the_documented_verbs_are_all_there(self):
         expected = {"start", "stop", "restart", "status", "log", "doctor", "setup", "update",
                     "uninstall", "import", "sync", "keymap", "config", "demo", "poke", "feed",
-                    "version", "session", "heatmap", "show", "hide", "toggle", "menubar", "autostart", "power"}
+                    "version", "session", "heatmap", "show", "hide", "toggle", "menubar", "autostart", "power",
+                    "typing", "dock", "remote"}
         self.assertEqual(expected, set(self.verbs))
 
     def test_the_session_verbs_need_no_venv(self):
@@ -184,8 +185,11 @@ class HostScript(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        # start and restart go into the venv first (NEEDS_VENV), which a checkout without one --
+        # CI's -- does not have: what is tested here is what comes after.
         patches = [mock.patch.object(cli, "STATE", self.tmp.name),
-                   mock.patch.object(cli, "definitions_missing", lambda: None)]
+                   mock.patch.object(cli, "definitions_missing", lambda: None),
+                   mock.patch.object(cli, "reexec_into_venv", lambda: None)]
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
@@ -220,11 +224,25 @@ class HostScript(unittest.TestCase):
 
 # A stand-in for a panel: says it is shown, and does what panel.want says each time SIGUSR2 comes.
 FAKE_PANEL = textwrap.dedent('''
-    import signal, sys, time
+    import os, signal, sys, time
     sys.path.insert(0, sys.argv[1])
     import panelstate
     d = sys.argv[2]
-    signal.signal(panelstate.SIGNAL, lambda *_: panelstate.write(d, panelstate.wanted(d)))
+    docked = [False]
+    def asked(*_):
+        shown = panelstate.wanted(d)
+        dock = panelstate.take_want(d, "dock")
+        if dock is not None:
+            docked[0] = bool(dock)
+        extra = {"dock": docked[0], "dock_at": time.time(), "typing": "ok" if docked[0] else "off"}
+        panelstate.write(d, True if shown is None else shown, extra=extra)
+        # A board too big for the screen at its real size: the page says so a moment after it docks.
+        if docked[0] and os.path.exists(os.path.join(d, "too-big")):
+            time.sleep(0.2)
+            docked[0] = False
+            extra.update(dock=False, dock_at=time.time(), typing="off", dock_note="the board is 191 x 115 mm")
+            panelstate.write(d, True if shown is None else shown, extra=extra)
+    signal.signal(panelstate.SIGNAL, asked)
     panelstate.write(d, True)
     time.sleep(30)
 ''')
@@ -265,6 +283,31 @@ class ShowHide(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertIn("HUD shown", said)
 
+    def test_dock_toggles_and_is_said(self):
+        proc = self.start_panel()
+        code, said = self.run_cli("dock", pids=[proc.pid])
+        self.assertEqual((0, True), (code, cli.panelstate.read(self.tmp.name)["dock"]), said)
+        self.assertIn("docked", said)
+        code, said = self.run_cli("dock", "status", pids=[proc.pid])
+        self.assertIn("can type", said)
+        self.assertEqual(0, self.run_cli("dock", "off", pids=[proc.pid])[0])
+        self.assertFalse(cli.panelstate.read(self.tmp.name)["dock"])
+        self.assertEqual(0, self.run_cli("dock", "off", pids=[proc.pid])[0])     # said again: still off
+        self.assertTrue(cli.panelstate.read(self.tmp.name)["shown"])              # and still shown
+
+    def test_a_board_too_big_to_dock_is_said_and_stays_a_hud(self):
+        proc = self.start_panel()
+        open(os.path.join(self.tmp.name, "too-big"), "w").close()
+        code, said = self.run_cli("dock", "on", pids=[proc.pid])
+        self.assertEqual(1, code, said)
+        self.assertIn("did not dock, and is a HUD only: the board is 191 x 115 mm", said)
+        self.assertFalse(cli.panelstate.read(self.tmp.name)["dock"])
+        code, said = self.run_cli("dock", "status", pids=[proc.pid])
+        self.assertIn("floating, a HUD only: the board is 191 x 115 mm", said)
+        # The note of a refusal before is not this one's: a board that fits now docks.
+        os.remove(os.path.join(self.tmp.name, "too-big"))
+        self.assertEqual(0, self.run_cli("dock", "on", pids=[proc.pid])[0])
+
     def test_power_stops_a_running_hud_and_starts_one_that_is_not(self):
         with mock.patch.object(cli, "reexec_into_venv"), mock.patch.object(cli, "cmd_stop", return_value=0) as stop, \
                 mock.patch.object(cli, "cmd_start", return_value=0) as start:
@@ -292,6 +335,101 @@ class ShowHide(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertIn("restart", said)
         kill.assert_not_called()
+
+
+# A stand-in for what serves remote mode (host/remote.py): answers each request in remote.json the way
+# the controller does, in remote.live.json -- serving at a made-up address, or refusing with argv[3].
+FAKE_REMOTE = textwrap.dedent('''
+    import os, sys, time
+    sys.path.insert(0, sys.argv[1])
+    import remote
+    d, refusal = sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else ""
+    seen = None
+    while True:
+        req = remote.read_request(d)
+        if req.get("id") != seen:
+            seen = req.get("id")
+            on = bool(req.get("on")) and not refusal
+            live = {"pid": os.getpid(), "id": seen, "serving": on, "client": False,
+                    "until": req.get("until") if on else None, "typing": "ok", "why": refusal}
+            if on:
+                live["url"] = "http://192.168.1.5:%d/" % req["port"]
+            remote._write(os.path.join(d, remote.LIVE_FILE), live)
+        time.sleep(0.02)
+''')
+
+
+class Remote(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        for name, value in (("STATE", self.tmp.name), ("reexec_into_venv", lambda: None),
+                            ("remote_config", lambda: {"port": 8768, "minutes": 30, "bind": ""})):
+            p = mock.patch.object(cli, name, value)
+            p.start()
+            self.addCleanup(p.stop)
+        self.r = cli.remote_mod()
+
+    def start(self, script, *more):
+        proc = subprocess.Popen([sys.executable, "-c", script, os.path.join(ROOT, "host"), self.tmp.name, *more])
+        self.addCleanup(proc.wait)
+        self.addCleanup(proc.kill)
+        return proc
+
+    def run_cli(self, *argv, pids=()):
+        with mock.patch.object(cli, "panel_pids", lambda: list(pids)), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            code = cli.main(list(argv))
+        return code, out.getvalue() + err.getvalue()
+
+    def panel(self):
+        proc = self.start(FAKE_PANEL)
+        deadline = time.monotonic() + 10
+        while not os.path.exists(os.path.join(self.tmp.name, "panel.json")):
+            self.assertLess(time.monotonic(), deadline, "the stand-in never said it was there")
+            time.sleep(0.02)
+        return proc
+
+    def test_on_prints_the_link_and_off_and_unpair_close_it(self):
+        panel = self.panel()
+        self.start(FAKE_REMOTE)
+        code, said = self.run_cli("remote", "on", "--minutes", "5", pids=[panel.pid])
+        key = self.r.load_key(self.tmp.name)
+        self.assertEqual(0, code, said)
+        self.assertIn(f"http://192.168.1.5:8768/#k={key}", said)
+        self.assertIn("remote off", said)
+        self.assertEqual((True, 5), (self.r.read_request(self.tmp.name)["on"], self.r.read_request(self.tmp.name)["minutes"]))
+        code, said = self.run_cli("remote", pids=[panel.pid])
+        self.assertIn("remote: serving http://192.168.1.5:8768/ until", said)
+        self.assertNotIn(key, said)                               # only `on` shows the link
+        self.assertEqual("remote: off\n", self.run_cli("remote", "off", pids=[panel.pid])[1])
+        self.assertIn("remote: off (", self.run_cli("remote", "status", pids=[panel.pid])[1])
+        self.assertIn("unpaired", self.run_cli("remote", "unpair", pids=[panel.pid])[1])
+        self.assertIsNone(self.r.load_key(self.tmp.name))
+        self.run_cli("remote", "on", pids=[panel.pid])
+        self.assertNotEqual(key, self.r.load_key(self.tmp.name))  # paired again: a new link
+        code, said = self.run_cli("remote", "on", "--app", pids=[panel.pid])
+        self.assertIn(f"zmkhud://import?from=192.168.1.5:8768#k={self.r.load_key(self.tmp.name)}", said)
+        self.assertEqual("zmkhud://import?from=%5Bfe80::1%5D:8768#k=K", cli.app_link("http://[fe80::1]:8768/", "K"))
+
+    def test_a_refusal_is_said(self):
+        panel = self.panel()
+        self.start(FAKE_REMOTE, "this computer's address (8.8.8.8) is a public one")
+        code, said = self.run_cli("remote", "on", pids=[panel.pid])
+        self.assertEqual(1, code)
+        self.assertIn("is a public one", said)
+        self.assertIn("off: this computer's address", self.run_cli("remote", pids=[panel.pid])[1])
+
+    def test_on_needs_a_running_hud_and_a_dead_servers_word_is_not_taken(self):
+        code, said = self.run_cli("remote", "on")
+        self.assertEqual(1, code)
+        self.assertIn("not running", said)
+        self.assertIsNone(self.r.load_key(self.tmp.name))         # nothing made for a HUD not there
+        gone = subprocess.Popen([sys.executable, "-c", "pass"])
+        gone.wait()
+        self.r._write(os.path.join(self.tmp.name, self.r.LIVE_FILE),
+                      {"pid": gone.pid, "serving": True, "url": "http://192.168.1.5:8768/", "until": 1})
+        self.assertIn("remote: off", self.run_cli("remote")[1])
 
 
 class SyncArgv(unittest.TestCase):
@@ -786,6 +924,19 @@ class Update(unittest.TestCase):
             cli.write_installed(root, "main", sha)
             self.assertEqual("main 06846f5 (installed)", cli.describe_version())
             self.assertEqual("main", cli.ref_to_follow(cli.installed_version()))    # a branch: that branch again
+
+    def test_a_tree_with_no_record_says_the_version_release_please_keeps(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with mock.patch.object(cli, "ROOT", tmp.name), mock.patch.object(cli, "in_clone", lambda: False):
+            with open(os.path.join(tmp.name, "version.txt"), "w") as f:
+                f.write("1.2.0\n")
+            self.assertEqual("v1.2.0 (installed tree)", cli.describe_version())
+            with open(os.path.join(tmp.name, "version.txt"), "w") as f:
+                f.write("not a version\n")
+            self.assertEqual("(installed tree)", cli.describe_version())
+        with open(os.path.join(ROOT, "version.txt")) as f:
+            self.assertRegex(f.read().strip(), r"^\d+\.\d+\.\d+$")           # the tree's own, as release-please writes it
 
     def test_update_leaves_a_tree_already_at_the_commit_alone_and_swaps_one_that_is_not(self):
         tmp = tempfile.TemporaryDirectory()

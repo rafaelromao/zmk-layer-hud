@@ -100,7 +100,8 @@ class PanelState(unittest.TestCase):
     def test_what_a_live_panel_says_is_read_back(self):
         panelstate.write(self.d, False)
         self.assertEqual({"pid": os.getpid(), "shown": False, "wpm": 0, "avg_wpm": None, "top_wpm": None, "session": None,
-                          "stats": []}, panelstate.read(self.d))
+                          "stats": [], "typing": None, "dock": False, "dock_note": None, "dock_at": None},
+                         panelstate.read(self.d))
         panelstate.write(self.d, True, wpm=63)
         self.assertEqual(63, panelstate.read(self.d)["wpm"])
         self.assertEqual(["panel.json"], os.listdir(self.d))       # no temporary file left beside it
@@ -167,6 +168,31 @@ class PanelState(unittest.TestCase):
         self.assertIs(False, panelstate.wanted(self.d))
         panelstate.ask(self.d, True)
         self.assertIs(True, panelstate.wanted(self.d))
+
+    def test_the_touch_keyboards_state_is_kept_checked(self):
+        panelstate.write(self.d, True, extra={"typing": "denied", "dock": True, "other": 1})
+        st = panelstate.read(self.d)
+        self.assertEqual(("denied", True), (st["typing"], st["dock"]))
+        self.assertNotIn("other", st)
+        panelstate.write(self.d, True, extra={"typing": "sideways", "dock": "yes"})
+        st = panelstate.read(self.d)
+        self.assertEqual((None, False), (st["typing"], st["dock"]))
+        # Why it is not docked: a sentence, not a page of anything.
+        panelstate.write(self.d, True, extra={"dock": False, "dock_note": "too big", "dock_at": 1760000000.5})
+        self.assertEqual(("too big", 1760000000.5), (panelstate.read(self.d)["dock_note"], panelstate.read(self.d)["dock_at"]))
+        for bad in ("", 5, "x" * (panelstate.NOTE_MAX + 1)):
+            panelstate.write(self.d, True, extra={"dock_note": bad})
+            self.assertIsNone(panelstate.read(self.d)["dock_note"], msg=repr(bad))
+
+    def test_a_request_is_taken_once(self):
+        self.assertIsNone(panelstate.take_want(self.d, "dock"))
+        panelstate.request(self.d, "dock", True)
+        panelstate.request(self.d, "typing", "request")
+        self.assertIs(True, panelstate.take_want(self.d, "dock"))
+        self.assertIsNone(panelstate.take_want(self.d, "dock"))     # once
+        self.assertEqual("request", panelstate.take_want(self.d, "typing"))
+        with self.assertRaises(ValueError):
+            panelstate.request(self.d, "shown", True)
 
     def test_the_signal_is_never_sigusr1(self):
         # WebKit suspends its own threads with SIGUSR1 on Linux, and the GTK panel is a WebKit

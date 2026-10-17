@@ -71,6 +71,8 @@
     "⌫": ["bspc", "BSPC", "backspace"], "⌦": ["del", "DEL"], "⇥": ["tab", "TAB", "↹"] };
   // Modifier flags → the glyph a hold legend uses for them (home-row mods light while held).
   const MOD_GLYPH = { shift: "⇧", ctrl: "⌃", alt: "⌥", cmd: "⌘" };
+  // Where the keys go and which legend each shows (hud/view.js), the same answers a native board draws from.
+  const View = window.ZmkView;
 
   const state = {
     data: null,
@@ -99,6 +101,8 @@
     heatMode: "live",         // what the keys glow with: live | session | physical | speed | off
     prefs: {},                // what the viewer chose (setPref): theme light | dark, side shown | hidden
     secure: false,            // secure input: a secret is being typed, and nothing of it shows
+    mini: false,              // docked and minimized: the keyboard down to its banner (setMini)
+    touchNote: "",            // why the board that was asked to type cannot (touch.js setTouchNote)
     watched: null,            // what the feed says sees a secret being typed ([] = nothing); null until told
     demo: false,              // a GIF still (&demo=N): drawn as it always was, no heat, no counts
     ledger: [],               // keystrokes drawn and not counted yet (see "ledger")
@@ -129,7 +133,26 @@
     seq: 0,
     tallyTimer: null,
     viewCache: null,
+    touch: null,              // the touch keyboard's view (touch.js, setTouchView): {ids, down, latched, mods, note}
+    dock: null,               // docked along the bottom of the screen (setDock): {maxHeight, split, pxPerMm, width, fit}
+    offsetX: 0,               // the board's left margin when docked: it is centred, not stretched
   };
+  // What other scripts on the page hook into (hud.on): touch.js follows the keymap and the layers.
+  const hooks = {};
+  let attachOwn = null;      // a page's own attach and detach (hud.setAttach), else the panel's
+  let widthDue = null;       // the board's width checked again soon (followWidth)
+  function fire(name, arg) {
+    for (const fn of hooks[name] || []) {
+      try { fn(arg); } catch (e) { console.error(e); }
+    }
+  }
+  // Docked, the banner is one thin line and nothing else sits around the board: this is the
+  // height of what is not the board (hud.css html.dock #hud and #layer), which the host's
+  // max_height has to make room for.
+  const DOCK_CHROME = 40;
+  // ...and the width of what is not the board either side (hud.css html.dock #hud: 10px of padding and
+  // a 1px border each): the screen's width less this is the board's.
+  const DOCK_SIDES = 22;
 
   const $ = id => document.getElementById(id);
   const base = () => state.data ? state.data.base : null;
@@ -152,33 +175,45 @@
     board.innerHTML = "";
     state.keyEls = [];
     const width = board.clientWidth || 570;
-    const scale = width / lay.width;
-    state.scale = scale;
-    board.style.height = Math.ceil(lay.height * scale) + "px";
+    // Docked: as wide as the screen allows and no taller than the host lets the strip be, a split
+    // board's halves at the sides (View.geometry).
+    // A touch keyboard's keys as big as the board's own, when they fit (dockFit).
+    const fit = state.dock && state.dock.fit;
+    const g = View.geometry(lay, { width, gap: GAP, chrome: DOCK_CHROME, dock: state.dock &&
+      { maxHeight: state.dock.maxHeight || window.innerHeight || 360, split: state.dock.split,
+        scale: fit && fit.fits ? fit.scale : null } });
+    state.scale = g.scale; state.offsetX = g.offsetX; state.gap = g.gap;
+    // Each key's centre on the board, in px: what a touch between keys is measured from (touch.js),
+    // and its box, which the combo chips keep off.
+    state.centers = g.centers;
+    state.rects = g.rects;
+    state.chipsEl = null;   // went with the keys
+    board.style.height = g.height + "px";
+    state.boardHeight = g.height;
+    state.builtWidth = width;
     // Legends scale with the typical key height (see --kh in hud.css).
-    const kh = Math.min(...lay.keys.map(k => k.h)) * scale - GAP;
-    board.style.setProperty("--kh", Math.max(20, kh) + "px");
+    board.style.setProperty("--kh", Math.max(20, g.kh) + "px");
     // What a combo's pill is placed around (pillSpot): the board's extent, each key's box as drawn
     // (a rotated key's is the box around it), and the size of a key, the unit its distances go by.
-    state.boardSize = { w: width, h: Math.ceil(lay.height * scale) };
+    state.boardSize = { w: width, h: g.height };
     state.keyBoxes = [];
-    state.keyUnit = Math.max(1, Math.min(...lay.keys.map(k => Math.min(k.w, k.h))) * scale - GAP);
+    state.keyUnit = Math.max(1, Math.min(...lay.keys.map(k => Math.min(k.w, k.h))) * g.scale - g.gap);
     state.pillSpots = new Map();
     lay.keys.forEach((k, idx) => {
       const e = el("div", "key");
       e.dataset.idx = idx;
       e.title = `#${idx}`;
-      const w = k.w * scale - GAP, h = k.h * scale - GAP;
-      const a = (k.r || 0) * Math.PI / 180, cx = k.x * scale, cy = k.y * scale;
-      const hw = (Math.abs(w * Math.cos(a)) + Math.abs(h * Math.sin(a))) / 2;
-      const hh = (Math.abs(w * Math.sin(a)) + Math.abs(h * Math.cos(a))) / 2;
+      const r = g.rects[idx];
+      const a = r.r * Math.PI / 180, cx = g.centers[idx].x, cy = g.centers[idx].y;
+      const hw = (Math.abs(r.w * Math.cos(a)) + Math.abs(r.h * Math.sin(a))) / 2;
+      const hh = (Math.abs(r.w * Math.sin(a)) + Math.abs(r.h * Math.cos(a))) / 2;
       state.keyBoxes[idx] = { l: cx - hw, t: cy - hh, r: cx + hw, b: cy + hh };
-      e.style.left = (k.x * scale - w / 2) + "px";
-      e.style.top = (k.y * scale - h / 2) + "px";
-      e.style.width = w + "px";
-      e.style.height = h + "px";
+      e.style.left = r.x + "px";
+      e.style.top = r.y + "px";
+      e.style.width = r.w + "px";
+      e.style.height = r.h + "px";
       if (k.r) e.style.transform = `rotate(${k.r}deg)`;
-      if (h < 50) e.classList.add("short");
+      if (r.h < 50) e.classList.add("short");
       e.appendChild(el("div", "shifted"));
       e.appendChild(el("div", "tap"));
       e.appendChild(el("div", "hold"));
@@ -186,28 +221,94 @@
       state.keyEls[idx] = e;
     });
     paintHeat();   // the glow lives by index, not on the elements just replaced
+    placeStats(g);
+  }
+
+  /* Docked as a touch keyboard, its keys are as big as the keyboard's own -- touch.key_mm apart, 1u
+   * being the layout's typical key (View.unitOf) -- and never made smaller to fit: what is typed on
+   * is a keyboard, not a picture of one. The host says how many CSS pixels a millimetre is on the
+   * dock's screen and how wide that screen is ({"kind":"dock", "px_per_mm", "width"}); a host that
+   * does not say (the remote page, the iPad's keyboard) gets the board fitted, as before.
+   *
+   * A board that does not fit -- the screen too narrow for it, or the dock's share of the screen
+   * too short -- is the HUD and not a keyboard: drawn to fit, typing nothing (touch.js, the "fit"
+   * hook), the banner saying why. The panel is told ({"kind":"dock","fits":false}) and floats the
+   * HUD again; a tablet's keyboard stays, a HUD, until it is turned or another keyboard is picked.
+   * Decided from the host's numbers, not the window's, which may not have caught up yet. */
+  function dockFit() {
+    const d = state.dock;
+    if (!d || !(d.pxPerMm > 0) || !state.data) return null;
+    const lay = state.data.layout;
+    const keyMm = Number(state.data.touch && state.data.touch.key_mm) || 18;
+    const scale = View.realScale(lay, keyMm, d.pxPerMm);
+    const width = Math.max(0, (d.width || window.innerWidth || 0) - DOCK_SIDES);
+    const maxHeight = d.maxHeight || window.innerHeight || 360;
+    const g = View.geometry(lay, { width, gap: GAP, chrome: DOCK_CHROME, dock: { maxHeight, split: d.split, scale } });
+    const mm = (px) => Math.round(px / d.pxPerMm);
+    return { fits: g.fits, scale, keyMm, needMm: [mm(g.need.w), mm(g.need.h)], roomMm: [mm(width), mm(maxHeight)] };
+  }
+
+  // The fit measured again, before the board is built with it: true when the answer is news, which
+  // sayFit then gives touch.js and the panel, once the board is drawn.
+  function checkFit() {
+    if (!state.dock) return false;
+    const before = state.dock.fit;
+    const fit = state.dock.fit = dockFit();
+    return before === undefined || (!before || before.fits) !== (!fit || fit.fits);
+  }
+
+  function sayFit() {
+    const fit = state.dock && state.dock.fit;
+    fire("fit", !fit || fit.fits);
+    if (fit && !fit.fits) hud.post({ kind: "dock", fits: false, key_mm: fit.keyMm, need_mm: fit.needMm, room_mm: fit.roomMm });
+  }
+
+  // The banner's word on a board too big to type on here.
+  function fitNote() {
+    const fit = state.dock && state.dock.fit;
+    if (!fit || fit.fits) return state.touchNote;
+    return `a HUD only · at ${fit.keyMm} mm a key the board is ${fit.needMm[0]} × ${fit.needMm[1]} mm, ` +
+      `the screen has ${fit.roomMm[0]} × ${fit.roomMm[1]} mm for it`;
+  }
+
+  // Docked with a split board's halves at the sides, the room between them holds the stats column
+  // when it fits (hud.css html.stats-middle): centred there, from the board's top and no taller than
+  // it. Not on a tablet's pages (the remote page, a tablet keyboard's), where touch typing counts
+  // nothing and the column would only say so.
+  const STATS_WIDTH = 188;          // hud.css #stats width
+  const STATS_ROOM = STATS_WIDTH + 2 * 12;
+  function placeStats(g) {
+    const root = document.documentElement, host = $("stats"), frame = $("frame"), board = $("board");
+    const fits = !!(state.dock && g.middle && g.middle.w >= STATS_ROOM && host && frame &&
+                    !root.classList.contains("remote") && !root.classList.contains("embed"));
+    root.classList.toggle("stats-middle", fits);
+    if (!host) return;
+    if (!fits) { host.style.left = host.style.top = host.style.maxHeight = ""; return; }
+    const b = board.getBoundingClientRect(), f = frame.getBoundingClientRect();
+    host.style.left = (b.left - f.left + g.middle.x + (g.middle.w - STATS_WIDTH) / 2) + "px";
+    host.style.top = (b.top - f.top) + "px";
+    fitMiddle();
+  }
+
+  // The column in the middle as tall as its stats: the strip grows to hold it, within the room the
+  // host allows, and only past that does it scroll. The keys stay where they are.
+  function fitMiddle() {
+    if (!document.documentElement.classList.contains("stats-middle") || !state.dock) return;
+    const host = $("stats"), board = $("board");
+    host.style.maxHeight = "";
+    const need = Math.ceil(host.scrollHeight || 0);
+    const room = Math.max(40, (state.dock.maxHeight || window.innerHeight || 360) - DOCK_CHROME);
+    const h = Math.max(state.boardHeight || 0, Math.min(need, room));
+    if (board.style.height !== h + "px") board.style.height = h + "px";
+    host.style.maxHeight = h + "px";
   }
 
   // ZMK layer id → keymap entry ({name, drawer, label, cls}); falls back to the YAML order.
-  function zl(id) {
-    const t = state.data.zmk_layers || {};
-    if (t[String(id)]) return t[String(id)];
-    const name = state.data.layer_order[id];
-    return name ? { id, name, drawer: name, label: name, cls: id === 0 ? "off" : "momentary" } : null;
-  }
+  function zl(id) { return View.zl(state.data, id); }
 
   // The live stack as drawer layer names, top first: higher ZMK ids win, undrawn layers are
   // skipped, duplicates (two ids drawn by one layer) collapse; the base layer is always last.
-  function liveStack() {
-    const names = [];
-    const ids = state.live.ids.slice().sort((a, b) => b - a);
-    for (const id of ids) {
-      const z = zl(id);
-      if (z && z.drawer && !names.includes(z.drawer)) names.push(z.drawer);
-    }
-    if (!names.includes(base())) names.push(base());
-    return names;
-  }
+  function liveStack() { return View.drawnStack(state.data, state.live.ids.slice().sort((a, b) => b - a)); }
 
   function baseStack() {
     // top first
@@ -218,9 +319,14 @@
     return s;
   }
 
+  // The touch keyboard's layers, top first (touch.js: the engine's, which takes the keyboard's own
+  // while nothing on glass holds one), drawn as liveStack draws the keyboard's.
+  function touchStack() { return View.drawnStack(state.data, state.touch.ids); }
+
   function stack() {
     // A layer picked to look at is drawn over the base alone, until the next keystroke (unpick).
     if (state.pick) return state.pick === base() ? [base()] : [state.pick, base()];
+    if (state.touch && state.touch.ids) return touchStack();
     const s = [];
     if (state.oneShot) s.push(state.oneShot);
     for (let i = state.momentary.length - 1; i >= 0; i--) s.push(state.momentary[i].layer);
@@ -229,15 +335,7 @@
   }
 
   // The binding that wins at idx, walking the stack through transparent keys.
-  function resolveBinding(idx, layersTopFirst) {
-    for (const name of layersTopFirst) {
-      const k = state.data.layers[name] && state.data.layers[name][idx];
-      if (!k) continue;
-      if (k.type === "trans") continue;
-      return { key: k, layer: name };
-    }
-    return null;
-  }
+  function resolveBinding(idx, layersTopFirst) { return View.resolve(state.data, idx, layersTopFirst); }
 
   // A legend is text, or the SVG keymap-drawer draws for a $$glyph$$ (sent with the keymap). The
   // glyph replaces the text rather than joining it: a key's `tap` carries the glyph's own text
@@ -332,25 +430,25 @@
     // tapped as a one-shot, only ever reaches us as this flag. A single lowercase letter is the
     // whole of what it changes: \p{Ll} so the accented alphabets shift too (á -> Á), and a glyph,
     // a word or a symbol is left alone, because shift does not make ␣ or `nav` into anything.
-    const shifting = !!state.mods.shift;
-    const shiftLegend = t => (shifting && typeof t === "string" && /^\p{Ll}$/u.test(t)) ? t.toUpperCase() : t;
+    // A Shift latched on glass (touch.js: the report's modifier byte, either Shift) shifts the
+    // legends as one held on the keyboard does.
+    const touch = state.touch;
+    const shifting = !!state.mods.shift || !!(touch && touch.mods & View.SHIFT_BITS);
+    const shiftLegend = t => View.shiftLegend(t, shifting);
     state.data.layout.keys.forEach((k, idx) => {
       const e = state.keyEls[idx];
       const r = resolveBinding(idx, layers);
-      e.classList.remove("trans", "blank", "ghost", "held", "activator", "mod");
+      e.classList.remove("trans", "blank", "ghost", "held", "activator", "mod", "latched", "locked");
+      // A finger on the key lights it however often the board is rebuilt under it; a hold let go
+      // and still on (one-shot or locked) is ringed.
+      for (const c of View.touchClasses(touch, idx)) e.classList.add(c);
+      for (const c of View.bindingClasses(state.data, idx, layers, r)) e.classList.add(c);
       if (!r) {
-        e.classList.add("blank");
         fit(e.querySelector(".tap"), "");
         e.querySelector(".hold").textContent = "";
         e.querySelector(".shifted").textContent = "";
         return;
       }
-      const top = layers[0];
-      const topKey = state.data.layers[top] && state.data.layers[top][idx];
-      if (r.layer !== top && topKey && topKey.type === "trans") e.classList.add("trans");
-      if (r.key.type === "blank") e.classList.add("blank");
-      if (r.key.type === "ghost") e.classList.add("ghost");
-      if (r.key.type.startsWith("held")) e.classList.add("held");
       if (activators.has(idx)) e.classList.add("activator");
       // A held modifier rings the key that turned it on (modSource): the home-row mod held, or the
       // sticky shift tapped. Without positions there is no telling which, so every key that
@@ -364,11 +462,7 @@
   }
 
   // A drawer layer's banner label: the ZMK table's label when one id is drawn by it, else its name.
-  function layerLabel(name) {
-    const t = state.data.zmk_layers || {};
-    for (const z of Object.values(t)) if (z.drawer === name) return z.label;
-    return name;
-  }
+  function layerLabel(name) { return View.layerLabel(state.data, name); }
 
   // Emulated mode: only the base layer is known.
   function codeSummary() {
@@ -408,9 +502,14 @@
     return layerLabel(drawer);
   }
 
+  // The touch keyboard's layers on the banner, as liveSummary says the keyboard's, and what glass
+  // is holding on the sub line (touch.js: touch · held, touch · one shot, touch · locked).
+  function touchSummary() { return View.touchSummary(state.data, state.touch); }
+
   // What to print on the banner: an inferred held/one-shot layer on top of the base, else the base.
   function activeSummary() {
     if (state.pick) return { name: layerLabel(state.pick), cls: state.pick === base() ? "off" : "momentary", sub: "picked · type to follow the keyboard" };
+    if (state.touch && state.touch.ids) return touchSummary();
     const b = baseSummary();
     const top = state.oneShot || (state.momentary.length ? state.momentary[state.momentary.length - 1].layer : null);
     if (!top) return b;
@@ -423,10 +522,12 @@
     $("layer").className = a.cls;
     $("layerName").textContent = a.name;
     // A feed that says nothing sees a secret being typed (watched: []) is said on the banner, so
-    // that nobody types a password in front of it trusting that it would hold back.
+    // that nobody types a password in front of it trusting that it would hold back. Before it, why a
+    // board asked to type cannot (fitNote).
     const unwatched = !state.secure && Array.isArray(state.watched) && state.watched.length === 0;
+    const sub = fitNote() || a.sub;
     $("layerSub").textContent = state.secure ? "secure input · typing hidden"
-      : unwatched ? (a.sub ? a.sub + " · typing not watched" : "typing not watched") : a.sub;
+      : unwatched ? (sub ? sub + " · typing not watched" : "typing not watched") : sub;
     document.body.classList.toggle("unwatched", unwatched);
     $("board").className = a.cls;
   }
@@ -476,7 +577,9 @@
     if (!f) return;
     // Only the two waiting states are worth a line; once the keyboard reports, say nothing.
     if (!state.data) { f.textContent = "waiting for the keymap…"; f.className = ""; return; }
-    f.textContent = state.live ? "" : "waiting for the keyboard's layers…";
+    // A touch keyboard waits for no keyboard: there may be none plugged in.
+    const waiting = !state.live && !state.dock && !document.documentElement.classList.contains("touch");
+    f.textContent = waiting ? "waiting for the keyboard's layers…" : "";
     f.className = state.live ? "live" : "";
   }
 
@@ -490,9 +593,33 @@
   }
   function unpick() { if (state.pick) pickLayer(null); }
 
+  // The touch keyboard's combos as chips over the board (view.js chips), when it types and the
+  // config wants them (touch.combos: "chips"). Drawn again with the keys: the layer decides which.
+  function renderChips() {
+    if (state.chipsEl) state.chipsEl.remove();
+    state.chipsEl = null;
+    const t = state.touch;
+    if (!t || !t.ids || !state.rects || (state.data.touch || {}).combos !== "chips") return;
+    const list = View.chips(state.data, { scale: state.scale, centers: state.centers, rects: state.rects }, t);
+    if (!list.length) return;
+    const box = el("div");
+    box.id = "chips";
+    for (const c of list) {
+      const e = el("div", ["combo-chip"].concat(c.cls).join(" "));
+      e.dataset.combo = c.combo;
+      e.style.left = (c.x - c.size / 2) + "px";
+      e.style.top = (c.y - c.size / 2) + "px";
+      e.style.width = e.style.height = c.size + "px";
+      setLegend(e, c.tap, c.glyph);
+      box.appendChild(e);
+    }
+    $("board").appendChild(box);
+    state.chipsEl = box;
+  }
+
   function render() {
     if (!state.data) { renderFeed(); renderStats(); return; }
-    renderBanner(); renderKeys(); renderFeed();
+    renderBanner(); renderKeys(); renderChips(); renderFeed();
     paintSessionHeat(); renderStats();   // both follow the layer on screen
   }
 
@@ -518,8 +645,10 @@
     // slider's whole box, not just its track, so a press a little off the thumb works.
     let rects = [];
     try {
-      const controls = [$("side"), $("hide"), $("close"), $("statsHead"), bar.layer && bar.layer.pick]
-        .concat(["heatmap", "theme", "opacity"].map(n => bar[n] && bar[n].chip));
+      // The board itself while it types (touch.js): a press on a key is a keystroke, not a drag.
+      const typing = document.documentElement.classList.contains("touch") ? $("board") : null;
+      const controls = [$("mini"), $("attach"), $("side"), $("hide"), $("close"), $("statsHead"), bar.layer && bar.layer.pick, typing]
+        .concat(["heatmap", "theme", "opacity", "feedback"].map(n => bar[n] && bar[n].chip));
       rects = controls.filter(Boolean).map(e => e.getBoundingClientRect())
         .filter(r => r.width > 0 && r.height > 0)
         .map(r => [r.left, r.top, r.width, r.height].map(v => Math.round(v)));
@@ -533,6 +662,8 @@
   function postSize() {
     let width = (state.data && state.data.hud && state.data.hud.width) || null;
     if (width && bar.host && !bar.host.classList.contains("off") && sideShown()) width += STATS_COLUMN;
+    // Docked, the host decides the width (the screen's) and the page only says how tall it came out.
+    if (state.dock) width = null;
     const height = Math.ceil(document.body.scrollHeight);
     // The macOS panel reads it on its bridge. The Linux panel has a handler for nothing else
     // (host/linux/panel.py), named apart so that the page never takes it for the bridge a
@@ -542,6 +673,8 @@
     }
     // A panel that can hide the HUD is one that has one of these: offer the button there only.
     document.documentElement.classList.toggle("hideable", !!panelHandler());
+    // ...and one that can dock it, attach and detach.
+    if (!attachOwn) document.documentElement.classList.toggle("attachable", !!panelHandler());
     postNoDrag();
   }
 
@@ -694,11 +827,16 @@
     theme: v => v === "light" || v === "dark",
     side: v => v === "shown" || v === "hidden",
     opacity: v => Number.isInteger(v) && v >= 0 && v <= 100,   // the slider (host/session.py PREFS)
+    feedback: v => v === "on" || v === "off",                  // the touch keyboard's click and buzz (the switch)
   };
   const PREFS_KEY = "zmkhud.prefs";
   try { Object.assign(state.prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || "{}")); } catch (e) { /* no storage */ }
   const theme = () => state.prefs.theme || (T("dark") > 0 ? "dark" : "light");
   const sideShown = () => state.prefs.side !== "hidden";
+  // The touch keyboard's click and buzz (touch.js): the viewer's choice once made, everywhere; until
+  // then on where the board is a touch screen's keyboard (docked: the panels' dock, the remote page,
+  // a tablet's keyboard) and off elsewhere.
+  const feedbackOn = () => (state.prefs.feedback ? state.prefs.feedback === "on" : !!state.dock);
   // The panels' background: the slider's, else the config's hud.opacity. A GIF still's script may
   // set its own (showDemo), which outranks both.
   const opacity = () => (state.demoOpacity != null ? state.demoOpacity : state.prefs.opacity != null ? state.prefs.opacity : T("opacity"));
@@ -712,7 +850,10 @@
       body.classList.toggle("dark", theme() === "dark");
       paintHeat();                  // light keys glow, dark keys take the ramp's steps (paintKeyHeat)
     }
-    if (body.classList.contains("side-hidden") === sideShown()) body.classList.toggle("side-hidden", !sideShown());
+    if (body.classList.contains("side-hidden") === sideShown()) {
+      body.classList.toggle("side-hidden", !sideShown());
+      followWidth();                // the board beside it is narrower or wider now, unless a panel grows
+    }
     const side = $("side");
     if (side) {
       const say = sideShown() ? "hide the stats" : "show the stats";
@@ -1162,6 +1303,17 @@
     bar.theme = chip("theme", ["keys"]);
     bar.theme.chip.title = "click: light or dark keys";
     bar.theme.chip.addEventListener("click", () => setPref("theme", theme() === "dark" ? "light" : "dark"));
+    // The touch keyboard's click and buzz, as a switch, while the board types: a tile across the
+    // panel, as the background's is (hud.css #stats .stat.feedback).
+    bar.feedback = chip("feedback", ["feedback"]);
+    bar.feedback.chip.title = "a click, and a buzz where the device has one, on each touch";
+    const sw = el("button", "switch");
+    sw.type = "button";
+    sw.setAttribute("role", "switch");
+    sw.setAttribute("aria-label", "sound and vibration on each touch");
+    sw.addEventListener("click", () => setPref("feedback", feedbackOn() ? "off" : "on"));
+    bar.feedback.chip.appendChild(sw);
+    bar.feedback.sw = sw;
     // The panels' background, as a slider: every step shows at once, and the value it is let go at
     // is the one the feed remembers.
     bar.opacity = chip("opacity", ["background"]);
@@ -1322,6 +1474,9 @@
     bar.named.chip.title = named || "";   // a long name is cut short on the column
     put(bar.heatmap, [state.heatMode]);
     put(bar.theme, [theme()]);
+    toggleChip(bar.feedback, document.documentElement.classList.contains("touch"));
+    if (bar.feedback.sw.getAttribute("aria-checked") !== String(feedbackOn())) bar.feedback.sw.setAttribute("aria-checked", String(feedbackOn()));
+    put(bar.feedback, [feedbackOn() ? "on" : "off"]);
     put(bar.opacity, [opacity() + "%"]);
     if (bar.opacity.slider.value !== String(opacity())) bar.opacity.slider.value = String(opacity());
     bar.opacity.slider.style.setProperty("--fill", opacity() + "%");   // the track's filled part (hud.css)
@@ -1330,6 +1485,7 @@
   // A column taller than the board makes the page taller, and one shown or hidden changes the
   // panel's width (postSize): the panel sizes itself from what the page says.
   function followBar() {
+    fitMiddle();          // stats shown or hidden change how tall the column in the middle is
     const shape = bar.host.offsetHeight + (bar.host.classList.contains("off") ? "/off" : "") + (sideShown() ? "" : "/hidden");
     if (shape !== bar.shape) { bar.shape = shape; postSize(); } else postNoDrag();
   }
@@ -1882,6 +2038,7 @@
     state.momentary = []; state.oneShot = null;
     if (gained.length) recredit(gained, now);
     render();
+    fire("layers", ids);
   }
 
   /* A layer change held back for a flash is the keyboard's word all the same, and the moment
@@ -1928,10 +2085,13 @@
       if (!Object.keys(map).length) data.layout.keys.forEach((k, idx) => { state.posOf[idx] = idx; });
       // Heat outlives a reload (it fades in seconds anyway), but not on keys this layout lacks.
       for (const idx of [...state.heat.keys()]) if (idx >= data.layout.keys.length) state.heat.delete(idx);
+      const fitNews = checkFit();   // a keyboard of another size, docked: does it still fit?
       buildBoard();
+      if (fitNews) sayFit();
       renderTitle();
       postSize();
       render();
+      fire("load", data);
     },
     // The keyboard's active ZMK layer ids (layer 0 omitted). Clears every inference: from now on
     // the stack is what the keyboard says.
@@ -2192,7 +2352,80 @@
       else if (m.kind === "session") applySession(m);
       else if (m.kind === "secure") setSecure(m.on, m.watched);
       else if (m.kind === "heat") setHeatmap(m.mode, true);   // a demo's moment: shown, never kept
+      else if (m.kind === "dock") hud.setDock(m);
+      else if (hooks[m.kind]) fire(m.kind, m);   // touch and typing: touch.js (docs/touch.md)
       if (m.device) hud.setDevice(m.device);  // the keyboard that is typing names the panel
+    },
+    // Another script's hook: "load" (the keymap message), "layers" (the keyboard's ids), or a
+    // message kind hud.receive has no handling of its own for ("touch", "typing").
+    on(name, fn) { (hooks[name] = hooks[name] || []).push(fn); },
+    // What the touch keyboard holds (touch.js): {ids: its layers top first, down: drawer idx under
+    // a finger, latched: {idx: "oneshot"|"locked"}, mods: the report's modifier byte, note: the
+    // banner's sub line}; null when it is off. Drawn over whatever the keyboard reports.
+    setTouchView(view) {
+      const before = (state.touch && state.touch.down) || [];
+      state.touch = view || null;
+      const now = (view && view.down) || [];
+      for (const idx of before) {
+        // A finger lifted: its key goes dark, unless the keyboard itself is holding it.
+        if (!now.includes(idx) && state.keyEls[idx] && !state.held.has(idx)) state.keyEls[idx].classList.remove("pressed");
+      }
+      if (view && now.length) unpick();
+      if (state.data) render();
+    },
+    // Docked along the bottom of a screen ({"kind":"dock","on":true,"max_height":N}): the board as
+    // wide as the window and no taller than the host allows, and nothing around it but the banner.
+    // A split board's halves go to the sides unless it says "split": false. With "px_per_mm" and
+    // "width" (the screen's), its keys are their real size, or it is a HUD only (dockFit).
+    setDock(d) {
+      const on = !!(d && d.on);
+      const was = state.dock;
+      state.dock = on ? { maxHeight: Number(d.max_height) || null, split: d.split !== false,
+                          pxPerMm: Number(d.px_per_mm) || null, width: Number(d.width) || null } : null;
+      document.documentElement.classList.toggle("dock", on);
+      const fitNews = on ? checkFit() : !!(was && was.fit && !was.fit.fits);   // floating, there is no keyboard to refuse
+      if (!on) setMini(false);
+      $("attach").setAttribute("aria-pressed", String(on));
+      $("attach").setAttribute("aria-label", on ? "detach" : "attach as a touch keyboard");
+      $("attach").title = !on ? "attach: a touch keyboard along the bottom of the screen" :
+        attachOwn ? attachOwn.title || "detach" : "detach: the floating HUD again";
+      if (state.data) { buildBoard(); render(); }
+      if (fitNews) sayFit();
+      postSize();
+    },
+    // Attach and detach for a page that does it its own way (the browser's, in touch.js; a tablet
+    // keyboard's, handing the field back to the keyboard used before): fn(on) is called with
+    // what is asked for, and fn.title names what detaching does. Else a panel is asked, as its
+    // menu's Dock and Float ask it ({"kind":"attach","on":bool}).
+    setAttach(fn) {
+      attachOwn = fn || null;
+      document.documentElement.classList.toggle("attachable", !!attachOwn || !!panelHandler());
+    },
+    setMini(on) { setMini(on); },
+    // Why the board, asked to type, cannot (touch.js): on the banner while it is so.
+    setTouchNote(text) {
+      if ((text || "") === state.touchNote) return;
+      state.touchNote = text || "";
+      if (state.data) renderBanner();
+    },
+    // A touched key's glow: never counted, never in a session (the keyboard's own counts are the
+    // session's), and none at all while a secret is being typed.
+    warmKey(idx) { if (!state.secure) bumpHeat(idx); },
+    // Whether a touch clicks and buzzes (touch.js): the switch's choice, else the mode's.
+    feedbackOn() { return feedbackOn(); },
+    // A message for the panel this page is in (its bridge); false where there is none.
+    post(obj) {
+      const h = panelHandler();
+      if (!h) return false;
+      h.postMessage(JSON.stringify(obj));
+      return true;
+    },
+    // Something the panel's drag rects depend on changed (touch.js turning typing on or off).
+    relayout() { postSize(); },
+    // Where the keys are drawn, for hit-testing a touch between them (touch.js).
+    geometry() {
+      return state.data ? { scale: state.scale, gap: state.gap || GAP, keys: state.data.layout.keys,
+                            centers: state.centers, posOf: state.posOf } : null;
     },
     // What the keys glow with: "live" (what was just typed), "session" (every press counted) or
     // "off". The bar's last chip cycles it too.
@@ -2224,6 +2457,33 @@
     }
     return null;
   }
+
+  // Attach and detach (setAttach): docked along the bottom of the screen as a touch keyboard, or the
+  // floating HUD again. Minimize, docked: the keyboard down to its banner, a bar of buttons, and
+  // back -- room for the windows above without undocking it; it types nothing while it is a bar.
+  const attachBtn = $("attach");
+  if (attachBtn) attachBtn.addEventListener("click", () => {
+    const on = !state.dock;
+    if (attachOwn) { attachOwn(on); return; }
+    const h = panelHandler();
+    if (h) h.postMessage(JSON.stringify({ kind: "attach", on }));
+  });
+  function setMini(on) {
+    on = !!on && !!state.dock;
+    if (on === state.mini) return;
+    state.mini = on;
+    document.documentElement.classList.toggle("mini", on);
+    const b = $("mini");
+    if (b) {
+      b.setAttribute("aria-pressed", String(on));
+      b.title = on ? "maximize: the keyboard back" : "minimize: the keyboard down to this bar, still docked";
+    }
+    fire("mini", on);                         // touch.js lets go of whatever is held
+    if (!on && state.data) { buildBoard(); render(); }   // laid out afresh: it was not, while hidden
+    postSize();
+  }
+  const miniBtn = $("mini");
+  if (miniBtn) miniBtn.addEventListener("click", () => setMini(!state.mini));
 
   // Hide: the panel takes itself off screen, and this page goes on counting as before.
   const hideBtn = $("hide");
@@ -2257,6 +2517,21 @@
   // and the combo pill with it. Headless browsers fire a resize after the first layout, which is
   // why a screenshot could come back with the board drawn but nothing on it.
   window.addEventListener("resize", () => { if (state.data && !state.demoShown) { buildBoard(); render(); postSize(); } });
+  // ...and when the board's own width changes while the window's does not: the stats column shown or
+  // hidden in a browser, which no panel resizes, would leave the keys drawn over it. A moment later,
+  // so a panel that grows the window for the column has done so, and the board is drawn once, at its
+  // width; asked by the column's chevron itself as well as by an observer, which a page that is not
+  // being painted (a hidden tab) never hears from. Put away (a minimized keyboard), the board has no
+  // width to follow.
+  function followWidth() {
+    clearTimeout(widthDue);
+    widthDue = setTimeout(() => {
+      widthDue = null;
+      const w = $("board").clientWidth;
+      if (state.data && !state.demoShown && w > 0 && Math.abs(w - (state.builtWidth || 0)) >= 1) { buildBoard(); render(); postSize(); }
+    }, 150);
+  }
+  if (window.ResizeObserver) new window.ResizeObserver(followWidth).observe($("board"));
 
   // Generic host: index.html?ws=ws://127.0.0.1:8766 — messages are
   //   {"kind":"keymap",…}  {"kind":"key", ...event}  {"kind":"layers","ids":[…]}   (host/hudfeed.py speaks this).
@@ -2418,7 +2693,10 @@
       })
       .catch(e => console.error(e));
   }
-  if (location.protocol.startsWith("http") && !embedded) window.addEventListener("keydown", e => {
+  // Not on the remote page (host/remote.py): a tablet's own keyboard types into the computer there
+  // only through the board.
+  const remote = document.documentElement.classList.contains("remote");
+  if (location.protocol.startsWith("http") && !embedded && !remote) window.addEventListener("keydown", e => {
     const name = e.key.length === 1 ? null : e.key.toLowerCase().replace("arrow", "").replace("backspace", "delete").replace("enter", "return");
     hud.key({ type: "keyDown", chars: e.key.length === 1 ? e.key : "", name, flags: {} });
     if (e.key !== "F5" && !e.metaKey) e.preventDefault();

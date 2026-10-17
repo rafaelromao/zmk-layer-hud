@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""The HUD's two global shortcuts, the same on macOS and Omarchy:
+"""The HUD's global shortcuts, the same on macOS and Omarchy:
 
   toggle   Ctrl+Alt+L       shows the HUD, or hides it (`zmk-layer-hud toggle`)
   power    Ctrl+Alt+Gui+L   starts the HUD, or stops it (`zmk-layer-hud power`)
+  dock     (none)           docks the HUD to type on it, or floats it again (`zmk-layer-hud dock`)
 
 `shortcuts: { toggle: ctrl+alt+l, power: ctrl+alt+gui+l }` in the config changes them, and null
 turns one off. Nothing in a menu edits them; the menus only show them.
@@ -28,8 +29,9 @@ import subprocess
 import sys
 import tempfile
 
-DEFAULTS = {"toggle": "ctrl+alt+l", "power": "ctrl+alt+gui+l"}
-WHAT = {"toggle": "shows or hides", "power": "starts or stops"}
+DEFAULTS = {"toggle": "ctrl+alt+l", "power": "ctrl+alt+gui+l", "dock": None}
+WHAT = {"toggle": "shows or hides", "power": "starts or stops", "dock": "docks or floats"}
+BIND_NAMES = {"toggle": "show/hide", "power": "start/stop", "dock": "dock/float"}
 
 # The order they are written in, whichever order they were typed in.
 MODS = ("ctrl", "alt", "shift", "gui")
@@ -85,14 +87,14 @@ def settings(cfg):
         raise ShortcutError("shortcuts: expected { toggle: ctrl+alt+l, power: ctrl+alt+gui+l }")
     unknown = set(given) - set(DEFAULTS)
     if unknown:
-        raise ShortcutError(f"shortcuts: {', '.join(sorted(unknown))} is not one (toggle, power)")
+        raise ShortcutError(f"shortcuts: {', '.join(sorted(unknown))} is not one (toggle, power, dock)")
     out = {}
     for name, default in DEFAULTS.items():
         text = given.get(name, default)
         out[name] = None if text in (None, False) else parse(text)
     taken = [sc for sc in out.values() if sc]
     if len(taken) != len(set(taken)):
-        raise ShortcutError("shortcuts: toggle and power are the same keys")
+        raise ShortcutError("shortcuts: two of toggle, power and dock are the same keys")
     return out
 
 
@@ -137,7 +139,7 @@ def _binds(sets, command, state, start_with=""):
         # A HUD a bind starts would live in Hyprland's own cgroup without uwsm-app.
         run = (start_with + " " if start_with and name == "power" else "") + \
             f"env ZMKHUD_STATE={shlex.quote(state)} {shlex.quote(command)} {name}"
-        out.append((mods, key, f"ZMK HUD {'show/hide' if name == 'toggle' else 'start/stop'}", run))
+        out.append((mods, key, f"ZMK HUD {BIND_NAMES[name]}", run))
     return out
 
 

@@ -27,3 +27,16 @@ hud/timeline.json
 .venv/
 
 hud/keymap-*.json
+
+# the Android keyboard (apps/android): Gradle's and Kotlin's own state, and where the SDK is on this machine
+apps/android/.gradle/
+apps/android/.kotlin/
+apps/android/local.properties
+
+# the iPad keyboard (apps/ios): what is yours to sign it with, a keymap built in, and what xcodegen and
+# swift test make
+apps/ios/Local.xcconfig
+apps/ios/Keyboard/keymap.json
+apps/ios/ZmkHud.xcodeproj/
+apps/ios/Core/.build/
+apps/ios/Core/.swiftpm/

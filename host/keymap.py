@@ -62,6 +62,7 @@ wins over it. `<config>.imported.yaml` is the same facts written to be read, and
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import os
 import re
@@ -120,6 +121,38 @@ FEED_DEFAULTS = {
     "secure_input": 1,         # while a password field has focus or a terminal asks for a password, pass on nothing typed (0: pass it all)
     "accessibility": 1,        # (Linux) tell the apps assistive technology is wanted, so a password field with focus is seen (0: leave that setting alone)
     "altgr": 0,                # 1: the right Alt is AltGr, a Linux host's US-International (ç is AltGr+,); 0: it is macOS's Option
+}
+
+# `touch:` section: the touch keyboard, the HUD typing when its keys are tapped (docs/touch.md).
+TOUCH_DEFAULTS = {
+    "enabled": 1,              # 0: the HUD never types (it types docked, at its keys' real size)
+    "key_mm": 18,              # how far apart the keyboard's keys are, in mm: 18 Choc spacing, 19.05 MX
+    "hold_ms": 280,            # a key held this long is held (a hold-tap's hold): glass is slower than a switch
+    "flavor": "balanced",      # how a hold-tap decides on glass: balanced, or firmware (as the keymap says)
+    "latch": 1,                # a hold let go with nothing else touched latches: one-shot, then locked
+    "lock_ms": 350,            # a latched key let go again within this locks
+    "sticky_ms": 0,            # a one-shot lapses after this (0: it waits for the next key)
+    "repeat_delay_ms": 450,    # a held key repeats after this, where the host does not repeat it itself
+    "repeat_ms": 60,           # ...and then every this
+    "combos": "chords",        # chords: a combo is its keys touched together, as on the keyboard; chips: a chip to tap too
+    "heat": 1,                 # touch typing warms the live heat (0: it does not)
+    "sound": 30,               # a key's click, as loud as this in 0-100 (0: silent), the moment a finger lands
+    "haptics": 1,              # ...and a buzz where the device has one (an Android tablet's browser; 0: none)
+}
+TOUCH_CHOICES = {"flavor": ("balanced", "firmware"), "combos": ("chords", "chips")}
+KEY_MM = (10, 30)              # touch.key_mm's bounds: no keyboard's keys are closer or further apart
+# `dock:` section: the HUD docked along the bottom of a screen (zmk-layer-hud dock, docs/touch.md).
+DOCK_DEFAULTS = {
+    "screen": "",              # the screen to dock on, by name or a word of its description ("" picks one)
+    "height_pct": 60,          # the strip is at most this share of the screen's height
+    "start": 0,                # 1: the HUD starts docked
+    "split": 1,                # a split board's halves go to the sides of the screen (0: in one piece, centred)
+}
+# `remote:` section: a tablet's browser typing into this computer (zmk-layer-hud remote).
+REMOTE_DEFAULTS = {
+    "port": 8768,              # where the page and its socket are served on the local network
+    "minutes": 30,             # how long a tablet may pair, and how long an idle one stays paired
+    "bind": "",                # the address to serve on ("" picks this machine's private one)
 }
 
 # keymap-drawer glyph names -> text the HUD can show. The glyph id is kept too.
@@ -870,6 +903,94 @@ def draw(doc, drawer_cfg=None, stagger=True, fetch=True, previous=None, log=None
 
 # ---------- the message: built at runtime ----------
 
+def touch_settings(value):
+    """The `touch:` section checked: whole numbers, the words TOUCH_CHOICES allows, and key_mm a
+    keyboard's key spacing in millimetres."""
+    if value is None:
+        value = {}
+    if not isinstance(value, dict):
+        raise KeymapError("touch: expected settings, one per line (`hold_ms: 300`)")
+    unknown = sorted(set(value) - set(TOUCH_DEFAULTS))
+    if unknown:
+        raise KeymapError(f"touch: unknown settings {unknown}; known: {sorted(TOUCH_DEFAULTS)}")
+    out = dict(TOUCH_DEFAULTS)
+    for k, v in value.items():
+        if k in TOUCH_CHOICES:
+            if v not in TOUCH_CHOICES[k]:
+                raise KeymapError(f"touch.{k} must be one of {', '.join(TOUCH_CHOICES[k])} (it is {v!r})")
+            out[k] = v
+            continue
+        if k == "key_mm":
+            if isinstance(v, bool) or not isinstance(v, (int, float)) or not KEY_MM[0] <= v <= KEY_MM[1]:
+                raise KeymapError(f"touch.key_mm is how far apart the keyboard's keys are, in mm, {KEY_MM[0]} to "
+                                  f"{KEY_MM[1]}: 18 for Choc spacing, 19.05 for MX (it is {v!r})")
+            out[k] = int(v) if v == int(v) else round(float(v), 2)
+            continue
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or v != int(v) or v < 0:
+            raise KeymapError(f"touch.{k} must be a whole number, 0 or more (it is {v!r}); the default is "
+                              f"{TOUCH_DEFAULTS[k]}")
+        if k == "sound" and v > 100:
+            raise KeymapError(f"touch.sound is a volume, 0 to 100 (it is {v!r})")
+        out[k] = int(v)
+    return out
+
+
+def _section(name, value, defaults, check):
+    """A settings section checked against its defaults: known names only, each value as `check`
+    says (a message, or None when it is fine)."""
+    if value is None:
+        value = {}
+    if not isinstance(value, dict):
+        raise KeymapError(f"{name}: expected settings, one per line")
+    unknown = sorted(set(value) - set(defaults))
+    if unknown:
+        raise KeymapError(f"{name}: unknown settings {unknown}; known: {sorted(defaults)}")
+    out = dict(defaults)
+    for k, v in value.items():
+        problem = check(k, v)
+        if problem:
+            raise KeymapError(f"{name}.{k} {problem} (it is {v!r}); the default is {defaults[k]!r}")
+        out[k] = v if isinstance(defaults[k], str) else int(v)
+    return out
+
+
+def _whole(v, lo, hi):
+    if isinstance(v, bool) or not isinstance(v, (int, float)) or v != int(v) or not lo <= v <= hi:
+        return f"must be a whole number from {lo} to {hi}"
+    return None
+
+
+def dock_settings(value):
+    return _section("dock", value, DOCK_DEFAULTS, lambda k, v: (
+        (None if isinstance(v, str) and len(v) <= 64 else "must be a screen's name") if k == "screen" else
+        _whole(v, 15, 90) if k == "height_pct" else _whole(v, 0, 1)))
+
+
+def remote_settings(value):
+    return _section("remote", value, REMOTE_DEFAULTS, lambda k, v: (
+        (None if isinstance(v, str) and len(v) <= 64 else "must be an address") if k == "bind" else
+        _whole(v, 1024, 65535) if k == "port" else _whole(v, 1, 24 * 60)))
+
+
+def host_settings(cfg):
+    """What the hosts read of the config for the touch keyboard: `touch:`, `dock:` and `remote:`,
+    checked. keymap.py --host-settings prints it for the Linux panel, whose interpreter reads no YAML."""
+    return {"touch": touch_settings(cfg.get("touch")), "dock": dock_settings(cfg.get("dock")),
+            "remote": remote_settings(cfg.get("remote"))}
+
+
+def touch_actions(cfg, drawing, layers, zmk_layers, pos_to_idx, base, extras, combos):
+    """What every key does when tapped (host/actions.py). A keymap the touch keyboard cannot read
+    still draws: the HUD shows it, and only typing is off, with the reason."""
+    import actions as actions_mod   # here, not above: hudfeed imports this module, and actions it
+    try:
+        return actions_mod.build(layers, zmk_layers, pos_to_idx, base, extras, cfg.get("_imported_keymap"),
+                                 combos, int(cfg.get("combo_term_ms", 50)), drawing.get("sticky_label") or "sticky",
+                                 bool(int((cfg.get("feed") or {}).get("altgr", FEED_DEFAULTS["altgr"]))))
+    except Exception as e:  # noqa: BLE001 -- a bug here must not cost the user the HUD
+        return {"v": actions_mod.ACTIONS_VERSION, "error": f"{type(e).__name__}: {e}"}
+
+
 def build_message(cfg, drawing, source=""):
     """Everything the page needs, from the parsed config -- with what was imported folded in
     (merge_imported) -- and the definitions' drawing. Pure: no file, no keymap-drawer, no network."""
@@ -931,8 +1052,11 @@ def build_message(cfg, drawing, source=""):
             raise KeymapError(f"positions: {len(positions)} entries for {n} drawer keys")
         pos_to_idx = {str(int(p)): i for i, p in enumerate(positions)}
     fingers = configured_fingers(cfg["fingers"], n) if cfg.get("fingers") is not None else infer_fingers(layout)
+    touch = host_settings(cfg)["touch"]     # dock: and remote: are the hosts', checked here all the same
     return {
         "kind": "keymap",
+        # The message's own version, for a tablet app that keeps one (docs/touch.md).
+        "schema": 1,
         "source": source,
         "title": cfg.get("title") or "",
         "hud": hud_cfg,
@@ -959,6 +1083,9 @@ def build_message(cfg, drawing, source=""):
         "zmk_layers": zmk_layers,
         "base": base,
         "extras": extras,
+        # The touch keyboard: what each ZMK position does on each ZMK layer, and how glass is read.
+        "actions": touch_actions(cfg, drawing, layers, zmk_layers, pos_to_idx, base, extras, combos),
+        "touch": touch,
     }
 
 
@@ -1034,6 +1161,8 @@ def merge_imported(cfg, imported):
         cfg["combo_term_ms"] = int(imported["combo_term_ms"])
     if imported.get("combo_idle_ms") and "combo_idle_ms" not in cfg:
         cfg["combo_idle_ms"] = int(imported["combo_idle_ms"])
+    if isinstance(imported.get("keymap"), dict):
+        cfg["_imported_keymap"] = imported["keymap"]
     named = {tuple(sorted(c.get("positions") or [])) for c in (cfg.get("combos") or [])}
     inherited = [c for c in (imported.get("combos") or [])
                  if tuple(sorted(c.get("positions") or [])) not in named]
@@ -1113,13 +1242,42 @@ def main(argv=None):
                                             "`zmk-layer-hud import` wrote beside it.")
     p.add_argument("--config", help=f"config file (default: $ZMKHUD_CONFIG or {DEFAULT_CONFIG})")
     p.add_argument("--dump", action="store_true", help="print the full JSON message (default: a summary)")
+    p.add_argument("-o", "--output", metavar="FILE",
+                   help="write the full JSON message to FILE: what a tablet's touch keyboard imports")
+    p.add_argument("--host-settings", action="store_true",
+                   help="print the config's touch:, dock: and remote: settings as JSON (for the Linux panel)")
     args = p.parse_args(argv)
+    if args.host_settings:
+        # The config alone: a panel that is docking needs no definitions to say where.
+        try:
+            cfg = load_yaml(find_config(args.config))
+            json.dump(host_settings(cfg if isinstance(cfg, dict) else {}), sys.stdout)
+            print()
+            return 0
+        except (KeymapError, OSError) as e:
+            print(f"keymap: {e}", file=sys.stderr)
+            return 1
     try:
         src = KeymapSource(args.config)
         msg = src.load()
     except (KeymapError, OSError) as e:
         print(f"keymap: {e}", file=sys.stderr)
         return 1
+    if args.output:
+        path = os.path.abspath(os.path.expanduser(args.output))
+        tmp = f"{path}.tmp-{os.getpid()}"
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(msg, f, ensure_ascii=False)
+                f.write("\n")
+            os.replace(tmp, path)   # whole or not at all: a half-written file is not a keymap
+        except OSError as e:
+            with contextlib.suppress(OSError):
+                os.unlink(tmp)
+            print(f"keymap: cannot write {args.output}: {e}", file=sys.stderr)
+            return 1
+        print(f"wrote {args.output}: open it with the ZMK Layer HUD app on the tablet (AirDrop, Files, or a share)")
+        return 0
     if args.dump:
         json.dump(msg, sys.stdout, ensure_ascii=False)
         print()
@@ -1128,6 +1286,9 @@ def main(argv=None):
               f"{len(msg['glyphs'])} glyphs, "
               f"{len(msg['zmk_layers'])} ZMK layers, {len(msg['combos'])} combos, {len(msg['activators'])} activators, "
               f"base {msg['base']!r}")
+        import actions as actions_mod
+        acts = msg.get("actions") or {}
+        print(f"touch keyboard error: {acts['error']}" if acts.get("error") else actions_mod.summary(acts))
     return 0
 
 

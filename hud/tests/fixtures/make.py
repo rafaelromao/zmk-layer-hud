@@ -10,5 +10,8 @@ import sys
 msg = json.load(sys.stdin)
 msg["glyphs"] = {gid: '<svg data-glyph="%s"></svg>' % gid for gid in msg.get("glyphs", {})}
 msg["source"] = sys.argv[1] if len(sys.argv) > 1 else "examples/diamond.yaml"   # the dump records a path under someone's home
+# What each key does is the touch keyboard's, and its tests have their own; the drawing tests take
+# the legends' (actions.from_message), so the fixture stays the drawing.
+msg.pop("actions", None)
 json.dump(msg, sys.stdout, ensure_ascii=False, indent=0, sort_keys=True)
 sys.stdout.write("\n")
