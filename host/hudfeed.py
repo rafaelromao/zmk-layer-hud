@@ -1350,6 +1350,10 @@ class Feed:
         raw_log = (lambda: self.secure is None or not self.secure.check()) if raw else False
         # Both carriers may read the one keyboard: its signal is taken from one (Carriers).
         self.carriers = Carriers(log)
+        # Which message goes on and what a takeover hands on are one step: had the BLE thread put
+        # a newer layer set through between a USB `gone` and its takeover going out, the older,
+        # takeover set would follow it, and BLE's decoder would never say the newer one again.
+        self._carrier_lock = threading.Lock()
         self.reader = SerialReader(
             functools.partial(self._from, "usb"), log=log, raw=raw_log, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
             vid=vid if vid is not None else int(kb.get("vid", ZMK_VID)),
@@ -1402,10 +1406,11 @@ class Feed:
 
     def _from(self, carrier, msg):
         """A signal reader's message: forwarded if its carrier is the one this keyboard is read on."""
-        if self.carriers.take(carrier, msg):
-            self._emit(msg)
-        for m in self.carriers.drain():    # a takeover: the new owner's layers (Carriers)
-            self._emit(m)
+        with self._carrier_lock:
+            if self.carriers.take(carrier, msg):
+                self._emit(msg)
+            for m in self.carriers.drain():    # a takeover: the new owner's layers (Carriers)
+                self._emit(m)
 
     def _emit(self, msg):
         if msg["kind"] == "gone":
