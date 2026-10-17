@@ -134,6 +134,16 @@ final class Field: TextProxy {
         // The test keymap, and the boards the site publishes, are keymaps.
         #expect(KeymapFile.check(Data(try text("apps/fixtures/kbd-keymap.json").utf8)) == .ok(title: "Test", types: true))
     }
+
+    @Test func aFileIsReadNoFurtherThanItTakesToKnowItIsTooLarge() throws {
+        let tmp = ProcessInfo.processInfo.environment["TMPDIR"].map { URL(fileURLWithPath: $0) } ?? FileManager.default.temporaryDirectory
+        let url = tmp.appendingPathComponent("zmkhud-read-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data(repeating: 0x20, count: 1000).write(to: url)
+        #expect(try KeymapFile.read(url, limit: 2000).count == 1000)
+        #expect(try KeymapFile.read(url, limit: 100).count == 101)         // one over: enough to refuse it
+        #expect(KeymapFile.check(try KeymapFile.read(url)) != .ok(title: "keymap", types: false))
+    }
 }
 
 /// A computer in remote mode, as the app's side of the socket meets it: the challenge, the welcome
