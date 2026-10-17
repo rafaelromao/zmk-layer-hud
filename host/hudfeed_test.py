@@ -11,6 +11,7 @@ import re
 import shutil
 import sys
 import tempfile
+import threading
 import termios
 import types
 import unittest
@@ -92,6 +93,36 @@ class StreamTest(unittest.TestCase):
         plain = Stream(self.out.append, "Diamond", raw=True, log=said.append)
         plain.message({"kind": "layers", "ids": [1]}, 2)
         self.assertEqual(2, len(said))
+
+    def test_closing_lets_a_held_modifier_go(self):
+        # Shift held as the keyboard was unplugged: the page draws it held until it is told otherwise.
+        self.stream.message({"kind": "keys", "mods": 0x02, "keys": []}, 0)
+        self.out.clear()
+        self.stream.close()
+        self.assertEqual([("flagsChanged", False)], [(m["type"], m["flags"]["shift"]) for m in self.out])
+
+    def test_closing_leaves_held_a_modifier_another_keyboard_holds(self):
+        # Shift held on both keyboards, one unplugged: the other still holds it, and will not say
+        # so again until it lets it go -- so the pages are not told it came up.
+        self.stream.message({"kind": "keys", "mods": 0x02, "keys": [0x04]}, 0)
+        self.out.clear()
+        self.stream.close(held_elsewhere=0x02)
+        self.assertEqual([("keyUp", "A")], [(m["type"], m["chars"]) for m in self.out])
+        # Ctrl and Shift here, Shift there: Ctrl comes up, Shift stays.
+        stream = Stream(self.out.append, "Diamond")
+        stream.message({"kind": "keys", "mods": 0x03, "keys": []}, 0)
+        self.out.clear()
+        stream.close(held_elsewhere=0x02)
+        self.assertEqual([("flagsChanged", False, True)],
+                         [(m["type"], m["flags"]["ctrl"], m["flags"]["shift"]) for m in self.out])
+
+    def test_closing_types_a_dead_key_that_was_waiting_for_its_letter(self):
+        # ' held back for the letter that would make it an accent: the keyboard went away instead,
+        # so it is the plain key it was -- down, then up -- never an up with no down.
+        self.stream.message({"kind": "keys", "mods": 0, "keys": [0x34]}, 0)
+        self.assertEqual([], self.out)
+        self.stream.close()
+        self.assertEqual([("keyDown", "'"), ("keyUp", "'")], [(m["type"], m["chars"]) for m in self.out])
 
     def test_closing_releases_what_was_held(self):
         self.stream.message({"kind": "keys", "mods": 0, "keys": [0x04]}, 0)
@@ -790,7 +821,7 @@ class PortTaken(unittest.TestCase):
         with mock.patch("fcntl.ioctl") as ioctl:
             self.read_once([b"\x00\x01\x02 not a frame"], reader)
         ioctl.assert_not_called()
-        self.assertEqual("no frames", reader._quiet.get("/dev/cu.test"))
+        self.assertEqual("no frames", reader._failed.get("/dev/cu.test"))
 
     def test_a_port_that_cannot_be_taken_is_still_read(self):
         said = []
@@ -799,6 +830,238 @@ class PortTaken(unittest.TestCase):
             self.read_once([self.frame(signal_frame.KIND_LAYERS, (1).to_bytes(4, "little"))], reader)
         self.assertTrue(any("could not take the port" in s for s in said), said)
         self.assertTrue(any("reading Test Board" in s for s in said), said)
+
+
+class SerialScan(unittest.TestCase):
+    """The serial reader's scan with a pyserial that lists what each round says."""
+
+    def scan(self, *rounds):
+        said = []
+        reader = SerialReader(lambda m: None, log=said.append)
+        left = list(rounds)
+
+        def comports():
+            got = left[0]
+            if isinstance(got, Exception):
+                raise got
+            return got
+        list_ports = types.SimpleNamespace(comports=comports)
+        serial = types.ModuleType("serial")
+        tools = types.ModuleType("serial.tools")
+        tools.list_ports = list_ports
+        serial.tools = tools
+
+        def next_round(_s):
+            left.pop(0)
+            if not left:
+                reader._stop.set()
+        with mock.patch.dict(sys.modules, {"serial": serial, "serial.tools": tools, "serial.tools.list_ports": list_ports}), \
+                mock.patch.object(reader._stop, "wait", side_effect=next_round):
+            reader._scan_loop()
+        return said
+
+    def test_no_port_is_said_once_and_not_every_rescan(self):
+        said = self.scan([], [], [])
+        self.assertEqual(1, len(said), said)
+        self.assertIn("no serial port 1d50:615e", said[0])
+
+    def test_a_port_that_cannot_be_listed_is_said_once_per_change(self):
+        said = self.scan(OSError("busy"), OSError("busy"), OSError("busy"))
+        self.assertEqual(1, len([s for s in said if "cannot list serial ports" in s]), said)
+
+
+class ReaderLoop(unittest.TestCase):
+    """The one loop every keyboard connection is read by (hudfeed.Reader), on a transport that finds
+    what each scan says and reads what it is given."""
+
+    class Fake:
+        def __init__(self, reports):
+            self.reports, self.closed = list(reports), False
+
+        def close(self):
+            self.closed = True
+
+    def reader(self, rounds, refuse=(), reports=()):
+        import hudfeed
+        test = self
+
+        class Fake(hudfeed.Reader):
+            kind = "fake"
+
+            def find(self):
+                return [(p, "Board") for p in rounds[0]]
+
+            def note(self, found):
+                return None if found else "hudfeed: no fake keyboard"
+
+            def open(self, path, product):
+                test.opened.append(path)
+                if path in refuse:
+                    raise hudfeed.OpenFailed(f"hudfeed: cannot open {path}", "hudfeed: replug it")
+                return test.Fake(reports)
+
+            def read(self, conn, timeout):
+                return conn.reports.pop(0) if conn.reports else self.stop()
+        self.opened, self.said, self.out = [], [], []
+        r = Fake(self.out.append, log=self.said.append, dead_key_ms=20)
+
+        def next_round(_s):
+            rounds.pop(0)
+            if not rounds:
+                r._stop.set()
+        r._stop.wait = next_round
+        return r
+
+    def test_a_device_that_would_not_open_is_tried_again_once_it_comes_back(self):
+        r = self.reader([["a"], ["a"], [], ["a"]], refuse=("a",))
+        r._scan_loop()
+        self.assertEqual(["a", "a"], self.opened)                   # not every scan: after the replug
+        self.assertEqual(["hudfeed: cannot open a", "hudfeed: replug it", "hudfeed: no fake keyboard",
+                          "hudfeed: cannot open a", "hudfeed: replug it"], self.said)
+
+    def test_a_keyboard_is_read_said_and_its_keys_released_when_it_ends(self):
+        r = self.reader([["a"]], reports=[{"kind": "keys", "mods": 0x02, "keys": [0x04]}])
+        conn = self.Fake([{"kind": "keys", "mods": 0x02, "keys": [0x04]}])
+        with r._lock:
+            r._open["a"] = conn
+        r._read_loop("a", conn, "Board")
+        self.assertTrue(conn.closed)
+        self.assertNotIn("a", r._open)
+        said = [(m["type"], m["chars"] if m["type"] != "flagsChanged" else m["flags"]["shift"]) for m in self.out]
+        self.assertEqual([("flagsChanged", True), ("keyDown", "A"), ("flagsChanged", False), ("keyUp", "a")], said)
+
+    def test_a_keyboard_that_ends_leaves_held_what_another_still_holds(self):
+        import hudfeed
+        r = self.reader([["a"]])
+        other = hudfeed.Stream(lambda m: None, "Other")
+        other.message({"kind": "keys", "mods": 0x02, "keys": []}, 0)   # Shift, on the other keyboard
+        r._streams.add(other)
+        conn = self.Fake([{"kind": "keys", "mods": 0x02, "keys": [0x04]}])
+        r._read_loop("a", conn, "Board")
+        said = [(m["type"], m["chars"] if m["type"] != "flagsChanged" else m["flags"]["shift"]) for m in self.out]
+        self.assertEqual([("flagsChanged", True), ("keyDown", "A"), ("keyUp", "A")], said)
+
+    def test_a_listing_that_fails_is_said_and_the_scan_goes_on(self):
+        r = self.reader([["a"], ["a"]])
+        r.find = mock.Mock(side_effect=[OSError("bus"), []])
+        r._scan_loop()
+        self.assertEqual(["hudfeed: cannot list devices: OSError: bus", "hudfeed: no fake keyboard"], self.said)
+
+
+class BleReading(unittest.TestCase):
+    """The BLE reader's session and loop with a client that connects at once and is let go when the
+    test says: bleak's interface as hudfeed uses it, no adapter."""
+
+    def reader(self, rescan=2.0):
+        import hudfeed
+        self.said, self.out = [], []
+        return hudfeed.BleReader(self.out.append, log=self.said.append, rescan=rescan)
+
+    @staticmethod
+    def client(drop_after):
+        class Client:
+            def __init__(self, device, disconnected_callback):
+                self.gone = disconnected_callback
+
+            async def __aenter__(self):
+                asyncio.get_running_loop().call_later(drop_after, self.gone, self)
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def start_notify(self, uuid, callback):
+                pass
+        return Client
+
+    def test_a_keyboard_that_disconnects_is_said_gone(self):
+        r = self.reader()
+        device = types.SimpleNamespace(name="Diamond", address="AA")
+        self.assertIsNone(asyncio.run(r._session(self.client(0.05), device)))
+        self.assertIn("hudfeed: reading Diamond over BLE", self.said)
+        self.assertTrue(any("Diamond over BLE gone" in s for s in self.said), self.said)
+
+    def test_a_connection_with_nothing_to_wait_for_is_not_woken_every_few_milliseconds(self):
+        import hudfeed
+        r = self.reader()
+        device = types.SimpleNamespace(name="Diamond", address="AA")
+        with mock.patch.object(hudfeed.Stream, "idle") as idle:
+            asyncio.run(r._session(self.client(0.4), device))
+        self.assertLessEqual(idle.call_count, 1)          # not once every dead_key_ms (60) for 400 ms
+
+    def test_stop_ends_a_backoff_at_once(self):
+        import time
+        r = self.reader(rescan=3.0)
+
+        async def nothing():
+            return None
+        r._find = nothing
+        threading.Timer(0.1, r.stop).start()
+        started = time.monotonic()
+        with mock.patch.dict(sys.modules, {"bleak": types.SimpleNamespace(BleakClient=None)}):
+            asyncio.run(r._loop())
+        self.assertLess(time.monotonic() - started, 1.0)       # not the 3 s backoff
+
+
+class HidKeys(unittest.TestCase):
+    """The HID keys reader (hidapi, macOS) with a hid module that answers as the test says."""
+
+    def module(self, opens=True):
+        dev = mock.Mock()
+        if not opens:
+            dev.open_path.side_effect = OSError("open failed")
+        dev.read.side_effect = [[1, 0, 0, 0x04, 0, 0, 0, 0, 0], []]
+        return types.SimpleNamespace(device=lambda: dev, __file__="/nowhere/hid.so",
+                                     enumerate=lambda vid, pid: [{"path": b"DevSrvsID:1", "product_string": "Diamond"},
+                                                                 {"path": b"DevSrvsID:1", "product_string": "Diamond"},
+                                                                 {"path": b"DevSrvsID:2", "product_string": "Other"}]), dev
+
+    def test_one_path_per_keyboard_its_name_matched(self):
+        import hudfeed
+        r = hudfeed.HidKeysReader(lambda m: None, name="diamond", log=lambda *a: None)
+        r.hid, _ = self.module()
+        self.assertEqual([(b"DevSrvsID:1", "Diamond")], r.find())
+
+    def test_a_report_is_what_is_typed(self):
+        import hudfeed
+        r = hudfeed.HidKeysReader(lambda m: None, log=lambda *a: None)
+        r.hid, dev = self.module()
+        conn = r.open(b"DevSrvsID:1", "Diamond")
+        self.assertEqual({"kind": "keys", "mods": 0, "keys": [0x04, 0, 0, 0, 0, 0]}, r.read(conn, 0.5))
+        self.assertIsNone(r.read(conn, 0.5))
+        dev.read.assert_called_with(64, timeout_ms=500)
+
+    def test_a_keyboard_it_may_not_open_says_where_and_why(self):
+        import hudfeed
+        r = hudfeed.HidKeysReader(lambda m: None, log=lambda *a: None)
+        r.hid, _ = self.module(opens=False)
+        with mock.patch.object(hudfeed.sys, "platform", "darwin"):
+            with self.assertRaises(hudfeed.OpenFailed) as e:
+                r.open(b"DevSrvsID:1", "Diamond")
+        self.assertIn("(DevSrvsID:1)", e.exception.lines[0])
+        self.assertIn("Input Monitoring", e.exception.lines[1])
+
+
+class HidrawReading(unittest.TestCase):
+    """The hidraw reader's loop on a pipe: what /dev/hidrawN is to it, one report per read."""
+
+    def setUp(self):
+        import hudfeed
+        self.out, self.said = [], []
+        self.reader = hudfeed.HidrawReader(self.out.append, log=self.said.append, dead_key_ms=20)
+        self.rfd, self.wfd = os.pipe()
+        self.addCleanup(lambda: [os.close(fd) for fd in (self.wfd,) if fd is not None])
+
+    def test_an_error_reading_ends_the_connection_and_is_said(self):
+        # OSError is the unplug; anything else the read raises must end the connection the same way
+        # -- said, the node closed and forgotten so a replug opens it -- not as a thread's traceback.
+        import hudfeed
+        os.write(self.wfd, bytes([1, 0x02, 0, 0x04, 0, 0, 0, 0, 0]))
+        self.reader._open["/dev/hidraw9"] = self.rfd
+        with mock.patch.object(hudfeed, "split_report", side_effect=ValueError("a report it cannot take")):
+            self.reader._read_loop("/dev/hidraw9", self.rfd, "Diamond")
+        self.assertTrue(any("Diamond gone" in s for s in self.said), self.said)
+        self.assertNotIn("/dev/hidraw9", self.reader._open)
 
 
 @unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
