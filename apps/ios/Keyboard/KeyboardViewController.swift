@@ -16,6 +16,9 @@ final class KeyboardViewController: UIInputViewController {
     /// When the keymap it drew was written (keymapStamp): another, imported since, is loaded on the
     /// keyboard's next appearance.
     private var loadedStamp: Date?
+    /// The field it types into (textDocumentProxy.documentIdentifier): another, the keyboard still
+    /// up, is a fresh start (fieldChanged).
+    private var document: UUID?
     private let epoch = CACurrentMediaTime()
     private lazy var field = ProxyField(self)
 
@@ -51,6 +54,7 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         boardView.globe.isHidden = !needsInputModeSwitchKey
+        document = textDocumentProxy.documentIdentifier
         // The extension outlives an import in the app: viewDidLoad does not run again, so the keymap
         // the app wrote since is looked for here, each time the keyboard comes up.
         if Self.keymapStamp() != loadedStamp {
@@ -63,6 +67,32 @@ final class KeyboardViewController: UIInputViewController {
     override func viewWillLayoutSubviews() {
         super.viewWillLayoutSubviews()
         relayout()
+    }
+
+    override func textDidChange(_ textInput: UITextInput?) {
+        super.textDidChange(textInput)
+        fieldChanged()
+    }
+
+    override func selectionDidChange(_ textInput: UITextInput?) {
+        super.selectionDidChange(textInput)
+        fieldChanged()
+    }
+
+    /// Another field with the keyboard still up -- its view does not go away, so viewWillDisappear
+    /// does not run: all of the last field's is let go -- what is held, latched or locked, a dead key
+    /// waiting, the engine's next moment -- and none of it is typed into this one.
+    private func fieldChanged() {
+        let id = textDocumentProxy.documentIdentifier
+        guard id != document else { return }
+        let left = document != nil
+        document = id
+        guard left, let kbd else { return }
+        timer?.invalidate()
+        timer = nil
+        _ = kbd.releaseAll(at: now())      // its ops are the last field's: dropped
+        boardView.board = kbd.board()
+        boardView.chips = kbd.chips(width: room.width, maxHeight: room.maxHeight)
     }
 
     override func viewWillDisappear(_ animated: Bool) {
