@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-/* zmk-layer-hud — hud/hidtext.js, the page's port of hudfeed's decoder, held to hudfeed itself.
+/* zmk-layer-hud — hud/hidtext.js, the page's port of the feed's decoder, held to the decoder itself.
  *
  *   node hud/tests/hidtext_test.js
  *
  * For every legend a fixture keymap draws, host/uskeys.py gives the report snapshots a US-layout
- * keyboard sends to type it and the key events hudfeed's own SignalDecoder makes of them; the port
+ * keyboard sends to type it and the key events the feed's own SignalDecoder (host/hiddecode.py) makes of them; the port
  * must make the same events of the same snapshots, with and without AltGr. Then what a text-only
  * keyboard does with them (textEvents). Needs python3 (PYTHON=... to choose one); skips without it.
  */
@@ -83,5 +83,5 @@ for (const fixture of FIXTURES) {
 })();
 
 for (const f of fail.slice(0, 30)) console.log("FAIL " + f);
-console.log(`${legends} legends decoded as hudfeed decodes them, ${checks} checks, ${fail.length} failures`);
+console.log(`${legends} legends decoded as the feed decodes them, ${checks} checks, ${fail.length} failures`);
 process.exit(fail.length ? 1 : 0);

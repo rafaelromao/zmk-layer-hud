@@ -28,6 +28,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import keynames  # noqa: E402
 import uskeys  # noqa: E402
 import ways  # noqa: E402
 
@@ -45,12 +46,10 @@ STEP_HOLD_MS = 250    # how long a frame's keys stay down, played
 TAIL_MS = 2400        # after the last key: the strip fades (hud/keys.js), then the next loop
 STRIP_IDLE_MS = 1800  # a pause this long empties the strip (hud/keys.js IDLE_MS)
 
-# The characters text spells named keys with, and the words keymap-drawer files use for them
-# (uskeys.LEGEND_WORDS, which the touch keyboard's legend fallback reads too).
+# The characters text spells named keys with; a legend's own spellings are keynames.name_of's.
 TEXT_NAMES = {" ": "space", "\n": "return", "\t": "tab"}
-DRAWER_WORDS = uskeys.LEGEND_WORDS
 GLYPH_FOR_NAME = {}   # a named key -> a legend uskeys can type it from
-for _legend, _name in uskeys.NAME_FOR_LEGEND.items():
+for _legend, _name in keynames.SPELLINGS.items():
     if _name not in GLYPH_FOR_NAME and uskeys.keystrokes_for(_legend) is not None:
         GLYPH_FOR_NAME[_name] = _legend
 FLAGS = ("cmd", "ctrl", "alt", "shift", "fn")
@@ -67,7 +66,7 @@ def name_of(legend):
     """The named key a legend stands for, spelled as a glyph or as keymap-drawer's word."""
     if not isinstance(legend, str):
         return None
-    return uskeys.NAME_FOR_LEGEND.get(legend) or DRAWER_WORDS.get(legend.lower().replace(" ", ""))
+    return keynames.name_of(legend)
 
 
 def load(path):
@@ -117,7 +116,7 @@ class Speller:
                 i += len(hit)
                 continue
             ch = text[i]
-            name = TEXT_NAMES.get(ch) or uskeys.NAME_FOR_LEGEND.get(ch)
+            name = TEXT_NAMES.get(ch) or keynames.name_of(ch)
             if name and name in self.named and name in GLYPH_FOR_NAME:
                 units.append((ch, self.named[name], uskeys.events_for(GLYPH_FOR_NAME[name]), False))
             elif self.capitals and ch.islower() and ch.upper() in self.literal and uskeys.events_for(ch):

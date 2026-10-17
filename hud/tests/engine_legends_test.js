@@ -63,10 +63,10 @@ function typedBy(actions, msg, c) {
   return keyDowns;
 }
 
-// The named keys a legend may spell as a word (uskeys.LEGEND_WORDS): `Tab` on a typing layer is the
+// The named keys a legend may spell as a word (keynames.SPELLINGS): `Tab` on a typing layer is the
 // Tab key to the touch keyboard, where ways.py, reading characters, spells it.
-const namesOut = python(["-c", "import sys, json; sys.path.insert(0, 'host'); import uskeys; "
-                         + "print(json.dumps(uskeys.LEGEND_WORDS))"]);
+const namesOut = python(["-c", "import sys, json; sys.path.insert(0, 'host'); import keynames; "
+                         + "print(json.dumps(keynames.SPELLINGS))"]);
 const WORDS = namesOut ? JSON.parse(namesOut) : {};
 
 let cases = 0, skipped = 0;

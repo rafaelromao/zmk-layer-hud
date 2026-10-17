@@ -48,12 +48,13 @@
  * Nothing here keeps time: `now` is an argument, whatever is due at or before it runs first, and
  * `next` says when something will be. No DOM, no Date, no timers, no console, as in engine.js: the
  * same file runs in the page and under node's tests. Which layer a key resolves on comes from
- * view.js. Time is taken as given, never clamped: a GIF still dates a held key back (hud.js
+ * view.js; what a named key and a modifier are drawn as and spelled with, from keynames.js. Time is taken as given, never clamped: a GIF still dates a held key back (hud.js
  * demoFrame), and it is read as of then.
  */
 (function (root) {
   "use strict";
   const View = (typeof module === "object" && module.exports) ? require("./view.js") : root.ZmkView;
+  const Keys = (typeof module === "object" && module.exports) ? require("./keynames.js") : root.ZmkKeyNames;
 
   // The timings the reading uses, from the config's `hud:` section (host/keymap.py fills the
   // defaults in); these are only the fallbacks for a keymap message without it. hud.js takes them
@@ -113,7 +114,7 @@
     const activatorsOf = layer => s.data.activators.filter(a => a.layer === layer).map(a => a.idx);
     const resolve = (idx, layers) => View.resolve(s.data, idx, layers);
     // Modifier flags -> the glyph a hold legend uses for them.
-    const MOD_GLYPH = { shift: "⇧", ctrl: "⌃", alt: "⌥", cmd: "⌘" };
+    const MOD_GLYPH = Keys.MOD_GLYPHS;
     // A key that carries a modifier: a home-row mod (hold legend) or the modifier key itself (tap).
     const carries = (key, glyph) => !!key && ((key.hold && key.hold.includes(glyph)) || key.tap === glyph);
     // The drawer key's ZMK position, which is what a session is kept by; null for a key the keymap
@@ -227,21 +228,14 @@
     const fromKeyboard = ev => ev.sent !== true && typeof ev.combos !== "boolean" && !ev.synthetic;
     const isLetter = t => /^[\p{L}]$/u.test(t);
 
-    // Named keys -> the legend text keymap-drawer keymaps usually use for them.
-    const NAMED = {
-      space: "␣", return: "↵", escape: "⎋", delete: "⌫", forwarddelete: "⌦", tab: "⇥",
-      left: "←", right: "→", up: "↑", down: "↓", home: "⇱", end: "⇲",
-      pagedown: "⇟", pageup: "⇞", insert: "⎀", capslock: "⇪",
-      // Keyboard Cancel (K_CANCEL), what a cancel combo sends: without positions this is how its
-      // keys light and its pill shows.
-      cancel: "cancel",
-    };
-    // The function keys the decoder names (f1..f24): without them a keymap's F5 resolves to no
-    // token at all and the key never lights when the firmware reports no positions.
-    for (let i = 1; i <= 24; i++) NAMED["f" + i] = "F" + i;
-    // Alternative spellings a drawer file may use for the same named key.
-    const ALIASES = { "␣": ["space", "spc", "SPACE"], "↵": ["⏎", "enter", "ret", "RET"], "⎋": ["esc", "ESC"],
-      "⌫": ["bspc", "BSPC", "backspace"], "⌦": ["del", "DEL"], "⇥": ["tab", "TAB", "↹"] };
+    // Named keys -> their glyphs, the legend text drawings usually use for them, and back; a
+    // legend's named key under any spelling (the key vocabulary, host/keynames.py). Cancel and the
+    // function keys among them: without them a cancel combo or a keymap's F5 resolves to no token at
+    // all, and never lights when the firmware reports no positions.
+    const NAMED = Keys.GLYPHS;
+    const NAME_OF_GLYPH = {};
+    for (const [name, glyph] of Object.entries(NAMED)) NAME_OF_GLYPH[glyph] = name;
+    const nameOf = Keys.nameOf;
 
     // ---------- what is due ----------
 
@@ -716,7 +710,7 @@
     // ---------- the reports ----------
 
 
-    // A legend matches a typed token exactly, through the alias table, or as one side of an
+    // A legend matches a typed token exactly, as another spelling of the same named key, or as one side of an
     // "a|b" legend (a key that produces either). A multi-key sequence (a macro) matches when its
     // printable core equals the legend's: motion keys the macro types (End, arrows) and the
     // glyphs the legend uses to hint at them (⇥ → ⇲ …) are ignored on both sides.
@@ -727,8 +721,8 @@
       if (!legend) return false;
       if (legend === token) return true;
       if (!exact && legend.includes("|") && legend.split("|").some(part => part.trim() === token)) return true;
-      const alts = ALIASES[token];
-      if (alts && alts.includes(legend)) return true;
+      const named = NAME_OF_GLYPH[token];
+      if (named && nameOf(legend) === named) return true;
       if (token.length > 1) { const c = core(token); return c.length > 1 && c === core(legend); }
       return false;
     }
