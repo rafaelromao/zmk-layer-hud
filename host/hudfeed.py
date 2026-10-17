@@ -72,6 +72,7 @@ import secrets
 import sys
 import termios
 import threading
+import time
 import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -342,26 +343,40 @@ class Carriers:
     position would reach the pages twice. A page takes the copy of a press as a second press --
     each key counted twice, and a held chord's modifiers credited to its keys pressed "again".
 
-    So each keyboard's signal comes from one carrier: the first heard, until its connection goes
-    (`gone`, from Stream.close). USB is preferred and takes over from BLE as soon as no key is down
-    on either, so that no key goes down on one carrier and comes up on the other. Not by time: the
-    firmware's heartbeat is off by default, so a quiet carrier is not a gone one. Messages without
-    a device (the readers' `device` announcements) pass. Pure: take() says whether to forward.
+    So each keyboard's signal comes from one carrier: the first heard, for as long as its
+    connection lasts (`gone`, from Stream.close). Never handed over while both are up: the readers
+    run apart and either may lag, so a carrier that looks idle may still have the other's last tap
+    to deliver, and a handover there sends that tap twice. Not by time either: the firmware's
+    heartbeat is off by default, so a quiet carrier is not a gone one. Messages without a device
+    (the readers' `device` announcements) pass. Pure: take() says whether to forward.
 
     The carrier set aside still decodes, and its decoder only speaks of a layer set that changed:
     one it heard first is never said again while it stays. So when the owner goes, the other
     carrier takes over at once, and its last layer set is handed on (drain()) if the pages were
-    told another -- or they stay on the old layers until the next change."""
+    told another -- or they stay on the old layers until the next change.
 
-    PREFERRED = "usb"
+    The name is all the carriers share, and two keyboards may share it too: one on USB, another on
+    BLE. A copy presses what the owner presses, within moments either way; another keyboard
+    presses keys the owner never does. SPLIT_AFTER presses on the other carrier that the owner does
+    not match within MIRROR_S, inside SPLIT_WINDOW_S, and the name is two keyboards: both are read
+    from then on. (One press the owner lost -- a carrier drops a frame rather than block -- is not.)"""
 
-    def __init__(self, log=None):
+    MIRROR_S = 0.5
+    SPLIT_AFTER = 3
+    SPLIT_WINDOW_S = 10.0
+
+    def __init__(self, log=None, clock=None):
         self.log = log
+        self.clock = clock or time.monotonic
         self.owner = {}   # device -> the carrier its signal is taken from
-        self.held = {}    # (carrier, device) -> positions down on that carrier
+        self.links = set()  # (carrier, device) heard from and not gone
         self.layers = {}  # (carrier, device) -> the last layers message it decoded, forwarded or not
         self.told = {}    # device -> the layer ids the pages were last given
         self.queue = []   # messages handed on at a takeover (drain)
+        self.ahead = {}   # device -> [(pos, t)]: the owner's presses no copy has matched yet
+        self.behind = {}  # device -> [(pos, t)]: the other carrier's presses the owner has not matched
+        self.strays = {}  # device -> times of the other carrier's presses the owner never matched
+        self.split = set()  # names that are two keyboards: every carrier read
         self.lock = threading.Lock()   # the serial reader's thread and BLE's loop both call take()
 
     def take(self, carrier, msg):
@@ -380,34 +395,56 @@ class Carriers:
             return kind != "gone"
         link = (carrier, device)
         if kind == "gone":
-            self.held.pop(link, None)
+            self.links.discard(link)
             self.layers.pop(link, None)
             if self.owner.get(device) == carrier:
                 del self.owner[device]
-                rest = [c for (c, d) in self.held if d == device]
+                self.ahead.pop(device, None)
+                self.behind.pop(device, None)
+                rest = [c for (c, d) in self.links if d == device]
                 if rest:
                     self.owner[device] = rest[0]
                     last = self.layers.get((rest[0], device))
-                    if last is not None and last.get("ids") != self.told.get(device):
+                    if last is not None and last.get("ids") != self.told.get(device) and device not in self.split:
                         self.told[device] = last.get("ids")
                         self.queue.append(dict(last))
             return False
-        held = self.held.setdefault(link, set())
-        owner = self.owner.get(device)
-        if owner is None or (carrier == self.PREFERRED and owner != carrier
-                             and not held and not self.held.get((owner, device))):
-            if owner is not None and self.log:
-                self.log(f"hudfeed: {device} on {carrier.upper()} too: its {owner.upper()} copy is set aside")
-            self.owner[device] = owner = carrier
-        if kind == "press":
-            held.add(msg.get("pos"))
-        elif kind == "release":
-            held.discard(msg.get("pos"))
-        elif kind == "layers":
+        self.links.add(link)
+        if device in self.split:
+            return True
+        owner = self.owner.setdefault(device, carrier)
+        if kind == "layers":
             self.layers[link] = dict(msg)
             if owner == carrier:
                 self.told[device] = msg.get("ids")
+        if kind == "press":
+            self._mirror(device, msg.get("pos"), owner == carrier)
+            if device in self.split:
+                if self.log:
+                    self.log(f"hudfeed: two keyboards are called {device}, one on each carrier: both are read")
+                return True
         return owner == carrier
+
+    def _mirror(self, device, pos, from_owner):
+        """Match a press with its copy on the other carrier, whichever comes first; count the other
+        carrier's presses the owner never matches."""
+        now = self.clock()
+        ahead, behind = self.ahead.setdefault(device, []), self.behind.setdefault(device, [])
+        ahead[:] = [(p, t) for p, t in ahead if now - t <= self.MIRROR_S]
+        strays = self.strays.setdefault(device, [])
+        for p, t in behind:
+            if now - t > self.MIRROR_S:
+                strays.append(t)
+        behind[:] = [(p, t) for p, t in behind if now - t <= self.MIRROR_S]
+        strays[:] = [t for t in strays if now - t <= self.SPLIT_WINDOW_S]
+        mine, theirs = (ahead, behind) if from_owner else (behind, ahead)
+        hit = next((i for i, (p, _) in enumerate(theirs) if p == pos), None)
+        if hit is not None:
+            del theirs[hit]
+        else:
+            mine.append((pos, now))
+        if len(strays) >= self.SPLIT_AFTER:
+            self.split.add(device)
 
 
 def take_port(dev, log):

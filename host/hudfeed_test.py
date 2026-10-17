@@ -289,25 +289,68 @@ class CarriersTest(unittest.TestCase):
         out = self.both(Carriers(), msgs)
         self.assertEqual([("ble", "press", 11), ("ble", "press", 12), ("ble", "release", 12), ("ble", "release", 11)], out)
 
-    def test_usb_takes_over_once_nothing_is_down(self):
+    def test_the_first_carrier_keeps_it_while_both_are_up(self):
         carriers = Carriers()
-        said = []
-        carriers.log = said.append
         self.assertTrue(carriers.take("ble", self.press(11)))     # BLE heard first: BLE's
-        self.assertFalse(carriers.take("usb", self.press(11)))    # USB comes in mid-press: not yet
-        self.assertTrue(carriers.take("ble", self.release(11)))   # ...or the key comes up on the other
+        self.assertFalse(carriers.take("usb", self.press(11)))
+        self.assertTrue(carriers.take("ble", self.release(11)))
         self.assertFalse(carriers.take("usb", self.release(11)))
-        self.assertEqual([], said)
-        self.assertTrue(carriers.take("usb", self.press(12)))     # nothing down: USB from now on
-        self.assertFalse(carriers.take("ble", self.press(12)))
-        self.assertTrue(carriers.take("usb", self.release(12)))
-        self.assertFalse(carriers.take("ble", self.release(12)))
-        self.assertEqual(1, len(said))
-        self.assertIn("USB", said[0])
-        # USB first: BLE never takes it while USB reads it.
+        self.assertTrue(carriers.take("ble", self.press(12)))     # idle, and still BLE's
+        self.assertFalse(carriers.take("usb", self.press(12)))
         out = self.both(Carriers(), [self.press(3), self.release(3), self.press(3), self.release(3)], first="usb")
         self.assertEqual({"usb"}, {c for c, _, _ in out})
         self.assertEqual(4, len(out))
+
+    def test_a_lagging_copy_of_a_tap_is_not_sent_again(self):
+        # BLE delivers a quick tap before USB's copy of it starts: both look idle when USB's press
+        # comes. Handed over there, the tap would go out twice.
+        carriers = Carriers()
+        self.assertTrue(carriers.take("ble", self.press(5)))
+        self.assertTrue(carriers.take("ble", self.release(5)))
+        self.assertFalse(carriers.take("usb", self.press(5)))
+        self.assertFalse(carriers.take("usb", self.release(5)))
+
+    def clocked(self):
+        now = [0.0]
+        return Carriers(clock=lambda: now[0]), now
+
+    def test_two_keyboards_with_one_name_are_both_read(self):
+        # Another keyboard called Diamond on BLE: its presses are never the owner's.
+        carriers, now = self.clocked()
+        self.assertTrue(carriers.take("usb", self.press(1)))
+        for i, pos in enumerate([20, 21, 22, 23]):
+            now[0] += 1.0
+            carriers.take("ble", self.press(pos))
+        self.assertIn("Diamond", carriers.split)
+        self.assertTrue(carriers.take("ble", self.press(24)))
+        self.assertTrue(carriers.take("usb", self.press(2)))
+
+    def test_a_copy_ahead_or_behind_is_a_copy(self):
+        carriers, now = self.clocked()
+        for pos in range(12):
+            now[0] += 1.0
+            carriers.take("usb", self.press(pos))
+            now[0] += 0.1
+            carriers.take("ble", self.press(pos))           # behind the owner
+            now[0] += 1.0
+            carriers.take("ble", self.press(pos + 100))    # ahead of the owner
+            now[0] += 0.1
+            carriers.take("usb", self.press(pos + 100))
+        self.assertNotIn("Diamond", carriers.split)
+
+    def test_one_frame_the_owner_lost_does_not_split_it(self):
+        carriers, now = self.clocked()
+        carriers.take("usb", self.press(1))
+        now[0] += 0.05
+        carriers.take("ble", self.press(1))
+        now[0] += 1.0
+        carriers.take("ble", self.press(9))                 # the owner dropped this one
+        for pos in range(2, 8):
+            now[0] += 1.0
+            carriers.take("usb", self.press(pos))
+            now[0] += 0.05
+            carriers.take("ble", self.press(pos))
+        self.assertNotIn("Diamond", carriers.split)
 
     def test_the_other_carrier_takes_over_when_one_goes(self):
         carriers = Carriers()
@@ -316,9 +359,9 @@ class CarriersTest(unittest.TestCase):
         self.assertFalse(carriers.take("usb", {"kind": "gone", "device": "Diamond"}))   # unplugged
         self.assertTrue(carriers.take("ble", self.press(5)))
         self.assertTrue(carriers.take("ble", self.release(5)))
-        # Plugged in again, idle: USB is preferred again.
-        self.assertTrue(carriers.take("usb", self.press(6)))
-        self.assertFalse(carriers.take("ble", self.press(6)))
+        # Plugged in again: BLE keeps it while it lasts.
+        self.assertFalse(carriers.take("usb", self.press(6)))
+        self.assertTrue(carriers.take("ble", self.press(6)))
 
     def test_a_layer_change_heard_only_on_the_other_carrier_is_handed_on(self):
         # BLE decoded the new layers first and was set aside; USB went before it said them, and
