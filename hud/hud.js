@@ -395,7 +395,7 @@
       // sticky shift tapped. Without positions there is no telling which, so every key that
       // carries it is ringed.
       if (heldMods.some(({ flag, glyph }) => modSource[flag] !== undefined
-        ? modSource[flag] === idx : carries(r.key, glyph))) e.classList.add("mod");
+        ? [].concat(modSource[flag]).includes(idx) : carries(r.key, glyph))) e.classList.add("mod");
       fit(e.querySelector(".tap"), shiftLegend(r.key.tap) || "", r.key.glyph);
       setLegend(e.querySelector(".hold"), r.key.hold, r.key.glyph_hold);
       setLegend(e.querySelector(".shifted"), r.key.shifted, r.key.glyph_shifted);
@@ -1419,14 +1419,25 @@
     }
     board.appendChild(svg);
     requestAnimationFrame(() => { pill.classList.add("show"); svg.classList.add("show"); });
-    return {
-      until: p.until,
-      down(expired) {
-        if (!expired) { pill.remove(); svg.remove(); return; }
+    const shown = {
+      hold: null,
+      // A chord held for its modifiers: the pill reads the hold (keystrokes.js drawCombo).
+      held(legend) {
+        shown.hold = legend;
+        pill.classList.add("held");
+        setLegend(tapEl, legend);
+        const sub = pill.querySelector(".combo-sub");
+        if (sub) sub.remove();
+      },
+      // Gone by itself (its time up, its chord let go) it fades; taken down early it goes at once.
+      down(fades) {
+        if (!fades) { pill.remove(); svg.remove(); return; }
         pill.classList.remove("show"); svg.classList.remove("show");
         setTimeout(() => { pill.remove(); svg.remove(); }, 200);
       },
     };
+    if (p.hold) shown.held(p.hold);
+    return shown;
   }
 
   /* What keystrokes.js answered. The layers it applied go on the board, and to the scripts that
@@ -1450,7 +1461,7 @@
       else if (before.activators.join() !== board.activators.join() || JSON.stringify(before.mods) !== JSON.stringify(board.mods) ||
                JSON.stringify(before.modSource) !== JSON.stringify(board.modSource)) renderKeys();
     }
-    paintBoard(board, Date.now());
+    paintBoard(board);
     armKs(out.next);
     return out;
   }
@@ -1466,7 +1477,7 @@
    * name. Drawn by what changed since the last answer, as the timers that drew it did, so what else
    * marks a key -- a finger on it (touch.js) -- is left to its owner. */
   let painted = { lit: new Map(), pills: new Map(), comboKeys: new Set() };
-  function paintBoard(b, now) {
+  function paintBoard(b) {
     const lit = new Map(b.lit.map(idx => [idx, b.chord.includes(idx)]));
     for (const idx of painted.lit.keys()) {
       if (!lit.has(idx)) { const e = state.keyEls[idx]; if (e) e.classList.remove("pressed", "combo"); }
@@ -1481,9 +1492,13 @@
     for (const [id, shown] of painted.pills) {
       if (up.has(id)) continue;
       painted.pills.delete(id);
-      if (shown) shown.down(now >= shown.until);
+      if (shown) shown.down(b.faded.includes(id));
     }
-    for (const p of b.pills) if (!painted.pills.has(p.id)) painted.pills.set(p.id, drawPill(p));
+    for (const p of b.pills) {
+      const shown = painted.pills.get(p.id);
+      if (!painted.pills.has(p.id)) painted.pills.set(p.id, drawPill(p));
+      else if (shown && p.hold && p.hold !== shown.hold) shown.held(p.hold);
+    }
     const named = new Set(b.pills.flatMap(p => p.positions));
     for (const idx of painted.comboKeys) if (!named.has(idx)) { const e = state.keyEls[idx]; if (e) e.classList.remove("combo-key"); }
     for (const idx of named) if (!painted.comboKeys.has(idx)) { const e = state.keyEls[idx]; if (e) e.classList.add("combo-key"); }
@@ -1494,7 +1509,7 @@
   // drawn whole. Its old pills went with the old board.
   function paintedAfresh() {
     painted = { lit: new Map(), pills: new Map(), comboKeys: new Set() };
-    paintBoard(board, Date.now());
+    paintBoard(board);
   }
 
   // ---------- public API ----------
