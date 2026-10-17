@@ -120,6 +120,7 @@ const posOfIdx = idx => Number(Object.entries(DIAMOND.positions).find(([, i]) =>
   ks.read({ kind: "press", pos: posOfIdx(b) }, 1000);
   let out = ks.read(keyDown("", { name: "usage9c" }), 1010);
   check(out.label === "b", `a usage the feed has no name for reads as its key: ${out.label}`);
+  ks.read({ kind: "release", pos: posOfIdx(b) }, 1050);
   out = ks.read(keyDown("", { name: "usage9c" }), 2500);
   check(out.label === null, "but not from a press long gone");
   out = ks.read(keyDown("x", { name: "x" }), 2600);
@@ -304,6 +305,35 @@ const eIdx = DIAMOND.layers[DIAMOND.base].findIndex(key => key.tap === "e");
   k.read({ kind: "press", pos: E }, 1010);
   const out = k.read({ kind: "secure", on: true }, 1020);
   check(eq(out.board.lit, []) && eq(out.board.pills, []) && eq(out.board.held, []) && out.board.secure, "nothing lit, no pill, nothing held");
+})();
+
+// ---------- a chord held for its modifiers ----------
+
+(function aChordHeldForItsModifiersReadsItsHoldUntilItIsLetGo() {
+  const q = DIAMOND.combos.find(c => onBase(c) && c.key.tap === "q");
+  const k = session();
+  k.read({ kind: "layers", ids: [] }, 900);
+  for (const p of q.positions) k.read({ kind: "press", pos: posOfIdx(p) }, 1000);
+  k.read({ kind: "key", type: "flagsChanged", flags: { ctrl: true, alt: true } }, 1250);
+  let out = k.to(1300);
+  check(eq(out.board.pills.map(p => p.hold), ["⌃⌥"]) && out.board.pills[0].until === null, `held, the pill reads ⌃⌥ and stays: ${JSON.stringify(out.board.pills)}`);
+  check(eq(out.board.modSource.ctrl, q.positions), "and the chord's keys turned the modifiers on");
+  out = k.to(3000);
+  check(out.board.pills.length === 1, "still up while the chord is down");
+  const id = out.board.pills[0].id;
+  out = k.read({ kind: "release", pos: posOfIdx(q.positions[0]) }, 3100);
+  check(!out.board.pills.length && eq(out.board.faded, [id]), "let go, it fades out");
+})();
+
+(function aPositionToldTwiceIsOnePress() {
+  const k = session();
+  k.read({ kind: "layers", ids: [] }, 900);
+  k.read({ kind: "press", pos: E }, 1000);
+  k.read({ kind: "press", pos: E }, 1001);                    // the same press, by BLE as well as USB
+  k.read({ kind: "release", pos: E }, 1100);
+  k.read({ kind: "release", pos: E }, 1101);
+  k.to(2000);
+  check(counted(k.said).length === 1, `one press said: ${JSON.stringify(counted(k.said))}`);
 })();
 
 (function layersNoLongerReportedAreEmulatedAgain() {
