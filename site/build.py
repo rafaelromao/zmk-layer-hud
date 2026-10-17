@@ -118,8 +118,6 @@ def build_board(board, strict):
         log(f"site: {board['id']} skipped: {reason}")
 
     config = os.path.join(REPO, board["config"])
-    if not os.path.isfile(config):   # find_config would fall back to the user's own config
-        return cannot(f"no {board['config']}")
     try:
         message = keymap_mod.KeymapSource(config, log=log).load()
     except (keymap_mod.KeymapError, OSError) as e:

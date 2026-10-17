@@ -332,8 +332,7 @@ class Diamond(unittest.TestCase):
             defs = json.load(f)
         if "keymap" not in (defs.get("zmk") or {}):
             self.skipTest("the Diamond's definitions have no bindings yet (make samples)")
-        cfg = keymap.merge_imported({}, defs["zmk"])
-        m = keymap.build_message(cfg, defs["drawing"], source="diamond")
+        m = keymap.build_message({}, dict(defs, source="diamond"))
         a = m["actions"]
         self.assertEqual("mixed", a["source"])
         self.assertGreater(a["coverage"]["keymap"], 10 * (a["coverage"]["legend"] + a["coverage"]["unsupported"]))

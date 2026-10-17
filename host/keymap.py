@@ -206,29 +206,40 @@ def expand(path, base_dir=None):
     return p
 
 
+def resolve(path, named_in, walk_up=False):
+    """A path one of the HUD's files names, as the HUD finds it: ~ and $VARS expanded, an absolute
+    one as it is, a relative one from the directory of the file that names it (`named_in`).
+    `walk_up`, for layout files: from there up through its parents, the first that has it -- a
+    drawer repo names them from its root, where keymap-drawer runs, and the HUD runs anywhere. One
+    found nowhere is where it would be beside the file that names it, so keymap-drawer's error says
+    where it was looked for rather than wherever it happens to run."""
+    if not isinstance(path, str):
+        return path
+    p = expand(path)
+    if os.path.isabs(p):
+        return p
+    d = os.path.dirname(os.path.abspath(named_in))
+    if not walk_up:
+        return os.path.normpath(os.path.join(d, p))
+    while True:
+        if os.path.exists(os.path.join(d, p)):
+            return os.path.normpath(os.path.join(d, p))
+        if os.path.dirname(d) == d:
+            return os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(named_in)), p))
+        d = os.path.dirname(d)
+
+
+LAYOUT_FILES = ("qmk_info_json", "dts_layout")      # a keymap-drawer layout's keys that name a file
+
+
 def layout_files(layout, yaml_path):
-    """A drawer YAML's `layout` with its qmk_info_json / dts_layout file found. keymap-drawer reads
-    a relative one from the directory it runs in, which for a drawer repo is its root; the HUD runs
-    anywhere, so it looks from the YAML's directory up through its parents and takes the first that
-    has the file. A file found nowhere is left as written, for keymap-drawer's error to name."""
+    """A drawer YAML's `layout` with its qmk_info_json / dts_layout file found (resolve, walking up)."""
     if not isinstance(layout, dict):
         return layout
     out = dict(layout)
-    for key in ("qmk_info_json", "dts_layout"):
-        p = expand(out.get(key))
-        if not isinstance(p, str):
-            continue
-        out[key] = p
-        if os.path.isabs(p):
-            continue
-        d = os.path.dirname(os.path.abspath(yaml_path))
-        while True:
-            if os.path.exists(os.path.join(d, p)):
-                out[key] = os.path.normpath(os.path.join(d, p))
-                break
-            if os.path.dirname(d) == d:
-                break
-            d = os.path.dirname(d)
+    for key in LAYOUT_FILES:
+        if isinstance(out.get(key), str):
+            out[key] = resolve(out[key], yaml_path, walk_up=True)
     return out
 
 
@@ -991,9 +1002,13 @@ def touch_actions(cfg, drawing, layers, zmk_layers, pos_to_idx, base, extras, co
         return {"v": actions_mod.ACTIONS_VERSION, "error": f"{type(e).__name__}: {e}"}
 
 
-def build_message(cfg, drawing, source=""):
-    """Everything the page needs, from the parsed config -- with what was imported folded in
-    (merge_imported) -- and the definitions' drawing. Pure: no file, no keymap-drawer, no network."""
+def build_message(cfg, definitions):
+    """Everything the page needs, from the parsed config and its definitions: their drawing, the
+    file it came from (`source`), and what import took from the keyboard's keymap (`zmk`), a floor
+    under the config (_merge_imported). Pure: no file, no keymap-drawer, no network, and the config
+    is left as it was."""
+    cfg = _merge_imported(dict(cfg), definitions.get("zmk"))
+    drawing, source = definitions["drawing"], definitions.get("source") or ""
     layout, layers, layer_names = drawing["layout"], drawing["layers"], list(drawing["layer_order"])
     n = len(layout["keys"])
     # A copy: an override below changes a combo's layers, and the definitions are not the config's.
@@ -1144,7 +1159,7 @@ def read_definitions(path):
     return got
 
 
-def merge_imported(cfg, imported):
+def _merge_imported(cfg, imported):
     """Fold what `zmk-layer-hud import` took out of the keyboard's own keymap into the config.
 
     It is a floor, never a ceiling: the config is where a human writes things down, so anything set
@@ -1171,10 +1186,21 @@ def merge_imported(cfg, imported):
     return cfg
 
 
+def config_path(path):
+    """A config's path as the HUD names it, wherever it was written: ~ and $VARS expanded, absolute."""
+    return os.path.abspath(expand(path))
+
+
 def find_config(path=None):
-    for candidate in (path, os.environ.get("ZMKHUD_CONFIG"), DEFAULT_CONFIG):
-        if candidate and os.path.exists(expand(candidate)):
-            return expand(candidate)
+    """The config asked for, which must be there; asked for none, $ZMKHUD_CONFIG's, else the default.
+    A config asked for and not found is said, never stood in for by another board's."""
+    if path:
+        if os.path.exists(config_path(path)):
+            return config_path(path)
+        raise KeymapError(f"no config at {path}")
+    for candidate in (os.environ.get("ZMKHUD_CONFIG"), DEFAULT_CONFIG):
+        if candidate and os.path.exists(config_path(candidate)):
+            return config_path(candidate)
     raise KeymapError(f"no config: pass --config, set ZMKHUD_CONFIG, or create {DEFAULT_CONFIG} "
                       "(see config/example.yaml and config/diamond.yaml in zmk-layer-hud)")
 
@@ -1230,8 +1256,7 @@ class KeymapSource:
                               "`zmk-layer-hud import <your zmk-config>`, or name your keymap-drawer YAML "
                               "as `keymap:` and run `zmk-layer-hud import`")
         definitions = read_definitions(path)
-        merge_imported(cfg, definitions.get("zmk"))
-        self.message = build_message(cfg, definitions["drawing"], source=definitions.get("source") or "")
+        self.message = build_message(cfg, definitions)
         self.definitions = definitions
         self.mtimes = seen
         return self.message

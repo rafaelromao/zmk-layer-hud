@@ -110,7 +110,8 @@ class Missing(unittest.TestCase):
     def test_a_config_that_is_not_there_never_falls_back_to_the_users_own(self):
         with self.assertRaises(build.BuildError) as e:
             build.build_board({"id": "x", "config": "config/nope.yaml"}, strict=True)
-        self.assertIn("no config/nope.yaml", str(e.exception))
+        self.assertIn("no config at", str(e.exception))
+        self.assertIn("config/nope.yaml", str(e.exception))
 
 
 def write(path, text="x"):
