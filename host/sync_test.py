@@ -455,6 +455,17 @@ class Layout(unittest.TestCase):
                                           os.path.join(d, "config.yaml"), d, self.repo(d), {})
         self.assertEqual({"dts_layout": os.path.join(d, "shape.dtsi"), "layout_name": "a"}, spec)
 
+    def test_the_configs_layout_file_is_found_from_the_config_up_as_a_drawings_is(self):
+        # A config kept in the keyboard's repo names its layout from the repo's root, as a drawer
+        # YAML does there; both are found from the file that names them up through its parents.
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "config"))
+            os.makedirs(os.path.join(d, "docs"))
+            write(os.path.join(d, "docs"), "shape.dtsi", "/ {};")
+            spec = sync.layout_for_keymap({"layout": {"dts_layout": "docs/shape.dtsi"}},
+                                          os.path.join(d, "config", "hud.yaml"), d, self.repo(d), {})
+            self.assertEqual(os.path.join(d, "docs", "shape.dtsi"), spec["dts_layout"])
+
     def test_a_layout_zmk_shares_is_named_for_keymap_drawer_to_fetch(self):
         with tempfile.TemporaryDirectory() as d:
             keymap = self.repo(d)
@@ -513,6 +524,15 @@ class Import(unittest.TestCase):
 
     def run_import(self, source=None, keyboard=None):
         return sync.do_import(source, keyboard, self.config, quiet=True, fetch=False)
+
+    def test_a_config_named_through_a_variable_is_the_one_meant(self):
+        # As the HUD reads it (keymap.find_config): ~ and $VARS, then absolute. A $VAR left as it
+        # was named a directory called "$ZMKHUD_T" and wrote a new config there.
+        with mock.patch.dict(os.environ, {"ZMKHUD_T": self.d}):
+            sync.do_import(None, None, "$ZMKHUD_T/config.yaml", quiet=True, fetch=False)
+        self.assertTrue(os.path.isfile(self.defs))
+        self.assertFalse(os.path.exists(os.path.join(os.getcwd(), "$ZMKHUD_T")))
+        self.assertEqual(self.config, sync.keymap_mod.config_path(os.path.join(self.d, ".", "config.yaml")))
 
     def test_a_drawing_alone_from_the_configs_keymap_drawer_file(self):
         self.run_import()
@@ -757,12 +777,40 @@ class Watch(unittest.TestCase):
         repo = os.path.join(self.d, "repo")
         keymap = write(repo, "config/b.keymap", '#include "defs.dtsi"\n' + KEYMAP)
         write(repo, "config/defs.dtsi", "#define X 1\n")
-        files = sync.watched(self.config, repo, "b")
+        files = sync.inputs(self.config, repo, "b")
         self.assertIn(os.path.join(self.d, "board.yaml"), files)
         self.assertIn(os.path.expanduser("~/nowhere/drawer.yaml"), files)   # watched for when it appears
         self.assertIn(keymap, files)
         self.assertIn(os.path.join(repo, "config", "defs.dtsi"), files)
         self.assertNotIn(self.defs, files)                                  # what it writes, never
+
+    def test_a_drawings_layout_file_is_watched_and_an_unused_layout_is_not(self):
+        # The Diamond's drawing names its layout from its repo's root; saving that JSON changes the
+        # board as much as saving the drawing does. The config's own layout: is read only when the
+        # drawing is made from the ZMK keymap, so with keymap: set it is not the board's.
+        os.makedirs(os.path.join(self.d, "docs"))
+        write(self.d, "docs/layout.json", "{}")
+        write(self.d, "drawings/board.yaml", "layout: {qmk_info_json: docs/layout.json}\nlayers: {}\n")
+        write(self.d, "config.yaml", "keymap: drawings/board.yaml\nlayout: {dts_layout: unused.dtsi}\n")
+        files = sync.inputs(self.config)
+        self.assertIn(os.path.join(self.d, "docs", "layout.json"), files)
+        self.assertNotIn(os.path.join(self.d, "unused.dtsi"), files)
+
+    def test_without_a_drawing_the_configs_layout_is_watched(self):
+        write(self.d, "config.yaml", "layout: {dts_layout: shape.dtsi}\n")
+        self.assertIn(os.path.join(self.d, "shape.dtsi"), sync.inputs(self.config))
+
+    def test_the_keyboards_files_are_watched_only_when_its_layout_is_searched_for(self):
+        # A sync looks for the physical layout in the keyboard's own files only when the drawing is
+        # made from the ZMK keymap and the config says no layout: of its own.
+        repo = os.path.join(self.d, "repo")
+        write(repo, "config/b.keymap", KEYMAP)
+        overlay = write(repo, "config/b.overlay", "/ { };\n")
+        self.assertNotIn(overlay, sync.inputs(self.config, repo, "b"))
+        write(self.d, "config.yaml", "layout: {dts_layout: shape.dtsi}\n")
+        self.assertNotIn(overlay, sync.inputs(self.config, repo, "b"))
+        write(self.d, "config.yaml", "title: T\n")
+        self.assertIn(overlay, sync.inputs(self.config, repo, "b"))
 
     def test_a_repo_by_url_is_not_watched(self):
         with mock.patch.object(sync, "recorded", return_value=("https://github.com/you/zmk-config", None)):

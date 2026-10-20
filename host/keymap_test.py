@@ -29,10 +29,11 @@ except ImportError:
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def message(cfg, doc):
+def message(cfg, doc, zmk=None):
     """The message the HUD builds for `cfg` from what import draws of `doc`: the two halves, import
     time and runtime, run back to back."""
-    return km.build_message(cfg, km.draw(doc, stagger=cfg.get("stagger", True) is not False, fetch=False)["drawing"])
+    drawing = km.draw(doc, stagger=cfg.get("stagger", True) is not False, fetch=False)["drawing"]
+    return km.build_message(cfg, {"drawing": drawing, "zmk": zmk} if zmk else {"drawing": drawing})
 
 # A 2x2 + 1 thumb per hand keyboard: "22+1> 1<+22" = 10 keys, drawer layer order = ZMK order.
 DOC = {
@@ -211,12 +212,10 @@ class Settings(unittest.TestCase):
     def test_the_idle_a_combo_needs_reaches_the_page(self):
         self.assertEqual(0, message({}, DOC)["combo_idle"])
         self.assertEqual(150, message({"combo_idle_ms": 150}, DOC)["combo_idle"])
-        cfg = {}
-        km.merge_imported(cfg, {"combo_idle_ms": 120})
-        self.assertEqual(120, cfg["combo_idle_ms"])
+        self.assertEqual(120, message({}, DOC, zmk={"combo_idle_ms": 120})["combo_idle"])
         cfg = {"combo_idle_ms": 80}
-        km.merge_imported(cfg, {"combo_idle_ms": 120})
-        self.assertEqual(80, cfg["combo_idle_ms"])              # the config's own word wins
+        self.assertEqual(80, message(cfg, DOC, zmk={"combo_idle_ms": 120})["combo_idle"])  # the config's own word wins
+        self.assertEqual({"combo_idle_ms": 80}, cfg)            # and the config is left as it was
 
     def test_a_setting_that_is_not_a_number_says_so(self):
         # Not a traceback, and not quietly something else.
@@ -283,6 +282,12 @@ class Settings(unittest.TestCase):
         self.assertEqual(km.expand("/abs/x.yaml", "/a/b/config"), "/abs/x.yaml")
         self.assertTrue(km.expand("~/x.yaml", "/a").startswith(os.path.expanduser("~")))
 
+    def test_a_path_is_resolved_from_the_file_that_names_it(self):
+        self.assertEqual("/a/b/examples/x.yaml", km.resolve("../examples/x.yaml", "/a/b/config/hud.yaml"))
+        self.assertEqual("/abs/x.yaml", km.resolve("/abs/x.yaml", "/a/b/config/hud.yaml"))
+        self.assertTrue(km.resolve("~/x.yaml", "/a/hud.yaml").startswith(os.path.expanduser("~")))
+        self.assertIsNone(km.resolve(None, "/a/hud.yaml"))
+
     def test_layout_files_are_found_from_the_yaml_up(self):
         # keymap-drawer reads them from where it runs, a drawer repo's root; the HUD runs anywhere.
         with tempfile.TemporaryDirectory() as root:
@@ -294,7 +299,10 @@ class Settings(unittest.TestCase):
             self.assertEqual(km.layout_files({"qmk_info_json": "docs/d/layout.json", "layout_name": "L"}, yaml_path),
                              {"qmk_info_json": json_path, "layout_name": "L"})
             self.assertEqual(km.layout_files({"qmk_info_json": "layout.json"}, yaml_path), {"qmk_info_json": json_path})
-            self.assertEqual(km.layout_files({"dts_layout": "missing.dtsi"}, yaml_path), {"dts_layout": "missing.dtsi"})
+            # Found nowhere: where it would be beside the YAML, not wherever keymap-drawer happens to
+            # run, so its error names the place it was looked for.
+            self.assertEqual(km.layout_files({"dts_layout": "missing.dtsi"}, yaml_path),
+                             {"dts_layout": os.path.join(root, "docs", "d", "missing.dtsi")})
             self.assertEqual(km.layout_files({"cols_thumbs_notation": "33+2 2+33"}, yaml_path),
                              {"cols_thumbs_notation": "33+2 2+33"})
 
@@ -400,7 +408,7 @@ class Glyphs(unittest.TestCase):
     def test_the_message_drops_a_glyph_from_old_definitions_that_could_run(self):
         drawing = km.draw(DOC, fetch=False)["drawing"]
         drawing["glyphs"] = {"mdi:fine": self.BENIGN["mdi"], "mdi:evil": self.HOSTILE["an event handler"]}
-        self.assertEqual(["mdi:fine"], list(km.build_message({}, drawing)["glyphs"]))
+        self.assertEqual(["mdi:fine"], list(km.build_message({}, {"drawing": drawing})["glyphs"]))
 
 
 class Message(unittest.TestCase):
@@ -501,10 +509,8 @@ class Touch(unittest.TestCase):
         self.assertEqual(("sl", 2), (base[8]["op"], base[8]["layer"]))
 
     def test_the_imported_bindings_are_what_it_types(self):
-        cfg = {}
-        km.merge_imported(cfg, {"keymap": {"v": 1, "positions": 10, "layers": {
-            "0": ["&kp Q"] + ["&none"] * 9, "1": ["&trans"] * 10, "2": ["&trans"] * 10}}})
-        a = message(cfg, DOC)["actions"]
+        a = message({}, DOC, zmk={"keymap": {"v": 1, "positions": 10, "layers": {
+            "0": ["&kp Q"] + ["&none"] * 9, "1": ["&trans"] * 10, "2": ["&trans"] * 10}}})["actions"]
         self.assertEqual(("keymap", "&kp Q"), (a["source"], a["table"][a["layers"]["0"][0]]["raw"]))
 
     def test_a_broken_compiler_costs_typing_not_the_hud(self):
@@ -531,7 +537,7 @@ class Drawing(unittest.TestCase):
     def test_overrides_leave_the_drawing_as_it_was(self):
         drawing = km.draw(DOC, fetch=False)["drawing"]
         before = json.dumps(drawing, sort_keys=True)
-        km.build_message({"combos": [{"positions": [2, 3], "layers": ["Nav"]}]}, drawing)
+        km.build_message({"combos": [{"positions": [2, 3], "layers": ["Nav"]}]}, {"drawing": drawing})
         self.assertEqual(before, json.dumps(drawing, sort_keys=True))
 
     @unittest.skipUnless(HAVE_DRAWER, "keymap-drawer not installed")
@@ -567,6 +573,17 @@ class Runtime(unittest.TestCase):
         made = km.draw(DOC, fetch=False)
         with open(self.defs, "w", encoding="utf-8") as f:
             json.dump(dict({"version": km.DEFINITIONS_VERSION, "source": "board.yaml"}, **made, **extra), f)
+
+    def test_a_config_asked_for_that_is_not_there_is_said_never_another(self):
+        # `--config typo.yaml` must not quietly draw $ZMKHUD_CONFIG's board, or the user's own.
+        missing = os.path.join(self.tmp, "typo.yaml")
+        with mock.patch.dict(os.environ, {"ZMKHUD_CONFIG": self.config}):
+            with self.assertRaises(km.KeymapError) as e:
+                km.find_config(missing)
+            self.assertIn("typo.yaml", str(e.exception))
+            with self.assertRaises(km.KeymapError):
+                km.KeymapSource(missing)
+            self.assertEqual(self.config, km.find_config())       # asked for none: the one it is told of
 
     def test_only_the_config_and_the_definitions_are_opened(self):
         self.write_definitions()
@@ -626,9 +643,12 @@ class Runtime(unittest.TestCase):
     def test_what_was_imported_is_a_floor_under_the_config(self):
         self.write_definitions(zmk={"layers": {"0": {"name": "BASE"}, "1": {"name": "NAV"}, "2": {"name": "SYM"}},
                                     "combo_term_ms": 35})
-        msg = km.KeymapSource(self.config, log=lambda *a: None).load()
+        source = km.KeymapSource(self.config, log=lambda *a: None)
+        msg = source.load()
         self.assertEqual(35, msg["combo_term"])
         self.assertEqual("NAV", msg["zmk_layers"]["1"]["name"])
+        # The config as written: the feed reads its settings, never what the message folded in.
+        self.assertFalse([k for k in source.cfg if k.startswith("_imported")] or "combo_term_ms" in source.cfg)
 
 
 @unittest.skipUnless(HAVE_DRAWER, "keymap-drawer not installed")
