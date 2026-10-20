@@ -1,0 +1,7 @@
+// Copy to Local.xcconfig (never committed) and fill in what is yours:
+//   the team that signs the app (Xcode › Settings › Accounts; a free personal team works, its builds
+//   last 7 days), a bundle id prefix you own, and an App Group for the app and its keyboard to share
+//   the keymap in (registered under that team: group.<your prefix>.zmkhud).
+ZMKHUD_TEAM = YOURTEAMID
+ZMKHUD_BUNDLE_PREFIX = com.example
+ZMKHUD_APP_GROUP = group.com.example.zmkhud

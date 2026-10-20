@@ -31,13 +31,16 @@ export ZMKHUD_STATE="$RUN"
 # start.sh exports this; honour --reserve here too, so calling this script directly still works.
 export ZMKHUD_RESERVE="${ZMKHUD_RESERVE:-0}"
 export ZMKHUD_HIDDEN="${ZMKHUD_HIDDEN:-0}"
+# Docked along the bottom of the touch screen, typing (docs/touch.md).
+export ZMKHUD_DOCK="${ZMKHUD_DOCK:-0}"
 CMD=start
 for arg in "$@"; do
   case "$arg" in
     --reserve)   ZMKHUD_RESERVE=1 ;;
     --hidden)    ZMKHUD_HIDDEN=1 ;;
+    --dock)      ZMKHUD_DOCK=1 ;;
     start|stop|run)  CMD="$arg" ;;
-    *) echo "usage: $0 [start|run|stop] [--reserve] [--hidden]" >&2; exit 1 ;;
+    *) echo "usage: $0 [start|run|stop] [--reserve] [--hidden] [--dock]" >&2; exit 1 ;;
   esac
 done
 

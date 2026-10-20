@@ -16,6 +16,7 @@ verbs that do need the venv re-exec into it first; see `NEEDS_VENV` and `needs_v
 """
 
 import argparse
+import json
 import datetime
 import os
 import platform
@@ -35,8 +36,7 @@ VENV_PYTHON = os.path.join(ROOT, ".venv", "bin", "python3")
 
 # Logs live outside the tree because `update` replaces the tree wholesale, and the directory the
 # logs are in cannot be the directory being swapped. The host scripts read the same variable.
-STATE = os.environ.get("ZMKHUD_STATE") or os.path.join(
-    os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "zmk-layer-hud")
+STATE = panelstate.default_dir()
 
 CONFIG_DIR = os.path.expanduser("~/.config/zmk-layer-hud")
 CONFIG = os.path.join(CONFIG_DIR, "config.yaml")
@@ -68,7 +68,7 @@ REQUIREMENTS = os.path.join(ROOT, "host", "requirements.txt")
 
 # Verbs that need keymap-drawer, pyserial, websockets or pyobjc. Everything else must keep
 # working on a half-installed machine.
-NEEDS_VENV = {"start", "restart", "power", "keymap", "import", "sync", "poke", "feed", "demo"}
+NEEDS_VENV = {"start", "restart", "power", "keymap", "import", "sync", "poke", "feed", "demo", "remote"}
 
 
 class Fail(Exception):
@@ -97,10 +97,11 @@ def in_clone():
     return os.path.isdir(os.path.join(ROOT, ".git"))
 
 
-def env_for_host(reserve=False, hidden=False):
+def env_for_host(reserve=False, hidden=False, dock=False):
     env = dict(os.environ)
     env["ZMKHUD_RESERVE"] = "1" if reserve else "0"
     env["ZMKHUD_HIDDEN"] = "1" if hidden else "0"
+    env["ZMKHUD_DOCK"] = "1" if dock else "0"
     env["ZMKHUD_STATE"] = STATE
     env["ZMKHUD_ROOT"] = ROOT
     # The host scripts prefer $ZMKHUD_PYTHON over their own search, so pointing them at the venv
@@ -110,9 +111,9 @@ def env_for_host(reserve=False, hidden=False):
     return env
 
 
-def run_host(verb, reserve=False, hidden=False, foreground=False):
+def run_host(verb, reserve=False, hidden=False, foreground=False, dock=False):
     os.makedirs(STATE, exist_ok=True)
-    env = env_for_host(reserve, hidden)
+    env = env_for_host(reserve, hidden, dock)
     if foreground:
         # The host script's `run` execs the panel, so this process becomes the HUD: a login item's
         # child is then the HUD itself, alive as long as it is, and launchd or systemd end with it.
@@ -189,7 +190,10 @@ def cmd_start(args):
     missing = definitions_missing()
     if missing:
         raise Fail(missing)
-    return run_host("start", args.reserve, args.hidden, args.foreground)
+    h = hud_now()
+    if h["running"] and not h["ours"]:
+        raise Fail(another_copy(h))
+    return run_host("start", args.reserve, args.hidden, args.foreground, getattr(args, "dock", False))
 
 
 def cmd_stop(args):
@@ -201,12 +205,55 @@ def cmd_restart(args):
     if missing:
         raise Fail(missing)
     run_host("stop")
-    return run_host("start", args.reserve, args.hidden)
+    return run_host("start", args.reserve, args.hidden, dock=getattr(args, "dock", False))
+
+
+# Docked, the page measures the board at its real size against the screen (hud/hud.js dockFit) and
+# says so within moments; `dock` waits this long for that word before it says the HUD is docked.
+DOCK_SETTLE = 1.0
+
+
+def cmd_dock(args):
+    """The HUD docked along the bottom of the screen, typing, or floating again: asked of the running
+    panel (dock.want and the signal), and its panel.json says when it has -- or that it would not,
+    the board too big for the screen at its real size (dock_note, from a panel that changed its
+    dock after it was asked: dock_at)."""
+    st = running_panel()
+    if args.action == "status":
+        print("dock: " + ("docked, " + TYPING_SAID.get(st.get("typing") or "off", "") if st.get("dock") else
+                          f"floating, a HUD only: {st['dock_note']}" if st.get("dock_note") else
+                          "floating (zmk-layer-hud dock docks it)"))
+        return 0
+    want = {"on": True, "off": False}.get(args.action, not st.get("dock"))
+    asked = time.time()
+    panelstate.request(STATE, "dock", want)
+    try:
+        os.kill(st["pid"], panelstate.SIGNAL)
+    except ProcessLookupError:
+        raise Fail("the HUD went away just now: `zmk-layer-hud start`")
+    deadline, settled = time.monotonic() + 3.0, None
+    while time.monotonic() < deadline:
+        now = panelstate.read(STATE) or {}
+        if want and not now.get("dock") and now.get("dock_note") and (now.get("dock_at") or 0) >= asked:
+            raise Fail(f"the HUD did not dock, and is a HUD only: {now['dock_note']}")
+        if now.get("dock") == want:
+            settled = settled or time.monotonic() + (DOCK_SETTLE if want else 0)
+            if time.monotonic() >= settled:
+                print("HUD docked: it types where you tap" if want else "HUD floating again")
+                return 0
+        else:
+            settled = None
+        time.sleep(0.05)
+    raise Fail("the HUD did not dock; `zmk-layer-hud log` says why" if want else
+               "the HUD did not undock; `zmk-layer-hud log` says why")
 
 
 def cmd_power(args):
     """Ctrl+Alt+Gui+L's verb: the HUD started, shown, when it is not running, and stopped when it is."""
-    if panel_pids():
+    h = hud_now()
+    if h["running"] and not h["ours"]:
+        raise Fail(another_copy(h))
+    if h["running"]:
         return cmd_stop(args)
     args.reserve = args.hidden = args.foreground = False
     return cmd_start(args)
@@ -217,30 +264,44 @@ def pgrep(pattern):
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
 
 
-# Either host's panel, run from this tree.
-PANEL = re.escape(os.path.join(ROOT, "host")) + r"/.*/panel\.py"
+def processes(pattern):
+    """{pid: command line} of the processes matching `pattern` (panelstate.processes; the tests
+    stand in for it)."""
+    return panelstate.processes(pattern)
+
+
+def hud_now():
+    """The HUD as every verb reads it (panelstate.hud), for this copy and this $STATE."""
+    return panelstate.hud(STATE, ROOT, procs=processes)
 
 
 def panel_pids():
-    try:
-        out = subprocess.run(["pgrep", "-f", PANEL], capture_output=True, text=True).stdout
-    except OSError:
-        return []
-    return [int(p) for p in out.split() if p.isdigit()]
+    """This copy's HUD panels: what `stop` stops, and `update` waits for."""
+    here = os.path.realpath(ROOT)
+    return [pid for pid, command in processes(panelstate.PANEL_PROCESS).items()
+            if panelstate.tree_of(command) == here]
+
+
+def another_copy(h):
+    """What to say of a HUD that runs from another copy of zmk-layer-hud, on this $STATE: this copy
+    neither stops it nor starts a second beside it, which would find its port taken."""
+    return (f"a HUD from {h['where']} is running (pid {h['pid']}): it is that copy's to show, hide or stop "
+            f"-- {os.path.join(h['where'], 'bin', 'zmk-layer-hud')} stop -- before this one starts")
 
 
 # ---------- show / hide ----------
 
 def running_panel():
-    """The live panel's own word on itself, {"pid", "shown"}, or a Fail that says why there is no
-    panel to ask. Its pid has to be one of this tree's panels as well as alive: a pid outlives its
-    process, and is handed out again."""
-    st = panelstate.read(STATE)
-    pids = panel_pids()
-    if st and st["pid"] in pids:
-        return st
-    panelstate.discard(STATE)       # its panel is gone: left there, it says something untrue
-    if pids:
+    """The live panel's own word on itself (panelstate.hud: "pid", "shown", ...), or a Fail that
+    says why there is no panel to ask. It has to be a HUD panel's, of this copy: a pid outlives its
+    process and is handed out again, and another copy's HUD is that copy's to ask."""
+    h = hud_now()
+    if h["said"] and h["ours"]:
+        return h
+    if h["said"]:
+        raise Fail(another_copy(h))
+    panelstate.discard(STATE)       # no panel stands behind it: left there, it says something untrue
+    if h["running"]:
         # A panel too old to know the signal would take it the default way, which is to end.
         raise Fail("the HUD that is running is older than show and hide, or still starting: "
                    "`zmk-layer-hud restart` once, and this works from then on")
@@ -280,6 +341,209 @@ def cmd_toggle(args):
     return ask_panel(not st["shown"], st)
 
 
+# ---------- typing: the touch keyboard's leave to type ----------
+
+TYPING_RULE = os.path.join(ROOT, "contrib", "udev", "61-zmk-layer-hud-uinput.rules")
+TYPING_MODULE = os.path.join(ROOT, "contrib", "modules-load.d", "zmk-layer-hud-uinput.conf")
+TYPING_SAID = {
+    "ok": "can type",
+    "off": "not typing (dock the HUD to type with it: `zmk-layer-hud dock`)",
+    "denied": "not allowed to type yet",
+    "missing": "nothing to type with",
+    "error": "cannot type (zmk-layer-hud log says why)",
+}
+
+
+def uinput_probe():
+    sys.path.insert(0, os.path.join(ROOT, "host", "linux"))
+    import uinput
+    return uinput.probe()
+
+
+def typing_line():
+    """One line on whether the touch keyboard can type: the running panel's word when there is
+    one (panelstate.hud: a HUD panel stands behind it), else what this machine allows."""
+    typing = hud_now()["typing"]
+    if typing:
+        return TYPING_SAID[typing] + ("" if typing in ("ok", "off") else " -- zmk-layer-hud typing setup")
+    if platform.system() == "Linux":
+        probe = uinput_probe()
+        return {"ok": "this user may make a virtual keyboard (/dev/uinput)",
+                "denied": "/dev/uinput is not this user's -- zmk-layer-hud typing setup",
+                "missing": "no /dev/uinput (the uinput module is not loaded) -- zmk-layer-hud typing setup"}[probe]
+    if platform.system() == "Darwin":
+        return "asked of macOS when the HUD first types (Accessibility); zmk-layer-hud typing setup asks now"
+    return "the touch keyboard types on macOS and Linux only"
+
+
+def cmd_typing(args):
+    if args.action == "status":
+        print("typing: " + typing_line())
+        return 0
+    if platform.system() == "Linux":
+        print("==> the touch keyboard types through a virtual keyboard (/dev/uinput)")
+        print(f"    the rule lets the user at the seat make one: {os.path.relpath(TYPING_RULE, ROOT)}")
+        print("    with it, any program you run can type into any window, as the HUD will; deleting")
+        print("    /etc/udev/rules.d/" + os.path.basename(TYPING_RULE) + " takes that back")
+        steps = [["cp", TYPING_RULE, "/etc/udev/rules.d/"], ["cp", TYPING_MODULE, "/etc/modules-load.d/"],
+                 ["modprobe", "uinput"], ["udevadm", "control", "--reload-rules"],
+                 ["udevadm", "trigger", "--subsystem-match=misc", "--sysname-match=uinput"]]
+        for step in steps:
+            if not privileged(step, args):
+                return 1
+        print("    done: a running HUD notices within seconds and types")
+        print("typing: " + typing_line())
+        return 0
+    if platform.system() == "Darwin":
+        print("==> the touch keyboard types by posting key events, which macOS asks you to allow")
+        print("    System Settings > Privacy & Security > Accessibility: ZMK Layer HUD (or the terminal it runs from)")
+        h = hud_now()
+        if not (h["said"] and h["ours"]):
+            print(f"    {another_copy(h)}" if h["said"] else
+                  "    the HUD is not running: `zmk-layer-hud start`, and it asks when it first types")
+            return 0
+        panelstate.request(STATE, "typing", "request")
+        os.kill(h["pid"], panelstate.SIGNAL)
+        print("    asked the running HUD to ask macOS: allow it there, and it types within seconds")
+        return 0
+    raise Fail("the touch keyboard types on macOS and Linux only")
+
+
+# ---------- remote: a tablet's browser types here ----------
+
+def remote_mod():
+    sys.path.insert(0, os.path.join(ROOT, "host"))
+    import remote
+    return remote
+
+
+def remote_config():
+    """The config's remote: (port, minutes, bind), checked; its defaults without a config."""
+    import keymap as keymap_mod
+    try:
+        cfg = keymap_mod.load_yaml(keymap_mod.find_config())
+    except (keymap_mod.KeymapError, OSError):
+        return dict(keymap_mod.REMOTE_DEFAULTS)
+    try:
+        return keymap_mod.host_settings(cfg if isinstance(cfg, dict) else {})["remote"]
+    except keymap_mod.KeymapError as e:
+        raise Fail(str(e))
+
+
+def remote_live(r):
+    return r.live_now(STATE)
+
+
+def remote_line(r=None):
+    r = r or remote_mod()
+    live = remote_live(r)
+    if live.get("serving"):
+        until = time.strftime("%H:%M", time.localtime(live["until"])) if live.get("until") else "?"
+        typing = live.get("typing")
+        return (f"serving {live['url']} until {until}" + (", a tablet connected" if live.get("client") else "")
+                + ("" if typing in (None, "ok") else f"; {TYPING_SAID.get(typing, typing)} -- zmk-layer-hud typing setup"))
+    if live.get("why"):
+        return "off: " + live["why"]
+    return "off (`zmk-layer-hud remote on` pairs a tablet)"
+
+
+def remote_answer(r, req, timeout=4.0):
+    """The serving process's word on this request (remote.live.json naming its id), or {}."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        live = remote_live(r)
+        if live.get("id") == req["id"] and (live.get("serving") == req["on"] or live.get("why")):
+            return live
+        time.sleep(0.1)
+    return {}
+
+
+def app_link(url, key):
+    """The iPad app's link to the same pairing (apps/ios RemoteImport): the computer's address and
+    port, and the key in the fragment, as the browser's link has it."""
+    import urllib.parse
+    host = urllib.parse.urlsplit(url).netloc
+    return "zmkhud://import?from=" + urllib.parse.quote(host, safe=":") + "#k=" + key
+
+
+def print_qr(link):
+    """The link as a code for the tablet's camera, when qrencode is there to draw one. Handed over on
+    its standard input: an argument would show the key to anyone listing this machine's processes."""
+    if not shutil.which("qrencode"):
+        print("  (with qrencode installed, a code to scan is drawn here: brew or pacman install qrencode)")
+        return
+    print()
+    subprocess.run(["qrencode", "-t", "ANSIUTF8", "-m", "2"], input=link, text=True, check=False)
+
+
+def cmd_remote(args):
+    if not args.wait:
+        return remote_verb(args)
+    # A terminal opened only to show the link (the Omarchy bar's): what it says, failure too, stays
+    # until it is read.
+    try:
+        code = remote_verb(args)
+    except Fail as e:
+        warn(f"zmk-layer-hud remote: {e}")
+        code = 1
+    sys.stdout.flush()
+    try:
+        input("\n(Enter closes this window; remote mode stays as it is.)")
+    except (EOFError, KeyboardInterrupt):
+        pass
+    return code
+
+
+def remote_verb(args):
+    r = remote_mod()
+    if args.action == "status":
+        print("remote: " + remote_line(r))
+        return 0
+    if args.action in ("off", "unpair"):
+        req = r.write_request(STATE, False)
+        if remote_live(r).get("serving"):
+            remote_answer(r, req)
+        if args.action == "unpair":
+            print("remote: unpaired -- the tablets paired so far can no longer connect; `zmk-layer-hud remote on` "
+                  "pairs again with a new link" if r.unpair(STATE) else "remote: off, and nothing was paired")
+        else:
+            print("remote: off")
+        return 0
+    conf = remote_config()
+    minutes = args.minutes if args.minutes is not None else conf["minutes"]
+    port = args.port if args.port is not None else conf["port"]
+    bind = args.bind if args.bind is not None else conf["bind"]
+    if not 1 <= minutes <= 24 * 60:
+        raise Fail("--minutes takes 1 to 1440")
+    running_panel()                 # the HUD serves it: say so now rather than wait for nothing
+    key = r.load_key(STATE, create=True)
+    req = r.write_request(STATE, True, minutes=minutes, port=port, bind=bind)
+    live = remote_answer(r, req)
+    if not live:
+        raise Fail("the HUD did not answer; `zmk-layer-hud log` says what it is doing")
+    if not live.get("serving"):
+        raise Fail(live["why"])
+    until = time.strftime("%H:%M", time.localtime(live["until"]))
+    if args.app:
+        link = app_link(live["url"], key)
+        print("Open this on the iPad with the ZMK Layer HUD app, on the same network as this computer:")
+        print("the app takes this computer's keymap for its keyboard.")
+    else:
+        link = live["url"] + "#k=" + key
+        print("Open this on the tablet, on the same network as this computer:")
+    print()
+    print("  " + link)
+    print_qr(link)
+    print()
+    print(f"It is open until {until}, and for as long as a tablet is connected; `zmk-layer-hud remote off` closes it.")
+    print("The link is the pairing: whoever has it can type here while remote mode is on, and `remote unpair`")
+    print("makes it useless. Anyone on this Wi-Fi can see which keys the tablet presses, though not type: on a")
+    print("network you do not trust, --bind a Tailscale address instead.")
+    if live.get("typing") not in (None, "ok"):
+        print(f"Typing: {TYPING_SAID.get(live['typing'], live['typing'])} -- zmk-layer-hud typing setup")
+    return 0
+
+
 def feed_log_text():
     """Both logs, because where the feed writes depends on the host: the Linux panel starts it as
     a subprocess with its own hudfeed.log, the macOS one runs it in-process and it lands in
@@ -304,7 +568,7 @@ def hypr_surfaces():
     entirely transparent: "mapped with nothing on it" and "never mapped" look the same on screen.
     Only the compositor can tell them apart, so ask it."""
     import json
-    want = ("zmkhud-layer", "zmkhud-reserved", "zmkhud-keys")
+    want = ("zmkhud-layer", "zmkhud-dock", "zmkhud-reserved", "zmkhud-keys")
     try:
         out = subprocess.check_output(["hyprctl", "layers", "-j"], text=True,
                                       stderr=subprocess.DEVNULL)
@@ -325,20 +589,27 @@ def hypr_surfaces():
         elif ns == "zmkhud-reserved":
             # Absent is the normal state: the HUD only takes room from other windows when asked.
             print("  %-16s overlay, nothing reserved (start with --reserve to tile beside it)" % ns)
+        elif ns == "zmkhud-dock":
+            # One surface, floating or docked: the dock is the HUD's own, set up the other way.
+            print("  %-16s not docked (zmk-layer-hud dock docks it, to type on it)" % ns)
+        elif "zmkhud-dock" in found and ns in ("zmkhud-layer", "zmkhud-keys"):
+            print("  %-16s put away while docked" % ns)
         else:
             print("  %-16s missing" % ns)
 
 
 def cmd_status(args):
-    host_dir = re.escape(os.path.join(ROOT, "host"))
-    pids = panel_pids()
-    st = panelstate.read(STATE)
-    said = st if st and st["pid"] in pids else None
-    print("panel: " + ("stopped" if not pids else
-                       "running, shown" if said and said["shown"] else
-                       "running, hidden (zmk-layer-hud show)" if said else "running"))
-    print("feed:  " + ("running" if pgrep(host_dir + r"/hudfeed\.py")
-                       else "stopped (the macOS panel runs it in-process)"))
+    h = hud_now()
+    if getattr(args, "json", False):
+        # What the Omarchy bar reads (host/linux/omarchy): the same answer every verb and the macOS
+        # icon get, rather than a reading of panel.json of its own.
+        print(json.dumps(h, ensure_ascii=False))
+        return 0
+    where = "" if h["ours"] or not h["running"] else f" (from {h['where']})"
+    print("panel: " + ("stopped" if not h["running"] else
+                       "running, shown" if h["said"] and h["shown"] else
+                       "running, hidden (zmk-layer-hud show)" if h["said"] else "running") + where)
+    print("feed:  " + h["feed"])
     # What it last managed to open says more than whether it is alive: the layer signal and the
     # typed-keys strip are separate grants and either can be the one that is missing.
     text = feed_log_text()
@@ -368,6 +639,8 @@ def cmd_status(args):
                          else "none yet (the HUD starts one)"))
     if platform.system() in ("Darwin", "Linux"):
         print("login: " + login_line())
+        print("typing: " + typing_line())
+        print("remote: " + remote_line())
     if platform.system() == "Linux":
         hypr_surfaces()
     return 0
@@ -393,6 +666,8 @@ def cmd_keymap(args):
         argv += ["--config", args.config]
     if args.dump:
         argv.append("--dump")
+    if args.output:
+        argv += ["--output", args.output]
     return keymap_mod.main(argv)
 
 
@@ -1698,6 +1973,18 @@ def check_udev(results):
                               "zmk-layer-hud setup   (the tty and hidraw grants come from it)"))
 
 
+def check_typing(results):
+    """The touch keyboard's grant: a warning at most, since the HUD does everything else without it."""
+    if platform.system() != "Linux":
+        return
+    probe = uinput_probe()
+    if probe == "ok":
+        results.append(report(OK, "typing", "this user may make a virtual keyboard (/dev/uinput)"))
+    else:
+        results.append(report(WARN, "typing", "/dev/uinput is " + ("not this user's" if probe == "denied" else "missing"),
+                              "zmk-layer-hud typing setup   (only for the touch keyboard)"))
+
+
 def check_path(results):
     if shutil.which("zmk-layer-hud"):
         results.append(report(OK, "path", f"{shutil.which('zmk-layer-hud')}"))
@@ -1716,6 +2003,7 @@ def cmd_doctor(args):
     check_config(results)
     check_udev(results)
     check_secure(results)
+    check_typing(results)
     check_path(results)
     print()
     cmd_status(args)
@@ -1956,7 +2244,16 @@ def describe_version():
         except subprocess.SubprocessError:
             pass
     v = installed_version()
-    return f"{describe_installed(v)} (installed)" if v else "(installed tree)"
+    if v:
+        return f"{describe_installed(v)} (installed)"
+    # A tree with neither git nor an install record (an unpacked tarball): the version release-please
+    # keeps in version.txt.
+    try:
+        with open(os.path.join(ROOT, "version.txt"), encoding="utf-8") as f:
+            tree = f.read().strip()
+    except OSError:
+        tree = ""
+    return f"v{tree} (installed tree)" if re.fullmatch(r"\d+\.\d+\.\d+", tree) else "(installed tree)"
 
 
 # ---------- the parser ----------
@@ -1982,6 +2279,8 @@ def build_parser():
     s.add_argument("--foreground", action="store_true",
                    help="stay until the HUD stops, as the HUD itself (its output still goes to the log); "
                         "what a login item runs")
+    s.add_argument("--dock", action="store_true",
+                   help="start it docked along the bottom of the screen, where it types (the touch keyboard)")
     s.set_defaults(func=cmd_start)
 
     add("stop", "stop the HUD").set_defaults(func=cmd_stop)
@@ -1989,7 +2288,13 @@ def build_parser():
     s = add("restart", "stop the HUD, then start it")
     s.add_argument("--reserve", action="store_true", help="as for `start`")
     s.add_argument("--hidden", action="store_true", help="as for `start`")
+    s.add_argument("--dock", action="store_true", help="as for `start`")
     s.set_defaults(func=cmd_restart)
+
+    s = add("dock", "the touch keyboard: the HUD docked along the bottom of the screen, typing, or floating")
+    s.add_argument("action", nargs="?", default="toggle", choices=("toggle", "on", "off", "status"),
+                   help="toggle (default), on, off, or status")
+    s.set_defaults(func=cmd_dock)
 
     add("power", "start the HUD if it is not running, stop it if it is").set_defaults(func=cmd_power)
 
@@ -1997,7 +2302,33 @@ def build_parser():
     add("hide", "take the HUD off screen; it goes on running and counting").set_defaults(func=cmd_hide)
     add("toggle", "show the HUD if it is hidden, hide it if it is shown").set_defaults(func=cmd_toggle)
 
-    add("status", "is it running, and what is it reading").set_defaults(func=cmd_status)
+    s = add("status", "is it running, and what is it reading")
+    s.add_argument("--json", action="store_true",
+                   help="the HUD's state as one JSON object, for a bar or a script: running, shown, the WPMs, "
+                        "docked, typing, the feed, remote mode")
+    s.set_defaults(func=cmd_status)
+
+    s = add("typing", "the touch keyboard's leave to type: whether it has it, and getting it")
+    s.add_argument("action", nargs="?", default="status", choices=("status", "setup"),
+                   help="status (default), or setup: on Linux the uinput rule (asks before each sudo step), "
+                        "on macOS the running HUD asks for Accessibility")
+    s.add_argument("-y", "--yes", action="store_true", help="run the privileged steps without asking")
+    s.set_defaults(func=cmd_typing)
+
+    s = add("remote", "a tablet's browser as the touch keyboard, typing here over the local network")
+    s.add_argument("action", nargs="?", default="status", choices=("status", "on", "off", "unpair"),
+                   help="status (default); on prints the link to open on the tablet; off; unpair makes every "
+                        "link given so far useless")
+    s.add_argument("--minutes", type=int, help="how long it stays open with no tablet connected "
+                                               "(default: config remote.minutes, else 30)")
+    s.add_argument("--port", type=int, help="the port to serve on (default: config remote.port, else 8768)")
+    s.add_argument("--bind", metavar="ADDR", help="the address to serve on, a Tailscale one say (default: this "
+                                                  "computer's on its local network; config remote.bind)")
+    s.add_argument("--app", action="store_true", help="on: the link for the iPad app instead, which takes this "
+                                                      "computer's keymap for its keyboard")
+    s.add_argument("--wait", action="store_true", help="wait for Enter before going: for a terminal opened only "
+                                                       "to show the link")
+    s.set_defaults(func=cmd_remote)
 
     s = add("session", "the typing sessions: the active one, naming it, starting or loading another")
     s.add_argument("action", nargs="?", default="status",
@@ -2098,6 +2429,8 @@ def build_parser():
     s = add("keymap", "check the HUD's own files load: the config and the definitions import wrote")
     s.add_argument("--config", help="config file")
     s.add_argument("--dump", action="store_true", help="print the full JSON message")
+    s.add_argument("-o", "--output", metavar="FILE",
+                   help="write the full JSON message to FILE, for a tablet's touch keyboard to import")
     s.set_defaults(func=cmd_keymap)
 
     s = add("config", "where the config is, and what is in it")

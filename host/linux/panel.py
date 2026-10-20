@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """zmk-layer-hud Linux host: transparent Wayland (layer-shell) surfaces, layer HUD with the
-typed-keys strip below it, plus hudfeed.py for layers, keys and daemon decisions.
+typed-keys strip below it, plus hudfeed.py for layers, keys and daemon decisions. What the page
+says and the command line asks are the panel's (host/panelcore.py); these surfaces are its window
+here.
 
 By default the HUD is an overlay: it floats over whatever is on screen and takes no room from
 it, which is what a HUD should do to a session you are working in.
@@ -36,14 +38,17 @@ gi.require_foreign("cairo")
 import cairo  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import dock as dock_mod  # noqa: E402  (host/dock.py)
+import inject  # noqa: E402  (host/inject.py)
+import panelcore  # noqa: E402  (host/panelcore.py)
 import panelstate  # noqa: E402  (host/panelstate.py)
+import uinput  # noqa: E402  (host/linux/uinput.py)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 PAGES = ROOT / "hud"
 # Outside the tree, because `zmk-layer-hud update` replaces the tree wholesale. hud.sh exports
-# ZMKHUD_STATE; the default is repeated so running this directly still works.
-RUN = Path(os.environ.get("ZMKHUD_STATE") or
-           Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "zmk-layer-hud")
+# ZMKHUD_STATE; panelstate works out the default, so running this directly still works.
+RUN = Path(panelstate.default_dir())
 # Until the page says how big it is (follow_page): the board, the banner and one row of the stats
 # bar above them (hud/hud.css #stats: 26px + 6px).
 STATS_H = 32
@@ -82,17 +87,28 @@ def load_position():
         return None
 
 
-def save_position(top, right):
+def load_state():
     try:
-        try:
-            state = json.loads(POSITION.read_text())
-        except (OSError, ValueError):
-            state = {}
-        state = state if isinstance(state, dict) else {}
-        state["linux"] = {"top": top, "right": right}
-        panelstate._write(str(POSITION), state)     # whole or not at all, and this user's alone
+        state = json.loads(POSITION.read_text())
+    except (OSError, ValueError):
+        state = {}
+    state = state if isinstance(state, dict) else {}
+    if not isinstance(state.get("linux"), dict):
+        state["linux"] = {}
+    return state
+
+
+def write_state(state):
+    try:
+        panelstate.write_json(str(POSITION), state)     # whole or not at all, and this user's alone
     except OSError as e:
         print(f"panel: could not save {POSITION}: {e}", file=sys.stderr, flush=True)
+
+
+def save_position(top, right):
+    state = load_state()
+    state["linux"].update(top=top, right=right)    # beside what else it keeps (docked or not)
+    write_state(state)
 
 
 def cursor():
@@ -138,15 +154,56 @@ def pick_monitor():
 
 
 def surface_there():
-    """Whether Hyprland has the HUD's surface. A panel can outlive its surface unseen, told to show
-    a HUD there is nothing left of; True when Hyprland cannot be asked."""
+    """Whether Hyprland has the HUD's surface, floating or docked. A panel can outlive its surface
+    unseen, told to show a HUD there is nothing left of; True when Hyprland cannot be asked."""
     try:
         layers = json.loads(subprocess.check_output(["hyprctl", "layers", "-j"], timeout=5))
     except (OSError, subprocess.SubprocessError, ValueError):
         return True
-    return any(e.get("namespace") == "zmkhud-layer"
+    return any(e.get("namespace") in ("zmkhud-layer", "zmkhud-dock")
                for m in layers.values() if isinstance(m, dict)
                for entries in (m.get("levels") or {}).values() for e in entries)
+
+
+def hypr(args):
+    """What `hyprctl ARGS -j` says, or None."""
+    try:
+        return json.loads(subprocess.check_output(["hyprctl", *args, "-j"], timeout=5))
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def gdk_monitor(info):
+    """GDK's monitor for Hyprland's, matched by position."""
+    display = Gdk.Display.get_default()
+    for i in range(display.get_n_monitors()):
+        m = display.get_monitor(i)
+        if (m.get_geometry().x, m.get_geometry().y) == (info["x"], info["y"]):
+            return m
+    return None
+
+
+def host_settings():
+    """The config's touch:, dock: and remote: sections (host/keymap.py --host-settings): the
+    venv's interpreter reads the YAML, which this one cannot. The defaults when it cannot be asked."""
+    try:
+        out = subprocess.check_output([os.environ.get("ZMKHUD_PYTHON", sys.executable),
+                                       str(ROOT / "host" / "keymap.py"), "--host-settings"],
+                                      timeout=30, stderr=subprocess.DEVNULL)
+        return json.loads(out)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return {"touch": {"enabled": 1}, "dock": {"screen": "", "height_pct": dock_mod.DEFAULT_PCT, "start": 0, "split": 1},
+                "remote": {"port": 8768, "minutes": 30, "bind": ""}}
+
+
+def load_dock():
+    return bool(((load_state().get("linux") or {}).get("dock")))
+
+
+def save_dock(on):
+    state = load_state()
+    state.setdefault("linux", {})["dock"] = bool(on)
+    write_state(state)
 
 
 # A page whose web process went away -- crashed, or killed for its memory -- leaves an empty view,
@@ -164,6 +221,20 @@ def reload_page(view, reason):
     print(f"panel: the page's web process went away ({reason.value_nick}); loading it again in {delay} s",
           file=sys.stderr, flush=True)
     GLib.timeout_add_seconds(delay, lambda: view.reload() or False)
+
+
+def keep_to_pages(_view, decision, kind):
+    """Only the HUD's own pages load in its views, and nothing opens a window. The page can type
+    (the touch keyboard, through the handler below), so whatever is shown there must be it."""
+    if kind == WebKit2.PolicyDecisionType.NEW_WINDOW_ACTION:
+        decision.ignore()
+        return True
+    if kind == WebKit2.PolicyDecisionType.NAVIGATION_ACTION:
+        uri = decision.get_navigation_action().get_request().get_uri() or ""
+        if not uri.startswith(PAGES.as_uri() + "/"):
+            decision.ignore()
+            return True
+    return False
 
 
 def surface(monitor, page, namespace, width, height, query="", on_size=None):
@@ -205,7 +276,9 @@ def surface(monitor, page, namespace, width, height, query="", on_size=None):
                         lambda _manager, result: on_size(result.get_js_value().to_string()))
     view = WebKit2.WebView.new_with_user_content_manager(manager)
     view.set_background_color(Gdk.RGBA(0, 0, 0, 0))
+    view.get_settings().set_enable_webaudio(True)      # the touch keyboard's key clicks (hud/touch.js)
     view.connect("web-process-terminated", reload_page)
+    view.connect("decide-policy", keep_to_pages)
     view.set_size_request(width, height)
     view.load_uri((PAGES / page).as_uri() +
                   f"?ws=ws://127.0.0.1:{os.environ.get('ZMKHUD_PORT', '8766')}/{SOCKET_TOKEN}" + query)
@@ -240,7 +313,7 @@ def main():
     pos = [top, right]
 
     hud, hud_css = surface(monitor, "index.html", "zmkhud-layer", HUD_W, HUD_H, query=f"&tally={TALLY_TOKEN}",
-                  on_size=lambda body: page_said(body))
+                  on_size=lambda body: panel.page(body))   # only its own pages load there (keep_to_pages)
     GtkLayerShell.set_anchor(hud, GtkLayerShell.Edge.TOP, True)
     GtkLayerShell.set_anchor(hud, GtkLayerShell.Edge.RIGHT, True)
     # Explicit coordinates include the top bar; ignore other panels' exclusive zones.
@@ -278,63 +351,176 @@ def main():
     GtkLayerShell.set_margin(keys, GtkLayerShell.Edge.RIGHT, right)
 
     size = [HUD_W, HUD_H]
-    shown = [not HIDDEN]
-    wpm = [0]           # the page's live WPM, for the bar icon (host/linux/omarchy)
-    stats = [None]      # ...and its stats column, for the icon's menu and its hover panel
+
+    # What the panel itself tells its page (the feed tells it everything else, on the socket):
+    # whether it may type, and docked or not. The latest of each is said again to a page loaded
+    # afresh.
+    told = {}
+    page_view = hud.get_child()
+
+    def run_js(script):
+        try:
+            page_view.evaluate_javascript(script, -1, None, None, None, None, None)
+        except (AttributeError, TypeError):
+            page_view.run_javascript(script, None, None, None)
+
+    def tell_page(msg):
+        told[msg["kind"]] = msg
+        run_js(f"window.hud && hud.receive({json.dumps(msg)})")
+
+    def page_loaded(_view, event):
+        if event == WebKit2.LoadEvent.STARTED:
+            typing.release()            # a page going away lets its keys go
+        elif event == WebKit2.LoadEvent.FINISHED:
+            for msg in list(told.values()):
+                run_js(f"window.hud && hud.receive({json.dumps(msg)})")
+
+    def make_keyboard():
+        try:
+            return uinput.Uinput().open()
+        except OSError as e:
+            raise inject.Unavailable(uinput.state_of(e), str(e)) from None
+
+    # The touch keyboard's keys (host/inject.py): a virtual keyboard, made the first time the page
+    # may type, its keys pressed from what the page sends ({"kind":"hid"}).
+    typing = inject.Typing(make_keyboard, lambda msg: panel.tell(msg),
+                           lambda seconds, fn: GLib.timeout_add(int(seconds * 1000), lambda: fn() or False),
+                           log=lambda msg: print("panel:", msg, file=sys.stderr, flush=True))
+    page_view.connect("load-changed", page_loaded)
+    page_view.connect("web-process-terminated", lambda *_: typing.release())
+
+    # ---------- docked: a strip along the bottom of a screen, as wide as it (host/dock.py) ----------
+    settings = host_settings()
+    pct = settings["dock"]["height_pct"]
+
+    def strip_wanted():
+        """The typed-keys strip is the HUD's, not the touch keyboard's: away while docked."""
+        return not panel.docked
+    dock_geo = [None]       # the dock's screen, as GDK has it
+    dock_ppmm = [None]      # ...and how many of its pixels are a millimetre (dock.px_per_mm)
+    dock_h = [0]            # the strip's height, and the room it reserves
+
+    def dock_monitor():
+        option = hypr(["getoption", "input:touchdevice:output"]) or {}
+        info_d = dock_mod.choose_monitor(hypr(["monitors"]) or [], hypr(["devices"]) or {},
+                                         option.get("str") if isinstance(option, dict) else None,
+                                         settings["dock"]["screen"])
+        return (info_d, gdk_monitor(info_d)) if info_d else (None, None)
+
+    def size_dock(h):
+        dock_h[0] = h
+        page_view.set_size_request(dock_geo[0].width, h)
+        hud.resize(dock_geo[0].width, h)
+        # The room it takes from the windows above: none while hidden.
+        GtkLayerShell.set_exclusive_zone(hud, h if panel.shown else 0)
+
+    def apply_dock():
+        info_d, mon = dock_monitor()
+        if mon is None:
+            print("panel: no screen to dock on", file=sys.stderr, flush=True)
+            return False
+        dock_geo[0] = mon.get_geometry()
+        # The touch keyboard's keys are drawn their real size (hud.js dockFit): the screen's size, as
+        # its EDID tells the compositor, over the pixels the page is laid out in.
+        dock_ppmm[0], measured = dock_mod.px_per_mm(dock_geo[0].width, dock_geo[0].height,
+                                                    mon.get_width_mm(), mon.get_height_mm())
+        if not measured:
+            print(f"panel: {info_d['name']} does not say how big it is; its keys drawn at 96 pixels to the inch",
+                  file=sys.stderr, flush=True)
+        # Named apart, so `hyprctl layers` and a layer rule can tell it from the floating HUD; on the
+        # overlay layer, which a fullscreen window does not cover; and, as always, never the keyboard's.
+        GtkLayerShell.set_namespace(hud, "zmkhud-dock")
+        GtkLayerShell.set_monitor(hud, mon)
+        GtkLayerShell.set_layer(hud, GtkLayerShell.Layer.OVERLAY)
+        GtkLayerShell.set_anchor(hud, GtkLayerShell.Edge.TOP, False)
+        for edge in (GtkLayerShell.Edge.BOTTOM, GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT):
+            GtkLayerShell.set_anchor(hud, edge, True)
+        for edge in (GtkLayerShell.Edge.TOP, GtkLayerShell.Edge.BOTTOM, GtkLayerShell.Edge.LEFT, GtkLayerShell.Edge.RIGHT):
+            GtkLayerShell.set_margin(hud, edge, 0)
+        size_dock(dock_mod.height(dock_h[0], dock_geo[0].height, pct))
+        print(f"panel: docked on {info_d['name']}, {dock_h[0]}px reserved", flush=True)
+        return True
+
+    def apply_float():
+        GtkLayerShell.set_namespace(hud, "zmkhud-layer")
+        GtkLayerShell.set_monitor(hud, screen["monitor"])
+        GtkLayerShell.set_layer(hud, GtkLayerShell.Layer.TOP)
+        for edge, on in ((GtkLayerShell.Edge.TOP, True), (GtkLayerShell.Edge.RIGHT, True),
+                         (GtkLayerShell.Edge.BOTTOM, False), (GtkLayerShell.Edge.LEFT, False)):
+            GtkLayerShell.set_anchor(hud, edge, on)
+            GtkLayerShell.set_margin(hud, edge, 0)
+        GtkLayerShell.set_margin(hud, GtkLayerShell.Edge.TOP, pos[0])
+        GtkLayerShell.set_margin(hud, GtkLayerShell.Edge.RIGHT, pos[1])
+        GtkLayerShell.set_exclusive_zone(hud, -1)
+        page_view.set_size_request(*size)
+        hud.resize(*size)
+
+    def dock_message():
+        msg = {"kind": "dock", "on": True, "max_height": dock_mod.max_height(dock_geo[0].height, pct),
+               "split": bool(settings["dock"]["split"])}
+        if settings["touch"]["enabled"]:       # a keyboard: its keys their real size, or no keyboard
+            msg.update(px_per_mm=dock_ppmm[0], width=dock_geo[0].width)
+        return msg
+
+    def dock_window(on):
+        """Docked or floating, at runtime (panelcore.Panel.set_dock): the surface is taken down, set
+        up the other way, and put back. Docked, the strip below and the recording rail are put away."""
+        msg = None
+        hud.hide()
+        if on:
+            if not apply_dock():
+                hud.show_all()
+                return None
+            keys.hide()
+            if rail is not None:
+                rail.hide()
+            msg = dock_message()
+        else:
+            apply_float()
+            if strip_wanted():
+                keys.show_all()
+            if rail is not None and panel.shown:
+                rail.show_all()
+        hud.show_all()
+        take_input(hud)
+        save_dock(on)
+        return msg
 
     def take_input(window):
         # None is the whole surface again, a layer surface's own.
-        window.input_shape_combine_region(None if shown[0] else cairo.Region())
+        window.input_shape_combine_region(None if panel.shown else cairo.Region())
 
-    def set_shown(want):
-        """On screen or off it; the pages go on as before either way. The rail goes with the HUD,
-        so a hidden one takes no room from the windows either."""
-        if want and not surface_there():
+    def show_window(want):
+        """Drawn, or drawn as nothing and taking no input (panelcore.Panel.set_shown). The rail goes
+        with the HUD, so a hidden one takes no room from the windows either."""
+        for window, css in ((hud, hud_css), (keys, keys_css)):
+            if want:
+                css.remove_style_sheet(HIDE_SHEET)
+            else:
+                css.add_style_sheet(HIDE_SHEET)
+            take_input(window)
+            window.queue_draw()
+        if rail is not None and not panel.docked:
+            rail.show_all() if want else rail.hide()
+        if panel.docked:
+            # A hidden dock gives its room back to the windows.
+            GtkLayerShell.set_exclusive_zone(hud, dock_h[0] if want else 0)
+
+    def to_front():
+        if not surface_there():
             remap("asked to show the HUD, and Hyprland had no surface of it")
-        if want != shown[0]:
-            shown[0] = want
-            for window, css in ((hud, hud_css), (keys, keys_css)):
-                if want:
-                    css.remove_style_sheet(HIDE_SHEET)
-                else:
-                    css.add_style_sheet(HIDE_SHEET)
-                take_input(window)
-                window.queue_draw()
-            if rail is not None:
-                rail.show_all() if want else rail.hide()
-        panelstate.write(RUN, want, wpm=wpm[0], stats=stats[0])
 
     no_drag = []
 
-    def page_said(body):
+    def open_url(url):
         try:
-            msg = json.loads(body)
-            kind = msg.get("kind")
-        except (ValueError, AttributeError):
-            return
-        if kind == "hide":
-            set_shown(False)
-        elif kind == "site":    # the stats column's heading: the landing page, in the browser
-            try:
-                Gtk.show_uri_on_window(None, panelstate.SITE, Gdk.CURRENT_TIME)
-            except GLib.Error as e:
-                print(f"panel: cannot open {panelstate.SITE}: {e.message}", file=sys.stderr, flush=True)
-        elif kind == "wpm":
-            if isinstance(msg.get("wpm"), int) and msg["wpm"] != wpm[0]:
-                wpm[0] = msg["wpm"]
-                panelstate.write(RUN, shown[0], wpm=wpm[0], stats=stats[0])
-        elif kind == "stats":
-            said = panelstate.stats_of(msg)
-            if said is not None and said != stats[0]:
-                stats[0] = said
-                panelstate.write(RUN, shown[0], wpm=wpm[0], stats=said)
-        elif kind == "nodrag":
-            rects = msg.get("rects")
-            if isinstance(rects, list):
-                no_drag[:] = [r for r in rects if isinstance(r, list) and len(r) == 4
-                              and all(isinstance(v, (int, float)) for v in r)]
-        else:
-            follow_page(body)
+            Gtk.show_uri_on_window(None, url, Gdk.CURRENT_TIME)
+        except GLib.Error as e:
+            print(f"panel: cannot open {url}: {e.message}", file=sys.stderr, flush=True)
+
+    def typing_access():
+        # `typing setup` asks this of the macOS panel only; here it is the udev rule, which it sets.
+        print("panel: typing: zmk-layer-hud typing setup sets up /dev/uinput", file=sys.stderr, flush=True)
 
     # Dragging. A layer surface is not the compositor's to move, so the panel moves it: a press
     # anywhere but on the page's controls (it says where they are, kind "nodrag") starts a drag,
@@ -353,8 +539,8 @@ def main():
         GtkLayerShell.set_margin(keys, GtkLayerShell.Edge.RIGHT, right)
 
     def pressed(_view, event):
-        if event.button != 1 or event.type != Gdk.EventType.BUTTON_PRESS:
-            return False
+        if panel.docked or event.button != 1 or event.type != Gdk.EventType.BUTTON_PRESS:
+            return False                # docked, nothing moves it: every press is the page's
         if any(x <= event.x <= x + w and y <= event.y <= y + h for x, y, w, h in no_drag):
             return False                # a control: the page has it
         at = cursor()
@@ -399,16 +585,23 @@ def main():
     view.connect("button-press-event", pressed)
     view.connect("motion-notify-event", moved)
     view.connect("button-release-event", released)
+    # A long press is a hold for the touch keyboard, not the web view's menu.
+    view.connect("context-menu", lambda *_: panel.docked or typing.state == "ok")
 
-    def follow_page(body):
+    def follow_page(width, height):
         """The HUD's surface as big as the page's layout -- its width is the config's hud.width,
-        its height the board's and the stats bar's -- and the strip just below it, as on macOS."""
+        its height the board's and the stats bar's -- and the strip just below it, as on macOS.
+        Docked, only the height: as wide as the screen, as tall as the page within its share."""
         try:
-            msg = json.loads(body)
-            w, h = int(msg.get("width") or size[0]), int(msg.get("height") or 0)
-        except (ValueError, TypeError, AttributeError):
+            w, h = int(width or size[0]), int(height or 0)
+        except (ValueError, TypeError):
             return
-        if msg.get("kind") != "size" or not (100 <= w <= 4000 and 50 <= h <= 4000) or [w, h] == size:
+        if panel.docked:            # within dock.BAR_HEIGHT..: minimized, a bar (panelcore checks)
+            want = dock_mod.height(h, dock_geo[0].height, pct)
+            if want != dock_h[0]:
+                size_dock(want)
+            return
+        if [w, h] == size:
             return
         size[:] = [w, h]
         hud.get_child().set_size_request(w, h)
@@ -419,15 +612,26 @@ def main():
         if rail is not None:
             rail.set_size_request(w + pos[1] + INSET, 1)
             GtkLayerShell.set_exclusive_zone(rail, w + pos[1] + INSET)
-        if not shown[0]:
+        if not panel.shown:
             take_input(hud)
             take_input(keys)
 
+    # The panel (host/panelcore.py): what the page says and the CLI asks, and panel.json; these
+    # surfaces are how it is drawn and placed here.
+    panel = panelcore.Panel(
+        panelcore.Window(show=show_window, front=to_front, dock=dock_window, resize=follow_page,
+                         no_drag=lambda rects: no_drag.__setitem__(slice(None), rects), open=open_url,
+                         tell=tell_page, typing_access=typing_access, close=lambda: quit_host(),
+                         let_go=lambda: run_js("window.hud && hud.touch && hud.touch.releaseAll()")),
+        RUN, typing, lambda: settings, shown=not HIDDEN,
+        log=lambda msg: print(f"panel: {msg}", file=sys.stderr, flush=True))
+
     take_input(hud)       # kept until each is realized
     take_input(keys)
-    if rail is not None and shown[0]:
+    if rail is not None and panel.shown:
         rail.show_all()
-    keys.show_all()
+    if strip_wanted():
+        keys.show_all()
     hud.show_all()
     room = f"reserved right {rail_width}px, bottom reclaimed" if rail is not None else \
         "overlay, nothing reserved (--reserve tiles windows beside it)"
@@ -454,10 +658,15 @@ def main():
             GtkLayerShell.set_monitor(window, mon)
         screen["monitor"] = mon
         move_to(*pos)               # kept on it, should it be a smaller one
-        keys.show_all()
+        if panel.docked:
+            apply_dock()            # docked: on the screen the dock picks now, which may be another
+            tell_page(dock_message())
+        else:
+            if strip_wanted():
+                keys.show_all()
+            if rail is not None and panel.shown:
+                rail.show_all()
         hud.show_all()
-        if rail is not None and shown[0]:
-            rail.show_all()
         take_input(hud)
         take_input(keys)
         print(f"panel: {why}; the HUD is on {info_now['name']} again", flush=True)
@@ -491,14 +700,15 @@ def main():
         GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, sig, quit_host)
 
     def asked(*_):
-        # `zmk-layer-hud show` / `hide`: what they want is in panel.want.
-        want = panelstate.wanted(RUN)
-        if want is not None:
-            set_shown(want)
+        # `zmk-layer-hud show` / `hide`, `dock`: what they want is in $STATE.
+        panel.wake()
         return GLib.SOURCE_CONTINUE
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, panelstate.SIGNAL, asked)
+    # Docked from the start when asked (`start --dock`, dock.start), or when it was left docked.
+    if panelcore.starts_docked(load_dock(), settings, os.environ):
+        GLib.idle_add(lambda: panel.set_dock(True) or False)
     # Only now, with the handler in: the CLI signals whatever pid this file names.
-    panelstate.write(RUN, shown[0])
+    panel.start()
     RUN.mkdir(mode=0o700, exist_ok=True)
     RUN.chmod(0o700)
     # The feed's log is this user's alone, like the rest of $STATE: O_CREAT leaves the mode of a
@@ -521,7 +731,8 @@ def main():
     try:
         Gtk.main()
     finally:
-        panelstate.remove(RUN)
+        typing.stop()                   # keys up, the virtual keyboard gone
+        panel.stop()
         for window in WINDOWS:
             window.destroy()
         # Include journalctl, including after the page's close request exits hudfeed.

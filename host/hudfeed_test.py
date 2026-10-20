@@ -18,6 +18,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import session  # noqa: E402
 import signal_frame  # noqa: E402
 from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SerialReader, any_of, probe_report,  # noqa: E402
                      SignalDecoder, Stream, asks_secret, hid_scan_note, hidraw_match, sent_in, serve_hub,
@@ -531,8 +532,11 @@ class Secure(unittest.TestCase):
         probes = {"system": lambda: said["system"], "terminal": lambda: said["terminal"], "lock": lambda: said["lock"]}
 
         def feed_with(**have):
+            # No accessibility bus: the next test has it. A Linux machine with one (CI's) would
+            # otherwise always have something to ask.
             with mock.patch("hudfeed.carbon_probe", return_value=probes["system"] if have.get("system") else None), \
                  mock.patch("hudfeed.terminal_probe", return_value=probes["terminal"] if have.get("terminal") else None), \
+                 mock.patch("hudfeed.a11y.available", return_value=False), \
                  mock.patch("hudfeed.sessionlock.probe", return_value=probes["lock"] if have.get("lock") else None), \
                  tempfile.TemporaryDirectory() as tmp:
                 path = os.path.join(tmp, "config.yaml")
@@ -550,9 +554,11 @@ class Secure(unittest.TestCase):
         feed = feed_with()
         self.assertIsNone(feed.secure)
         self.assertEqual((), feed.watched)
-        # Nothing watching is said when it starts, in the log and to the page, so nobody trusts it.
+        # Nothing watching is said when it starts, in the log and to the page, so nobody trusts it. No
+        # accessibility bus either, as above: a Linux machine with one (CI's) would have it watching.
         told, logged = [], []
         with mock.patch("hudfeed.carbon_probe", return_value=None), mock.patch("hudfeed.terminal_probe", return_value=None), \
+             mock.patch("hudfeed.a11y.available", return_value=False), \
              mock.patch("hudfeed.sessionlock.probe", return_value=None), mock.patch("hudfeed.SerialReader.start"), \
              tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "config.yaml")
@@ -682,6 +688,8 @@ class FakeSocket:
 
 
 class FakeStore:
+    apply_said = session.Store.apply_said     # the real routing, onto the recording methods below
+
     def __init__(self):
         self.applied, self.modes, self.prefs, self.flushed = [], [], [], 0
 

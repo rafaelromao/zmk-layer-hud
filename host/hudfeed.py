@@ -564,7 +564,7 @@ class BleReader:
     async def _loop(self):
         from bleak import BleakClient
         # A machine with no Bluetooth fails every scan, for ever. Saying so once
-        # is useful; saying so every rescan fills run/hudfeed.log with one line
+        # is useful; saying so every rescan fills $STATE/hudfeed.log with one line
         # every couple of seconds and buries everything worth reading. So each
         # message is held until what it says changes, and a run of failures
         # backs off -- a keyboard that is not there is not found any sooner for
@@ -1517,18 +1517,13 @@ class Hub:
                     if self.sessions is not None:
                         self.sessions.flush()   # os._exit runs no cleanup: what was counted goes first
                     os._exit(0)
-                if kind in ("tally", "heatmap", "pref"):
+                if kind in session_mod.Store.SAID:
                     # A page's counts, or the heatmap or a preference it switched to: only from the
                     # page the tally token was given to -- a second secret, because a second page
                     # holding the socket's must still not count twice. `--no-inject` is about
                     # drawing, not this.
                     if self.sessions is not None and self.tally_token and self._tally_ok(msg.get("token")):
-                        if kind == "tally":
-                            self.sessions.apply(msg)
-                        elif kind == "heatmap":
-                            self.sessions.set_heatmap(msg.get("mode"))
-                        else:
-                            self.sessions.set_pref(msg.get("name"), msg.get("value"))
+                        self.sessions.apply_said(msg)
                     continue
                 if self.inject and kind in INJECTABLE:
                     await self.send_in(msg)
@@ -1614,7 +1609,9 @@ class HubThread:
 
 
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    # prog as argv[0] says (`zmk-layer-hud feed` through the CLI and its reference): from Python 3.14
+    # on, argparse's own default follows how __main__ was run instead, `python -m ...` under -m.
+    p = argparse.ArgumentParser(prog=os.path.basename(sys.argv[0]), description=__doc__.split("\n\n")[0])
     p.add_argument("--config", help=f"zmk-layer-hud config (default: $ZMKHUD_CONFIG or {keymap_mod.DEFAULT_CONFIG})")
     p.add_argument("--stdout", action="store_true", help="print messages as JSON lines (macOS host)")
     p.add_argument("--no-ws", action="store_true", help="do not serve the WebSocket")
@@ -1636,6 +1633,8 @@ def parse_args(argv=None):
     p.add_argument("--no-inject", action="store_true",
                    help=f"refuse messages sent in by a WebSocket client ({', '.join(INJECTABLE)}), "
                         "which host/hudpoke.py uses to drive the page without a keyboard")
+    p.add_argument("--no-remote", action="store_true",
+                   help="never serve a tablet, whatever `zmk-layer-hud remote on` asks (Linux; host/remote.py)")
     p.add_argument("--no-sessions", action="store_true",
                    help="keep no session files (config `feed.sessions: 0`): the counts last as long as the page")
     p.add_argument("--debug", action="store_true", help="log layer messages to stderr")
@@ -1648,6 +1647,22 @@ def parse_args(argv=None):
     return p.parse_args(argv)
 
 
+def remote_typing(loop, tell, log):
+    """Remote mode's keys on Linux (host/remote.py): a virtual keyboard of its own beside the
+    panel's, made when remote mode starts serving and gone when it stops. Here rather than in the
+    panel because the panel runs the system Python, which has no websockets."""
+    import inject
+    sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "linux"))
+    import uinput
+
+    def make():
+        try:
+            return uinput.Uinput().open()
+        except OSError as e:
+            raise inject.Unavailable(uinput.state_of(e), str(e)) from None
+    return inject.Typing(make, tell, lambda seconds, fn: loop.call_later(seconds, fn), log=log)
+
+
 async def main(args):
     # The Linux panel makes the token and gives it to its pages and to this (ZMKHUD_TOKEN); run by
     # hand, the feed makes its own. Either way $STATE/token is where `poke` finds it.
@@ -1655,9 +1670,19 @@ async def main(args):
     hub = Hub(stdout=args.stdout, debug=args.debug, inject=not args.no_inject,
               tally_token=os.environ.get("ZMKHUD_TALLY_TOKEN") or None, token=token)
     loop = asyncio.get_running_loop()
+    # Remote mode, on Linux: a paired tablet's browser typing here (host/remote.py). It serves
+    # nothing until `zmk-layer-hud remote on` asks; the macOS panel runs its own.
+    remote = None
+    if sys.platform.startswith("linux") and not args.no_remote:
+        import remote as remote_mod
+        remote = remote_mod.Controller(panelstate.default_dir(), None, log=hub.log, loop=loop)
+        remote.typing = remote_typing(loop, remote.tell, hub.log)
+        remote_task = asyncio.ensure_future(remote.run())
 
     def emit(msg):
         loop.call_soon_threadsafe(lambda: asyncio.ensure_future(hub.send(msg)))
+        if remote is not None:
+            remote.hub_said(msg)
 
     feed = Feed(emit, log=hub.log, config=args.config, keys=not args.no_keys, keymap=not args.no_keymap,
                 vid=args.vid, pid=args.pid, name=args.name, port=args.serial,
@@ -1691,6 +1716,10 @@ async def main(args):
             await stopping.wait()
     finally:
         feed.stop()
+        if remote is not None:
+            remote.stop()                   # its keys up and its address closed
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(remote_task, 5)
 
 
 if __name__ == "__main__":

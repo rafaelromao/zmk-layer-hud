@@ -151,6 +151,14 @@ lives. Two rules it keeps, and both matter:
   `session export`, the one part of `session` that draws with keymap-drawer, in
   `host/export.py`). The rest must keep working on a half-installed machine.
 
+The panel is one module, `host/panelcore.py`, with two windows: `host/macos/panel.py` (AppKit) and
+`host/linux/panel.py` (GTK, layer-shell). What the page tells its panel (hide, attach, dock, size,
+site, wpm, stats, nodrag, the touch keyboard's keys), what the command line asks of it, and what
+`panel.json` says are `panelcore.Panel`'s; each platform's panel is a `panelcore.Window` to it, and
+owns only how the HUD is drawn, placed, moved and hidden there. Neither platform's panel imports
+without AppKit or GTK, so `host/panelcore_test.py` drives the panel with a window that records
+what it is asked, and `cli_test` signals the real panel with a window that does nothing.
+
 Showing and hiding goes to the running panel directly: `show` and `hide` write what they want to
 `$STATE/panel.want` and send the panel SIGUSR2, and the panel does it and says so in
 `$STATE/panel.json` (`{"pid", "shown", "wpm"}`), which `status` and both menubar icons read too
@@ -160,7 +168,13 @@ suspends its own threads with SIGUSR1, and the GTK panel is a WebKit process. Hi
 nothing rather than closed: the window stays, transparent and taking no clicks, so WebKit never
 takes the page for a hidden one and slows the timers it counts with.
 
-The icons only read `panel.json` and run the command line, so they work the same whether the HUD
+Whether the HUD runs, and what it shows, is read one way: `panelstate.hud`. It takes `panel.json`
+only when a HUD panel stands behind it (a pid alive and a panel's, never one handed out again), says
+which copy of zmk-layer-hud that panel runs from, and adds the feed and remote mode. Every verb
+reads it, the macOS icon reads it, and the Omarchy bar, which cannot import Python, reads it as
+`zmk-layer-hud status --json`, the same object for any other bar or script.
+
+The icons read the HUD's state and run the command line, so they work the same whether the HUD
 is running or not:
 - **macOS:** `host/macos/menubar.py` is a process of its own, and stays when the HUD quits.
   `start.sh` starts it with the HUD. It holds a lock, so a second copy exits at once, because
@@ -216,3 +230,51 @@ Starting and stopping stays in `host/macos/start.sh` and `host/linux/hud.sh`; `c
 and gives them the same verbs. `poke` and `feed` are split off before argparse sees them and
 handed their whole line, because their flags belong to `host/hudpoke.py` and `host/hudfeed.py` and
 restating them here would only give them somewhere to drift apart.
+
+## Commits, CI and releases
+
+Commit messages start with a [Conventional Commits](https://www.conventionalcommits.org/) type --
+`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `ci:`, `chore:`, and `feat!:` or a `BREAKING CHANGE:`
+footer for what breaks a config, a definitions file or a command -- then the subject as usual:
+`feat: the board types: a finger on a key is that key going down`. The commits before this rule are
+prose and stay as they are.
+
+**CI** (`.github/workflows/ci.yml`) runs on every push to main and every pull request, on each
+platform the HUD runs on:
+
+| Job | Runs |
+|---|---|
+| host (ubuntu, macos) | `make test-host` with the pinned packages |
+| host (Arch Linux) | every host module compiled with Arch's system Python, which the Linux panel runs under; then `test-host` and `test-firmware` |
+| pages, site and apps | `make test-hud test-site test-apps` |
+| firmware module | `make test-firmware` |
+| Android keyboard | the sink's tests, `ConstantsTest`, and the app built (the APK is kept as the run's artifact) |
+| iPad keyboard | Core's `swift test`, then the app and its keyboard built for the simulator, unsigned |
+
+**Releases** are release-please's (`.github/workflows/release.yml`, `release-please-config.json`).
+Each push to main keeps a release pull request up to date: the next version from the commits since
+the last release (`feat` a minor, `fix` a patch, a breaking change a major), its `CHANGELOG.md`
+entry, and the version in `version.txt`, the Android app (`appVersion`, the version code follows)
+and the iPad app (`MARKETING_VERSION`). Merging it tags `vX.Y.Z` and makes the GitHub release, which
+`install.sh` and `update` take; the Android keyboard's APK is then built from the tag and attached.
+A `Release-As: x.y.z` footer in a commit's body asks for a version outright.
+
+**The Android release key.** Every release's APK is signed with one key, so each installs over the
+one before: Android takes an update only from the key that signed what is installed, and a CI run's
+own debug key is new every time. The key is the maintainer's, made once and kept safe -- lose it and
+the next release cannot update anyone's installed app:
+
+```bash
+keytool -genkeypair -v -keystore zmkhud-release.jks -alias zmkhud -keyalg RSA -keysize 4096 -validity 10000
+```
+
+It goes to the repository's secrets as `ANDROID_KEYSTORE_BASE64` (`base64 -i zmkhud-release.jks`),
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`zmkhud`) and `ANDROID_KEY_PASSWORD`. The release
+workflow decodes it onto the runner for the build and removes it after; without the secrets it
+attaches no APK and says so. The same four, as environment variables (`ZMKHUD_KEYSTORE` the
+keystore's path), sign `gradle :app:assembleRelease` on a machine of your own.
+
+Two repository settings it needs: *Settings › Actions › General › Workflow permissions* allowing
+GitHub Actions to create and approve pull requests, or the release pull request cannot be opened.
+And a pull request opened with the workflow's own token starts no workflow, so CI does not run on
+the release pull request by itself; its commits are the ones already tested on main.
