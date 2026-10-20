@@ -41,6 +41,12 @@ walking up from there), and `sync.inputs` lists every file the definitions are m
 `import` wrote. The samples in `config/` carry theirs (`*.definitions.json`), so the demo, the
 fixtures and the landing page draw them with no keymap-drawer and no network.
 
+The feed reads each wired keyboard connection through one loop, `hudfeed.Reader`: a scan every
+rescan, each device opened and read on a thread of its own through a `Stream` that releases what
+it held when it goes. Serial, hidraw and HID keys are its hooks (find, open, read, close), so
+`hudfeed_test` drives the loop with a fake transport, a pipe for a hidraw node and a fake hidapi,
+and BLE's session with a fake bleak client; only a real keyboard checks the drivers themselves.
+
 `firmware/src/signal_frame.h` is the single definition of the wire format; the C and Python tests
 share its vectors, so a change on one side that is not mirrored on the other fails both.
 
