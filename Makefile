@@ -23,7 +23,7 @@ NODE ?= $(shell command -v node)
 # The audit reads the keyboard's keymap with keymap-drawer, which lives in the venv.
 VENV_PYTHON := $(wildcard .venv/bin/python3)
 
-.PHONY: all install venv test test-firmware test-host test-hud test-site test-apps test-android test-ios golden site cli-docs samples audit fixture zmk-tables hidtables zmk-vectors clean help
+.PHONY: all install venv test test-firmware test-host test-hud test-site test-apps test-android test-ios golden site cli-docs samples audit fixture zmk-tables keynames zmk-vectors clean help
 
 all: test
 
@@ -47,6 +47,7 @@ test-hud: ## the HUD page: every key and combo, the heatmap, the strip, and ever
 	@if [ -z "$(NODE)" ]; then \
 	  echo "test-hud: node not found, skipping (brew install node)"; \
 	else \
+	  $(NODE) hud/tests/keystrokes_test.js && \
 	  $(NODE) hud/tests/hud_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
 	  $(NODE) hud/tests/stats_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/strip_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
@@ -111,8 +112,8 @@ cli-docs: ## write docs/cli.md, the command line reference, from the parsers (th
 zmk-tables: ## write host/zmk_tables.py, ZMK's names and built-in behaviours, from a ZMK checkout (ZMK_DIR=..., the directory holding app/)
 	$(PYTHON) host/zmk_tables_gen.py --write $(if $(ZMK_DIR),--zmk $(ZMK_DIR))
 
-hidtables: ## write hud/hidtables.js, hudfeed's report tables for the page (the host tests fail when it is behind)
-	$(PYTHON) host/hidtables_gen.py --write
+keynames: ## write hud/keynames.js, the key vocabulary (host/keynames.py) for the pages (the host tests fail when it is behind)
+	$(PYTHON) host/keynames_gen.py --write
 
 zmk-vectors: ## write hud/tests/fixtures/zmk_vectors.json, ZMK's behaviour tests for the touch keyboard's engine (ZMK_DIR=..., the venv)
 	$(or $(VENV_PYTHON),$(PYTHON)) host/zmk_vectors_gen.py --write $(if $(ZMK_DIR),--zmk $(ZMK_DIR))

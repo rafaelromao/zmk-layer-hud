@@ -226,14 +226,19 @@ class Settings(unittest.TestCase):
         self.assertEqual(320, message({"hud": {"press_ms": 320.0}}, DOC)["hud"]["press_ms"])
 
     def test_the_page_falls_back_to_the_same_defaults(self):
-        # hud.js keeps its own copy for a keymap message without `hud` (a dump older than the
-        # setting, the committed test fixture). A setting added here and not there reads as
-        # undefined on the page: a timer of NaN ms, a glow that never shows. `width` is the one
-        # the page takes from the message alone (postSize).
-        page = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hud", "hud.js")
-        with open(page, encoding="utf-8") as f:
-            block = re.search(r"const DEFAULTS = \{(.*?)\};", f.read(), re.S).group(1)
-        on_page = {k: int(v) for k, v in re.findall(r"(\w+):\s*(\d+)", block)}
+        # The page keeps its own copy for a keymap message without `hud` (a dump older than the
+        # setting, the committed test fixture): hud.js the painting's, keystrokes.js the reading's.
+        # A setting added here and not there reads as undefined on the page: a timer of NaN ms, a
+        # glow that never shows. `width` is the one the page takes from the message alone (postSize).
+        hud = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hud")
+        on_page = {}
+        for name, pattern in (("hud.js", r"const DEFAULTS = Object\.assign\(\{(.*?)\}"),
+                              ("keystrokes.js", r"const DEFAULTS = \{(.*?)\};")):
+            with open(os.path.join(hud, name), encoding="utf-8") as f:
+                block = re.search(pattern, f.read(), re.S).group(1)
+            for k, v in re.findall(r"(\w+):\s*(\d+)", block):
+                self.assertNotIn(k, on_page, f"{k} is in both hud.js and keystrokes.js")
+                on_page[k] = int(v)
         self.assertEqual(on_page, {k: v for k, v in km.HUD_DEFAULTS.items() if k != "width"})
 
     def test_the_bar_shows_the_chips_the_config_asks_for(self):

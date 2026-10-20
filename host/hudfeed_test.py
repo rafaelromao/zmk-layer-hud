@@ -1,7 +1,7 @@
-"""Decoder tests for host/hudfeed.py: the keyboard's signal messages -> the pages' messages.
+"""Tests for host/hudfeed.py: the readers, the stream, the socket and what watches for secrets.
 
 The wire format itself is host/signal_frame.py's business and is tested in signal_frame_test.py;
-what is tested here is what the HUD gets told. Stream ties the two together.
+what a report means is host/hiddecode.py's, tested in hiddecode_test.py. Stream ties the two together.
 """
 
 import asyncio
@@ -20,8 +20,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import session  # noqa: E402
 import signal_frame  # noqa: E402
+from hiddecode import SignalDecoder  # noqa: E402
 from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SerialReader, any_of, probe_report,  # noqa: E402
-                     SignalDecoder, Stream, asks_secret, hid_scan_note, hidraw_match, sent_in, serve_hub,
+                     Stream, asks_secret, hid_scan_note, hidraw_match, sent_in, serve_hub,
                      split_report, terminal_probe)
 
 try:
@@ -29,169 +30,6 @@ try:
     HAVE_YAML = True
 except ImportError:
     HAVE_YAML = bool(shutil.which("yq"))   # keymap.load_yaml's other way to read a config
-
-
-def K(mods=0, *keys):
-    """A `keys` message: the report snapshot the firmware sends."""
-    return {"kind": "keys", "mods": mods, "keys": list(keys)}
-
-
-def L(*ids):
-    return {"kind": "layers", "ids": list(ids)}
-
-
-class Layers(unittest.TestCase):
-    def test_only_when_changed(self):
-        d = SignalDecoder()
-        self.assertEqual(d.feed(L(2)), [{"kind": "layers", "ids": [2]}])
-        self.assertEqual(d.feed(L(2)), [])                      # the heartbeat: unchanged
-        self.assertEqual(d.feed(L()), [{"kind": "layers", "ids": []}])
-
-    def test_layer_zero_is_never_drawn(self):
-        # The firmware sends the bitmap as the keymap holds it; the default layer is always on and
-        # the page's stack does not include it.
-        d = SignalDecoder()
-        self.assertEqual(d.feed(L(0, 22)), [{"kind": "layers", "ids": [22]}])
-        self.assertEqual(d.feed(L(22)), [])                     # the same set, spelled differently
-
-    def test_several_layers_keep_their_order(self):
-        d = SignalDecoder()
-        self.assertEqual(d.feed(L(2, 14, 22)), [{"kind": "layers", "ids": [2, 14, 22]}])
-
-
-class Positions(unittest.TestCase):
-    """Firmware `positions;`: each press and release names the key that moved."""
-
-    def test_press_and_release_pass_through(self):
-        d = SignalDecoder()
-        self.assertEqual(d.feed({"kind": "press", "pos": 13}), [{"kind": "press", "pos": 13}])
-        self.assertEqual(d.feed({"kind": "release", "pos": 13}), [{"kind": "release", "pos": 13}])
-
-    def test_a_position_is_not_swallowed_by_a_repeat(self):
-        # Unlike the report encoding, the same key pressed twice is two messages.
-        d = SignalDecoder()
-        self.assertEqual(d.feed({"kind": "press", "pos": 0}), [{"kind": "press", "pos": 0}])
-        self.assertEqual(d.feed({"kind": "press", "pos": 0}), [{"kind": "press", "pos": 0}])
-
-
-class Keys(unittest.TestCase):
-    def test_key_press_and_release(self):
-        d = SignalDecoder()
-        down = d.feed(K(0, 0x04))
-        self.assertEqual(len(down), 1)
-        self.assertEqual((down[0]["type"], down[0]["name"], down[0]["chars"], down[0]["code"]), ("keyDown", "a", "a", 4))
-        up = d.feed(K(0))
-        self.assertEqual((up[0]["type"], up[0]["chars"]), ("keyUp", "a"))
-
-    def test_shift_gives_uppercase_and_symbols(self):
-        d = SignalDecoder()
-        msgs = d.feed(K(0x02, 0x04))                             # left shift + a
-        self.assertEqual(msgs[0]["type"], "flagsChanged")
-        self.assertTrue(msgs[0]["flags"]["shift"])
-        self.assertEqual((msgs[1]["type"], msgs[1]["chars"]), ("keyDown", "A"))
-        d.feed(K(0x02))
-        msgs = d.feed(K(0x20, 0x1E))                             # right shift + 1
-        self.assertEqual(msgs[-1]["chars"], "!")
-
-    def test_named_keys(self):
-        d = SignalDecoder()
-        self.assertEqual(d.feed(K(0, 0x28))[0]["name"], "return")
-        d.feed(K(0))
-        self.assertEqual(d.feed(K(0, 0x50))[0]["name"], "left")
-        d.feed(K(0))
-        self.assertEqual(d.feed(K(0, 0x68))[0]["name"], "f13")
-        d.feed(K(0))
-        m = d.feed(K(0, 0x2C))[0]
-        self.assertEqual((m["name"], m["chars"]), ("space", " "))
-
-    def test_modifier_only_change(self):
-        d = SignalDecoder()
-        msgs = d.feed(K(0x08))                                   # cmd down
-        self.assertEqual([m["type"] for m in msgs], ["flagsChanged"])
-        self.assertTrue(msgs[0]["flags"]["cmd"])
-        self.assertEqual(d.feed(K(0))[0]["flags"]["cmd"], False)
-
-    def test_chord_reports_each_key_once(self):
-        d = SignalDecoder()
-        self.assertEqual([m["chars"] for m in d.feed(K(0, 0x04, 0x05))], ["a", "b"])
-        self.assertEqual(d.feed(K(0, 0x04, 0x05)), [])           # resent unchanged: nothing new
-        self.assertEqual([m["chars"] for m in d.feed(K(0, 0x05))], ["a"])  # a released
-
-    def test_a_kind_this_version_does_not_know_is_ignored(self):
-        # The firmware can add kinds without the host having to understand them.
-        self.assertEqual(SignalDecoder().feed({"kind": "battery", "pct": 80}), [])
-
-
-class DeadKeys(unittest.TestCase):
-    """Accent macros type a US-International dead key then the letter, back to back."""
-
-    def test_acute_a(self):
-        d = SignalDecoder()
-        self.assertEqual(d.feed(K(0, 0x34), now_ms=1000), [])          # ' held back
-        self.assertEqual(d.feed(K(0), now_ms=1001), [])                 # its release: nothing yet...
-        msgs = d.feed(K(0, 0x04), now_ms=1002)                          # a
-        downs = [m for m in msgs if m.get("type") == "keyDown"]
-        self.assertEqual(len(downs), 1)
-        self.assertEqual((downs[0]["chars"], downs[0]["name"], downs[0]["composed"]), ("á", "á", [0x34, 0x04]))
-
-    def test_tilde_and_umlaut_use_shift(self):
-        d = SignalDecoder()
-        d.feed(K(0x02, 0x35), now_ms=0)      # shift + ` = ~
-        d.feed(K(0x02), now_ms=1)
-        msgs = d.feed(K(0, 0x11), now_ms=2)  # n
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["ñ"])
-        d.feed(K(0), now_ms=3)
-        d.feed(K(0x02, 0x34), now_ms=10)     # shift + ' = "
-        d.feed(K(0x02), now_ms=11)
-        msgs = d.feed(K(0x02, 0x18), now_ms=12)  # shift + u
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["Ü"])
-
-    def test_cedilla_is_the_us_international_special_case(self):
-        d = SignalDecoder()
-        d.feed(K(0, 0x34), now_ms=0)         # '
-        d.feed(K(0), now_ms=1)
-        msgs = d.feed(K(0, 0x06), now_ms=2)  # c -> ç, not ć
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["ç"])
-        d.feed(K(0), now_ms=3)
-        d.feed(K(0, 0x34), now_ms=10)
-        d.feed(K(0), now_ms=11)
-        msgs = d.feed(K(0x02, 0x06), now_ms=12)  # shift + c -> Ç
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["Ç"])
-
-    def test_plain_apostrophe_is_released_on_timeout(self):
-        d = SignalDecoder()
-        self.assertEqual(d.feed(K(0, 0x34), now_ms=0), [])
-        self.assertEqual(d.feed(K(0), now_ms=5), [])                     # release held with it
-        self.assertEqual(d.flush(30), [])                                # not yet
-        out = d.flush(61)
-        self.assertEqual([(m["type"], m["chars"]) for m in out], [("keyDown", "'"), ("keyUp", "'")])
-
-    def test_apostrophe_then_slow_letter_stays_two_keys(self):
-        d = SignalDecoder()
-        d.feed(K(0, 0x34), now_ms=0)
-        d.feed(K(0), now_ms=5)
-        msgs = d.feed(K(0, 0x04), now_ms=200)                             # too late to compose
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["'", "a"])
-
-    def test_apostrophe_then_non_letter(self):
-        d = SignalDecoder()
-        d.feed(K(0, 0x34), now_ms=0)
-        d.feed(K(0), now_ms=1)
-        msgs = d.feed(K(0, 0x2C), now_ms=2)                               # space
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["'", " "])
-
-    def test_option_layer_characters(self):
-        d = SignalDecoder()
-        msgs = d.feed(K(0x02 | 0x04, 0x1F), now_ms=0)                    # shift + alt + 2 = €
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["€"])
-        d.feed(K(0), now_ms=1)
-        msgs = d.feed(K(0x04, 0x2D), now_ms=2)                           # alt + - = en dash
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["–"])
-
-    def test_compose_can_be_disabled(self):
-        d = SignalDecoder(compose=False)
-        msgs = d.feed(K(0, 0x34), now_ms=0)
-        self.assertEqual([m["chars"] for m in msgs], ["'"])
 
 
 class StreamTest(unittest.TestCase):

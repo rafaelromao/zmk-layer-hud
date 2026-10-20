@@ -37,6 +37,8 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import keynames  # noqa: E402
+from keymap_message import KeymapMessage  # noqa: E402
 import uskeys  # noqa: E402
 
 # The kit's recording pace (showcase/rehearse.py: 70 wpm), well outside the 30 ms combo term, so a
@@ -46,45 +48,27 @@ KEY_GAP_MS = 170
 
 # ---------- the keymap message ----------
 
-class Keymap:
+class Keymap(KeymapMessage):
+    """The keymap message as every Python reader reads it (host/keymap_message.py), and what the
+    oracle states for itself: a layer's own stack, which layers are for typing, and below, how a
+    legend is typed."""
+
     def __init__(self, data):
-        self.data = data
-        self.base = data.get("base") or data["layer_order"][0]
-        self.ids_of = {}
-        for zid, z in (data.get("zmk_layers") or {}).items():
-            if z and z.get("drawer"):
-                self.ids_of.setdefault(z["drawer"], []).append(int(zid))
-        for ids in self.ids_of.values():
-            ids.sort()
-        self.pos_of = {int(idx): int(pos) for pos, idx in (data.get("positions") or {}).items()}
+        super().__init__(data)
         self.sticky = set((data.get("extras") or {}).get("sticky") or [])
 
     def zmk(self, idx):
         """Drawer key -> the ZMK position the firmware reports for it."""
-        return self.pos_of.get(idx, idx)
+        pos = self.pos_of(idx)
+        return idx if pos is None else pos
 
-    def stack(self, layer):
+    def layer_stack(self, layer):
         """Top first, the way the keyboard resolves a key with `layer` up."""
         return [layer] if layer == self.base else [layer, self.base]
-
-    def binding(self, idx, stack):
-        for name in stack:
-            keys = self.data["layers"].get(name) or []
-            if idx < len(keys) and keys[idx].get("type") != "trans":
-                return name, keys[idx]
-        return None, None
 
     def typing(self, layer):
         """A layer made for typing text: the base, and the sticky alpha layers the config names."""
         return layer == self.base or layer in self.sticky
-
-    def combos_on(self, layer):
-        """The combos that fire with `layer` on top -- that layer's, and no other's."""
-        return [c for c in self.data["combos"] if layer in c["layers"]]
-
-    def activators(self, layer):
-        """The keys that bring `layer` up (host/keymap.py activators(): {layer, idx, kind})."""
-        return sorted({a["idx"] for a in self.data.get("activators") or [] if a.get("layer") == layer})
 
 
 def typed(key, typing_layer):
@@ -103,7 +87,7 @@ def typed(key, typing_layer):
         return uskeys.events_for(legend)
     if key.get("glyph"):
         return None  # the glyph's name standing in for its SVG, not something typed
-    if uskeys.NAME_FOR_LEGEND.get(legend) or not typing_layer or not legend.isalpha():
+    if keynames.name_of(legend) or not typing_layer or not legend.isalpha():
         return None
     events = []
     for ch in legend:
@@ -115,13 +99,12 @@ def typed(key, typing_layer):
 
 
 def accepts(legend):
-    name = uskeys.NAME_FOR_LEGEND.get(legend)
-    return sorted({l for l, n in uskeys.NAME_FOR_LEGEND.items() if name and n == name} | {legend})
+    return sorted(set(keynames.spellings(keynames.name_of(legend))) | {legend})
 
 
 def ident(legend):
     """What a legend types, whatever it is spelled: ⇥ and ↹ are both Tab."""
-    return uskeys.NAME_FOR_LEGEND.get(legend) or legend
+    return keynames.name_of(legend) or legend
 
 
 def adaptive(key):
@@ -150,13 +133,13 @@ def ways(km):
             live_states.append((km.base, [int(zid)], f"base under {z.get('name') or zid}"))
             break  # one undrawn layer above the base is enough to prove the page skips it
     for layer in km.data["layer_order"]:
-        if layer != km.base and layer in km.ids_of:
-            live_states.append((layer, [km.ids_of[layer][0]], layer))
+        if layer != km.base and km.ids_of(layer):
+            live_states.append((layer, [km.ids_of(layer)[0]], layer))
 
     for layer, live, label in live_states:
-        stack = km.stack(layer)
+        stack = km.layer_stack(layer)
         for idx in range(len(km.data["layers"][layer])):
-            on, key = km.binding(idx, stack)
+            on, key = km.resolve(idx, stack)
             if key is None:
                 continue
             split = adaptive(key)
@@ -190,10 +173,10 @@ def shifted_by_hand(km):
     out = []
     if not shifts:
         return out
-    stack = km.stack(km.base)
+    stack = km.layer_stack(km.base)
     letters = []
     for idx in range(len(km.data["layers"][km.base])):
-        _, key = km.binding(idx, stack)
+        _, key = km.resolve(idx, stack)
         split = key and adaptive(key)
         if split:
             key = split[0]
@@ -215,6 +198,27 @@ def shifted_by_hand(km):
             # combo it is -- so the pill is that combo's own.
             way["pill"] = pill_of(combo)
         out.append(way)
+    return out
+
+
+def unfired(km):
+    """The base's combos struck with another layer up that declares none on those keys. ZMK matches
+    a combo against the highest active layer alone, so each such chord is its keys, one by one: no
+    pill, no combo counted, and every key a keystroke of its own. A chord with a combo of the layer
+    up among its keys is left out: that one can fire."""
+    out = []
+    for layer in km.data["layer_order"]:
+        if layer == km.base or not km.ids_of(layer):
+            continue
+        own = [set(c["positions"]) for c in km.combos_on(layer)]
+        seen = set()
+        for combo in km.combos_on(km.base):
+            keys = tuple(sorted(combo["positions"]))
+            if keys in seen or any(o <= set(keys) for o in own):
+                continue
+            seen.add(keys)
+            out.append({"layer": layer, "live": [km.ids_of(layer)[0]], "keys": list(keys),
+                        "zmk": [km.zmk(i) for i in keys], "below": combo["key"].get("tap") or ""})
     return out
 
 
@@ -416,6 +420,8 @@ def main(argv):
             print(json.dumps({"kind": "case", **c}, ensure_ascii=False))
         for w in words(km, cs):
             print(json.dumps({"kind": "word", **w}, ensure_ascii=False))
+        for u in unfired(km):
+            print(json.dumps({"kind": "unfired", **u}, ensure_ascii=False))
         return 0
     if "--audit" in argv:
         import keymap as keymap_mod

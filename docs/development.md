@@ -44,11 +44,26 @@ fixtures and the landing page draw them with no keymap-drawer and no network.
 `firmware/src/signal_frame.h` is the single definition of the wire format; the C and Python tests
 share its vectors, so a change on one side that is not mirrored on the other fails both.
 
+`host/keynames.py` is the single statement of the key vocabulary: every named key (its key name,
+usages, glyph, control character and the spellings drawings use for it), the modifiers, and the
+characters each key of a US layout types. `host/hiddecode.py` decodes the keyboard's reports with it,
+`host/uskeys.py` inverts it, the tools read a legend's named key from it (`name_of`), and the pages
+get it as `hud/keynames.js`, which `make keynames` writes and the host tests fail on when it is
+behind. Naming another key is one record there, then `make keynames` and `make site`.
+
 `make test-hud` sweeps the page: every key on every layer it can be shown on, every combo on every
 layer it is declared on and in four press orders, every press that must draw no combo, and the
 typed-keys strip against what a keyboard would have sent to type each legend. Over 5000 checks in
 about a third of a second. The cases are generated from the keymap message, so pointing it at
 another board sweeps that board.
+
+What the page draws is read by `hud/keystrokes.js`: the feed's messages go in, each with the time it
+came, and the board comes out -- the layers up, the keys down and lit, the combo pills, the keys that
+brought a layer up -- with what was struck, said once nothing can take it back, for the page to
+count. It keeps no time of its own (what is due next is an answer, not a timer), so
+`hud/tests/keystrokes_test.js` drives it with plain numbers and no DOM: a chord a bigger one
+supersedes inside its term, a guess its position takes back, a layer drop held back for a key's
+flash. The other suites go through the page, the DOM included.
 
 Those two drive one channel each, with the page's own rules for what a keymap means, and that is
 how a letter typed by a combo lit nothing once the board had to work from the character: both
@@ -59,7 +74,16 @@ comes when the key comes up), stated there rather than borrowed from `hud.js`. E
 down every channel it can arrive by: positions and reports in either order, reports alone with and
 without layers, positions alone, and typing sent in with combos on and off. Words go key after key
 on one page at a typist's pace, so a way is also tested next to its neighbours: a one-shot layer
-that outlives its key, a chord inside a combo term, a macro across two layers.
+that outlives its key, a chord inside a combo term, a macro across two layers. It also lists the
+chords a layer rules out -- a base combo's keys struck with a layer up that declares none on them --
+and each is struck as ZMK types it: its keys one by one, and no pill.
+
+The Python tools read a keymap message one way, `host/keymap_message.py`, the page's `view.js` in
+Python: which drawer layer a ZMK layer is, where a ZMK position is on the board, the stack live
+layers draw, a key through transparent ones. `ways.py`, `play.py`, `export.py`, `session.py` and
+`actions.py` all read that. What stays the oracle's own is how a legend is typed: `ways.typed` and
+the touch keyboard's `actions.Legends` each say it for themselves, and `engine_legends_test`
+holds one to the other.
 
 `make audit` checks what those cases cannot: the drawing itself. One drawer layer stands for every
 ZMK layer drawn as it, so where two of them fire different things on the same keys, the HUD can be

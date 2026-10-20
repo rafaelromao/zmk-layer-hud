@@ -246,6 +246,12 @@ class Stats(Base):
         self.assertEqual(({}, {}), session.keys_of(None))
         self.assertEqual(({}, {}), session.keys_of({"layers": {"base": {}}}))     # a message with no keys
 
+    def test_a_message_with_no_map_is_in_the_firmwares_own_order(self):
+        # A hand-written demo carries no positions: the page takes position = index (view.js idxAt),
+        # and the session names its keys the same way rather than not at all.
+        bare = dict(self.MESSAGE, positions={}, layout={"keys": [{}] * 4})
+        self.assertEqual(session.keys_of(self.MESSAGE), session.keys_of(bare))
+
     def test_every_stat_the_bar_shows_is_kept_and_written_down(self):
         _, s = session.status(self.dir)
         fingers, legends = session.keys_of(self.MESSAGE)
