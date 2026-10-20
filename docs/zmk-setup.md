@@ -100,6 +100,11 @@ would rather use a physical one.
 Over BLE the module defines its own GATT service and needs nothing but `CONFIG_BT_PERIPHERAL`.
 Subscribing requires encryption, so the signal only flows to a host the keyboard is bonded with.
 
+With both on, a keyboard plugged in and paired to the same machine sends its signal twice. The
+feed reads one: the first carrier it hears, until that connection goes, when the other takes
+over. Two different keyboards that share a name, one on each carrier, are told apart by what they
+press, and both are read.
+
 ## 4. Build and flash
 
 ```bash

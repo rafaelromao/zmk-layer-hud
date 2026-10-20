@@ -62,6 +62,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import contextlib
+import functools
 import hmac
 import http
 import json
@@ -71,6 +72,7 @@ import secrets
 import sys
 import termios
 import threading
+import time
 import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -130,11 +132,19 @@ class Stream:
         then everything held comes up, modifiers too -- as the report a keyboard sends when every
         key is let go, so the decoder says it the way it says any release. All but the modifiers
         another keyboard still holds (`held_elsewhere`): the pages' modifiers are every keyboard's,
-        and that one says them again only when it lets them go."""
+        and that one says them again only when it lets them go.
+
+        Then the feed is told this connection is over (`gone`, which goes no further: Carriers
+        hands the keyboard to the other carrier, if one is reading it). Only a connection that
+        carried the signal says so: a composite board's other CDC ports are tried too and closed
+        when no frame comes, and they share the signal port's carrier and name -- their `gone`
+        would end the live port's turn."""
         for out in self.decoder.flush():
             self._emit(out)
         for out in self.decoder.feed({"kind": "keys", "mods": held_elsewhere, "keys": []}):
             self._emit(out)
+        if self.frames_seen:
+            self.emit({"kind": "gone", "device": self.device})
 
     def resync(self):
         """Forget what the pages were last told about the layers.
@@ -148,6 +158,123 @@ class Stream:
     def _emit(self, msg):
         msg["device"] = self.device  # which keyboard this came from
         self.emit(msg)
+
+
+class Carriers:
+    """One keyboard, one carrier. Plugged in by USB and paired by BLE at once, the keyboard sends
+    its signal on both, and each carrier's reader decodes it: every layer change and every key
+    position would reach the pages twice. A page takes the copy of a press as a second press --
+    each key counted twice, and a held chord's modifiers credited to its keys pressed "again".
+
+    So each keyboard's signal comes from one carrier: the first heard, for as long as its
+    connection lasts (`gone`, from Stream.close). Never handed over while both are up: the readers
+    run apart and either may lag, so a carrier that looks idle may still have the other's last tap
+    to deliver, and a handover there sends that tap twice. Not by time either: the firmware's
+    heartbeat is off by default, so a quiet carrier is not a gone one. Messages without a device
+    (the readers' `device` announcements) pass. Pure: take() says whether to forward.
+
+    The carrier set aside still decodes, and its decoder only speaks of a layer set that changed:
+    one it heard first is never said again while it stays. So when the owner goes, the other
+    carrier takes over at once, and its last layer set is handed on (drain()) if the pages were
+    told another -- or they stay on the old layers until the next change.
+
+    The name is all the carriers share, and two keyboards may share it too: one on USB, another on
+    BLE. A copy presses what the owner presses, within moments either way; another keyboard
+    presses keys the owner never does. SPLIT_AFTER presses on the other carrier that the owner does
+    not match within MIRROR_S, inside SPLIT_WINDOW_S, and the name is two keyboards: both are read
+    from then on. (One press the owner lost -- a carrier drops a frame rather than block -- is not.)"""
+
+    MIRROR_S = 0.5
+    SPLIT_AFTER = 3
+    SPLIT_WINDOW_S = 10.0
+
+    def __init__(self, log=None, clock=None):
+        self.log = log
+        self.clock = clock or time.monotonic
+        self.owner = {}   # device -> the carrier its signal is taken from
+        self.links = set()  # (carrier, device) heard from and not gone
+        self.layers = {}  # (carrier, device) -> the last layers message it decoded, forwarded or not
+        self.told = {}    # device -> the layer ids the pages were last given
+        self.queue = []   # messages handed on at a takeover (drain)
+        self.ahead = {}   # device -> [(pos, t)]: the owner's presses no copy has matched yet
+        self.behind = {}  # device -> [(pos, t)]: the other carrier's presses the owner has not matched
+        self.strays = {}  # device -> times of the other carrier's presses the owner never matched
+        self.split = set()  # names that are two keyboards: every carrier read
+        self.lock = threading.Lock()   # the serial reader's thread and BLE's loop both call take()
+
+    def take(self, carrier, msg):
+        with self.lock:
+            return self._take(carrier, msg)
+
+    def drain(self):
+        """What a takeover has to say: the new owner's layer set, if the pages were told another."""
+        with self.lock:
+            out, self.queue = self.queue, []
+            return out
+
+    def _take(self, carrier, msg):
+        device, kind = msg.get("device"), msg.get("kind")
+        if device is None:
+            return kind != "gone"
+        link = (carrier, device)
+        if kind == "gone":
+            self.links.discard(link)
+            self.layers.pop(link, None)
+            if not any(d == device for (_, d) in self.links):
+                # Its last connection: whatever comes next under the name is judged afresh (one
+                # keyboard on both carriers again, after two that shared it).
+                self.split.discard(device)
+                for seen in (self.strays, self.ahead, self.behind, self.owner):
+                    seen.pop(device, None)
+                return False
+            if self.owner.get(device) == carrier:
+                del self.owner[device]
+                self.ahead.pop(device, None)
+                self.behind.pop(device, None)
+                rest = [c for (c, d) in self.links if d == device]
+                if rest:
+                    self.owner[device] = rest[0]
+                    last = self.layers.get((rest[0], device))
+                    if last is not None and last.get("ids") != self.told.get(device) and device not in self.split:
+                        self.told[device] = last.get("ids")
+                        self.queue.append(dict(last))
+            return False
+        self.links.add(link)
+        if device in self.split:
+            return True
+        owner = self.owner.setdefault(device, carrier)
+        if kind == "layers":
+            self.layers[link] = dict(msg)
+            if owner == carrier:
+                self.told[device] = msg.get("ids")
+        if kind == "press":
+            self._mirror(device, msg.get("pos"), owner == carrier)
+            if device in self.split:
+                if self.log:
+                    self.log(f"hudfeed: two keyboards are called {device}, one on each carrier: both are read")
+                return True
+        return owner == carrier
+
+    def _mirror(self, device, pos, from_owner):
+        """Match a press with its copy on the other carrier, whichever comes first; count the other
+        carrier's presses the owner never matches."""
+        now = self.clock()
+        ahead, behind = self.ahead.setdefault(device, []), self.behind.setdefault(device, [])
+        ahead[:] = [(p, t) for p, t in ahead if now - t <= self.MIRROR_S]
+        strays = self.strays.setdefault(device, [])
+        for p, t in behind:
+            if now - t > self.MIRROR_S:
+                strays.append(t)
+        behind[:] = [(p, t) for p, t in behind if now - t <= self.MIRROR_S]
+        strays[:] = [t for t in strays if now - t <= self.SPLIT_WINDOW_S]
+        mine, theirs = (ahead, behind) if from_owner else (behind, ahead)
+        hit = next((i for i, (p, _) in enumerate(theirs) if p == pos), None)
+        if hit is not None:
+            del theirs[hit]
+        else:
+            mine.append((pos, now))
+        if len(strays) >= self.SPLIT_AFTER:
+            self.split.add(device)
 
 
 def take_port(dev, log):
@@ -542,9 +669,16 @@ class BleReader:
         feed asked to stop to go on running."""
         await asyncio.to_thread(self._stop.wait, seconds)
 
+    def _label(self, device):
+        """The keyboard's name as its messages carry it: the one BLE gives, else the configured
+        keyboard name, before the address. Its USB copy is named by the product string, the same
+        name in ZMK; an address would make it two keyboards to Carriers, and both copies would go
+        on (and the address would title the HUD)."""
+        return device.name or self.name or str(device.address)
+
     async def _session(self, BleakClient, device):
         """Reads one connection until it drops. -> None once it has been read, else why not."""
-        name = device.name or str(device.address)
+        name = self._label(device)
         reading = False
         stream = Stream(self.emit, name, self.dead_key_ms, self.raw, self.log, self.altgr)
         self._streams.add(stream)
@@ -1103,15 +1237,21 @@ class Feed:
         # keystroke is, so that nothing is logged while a secret is being typed (self.secure is
         # made below and read when a message arrives).
         raw_log = (lambda: self.secure is None or not self.secure.check()) if raw else False
+        # Both carriers may read the one keyboard: its signal is taken from one (Carriers).
+        self.carriers = Carriers(log)
+        # Which message goes on and what a takeover hands on are one step: had the BLE thread put
+        # a newer layer set through between a USB `gone` and its takeover going out, the older,
+        # takeover set would follow it, and BLE's decoder would never say the newer one again.
+        self._carrier_lock = threading.Lock()
         self.reader = SerialReader(
-            self._emit, log=log, raw=raw_log, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
+            functools.partial(self._from, "usb"), log=log, raw=raw_log, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
             vid=vid if vid is not None else int(kb.get("vid", ZMK_VID)),
             pid=pid if pid is not None else int(kb.get("pid", ZMK_PID)),
             name=kb_name, port=port if port is not None else ser.get("port"),
             probe_s=float(ser.get("probe_s", 8.0)))
         self.ble = None
         if ble and bt.get("enabled", True):
-            self.ble = BleReader(self._emit, log=log, raw=raw_log, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
+            self.ble = BleReader(functools.partial(self._from, "ble"), log=log, raw=raw_log, rescan=rescan, dead_key_ms=dead_key_ms, altgr=altgr,
                                  address=ble_address if ble_address is not None else bt.get("address"),
                                  name=kb_name)
         # What is typed comes from the keyboard's HID reports, not from the signal channel: one
@@ -1153,7 +1293,17 @@ class Feed:
             if probes:
                 self.secure = SecureInput(emit, any_of(list(probes.values())), log=log, watched=self.watched)
 
+    def _from(self, carrier, msg):
+        """A signal reader's message: forwarded if its carrier is the one this keyboard is read on."""
+        with self._carrier_lock:
+            if self.carriers.take(carrier, msg):
+                self._emit(msg)
+            for m in self.carriers.drain():    # a takeover: the new owner's layers (Carriers)
+                self._emit(m)
+
     def _emit(self, msg):
+        if msg["kind"] == "gone":
+            return                            # a connection over: Carriers' business, not the pages'
         # --no-keys: layers only. The positions go with the keys: with the keymap they are the typing.
         if not self.keys and msg["kind"] in ("key", "press", "release"):
             return
