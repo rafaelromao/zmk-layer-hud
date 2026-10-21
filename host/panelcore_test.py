@@ -190,6 +190,17 @@ class Docking(Base):
         self.panel.page(REFUSAL)
         self.assertEqual([], self.window.named("dock"))
 
+    def test_smaller_keys_are_kept_while_docked_and_forgotten_after(self):
+        self.panel.set_dock(True)
+        self.panel.page({"kind": "dock", "fits": True, "key_mm": 16.9, "want_mm": 18})
+        self.assertTrue(self.panel.docked)
+        self.assertEqual("at 16.9 mm a key, smaller than touch.key_mm's 18 to fit", self.state()["dock_keys"])
+        self.panel.page({"kind": "dock", "fits": True, "key_mm": 18})          # their own size again
+        self.assertIsNone(self.state()["dock_keys"])
+        self.panel.page({"kind": "dock", "fits": True, "key_mm": 16.9, "want_mm": 18})
+        self.panel.set_dock(False)
+        self.assertIsNone(self.state()["dock_keys"])
+
 
 class Typing(Base):
     def test_the_typing_state_is_told_and_kept(self):

@@ -489,8 +489,12 @@ class Touch(unittest.TestCase):
         # A key's spacing: Choc's 18 mm unless said, MX's 19.05 kept to the hundredth.
         self.assertEqual(18, msg["touch"]["key_mm"])
         self.assertEqual(19.05, message({"touch": {"key_mm": 19.05}}, DOC)["touch"]["key_mm"])
+        # The smallest the dock makes them to fit: 16 mm unless said, a key spacing too.
+        self.assertEqual(16, msg["touch"]["min_key_mm"])
+        self.assertEqual(17.5, message({"touch": {"min_key_mm": 17.5}}, DOC)["touch"]["min_key_mm"])
         for bad in ({"nope": 1}, {"hold_ms": "slow"}, {"hold_ms": -5}, {"latch": True}, {"combos": "both"}, "yes",
-                    {"sound": 101}, {"key_mm": 5}, {"key_mm": "19"}, {"key_mm": True}, {"floating": 1}):
+                    {"sound": 101}, {"key_mm": 5}, {"key_mm": "19"}, {"key_mm": True}, {"floating": 1},
+                    {"min_key_mm": 5}, {"min_key_mm": "16"}):
             with self.assertRaises(km.KeymapError, msg=repr(bad)):
                 message({"touch": bad}, DOC)
 

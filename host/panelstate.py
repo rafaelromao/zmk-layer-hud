@@ -155,7 +155,8 @@ def write(d, shown, pid=None, wpm=0, stats=None, extra=None):
     """The panel's word: which process it is, whether it is on screen, how fast it is being typed
     on, `stats` (from stats_of) once the page has said them, and `extra` -- the touch keyboard's:
     "typing" (ok, off, denied, missing, error), "dock" (true when docked), "dock_note" (why it
-    is not: the board too big for the screen at its real size) and "dock_at" (when it last docked
+    is not: the board too big for the screen even with its keys made smaller), "dock_keys" (docked
+    with them smaller to fit: how small, host/dock.py smaller) and "dock_at" (when it last docked
     or floated, time.time()). Remote mode says
     what it is doing in a file of its own (host/remote.py), from whichever process serves it."""
     obj = {"pid": pid or os.getpid(), "shown": bool(shown), "wpm": int(wpm or 0)}
@@ -164,7 +165,7 @@ def write(d, shown, pid=None, wpm=0, stats=None, extra=None):
     _write(os.path.join(d, STATE_FILE), obj)
 
 
-EXTRA = ("typing", "dock", "dock_note", "dock_at")
+EXTRA = ("typing", "dock", "dock_note", "dock_keys", "dock_at")
 TYPING_STATES = ("ok", "off", "denied", "missing", "error")
 # What the command line may ask a running panel for besides showing and hiding, each in a file of
 # its own (`dock.want`, ...) taken once, so one request never stands in for a later one.
@@ -224,8 +225,9 @@ def read(d):
     # The touch keyboard's, from a panel that says them; checked, as the rest is.
     st["typing"] = st.get("typing") if st.get("typing") in TYPING_STATES else None
     st["dock"] = st.get("dock") is True
-    note = st.get("dock_note")
-    st["dock_note"] = note if isinstance(note, str) and 0 < len(note) <= NOTE_MAX else None
+    for k in ("dock_note", "dock_keys"):
+        note = st.get(k)
+        st[k] = note if isinstance(note, str) and 0 < len(note) <= NOTE_MAX else None
     at = st.get("dock_at")
     st["dock_at"] = at if isinstance(at, (int, float)) and not isinstance(at, bool) and at > 0 else None
     return st if alive(st["pid"]) else None
@@ -325,7 +327,7 @@ def hud(d=None, root=None, procs=processes):
                   out again since -- what a verb that signals it needs
         ours      it runs from this copy (`root`), which `stop` and `start` act on
         pid, where   the panel's pid and the copy it runs from
-        shown, wpm, avg_wpm, top_wpm, session, stats, dock, dock_note, dock_at, typing
+        shown, wpm, avg_wpm, top_wpm, session, stats, dock, dock_note, dock_keys, dock_at, typing
                   what it last said, when `said`
         feed      "running", "in the panel" (macOS: the panel runs it), or "stopped"
         remote    what the remote-mode server last said, while it is alive (remote.live_now)
@@ -348,7 +350,8 @@ def hud(d=None, root=None, procs=processes):
     where = panels.get(pid)
     out = {"dir": d, "running": pid is not None, "said": said, "ours": pid is not None and where == root,
            "pid": pid, "where": where}
-    fields = ("shown", "wpm", "avg_wpm", "top_wpm", "session", "stats", "dock", "dock_note", "dock_at", "typing")
+    fields = ("shown", "wpm", "avg_wpm", "top_wpm", "session", "stats", "dock", "dock_note", "dock_keys", "dock_at",
+              "typing")
     out.update({k: (st.get(k) if said else None) for k in fields})
     feeds = {p: tree_of(cmd) for p, cmd in procs(FEED_PROCESS).items()}
     if any(tree in (None, where or root) for tree in feeds.values()):   # None: the shim, `zmk-layer-hud feed`
