@@ -1,7 +1,8 @@
 # Testing every open PR together
 
 This branch, `all-open-prs`, is `main` with every open PR merged into it, so that they can be tried
-live as one build before each is reviewed alone. It is not for merging: no PR is opened from it.
+live as one build before each is reviewed alone. It is not for merging: its draft PR carries this test
+plan and the results, and each PR still merges on its own.
 
 | PR | Branch | What to look at |
 |----|--------|-----------------|
