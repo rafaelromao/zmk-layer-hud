@@ -94,12 +94,17 @@ test-android: ## the Android keyboard's sink (apps/android/sink): Gradle and a J
 	fi
 
 SWIFT ?= $(shell command -v swift)
+# With the Command Line Tools alone, Swift Testing's macros are in host/plugins/testing, where the
+# build system `swift test` defaults to does not look for them: "plugin for module 'TestingMacros'
+# not found" on every @Test. Xcode's toolchain finds its own, so the path is passed only for these.
+SWIFT_DEVELOPER ?= $(shell xcode-select -p 2>/dev/null)
+SWIFT_TESTING_PLUGINS ?= $(if $(findstring CommandLineTools,$(SWIFT_DEVELOPER)),$(wildcard $(SWIFT_DEVELOPER)/usr/lib/swift/host/plugins/testing))
 
 test-ios: ## the iPad keyboard's Core (apps/ios/Core): JavaScriptCore, the text sink, hit-testing; a Mac, no Xcode
 	@if [ -z "$(SWIFT)" ]; then \
 	  echo "test-ios: swift not found, skipping (xcode-select --install)"; \
 	else \
-	  cd apps/ios/Core && $(SWIFT) test; \
+	  cd apps/ios/Core && $(SWIFT) test$(if $(SWIFT_TESTING_PLUGINS), -Xswiftc -plugin-path -Xswiftc $(SWIFT_TESTING_PLUGINS)); \
 	fi
 
 site: ## build the landing page into docs/, which GitHub Pages serves; commit what it writes (STRICT=1: every board, or fail)

@@ -268,17 +268,20 @@ function page(opts) {
   narrow.sent.length = 0;          // what was let go as the keyboard stopped
   narrow.tap(0);
   check(narrow.reports().length === 0, `a tap types nothing: ${JSON.stringify(narrow.reports())}`);
+  // Said at the smallest its keys may be made (touch.min_key_mm, 16 when the keymap does not say),
+  // which is what it would have taken.
   const refused = said.filter((m) => m.kind === "dock");
-  check(refused.length === 1 && eq(refused[0], { kind: "dock", fits: false, key_mm: 18, need_mm: [72, 26], room_mm: [56, 120] }),
+  check(refused.length === 1 && eq(refused[0], { kind: "dock", fits: false, key_mm: 16, want_mm: 18, need_mm: [64, 24], room_mm: [56, 120] }),
         `the panel is told why, once: ${JSON.stringify(refused)}`);
-  check(/a HUD only/.test(sub(narrow)) && /72 × 26 mm/.test(sub(narrow)), `and the banner says it: ${sub(narrow)}`);
+  check(/a HUD only/.test(sub(narrow)) && /at 16 mm a key/.test(sub(narrow)) && /64 × 24 mm/.test(sub(narrow)),
+        `and the banner says it: ${sub(narrow)}`);
   narrow.hud.receive({ kind: "dock", on: false });
   check(html(narrow).classList.contains("touch") && !/HUD only/.test(sub(narrow)), "floating again, nothing is refused");
 
-  // Too tall for the dock's share of the screen: the same.
+  // Too tall for the dock's share of the screen even at the smallest: the same.
   const short = page();
   short.board.style.width = "1578px";
-  short.hud.receive({ kind: "dock", on: true, max_height: 120, px_per_mm: 5, width: 1600 });
+  short.hud.receive({ kind: "dock", on: true, max_height: 110, px_per_mm: 5, width: 1600 });
   check(!html(short).classList.contains("touch"), "taller than the dock may be: no touch keyboard");
   // A keymap of a board that does fit, docked as it is: a keyboard again.
   const small = JSON.parse(JSON.stringify(MSG));
@@ -286,6 +289,44 @@ function page(opts) {
   short.hud.load(small);
   check(html(short).classList.contains("touch") && Math.abs(short.hud.state.scale - 0.9) < 1e-9,
         `a board that fits docks at its real size: scale ${short.hud.state.scale}`);
+})();
+
+(function aBoardALittleTooBigDocksWithSmallerKeys() {
+  // 18 mm keys need 130 px of height (90 and the banner's 40); the dock may be 124: at 16.9 mm a
+  // key, the largest a tenth of a millimetre at a time that fits, the board docks and types.
+  const html = (p) => p.document.documentElement;
+  const p = page();
+  const said = [];
+  p.window.webkit = { messageHandlers: { zmkhud: { postMessage: (s) => said.push(JSON.parse(s)) } } };
+  p.board.style.width = "1578px";
+  p.hud.receive({ kind: "dock", on: true, max_height: 124, px_per_mm: 5, width: 1600 });
+  check(html(p).classList.contains("touch"), "a little taller than the dock may be: it docks all the same, and types");
+  check(Math.abs(p.hud.state.scale - 16.9 * 5 / 100) < 1e-9, `at 16.9 mm a key: scale ${p.hud.state.scale}`);
+  const told = said.filter((m) => m.kind === "dock");
+  check(told.length === 1 && eq(told[0], { kind: "dock", fits: true, key_mm: 16.9, want_mm: 18 }),
+        `the panel is told its keys were made smaller, once: ${JSON.stringify(told)}`);
+  check(!/HUD only/.test(p.document.getElementById("layerSub").textContent), "and nothing is refused");
+
+  // touch.min_key_mm as big as key_mm: never made smaller, so a HUD only, as at its real size.
+  const strict = JSON.parse(JSON.stringify(MSG));
+  strict.touch.min_key_mm = 18;
+  const q = page();
+  const qsaid = [];
+  q.window.webkit = { messageHandlers: { zmkhud: { postMessage: (s) => qsaid.push(JSON.parse(s)) } } };
+  q.board.style.width = "1578px";
+  q.hud.load(strict);
+  q.hud.receive({ kind: "dock", on: true, max_height: 124, px_per_mm: 5, width: 1600 });
+  check(!html(q).classList.contains("touch"), "min_key_mm 18: no touch keyboard at 124 px");
+  const qrefused = qsaid.filter((m) => m.kind === "dock");
+  check(qrefused.length === 1 && eq(qrefused[0], { kind: "dock", fits: false, key_mm: 18, need_mm: [72, 26], room_mm: [316, 25] }),
+        `and the panel is told why at 18 mm: ${JSON.stringify(qrefused)}`);
+
+  // The keys their real size again once there is room: the panel hears they are.
+  said.length = 0;
+  p.hud.receive({ kind: "dock", on: true, max_height: 600, px_per_mm: 5, width: 1600 });
+  check(Math.abs(p.hud.state.scale - 0.9) < 1e-9, `room again: keys 18 mm, scale ${p.hud.state.scale}`);
+  check(eq(said.filter((m) => m.kind === "dock"), [{ kind: "dock", fits: true, key_mm: 18 }]),
+        `the panel hears the keys are their own size again: ${JSON.stringify(said)}`);
 })();
 
 (function attachDetachAndMinimize() {
