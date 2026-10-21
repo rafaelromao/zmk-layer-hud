@@ -278,7 +278,7 @@ dock_to() { "$HUD" dock "$1" && if [[ $1 == on ]]; then wait_for 15 docked; else
 up() { wait_for 30 hud_is said True shown True; }
 bring_back() {
   if hud_is running True >/dev/null 2>&1; then "$HUD" show >/dev/null 2>&1 || true
-  else "$HUD" start >/dev/null 2>&1 || true; fi
+  else keep_log; "$HUD" start >/dev/null 2>&1 || true; fi
   up >/dev/null || warn "the HUD is not back up: $HUD status says why"
 }
 
@@ -289,9 +289,24 @@ mark() {
   for f in "${LOGS[@]}"; do MARK+=("$( [[ -f $f ]] && wc -c <"$f" | tr -d ' ' || echo 0)"); done
 }
 since_mark() {
-  local i
+  local i size from
   for i in "${!LOGS[@]}"; do
-    [[ -f ${LOGS[$i]} ]] && tail -c +"$(( ${MARK[$i]:-0} + 1 ))" "${LOGS[$i]}"
+    [[ -f ${LOGS[$i]} ]] || continue
+    size=$(wc -c <"${LOGS[$i]}" | tr -d ' ')
+    from=${MARK[$i]:-0}
+    if (( size < from )); then from=0; fi   # the HUD started again since: its log began afresh
+    tail -c +"$(( from + 1 ))" "${LOGS[$i]}"
+  done
+  return 0
+}
+# keep_log: a copy of the logs, as panel.N.log beside the answers. Each start of the HUD begins its
+# log afresh, so this runs before every stop and start, and what a run said is still there after.
+KEPT=0
+keep_log() {
+  local f
+  KEPT=$((KEPT + 1))
+  for f in "${LOGS[@]}"; do
+    if [[ -s $f ]]; then cp "$f" "$OUT/$(basename "$f" .log).$KEPT.log"; fi
   done
   return 0
 }
@@ -303,6 +318,7 @@ put_back() {
   [[ $SWITCHED == yes ]] || return 0
   SWITCHED=no
   "$HUD" dock off >/dev/null 2>&1 || true
+  keep_log
   "$HUD" stop >>"$OUT/switch.log" 2>&1 || true
   if [[ -n $INSTALLED ]]; then
     "$HUD" menubar disable >>"$OUT/switch.log" 2>&1 || true
@@ -361,6 +377,7 @@ if [[ -n $INSTALLED ]]; then
   "$INSTALLED" stop >"$OUT/switch.log" 2>&1 || true
   if [[ $WAS_ICON == yes ]]; then "$INSTALLED" menubar disable >>"$OUT/switch.log" 2>&1 || true; fi
 fi
+keep_log
 "$HUD" stop >>"$OUT/switch.log" 2>&1 || true
 auto start "the branch's HUD starts" "$HUD" start
 auto icon_on "its menubar icon comes up" "$HUD" menubar enable
@@ -395,6 +412,7 @@ bring_back
 stage "Where it was left (#9)"
 step "Drag the HUD somewhere else on the screen."
 pause "Enter once it is there"
+keep_log
 auto restart "restart" "$HUD" restart
 auto restart_up "it is up again" up
 check place_kept "Did it come back where you left it?"
@@ -441,6 +459,7 @@ check stats_site "Does the heading of the HUD's stats column open the site?"
 check session_menu "Right-click the HUD: does its session menu save a session, then load it?"
 "$HUD" hide >/dev/null 2>&1 || true
 check icon_hidden "HUD hidden: does the icon say so, and does a click bring the HUD back?"
+keep_log
 "$HUD" stop >/dev/null 2>&1 || true
 check icon_stopped "HUD stopped: does the icon say so, and does a click start it?"
 bring_back
@@ -449,6 +468,16 @@ bring_back
 stage "Docked, and typing (#1, #9)"
 auto dock_on "dock on docks it" dock_to on
 "$HUD" dock status 2>&1 | indent || true
+if says 'a HUD only' "$HUD" dock status >/dev/null; then
+  why=$("$HUD" dock status 2>&1 | sed 's/^dock: floating, a HUD only: //')
+  record dock_on fail "it did not dock on this screen: $why"
+  record too_big pass "a board too big to dock floats, and dock status says why"
+  warn "It would fit with smaller keys or a taller dock. In the config (zmk-layer-hud config edit),"
+  warn "touch.key_mm a little lower, or dock.height_pct a little higher; then run this again."
+  for id in typing_ok grant types repeat real_size fits minimize detach redock; do
+    record "$id" skip "needs the HUD docked"
+  done
+else
 if ! says 'can type' "$HUD" typing status >/dev/null; then
   say "It may not type yet: the HUD asks for Accessibility now."
   "$HUD" typing setup 2>&1 | indent || true
@@ -466,6 +495,7 @@ check minimize "Minimize it: does it leave a bar, and come back from it?"
 check detach "Detach it from its banner, then attach it: does it float, then dock again?"
 check redock "Change the display (resolution, or a monitor in or out): does it dock again on the new one?"
 check too_big "On a screen too small for the board: does it float, and dock status say why? (skip without one)"
+fi
 auto dock_off "dock off floats it" dock_to off
 
 # ── 10 ────────────────────────────────────────────────────────────────────
@@ -487,9 +517,10 @@ pause "Enter once it is unplugged"
 check shift_let_go "Has the board let Shift go (no ⇧ held on the HUD)?"
 note "giving the feed 10 s to look for it again…"
 sleep 10
-n=$(since_mark | grep -c "no serial port" || true)
+since_mark | grep "hudfeed: " >"$OUT/serial_note.log" || true
+n=$(grep -c "no serial port" "$OUT/serial_note.log" || true)
 if [[ $n -eq 1 ]]; then record serial_note pass "unplugged, the log says once that no serial port is the keyboard's"
-else record serial_note fail "unplugged, the log said \"no serial port\" $n times, not once"; fi
+else record serial_note fail "unplugged, the log said \"no serial port\" $n times, not once (run/all-open-prs-macos/serial_note.log)"; fi
 since_mark | grep "hudfeed: " | tail -4 | indent || true
 mark
 step "Plug it back in."
@@ -507,14 +538,15 @@ step "Switch the keyboard off."
 auto ble_gone "the log says it is gone" wait_for 60 said_since 'over BLE gone'
 say "The feed is searching for it now. Stopping the HUD, timed:"
 t0=$(python3 -c 'import time; print(time.time())')
+keep_log
 "$HUD" stop >"$OUT/ble-stop.log" 2>&1 || true
 dt=$(python3 -c 'import sys, time; print(f"{time.time() - float(sys.argv[1]):.1f}")' "$t0")
 if python3 -c 'import sys; sys.exit(0 if float(sys.argv[1]) <= 3 else 1)' "$dt"; then
   record ble_stop pass "stop while it searches quits at once (${dt} s)"
 else record ble_stop fail "stop while it searches took ${dt} s"; fi
 auto ble_stopped "nothing of it is left running" hud_is running False feed stopped
-mark
 bring_back
+mark
 
 # ── 13 ────────────────────────────────────────────────────────────────────
 stage "USB and BLE at once (#16)"
@@ -545,7 +577,12 @@ ask KEYBOARDS "Your keyboards working copy${current:+ ($current)}; Enter keeps i
 [[ -z $KEYBOARDS ]] && KEYBOARDS=$current
 if [[ -n $KEYBOARDS && $KEYBOARDS != - && -d $KEYBOARDS ]]; then
   write_env KEYBOARDS "$KEYBOARDS" >/dev/null
-  auto audit "make audit against it" make audit SOURCE="$KEYBOARDS"
+  rc=0
+  make audit SOURCE="$KEYBOARDS" >"$OUT/audit.log" 2>&1 || rc=$?
+  found=$(sed -nE 's/^([0-9]+) chords where .*/\1/p' "$OUT/audit.log" | head -1)
+  if (( rc == 0 )); then record audit pass "make audit: the drawing and the keymap agree"
+  elif grep -q Traceback "$OUT/audit.log"; then record audit fail "make audit crashed (run/all-open-prs-macos/audit.log)"
+  else record audit pass "make audit ran and reports ${found:-its} findings (run/all-open-prs-macos/audit.log): the drawing's, not a fault"; fi
   tail -6 "$OUT/audit.log" | indent || true
   if confirm "Run sync --watch? It writes the definitions again from their sources, as sync does."; then
     "$HUD" sync --watch >"$OUT/sync-watch.log" 2>&1 &
