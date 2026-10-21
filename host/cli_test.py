@@ -254,6 +254,9 @@ FAKE_PANEL = textwrap.dedent('''
         if panel.docked and os.path.exists(os.path.join(d, "too-big")):
             time.sleep(0.2)
             panel.page({"kind": "dock", "fits": False, "key_mm": 19, "need_mm": [191, 115], "room_mm": [150, 90]})
+        # A board docked with its keys made smaller to fit: the page says so as it docks.
+        if panel.docked and os.path.exists(os.path.join(d, "smaller")):
+            panel.page({"kind": "dock", "fits": True, "key_mm": 16.9, "want_mm": 18})
     signal.signal(panelstate.SIGNAL, asked)
     panel.start()
     time.sleep(30)
@@ -342,6 +345,13 @@ class ShowHide(unittest.TestCase):
         # The note of a refusal before is not this one's: a board that fits now docks.
         os.remove(os.path.join(self.tmp.name, "too-big"))
         self.assertEqual(0, self.run_cli("dock", "on", pids=[proc.pid])[0])
+
+    def test_a_board_docked_with_smaller_keys_says_how_small(self):
+        proc = self.start_panel()
+        open(os.path.join(self.tmp.name, "smaller"), "w").close()
+        self.assertEqual(0, self.run_cli("dock", "on", pids=[proc.pid])[0])
+        code, said = self.run_cli("dock", "status", pids=[proc.pid])
+        self.assertIn("dock: docked at 16.9 mm a key, smaller than touch.key_mm's 18 to fit, can type", said)
 
     def test_power_stops_a_running_hud_and_starts_one_that_is_not(self):
         with mock.patch.object(cli, "reexec_into_venv"), mock.patch.object(cli, "cmd_stop", return_value=0) as stop, \

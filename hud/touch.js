@@ -9,8 +9,8 @@
  * A sink comes from the host ({"kind":"touch","on":true,"sink":{...}}, sent through hud.receive,
  * typing then going back through the panel's bridge), or from a native shell or the remote page
  * calling hud.setTouch({output, repeat, pages, shortcuts, mouse, send}). Without one the board is
- * the HUD it always was -- and with one too, while the board is docked too big for its screen at
- * its real size (hud.js dockFit, the "fit" hook): a keyboard is typed on at its own size or not at all.
+ * the HUD it always was -- and with one too, while the board is docked too big for its screen even
+ * with its keys as small as touch.min_key_mm lets them be (hud.js dockFit, the "fit" hook).
  *
  * Touch typing counts nowhere: not the session, the WPM, the tallies. It warms the live heat
  * (touch.heat), except while a secret is being typed, and the typed-keys strip is put away while the
@@ -28,7 +28,7 @@
   let data = null, sink = null, engine = null, driver = null, decoder = null;
   let view = { ids: null, down: [], latched: {}, mods: 0 };
   let problem = "";              // the host's word on why typing cannot happen (typing.state)
-  let fits = true;               // the board at its real size fits the dock (hud.js dockFit)
+  let fits = true;               // the board fits the dock, its keys their size or smaller (hud.js dockFit)
   const pointers = new Map();    // pointerId -> {input, idx}
   let last = null, seq = 0, beat = null, deadTimer = null;
 

@@ -285,6 +285,7 @@
  "touch": {
   "enabled": 1,
   "key_mm": 18,
+  "min_key_mm": 16,
   "hold_ms": 280,
   "flavor": "balanced",
   "latch": 1,

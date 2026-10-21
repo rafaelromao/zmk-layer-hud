@@ -164,11 +164,13 @@ class Panel:
 
     def set_dock(self, on, note=None):
         """Docked along the bottom of a screen, typing, or floating where it was. `note`: why it
-        floats again when it is not asked to (the board too big for the screen at its real size)."""
+        floats again when it is not asked to (the board too big for the screen even with its keys
+        made smaller)."""
         if on == self.docked:
             return
         self.typing.release()
         self.extra.pop("dock_note", None)
+        self.extra.pop("dock_keys", None)
         if on:
             self.docked = True          # before it moves: a docked panel's place is not remembered
             msg = self.window.dock(True)
@@ -189,8 +191,16 @@ class Panel:
         self.write()
 
     def refused_dock(self, msg):
-        """The page's word that its board, at its real size, does not fit the dock (hud.js dockFit):
-        the HUD floats again, a HUD and not a keyboard, and says why."""
+        """The page's word that its board does not fit the dock, even with its keys made smaller
+        (hud.js dockFit): the HUD floats again, a HUD and not a keyboard, and says why. Or that it
+        docked with them smaller, which `dock status` says (dock_keys)."""
+        keys = dock_mod.smaller(msg)
+        if keys is not None:
+            if self.docked and self.extra.get("dock_keys", "") != keys:
+                self.log(f"docked with smaller keys: {keys}" if keys else "docked, its keys their own size again")
+                self.extra["dock_keys"] = keys
+                self.write()
+            return
         note = dock_mod.refusal(msg, self.settings()["dock"]["height_pct"])
         if note and self.docked:
             self.log(f"not docked: {note}")

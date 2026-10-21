@@ -256,9 +256,11 @@ turns that off.
   the Omarchy bar's Dock and Float do; its chevron minimizes it to a bar, still docked, giving the
   room back to the windows. Floating, the HUD types nothing; docked, a mouse types too.
 - **Its keys are their real size**: `touch.key_mm` apart (18 mm, Choc spacing; 19.05 for MX), from
-  the size the screen reports. A board that does not fit the screen at that size, or the dock's
-  share of it (`dock.height_pct`, 60%), is not docked: it stays a HUD, and `zmk-layer-hud dock` says
-  how big it is and how much room there was.
+  the size the screen reports. A board a little too big for the screen at that size, or for the
+  dock's share of it (`dock.height_pct`, 60%), has its keys made smaller to fit, down to
+  `touch.min_key_mm` (16 mm), and `zmk-layer-hud dock status` says so. One that does not fit even
+  then is not docked: it stays a HUD, and `zmk-layer-hud dock` says how big it is and how much room
+  there was.
 - **Typing needs leave once**: `zmk-layer-hud typing setup`. On Linux the HUD types through a
   virtual keyboard, and the setup installs a udev rule that lets the user at the seat make one
   (asking before each sudo step); on macOS it asks for Accessibility. Either way your layout
