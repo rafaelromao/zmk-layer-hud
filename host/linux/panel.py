@@ -479,6 +479,7 @@ def main():
         typing.release()
         hud.hide()
         extra.pop("dock_note", None)
+        extra.pop("dock_keys", None)
         if on:
             if not apply_dock():
                 hud.show_all()
@@ -551,7 +552,15 @@ def main():
         elif kind == "attach":  # the banner's attach/detach: docked as a touch keyboard, or floating
             if isinstance(msg.get("on"), bool):
                 set_dock(msg["on"])
-        elif kind == "dock":    # the board too big to type on here at its real size: a HUD, floating
+        elif kind == "dock":    # the board too big to type on here even with smaller keys: a HUD, floating
+            keys = dock_mod.smaller(msg)
+            if keys is not None:   # ...or docked with them smaller, which `dock status` says
+                if docked[0] and extra.get("dock_keys", "") != keys:
+                    print(f"panel: docked with smaller keys: {keys}" if keys else
+                          "panel: docked, its keys their own size again", file=sys.stderr, flush=True)
+                    extra["dock_keys"] = keys
+                    panelstate.write(RUN, shown[0], wpm=wpm[0], stats=stats[0], extra=extra)
+                return
             note = dock_mod.refusal(msg, pct)
             if note and docked[0]:
                 print(f"panel: not docked: {note}", file=sys.stderr, flush=True)

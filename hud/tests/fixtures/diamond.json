@@ -7285,6 +7285,7 @@
 "key_mm": 18,
 "latch": 1,
 "lock_ms": 350,
+"min_key_mm": 16,
 "repeat_delay_ms": 450,
 "repeat_ms": 60,
 "sound": 30,
