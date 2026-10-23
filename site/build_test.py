@@ -72,7 +72,8 @@ class HudFiles(unittest.TestCase):
         with open(os.path.join(build.REPO, "hud", "index.html"), encoding="utf-8") as f:
             names = build.hud_files(f.read())
         self.assertEqual(names[0], "index.html")
-        self.assertEqual(sorted(names[1:]), ["hud.css", "hud.js", "keys.js"])
+        self.assertEqual(sorted(names[1:]), ["engine.js", "hidtext.js", "hud.css", "hud.js",
+                                             "keynames.js", "keys.js", "keystrokes.js", "touch.js", "view.js"])
         for name in names:
             self.assertTrue(os.path.isfile(os.path.join(build.REPO, "hud", name)), name)
 
@@ -109,7 +110,8 @@ class Missing(unittest.TestCase):
     def test_a_config_that_is_not_there_never_falls_back_to_the_users_own(self):
         with self.assertRaises(build.BuildError) as e:
             build.build_board({"id": "x", "config": "config/nope.yaml"}, strict=True)
-        self.assertIn("no config/nope.yaml", str(e.exception))
+        self.assertIn("no config at", str(e.exception))
+        self.assertIn("config/nope.yaml", str(e.exception))
 
 
 def write(path, text="x"):
@@ -181,7 +183,13 @@ class WholeBuild(unittest.TestCase):
                 if b["demo"]:
                     with open(os.path.join(out, b["demo"]), encoding="utf-8") as f:
                         self.assertTrue(json.load(f)["timeline"])
-            self.assertEqual(sorted(os.listdir(os.path.join(out, "hud"))), ["hud.css", "hud.js", "index.html", "keys.js"])
+            self.assertEqual(sorted(os.listdir(os.path.join(out, "hud"))),
+                             ["engine.js", "hidtext.js", "hud.css", "hud.js", "index.html", "keynames.js",
+                              "keys.js", "keystrokes.js", "touch.js", "view.js"])
+            # The landing page does not type: its boards carry no touch keyboard.
+            for b in built:
+                with open(os.path.join(out, b["keymap"]), encoding="utf-8") as f:
+                    self.assertNotIn("actions", json.load(f))
             self.assertEqual(build.stale(out), [])
 
             # The output is committed: built again from the same sources, it is the same bytes.

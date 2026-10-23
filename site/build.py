@@ -85,6 +85,9 @@ def publish(message, board):
     out = dict(message)
     out["source"] = board["source"]
     out["hud"] = dict(message.get("hud") or {}, opacity=100, dark=1)
+    # The page shows the HUD and does not type: the touch keyboard's actions would only weigh it down.
+    for key in ("actions", "touch"):
+        out.pop(key, None)
     return out
 
 
@@ -115,8 +118,6 @@ def build_board(board, strict):
         log(f"site: {board['id']} skipped: {reason}")
 
     config = os.path.join(REPO, board["config"])
-    if not os.path.isfile(config):   # find_config would fall back to the user's own config
-        return cannot(f"no {board['config']}")
     try:
         message = keymap_mod.KeymapSource(config, log=log).load()
     except (keymap_mod.KeymapError, OSError) as e:

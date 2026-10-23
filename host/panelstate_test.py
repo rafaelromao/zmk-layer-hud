@@ -1,6 +1,7 @@
 """Tests for what a running panel says of itself (panel.json) and what the command line asks of it
 (panel.want)."""
 
+import json
 import os
 import signal
 import stat
@@ -37,6 +38,14 @@ class PrivateFile(unittest.TestCase):
         self.assertEqual((0o600, 0o700), (self.mode(self.path), self.mode(self.d)))
         with open(self.path) as f:
             self.assertEqual("new\n", f.read())                 # truncated, as a fresh log is
+
+    def test_a_panels_own_file_is_written_whole_and_this_users_alone(self):
+        # Where the panel was put on screen (state.json), written by both panels.
+        path = os.path.join(self.d, "state.json")
+        panelstate.write_json(path, {"frame": [1, 2, 3, 4], "linux": {"top": 8}})
+        self.assertEqual(0o600, self.mode(path))
+        with open(path) as f:
+            self.assertEqual({"frame": [1, 2, 3, 4], "linux": {"top": 8}}, json.load(f))
 
     def test_or_kept_and_appended_to(self):
         with panelstate.open_private(self.path, truncate=False) as f:   # the directory made too
@@ -100,7 +109,9 @@ class PanelState(unittest.TestCase):
     def test_what_a_live_panel_says_is_read_back(self):
         panelstate.write(self.d, False)
         self.assertEqual({"pid": os.getpid(), "shown": False, "wpm": 0, "avg_wpm": None, "top_wpm": None, "session": None,
-                          "stats": []}, panelstate.read(self.d))
+                          "stats": [], "typing": None, "dock": False, "dock_note": None, "dock_keys": None,
+                          "dock_at": None},
+                         panelstate.read(self.d))
         panelstate.write(self.d, True, wpm=63)
         self.assertEqual(63, panelstate.read(self.d)["wpm"])
         self.assertEqual(["panel.json"], os.listdir(self.d))       # no temporary file left beside it
@@ -168,6 +179,35 @@ class PanelState(unittest.TestCase):
         panelstate.ask(self.d, True)
         self.assertIs(True, panelstate.wanted(self.d))
 
+    def test_the_touch_keyboards_state_is_kept_checked(self):
+        panelstate.write(self.d, True, extra={"typing": "denied", "dock": True, "other": 1})
+        st = panelstate.read(self.d)
+        self.assertEqual(("denied", True), (st["typing"], st["dock"]))
+        self.assertNotIn("other", st)
+        panelstate.write(self.d, True, extra={"typing": "sideways", "dock": "yes"})
+        st = panelstate.read(self.d)
+        self.assertEqual((None, False), (st["typing"], st["dock"]))
+        # Why it is not docked: a sentence, not a page of anything.
+        panelstate.write(self.d, True, extra={"dock": False, "dock_note": "too big", "dock_at": 1760000000.5})
+        self.assertEqual(("too big", 1760000000.5), (panelstate.read(self.d)["dock_note"], panelstate.read(self.d)["dock_at"]))
+        for bad in ("", 5, "x" * (panelstate.NOTE_MAX + 1)):
+            panelstate.write(self.d, True, extra={"dock_note": bad, "dock_keys": bad})
+            self.assertEqual((None, None), (panelstate.read(self.d)["dock_note"], panelstate.read(self.d)["dock_keys"]),
+                             msg=repr(bad))
+        # Docked with smaller keys: how small, a sentence too.
+        panelstate.write(self.d, True, extra={"dock": True, "dock_keys": "at 16.9 mm a key"})
+        self.assertEqual("at 16.9 mm a key", panelstate.read(self.d)["dock_keys"])
+
+    def test_a_request_is_taken_once(self):
+        self.assertIsNone(panelstate.take_want(self.d, "dock"))
+        panelstate.request(self.d, "dock", True)
+        panelstate.request(self.d, "typing", "request")
+        self.assertIs(True, panelstate.take_want(self.d, "dock"))
+        self.assertIsNone(panelstate.take_want(self.d, "dock"))     # once
+        self.assertEqual("request", panelstate.take_want(self.d, "typing"))
+        with self.assertRaises(ValueError):
+            panelstate.request(self.d, "shown", True)
+
     def test_the_signal_is_never_sigusr1(self):
         # WebKit suspends its own threads with SIGUSR1 on Linux, and the GTK panel is a WebKit
         # process: sent there, SIGUSR1 hangs or crashes it.
@@ -178,6 +218,83 @@ class PanelState(unittest.TestCase):
             self.assertEqual("/s/zmk", panelstate.default_dir())
         with mock.patch.dict(os.environ, {"ZMKHUD_STATE": "", "XDG_STATE_HOME": "/x"}):
             self.assertEqual(os.path.join("/x", "zmk-layer-hud"), panelstate.default_dir())
+
+
+class Hud(unittest.TestCase):
+    """The HUD read once (panelstate.hud), with the processes the test says are running."""
+
+    ROOT = "/opt/zmk-layer-hud"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.d = self.tmp.name
+        self.panels, self.feeds = {}, {}
+
+    def procs(self, pattern):
+        return self.feeds if "hudfeed" in pattern else self.panels
+
+    def hud(self, root=ROOT):
+        return panelstate.hud(self.d, root, procs=self.procs)
+
+    def panel(self, pid, tree=ROOT, os_="linux"):
+        self.panels[pid] = f"/usr/bin/python3 {tree}/host/{os_}/panel.py"
+
+    def test_nothing_running(self):
+        h = self.hud()
+        self.assertEqual((False, False, False, None, "stopped"), (h["running"], h["said"], h["ours"], h["pid"], h["feed"]))
+        self.assertIsNone(h["shown"])
+
+    def test_a_panel_of_this_copy_that_said_so(self):
+        self.panel(os.getpid())
+        self.feeds[99] = f"python3 {self.ROOT}/host/hudfeed.py"
+        panelstate.write(self.d, False, wpm=40, extra={"typing": "ok"})
+        h = self.hud()
+        self.assertEqual((True, True, True, os.getpid()), (h["running"], h["said"], h["ours"], h["pid"]))
+        self.assertEqual((False, 40, "ok", "running"), (h["shown"], h["wpm"], h["typing"], h["feed"]))
+
+    def test_a_pid_handed_out_again_is_not_a_panel(self):
+        # panel.json names a live process -- this test's -- that is no HUD panel.
+        panelstate.write(self.d, True)
+        h = self.hud()
+        self.assertEqual((False, False, None), (h["running"], h["said"], h["shown"]))
+
+    def test_a_panel_from_another_copy_is_running_but_not_ours(self):
+        self.panel(os.getpid(), tree="/home/me/src/zmk-layer-hud")
+        panelstate.write(self.d, True)
+        h = self.hud()
+        self.assertEqual((True, True, False), (h["running"], h["said"], h["ours"]))
+        self.assertEqual(os.path.realpath("/home/me/src/zmk-layer-hud"), h["where"])
+
+    def test_another_copys_hud_is_one_the_icons_offer_nothing_for(self):
+        # This copy's show, hide and stop refuse it (cli.another_copy): an icon that offered them
+        # would do nothing at a click, and say nothing either.
+        self.panel(os.getpid(), tree="/home/me/src/zmk-layer-hud")
+        panelstate.write(self.d, True)
+        self.assertEqual("another copy", self.hud()["icon"])
+
+    def test_the_icons_show_this_copys_hud_as_it_said_it_is(self):
+        self.assertEqual("stopped", self.hud()["icon"])
+        self.panel(os.getpid())
+        self.assertEqual("stopped", self.hud()["icon"])     # still starting: nothing to show or hide yet
+        panelstate.write(self.d, True)
+        self.assertEqual("shown", self.hud()["icon"])
+        panelstate.write(self.d, False)
+        self.assertEqual("hidden", self.hud()["icon"])
+
+    def test_a_panel_of_this_copy_that_has_said_nothing_yet(self):
+        self.panel(4242)
+        h = self.hud()
+        self.assertEqual((True, False, True, 4242), (h["running"], h["said"], h["ours"], h["pid"]))
+
+    def test_the_macos_panel_runs_the_feed(self):
+        self.panel(os.getpid(), os_="macos")
+        panelstate.write(self.d, True)
+        self.assertEqual("in the panel", self.hud()["feed"])
+
+    def test_the_feed_run_on_its_own(self):
+        self.feeds[7] = "/usr/bin/python3 /home/me/.local/bin/zmk-layer-hud feed --raw"
+        self.assertEqual("running", self.hud()["feed"])
 
 
 if __name__ == "__main__":

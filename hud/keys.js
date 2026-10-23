@@ -6,11 +6,10 @@
   "use strict";
   const host = document.getElementById("keys");
   if (!host) return;
-  const NAMED = { space: "␣", return: "↵", escape: "⎋", delete: "⌫", forwarddelete: "⌦", tab: "⇥",
-    left: "←", right: "→", up: "↑", down: "↓", home: "⇱", end: "⇲", pageup: "⇞", pagedown: "⇟",
-    insert: "⎀", capslock: "⇪", cancel: "cancel" };
-  for (let i = 1; i <= 24; i++) NAMED["f" + i] = "F" + i;
-  const MODS = [["cmd", "⌘"], ["ctrl", "⌃"], ["alt", "⌥"], ["shift", "⇧"]];
+  // Named keys and modifiers -> their glyphs, modifiers in the order a chord is drawn (⌘⌃⌥⇧): the
+  // key vocabulary (host/keynames.py), which keynames.js loads first, here and in keys.html.
+  const NAMED = window.ZmkKeyNames.GLYPHS;
+  const MODS = Object.entries(window.ZmkKeyNames.MOD_GLYPHS);
   const IDLE_MS = 1800, MAX_CHIPS = 5;
   let current = null, lastAt = 0, timer = null;
 

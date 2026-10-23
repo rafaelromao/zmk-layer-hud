@@ -7,17 +7,22 @@ poke`) is drawn on this page, marked as not the keyboard's.
 
     .venv/bin/python3 host/macos/panel.py            # or host/macos/start.sh
 
+What the page says and the command line asks are the panel's (host/panelcore.py); this is its
+window here: drawn, placed, moved and hidden with AppKit.
+
 The window opens on the screen that has keyboard focus, can be dragged anywhere, and remembers
 its position in ~/.config/zmk-layer-hud/state.json. Needs pyobjc-framework-Cocoa and
 pyobjc-framework-WebKit in the venv (make venv installs them on macOS). The first run asks for
 Input Monitoring for the app that launched this (your terminal).
 """
 
+import asyncio
 import json
 import os
 import secrets
 import signal
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -40,9 +45,14 @@ except ImportError:
     sys.exit("panel: pyobjc is required: make venv (installs pyobjc-framework-Cocoa and -WebKit)")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import cgevent  # noqa: E402  (host/macos/cgevent.py)
+import dock as dock_mod  # noqa: E402  (host/dock.py)
 import hudfeed  # noqa: E402
+import inject  # noqa: E402  (host/inject.py)
+import panelcore  # noqa: E402  (host/panelcore.py)
 import session as session_mod  # noqa: E402  (host/session.py)
 import panelstate  # noqa: E402  (host/panelstate.py)
+import remote as remote_mod  # noqa: E402  (host/remote.py)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 PAGES = ROOT / "hud"
@@ -75,10 +85,15 @@ def load_state():
         return {}
 
 
-def save_state(state):
+def save_state(changes):
+    """Merged into what is there: the frame and whether it was docked are kept side by side (and the
+    Linux panel's own, should one config be shared)."""
+    state = load_state()
+    state = state if isinstance(state, dict) else {}
+    state.update(changes)
     try:
         STATE.parent.mkdir(parents=True, exist_ok=True)
-        STATE.write_text(json.dumps(state))
+        panelstate.write_json(str(STATE), state)     # whole or not at all
     except OSError as e:
         log(f"could not save {STATE}: {e}")
 
@@ -124,6 +139,11 @@ class DragWebView(WKWebView):
 
     def mouseDownCanMoveWindow(self):
         return False
+
+    def acceptsFirstMouse_(self, event):
+        # The panel is never the key window: every click on it is a first click, and a key
+        # touched on the board has to reach the page on that one.
+        return True
 
     @objc.python_method
     def track_pointer(self):
@@ -184,50 +204,15 @@ class DragWebView(WKWebView):
 
 
 class Bridge(NSObject):
-    """Page → host messages (the ✕ posts "close", its hide button {"kind": "hide"}, the stats column's
-    heading {"kind": "site"}; the page's counts and the heatmap it switched to go to the session) and
-    window events. Only this panel's own page can post here, so it needs no token the way a WebSocket
-    client does."""
+    """Page messages, handed to the panel (host/panelcore.py; the page's counts and the heatmap it
+    switched to go on to the session), and window events. Only this panel's own page can post here,
+    so it needs no token the way a WebSocket client does."""
 
     def userContentController_didReceiveScriptMessage_(self, controller, message):
-        body = str(message.body())
-        if body == "close":
-            log("close requested by the page")
-            AppHelper.stopEventLoop()
-            return
-        try:
-            msg = json.loads(body)
-        except ValueError:
-            return
-        kind = msg.get("kind") if isinstance(msg, dict) else None
-        if kind == "size":
-            Host.instance.resize(msg.get("width"), msg.get("height"))
-        elif kind == "hide":        # the page's hide button
-            Host.instance.set_shown(False)
-        elif kind == "site":        # the stats column's heading: the landing page, in the browser
-            NSWorkspace.sharedWorkspace().openURL_(NSURL.URLWithString_(panelstate.SITE))
-        elif kind == "wpm":
-            Host.instance.set_wpm(msg.get("wpm"))
-        elif kind == "stats":       # what its stats column shows, for the menubar's menu
-            Host.instance.set_stats(msg)
-        elif kind == "nodrag":
-            rects = msg.get("rects")
-            if isinstance(rects, list):
-                DragWebView.no_drag = [tuple(float(v) for v in r) for r in rects
-                                       if isinstance(r, list) and len(r) == 4 and all(isinstance(v, (int, float)) for v in r)]
-        elif kind in ("tally", "heatmap", "pref"):
-            store = Host.instance.feed.sessions if Host.instance and Host.instance.feed else None
-            if store is None:
-                return
-            try:
-                if kind == "tally":
-                    store.apply(msg)
-                elif kind == "heatmap":
-                    store.set_heatmap(msg.get("mode"))
-                else:
-                    store.set_pref(msg.get("name"), msg.get("value"))
-            except Exception as e:  # a count that could not be kept must not take the panel down
-                log(f"session: {type(e).__name__}: {e}")
+        # The touch keyboard types only for the page itself: its main frame, loaded from disk.
+        frame = message.frameInfo()
+        from_page = bool(frame.isMainFrame()) and str(frame.securityOrigin().protocol()) == "file"
+        Host.instance.core.page(str(message.body()), from_page)
 
     # The menu's session items (DragWebView.willOpenMenu_withEvent_). What was counted and not yet
     # written goes first, and the store is read again at once, so the page shows the change now
@@ -258,8 +243,15 @@ class Bridge(NSObject):
         self._sessions(session_mod.new)
 
     def windowDidMove_(self, notification):
+        if Host.instance and Host.instance.docked:
+            return                  # the dock's place is not where the floating HUD goes back to
         f = notification.object().frame()
         save_state({"frame": [f.origin.x, f.origin.y, f.size.width, f.size.height]})
+
+    def screensChanged_(self, notification):
+        """A screen came, went or changed (the Dock moved, the resolution): docked, it docks again."""
+        if Host.instance and Host.instance.docked:
+            Host.instance.redock()
 
     def applicationWillTerminate_(self, notification):
         """The one way out that still runs Python: stopEventLoop (✕, a signal) ends in
@@ -267,6 +259,13 @@ class Bridge(NSObject):
         after runEventLoop never runs. What the session has counted and not yet written goes now."""
         if Host.instance:
             Host.instance.stop()
+
+    def webView_decidePolicyForNavigationAction_decisionHandler_(self, webview, action, handler):
+        """Only the HUD's own pages load in the panel. The page can type (the touch keyboard), so
+        whatever is shown there must be it."""
+        url = action.request().URL()
+        path = str(url.path() or "") if url is not None and url.isFileURL() else ""
+        handler(1 if path.startswith(str(PAGES) + "/") else 0)   # WKNavigationActionPolicyAllow : Cancel
 
     def webView_didStartProvisionalNavigation_(self, webview, navigation):
         Host.instance.page_leaving()
@@ -293,6 +292,18 @@ def ask_name(message, default):
     return field.stringValue().strip() if field is not None and ok else None
 
 
+class OnMain:
+    """An object's methods called on the main thread, whoever calls them: remote mode's typing,
+    asked for on the remote server's loop and pressed where the panel's own keys are."""
+
+    def __init__(self, obj):
+        self.obj = obj
+
+    def __getattr__(self, name):
+        fn = getattr(self.obj, name)
+        return lambda *a: AppHelper.callAfter(fn, *a)
+
+
 class Host:
     """Owns the window, the page and the in-process feed; marshals feed messages to the page."""
 
@@ -301,14 +312,27 @@ class Host:
     def __init__(self):
         Host.instance = self
         self.stopped = False
-        self.shown = not HIDDEN
-        self.wpm = 0
-        self.stats = None               # the page's stats column, once it has said it (panelstate.stats_of)
+        self.feed = None
         self.ready = False
         self.loaded = False             # the first page has loaded (page_ready): a later one is a reload
         self.queue = []
         self.standing = {}              # kind -> the latest of it, for a reloaded page
+        self.dock_screen = None
+        self.page_h = 0                 # how tall the page last said it is
         self.bridge = Bridge.alloc().init()
+        # The touch keyboard's keys (host/inject.py): CoreGraphics events, once macOS allows them,
+        # repeated at the user's own key-repeat settings while held. Before the page, whose
+        # navigation lets its keys go.
+        self.typing = inject.Typing(self.make_typist_backend, lambda msg: self.core.tell(msg), AppHelper.callLater,
+                                    pages=[inject.KEY_PAGE], log=log)
+        # The panel (host/panelcore.py): what the page says and the CLI asks, and panel.json; this
+        # window is how it is drawn and placed here.
+        self.core = panelcore.Panel(
+            panelcore.Window(show=self.show_window, front=lambda: self.panel.orderFrontRegardless(),
+                             dock=self.dock_window, resize=self.resize, no_drag=self.set_no_drag,
+                             open=self.open_url, tell=self.deliver, typing_access=self.request_typing,
+                             close=self.close, let_go=self.let_go),
+            RUN, self.typing, self.settings, said=self.said, shown=not HIDDEN, log=log)
 
         frame = initial_frame()
         panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -327,6 +351,8 @@ class Host:
             self.bridge, "windowDidMove:", "NSWindowDidMoveNotification", panel)
         NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
             self.bridge, "applicationWillTerminate:", "NSApplicationWillTerminateNotification", None)
+        NSNotificationCenter.defaultCenter().addObserver_selector_name_object_(
+            self.bridge, "screensChanged:", "NSApplicationDidChangeScreenParametersNotification", None)
 
         config = WKWebViewConfiguration.alloc().init()
         ucc = WKUserContentController.alloc().init()
@@ -365,9 +391,21 @@ class Host:
         hub = hudfeed.Hub(on_sent_in=lambda msg: AppHelper.callAfter(self.deliver, msg), token=self.token)
         self.socket = hudfeed.HubThread(hub, int(os.environ.get("ZMKHUD_PORT", "8766")), log=log)
 
+        # Remote mode (host/remote.py): a paired tablet's browser typing here, through keys of its
+        # own pressed on the main thread like the page's; its server runs on a loop of its own, and
+        # serves nothing until `zmk-layer-hud remote on` asks.
+        self.remote_typing = inject.Typing(self.make_typist_backend, lambda msg: self.remote.tell(msg),
+                                           AppHelper.callLater, pages=[inject.KEY_PAGE], log=log)
+        loop = asyncio.new_event_loop()
+        self.remote = remote_mod.Controller(RUN, OnMain(self.remote_typing), log=log, loop=loop)
+        self.remote_thread = threading.Thread(target=lambda: loop.run_until_complete(self.remote.run()),
+                                              name="remote", daemon=True)
+        self.remote_thread.start()
+
         def emit(msg):
             AppHelper.callAfter(self.deliver, msg)
             self.socket.send(msg)
+            self.remote.hub_said(msg)
         self.feed = hudfeed.Feed(emit, log=log).start()
         hub.on_inject, hub.sessions = self.feed.resync, self.feed.sessions
         self.socket.start()
@@ -376,35 +414,163 @@ class Host:
         width = (self.feed.cfg.get("hud") or {}).get("width")
         if width:
             self.resize(int(width), None)
+        # Docked from the start when asked (`start --dock`, dock.start), or when it was left docked.
+        if panelcore.starts_docked(load_state().get("dock"), self.settings(), os.environ):
+            AppHelper.callAfter(self.core.set_dock, True)
         # main() put the signal's handler in first: the CLI signals whatever pid this file names.
-        panelstate.write(RUN, self.shown)
+        self.core.start()
         panelstate.write_token(RUN, self.token)
 
-    def set_shown(self, shown):
-        """On screen or off it; the page goes on as before either way."""
-        if shown != self.shown:
-            self.shown = shown
-            self.panel.setAlphaValue_(1.0 if shown else 0.0)
-            if self.ready:          # otherwise page_ready puts the style in, with the page
-                self.web.evaluateJavaScript_completionHandler_(SHOW_JS if shown else HIDE_JS, None)
-            if DEBUG and not shown:
-                AppHelper.callLater(3.0, self.say_visibility)
-        if shown:
-            self.panel.orderFrontRegardless()
-        panelstate.write(RUN, shown, wpm=self.wpm, stats=self.stats)
+    def settings(self):
+        """The config's touch:, dock: and remote: (host/keymap.py host_settings), its defaults when
+        the config does not load."""
+        km = hudfeed.keymap_mod
+        try:
+            return km.host_settings(self.feed.cfg or {})
+        except km.KeymapError as e:
+            log(f"touch keyboard: {e}; its defaults instead")
+            return km.host_settings({})
 
-    def set_wpm(self, wpm):
-        """The page's live WPM, for the menubar icon (host/macos/menubar.py) to show beside it."""
-        if isinstance(wpm, int) and wpm != self.wpm:
-            self.wpm = wpm
-            panelstate.write(RUN, self.shown, wpm=wpm, stats=self.stats)
+    def target_screen(self):
+        """The screen to dock on: the one dock.screen names, else the one under the pointer (the HUD
+        is never the key window, so the focused screen is not its to know), else the main one."""
+        wanted = self.settings()["dock"]["screen"].lower()
+        screens = list(NSScreen.screens())
+        if wanted:
+            for s in screens:
+                if wanted in str(s.localizedName()).lower():
+                    return s
+        at = NSEvent.mouseLocation()
+        for s in screens:
+            f = s.frame()
+            if f.origin.x <= at.x < f.origin.x + f.size.width and f.origin.y <= at.y < f.origin.y + f.size.height:
+                return s
+        return focused_screen()
 
-    def set_stats(self, msg):
-        """The page's average and top WPM and the rows of its stats column, for the menubar's menu."""
-        stats = panelstate.stats_of(msg)
-        if stats is not None and stats != self.stats:
-            self.stats = stats
-            panelstate.write(RUN, self.shown, wpm=self.wpm, stats=stats)
+    def dock_frame(self):
+        """Along the bottom of the dock's screen, above the Dock (visibleFrame leaves it and the menu
+        bar out), as wide as the screen and as tall as the page within its share."""
+        vf = self.dock_screen.visibleFrame()
+        h = dock_mod.height(self.page_h, vf.size.height, self.settings()["dock"]["height_pct"])
+        return NSMakeRect(vf.origin.x, vf.origin.y, vf.size.width, h), vf
+
+    def dock_message(self, vf, settings):
+        msg = {"kind": "dock", "on": True, "split": bool(settings["dock"]["split"]),
+               "max_height": dock_mod.max_height(vf.size.height, settings["dock"]["height_pct"])}
+        if settings["touch"]["enabled"]:       # a keyboard: its keys their real size, or no keyboard
+            msg.update(px_per_mm=self.px_per_mm(self.dock_screen), width=vf.size.width)
+        return msg
+
+    @staticmethod
+    def px_per_mm(screen):
+        """How many of a screen's points -- the page's CSS pixels -- are a millimetre on it: its size
+        as its EDID tells macOS (CGDisplayScreenSize) over its frame, which a scaled screen has fewer
+        points in than its panel has pixels."""
+        f = screen.frame()
+        try:
+            wmm, hmm = cgevent.screen_mm(int(screen.deviceDescription()["NSScreenNumber"]))
+        except Exception as e:      # no CoreGraphics, no number: measured as CSS measures
+            log(f"dock: the screen's size: {type(e).__name__}: {e}")
+            wmm = hmm = 0
+        ppmm, measured = dock_mod.px_per_mm(f.size.width, f.size.height, wmm, hmm)
+        if not measured:
+            log(f"dock: {screen.localizedName()} does not say how big it is; its keys drawn at 96 points to the inch")
+        return ppmm
+
+    @property
+    def shown(self):
+        return self.core.shown
+
+    @property
+    def docked(self):
+        return self.core.docked
+
+    def dock_window(self, on):
+        """Docked, the panel is a strip over the bottom of a screen -- an overlay: macOS has no room
+        for an app to reserve -- and every click on it is the page's; floating, it goes back where
+        it was (panelcore.Panel.set_dock)."""
+        msg = None
+        if on:
+            self.dock_screen = self.target_screen()
+            frame, vf = self.dock_frame()
+            self.place(frame)
+            msg = self.dock_message(vf, self.settings())
+            log(f"docked on {self.dock_screen.localizedName()}")
+        else:
+            self.place(initial_frame())
+        save_state({"dock": on})
+        return msg
+
+    def redock(self):
+        screens = list(NSScreen.screens())
+        if self.dock_screen not in screens:
+            self.dock_screen = self.target_screen()
+        frame, vf = self.dock_frame()
+        self.place(frame)
+        self.deliver(self.dock_message(vf, self.settings()))     # another screen, or the same one at another size
+
+    def place(self, frame):
+        self.panel.setFrame_display_(frame, True)
+        self.web.setFrame_(((0, 0), (frame.size.width, frame.size.height)))
+
+    def said(self, msg):
+        """A page message for the session: its counts, its heatmap and preferences (session.Store.SAID)."""
+        store = self.feed.sessions if self.feed else None
+        if store is None:
+            return
+        try:
+            store.apply_said(msg)
+        except Exception as e:  # a count that could not be kept must not take the panel down
+            log(f"session: {type(e).__name__}: {e}")
+
+    @staticmethod
+    def set_no_drag(rects):
+        DragWebView.no_drag = rects
+
+    @staticmethod
+    def open_url(url):
+        NSWorkspace.sharedWorkspace().openURL_(NSURL.URLWithString_(url))
+
+    @staticmethod
+    def close():
+        log("close requested by the page")
+        AppHelper.stopEventLoop()
+
+    def request_typing(self):
+        """`zmk-layer-hud typing setup`: macOS's prompt, and its Accessibility pane, where the
+        switch is. Typing that is waiting for it notices within seconds (inject.Typing)."""
+        if cgevent.request_access():
+            log("typing: macOS allows this app to post key events")
+            return
+        NSWorkspace.sharedWorkspace().openURL_(NSURL.URLWithString_(
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"))
+
+    @staticmethod
+    def make_typist_backend():
+        if not cgevent.access():
+            raise inject.Unavailable("denied", "macOS has not allowed this app to post key events (Accessibility)")
+
+        def schedule(seconds, fn):
+            handle = {"live": True}
+            AppHelper.callLater(seconds, lambda: handle["live"] and fn())
+            return handle
+
+        def cancel(handle):
+            handle["live"] = False
+        return cgevent.CGBackend(schedule=schedule, cancel=cancel,
+                                 delay=float(NSEvent.keyRepeatDelay()), interval=float(NSEvent.keyRepeatInterval()))
+
+    def let_go(self):
+        if self.ready:
+            self.web.evaluateJavaScript_completionHandler_("window.hud && hud.touch && hud.touch.releaseAll()", None)
+
+    def show_window(self, shown):
+        """Drawn, or drawn as nothing (HIDE_JS); the page goes on as before either way."""
+        self.panel.setAlphaValue_(1.0 if shown else 0.0)
+        if self.ready:          # otherwise page_ready puts the style in, with the page
+            self.web.evaluateJavaScript_completionHandler_(SHOW_JS if shown else HIDE_JS, None)
+        if DEBUG and not shown:
+            AppHelper.callLater(3.0, self.say_visibility)
 
     def say_visibility(self):
         """ZMKHUD_DEBUG: what WebKit makes of the hidden HUD. `visible` is the point of hiding it
@@ -414,7 +580,13 @@ class Host:
         self.web.evaluateJavaScript_completionHandler_("document.visibilityState", said)
 
     def resize(self, width, height):
-        """The page knows how tall the layout is; keep the top-left corner where the user put it."""
+        """The page knows how tall the layout is; keep the top-left corner where the user put it.
+        Docked, the bottom edge stays on the screen's and the width is the screen's."""
+        if self.docked:
+            if height:
+                self.page_h = float(height)
+                self.place(self.dock_frame()[0])
+            return
         f = self.panel.frame()
         w = float(width or f.size.width)
         h = float(height or f.size.height)
@@ -426,11 +598,13 @@ class Host:
 
     # What a page loaded afresh (a reload from the page's menu) has to be told again: the latest of
     # each, since the feed says them once, when they change. Keys come and go and are not kept.
-    STANDING = ("keymap", "layers", "device", "session", "secure")
+    STANDING = ("keymap", "layers", "device", "session", "secure", "touch", "typing", "dock")
 
     def mouse_down(self, event):
         if event.window() is None or event.window() != self.panel:
             return event
+        if self.docked:
+            return event            # docked, nothing moves it: every press is the page's
         if self.web.on_control(event):
             if DEBUG:
                 log("mouse down on a control: the page has it")
@@ -449,8 +623,10 @@ class Host:
         self.queue = []
 
     def page_leaving(self):
-        """A reload has begun: until the new page is ready, messages wait for it."""
+        """A reload has begun: until the new page is ready, messages wait for it, and the keys it
+        held go up."""
         self.ready = False
+        self.typing.release()
 
     def deliver(self, msg):
         data = json.dumps(msg, ensure_ascii=False)
@@ -485,7 +661,11 @@ class Host:
         if self.stopped:
             return
         self.stopped = True
-        panelstate.remove(RUN)
+        self.typing.stop()              # keys up before the panel goes
+        self.remote.stop()              # no tablet's keys after this
+        self.remote_thread.join(timeout=2)
+        self.remote_typing.stop()
+        self.core.stop()
         panelstate.remove_token(RUN, self.token)
         self.feed.stop()
         self.socket.stop()
@@ -502,10 +682,9 @@ def main():
         MachSignals.signal(sig, lambda _sig: AppHelper.stopEventLoop())
 
     def asked(_sig):
-        # `zmk-layer-hud show` / `hide`: what they want is in panel.want.
-        want = panelstate.wanted(RUN)
-        if want is not None and Host.instance:
-            Host.instance.set_shown(want)
+        # `zmk-layer-hud show` / `hide`, `dock`, `typing setup`: what they want is in $STATE.
+        if Host.instance:
+            Host.instance.core.wake()
     MachSignals.signal(panelstate.SIGNAL, asked)
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)  # no Dock icon, no menu bar

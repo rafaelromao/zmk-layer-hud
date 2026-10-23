@@ -8,7 +8,9 @@ import qs.Ui
 // while it is hidden (still counting); the glyph crossed out when it is not running. The WPM is the
 // live one, or the session's average or top, as the menu picked. A click shows or hides the HUD, or
 // starts it. A right-click offers the three WPMs, each with its number now, then the same and Quit,
-// each beside its global shortcut. Resting the pointer on it opens the HUD's stats column, laid out
+// each beside its global shortcut. A HUD from another copy of zmk-layer-hud is that copy's to show,
+// hide or stop, which this copy's command line refuses: the glyph stays dimmed, and the menu says
+// where it runs and offers nothing for it. Resting the pointer on it opens the HUD's stats column, laid out
 // across: the same tiles the HUD shows (`stats:` in its config), in the shell's own popout.
 //
 // The shortcuts are Hyprland binds that `zmk-layer-hud start` writes (host/shortcuts.py); their
@@ -32,12 +34,14 @@ BarWidget {
   readonly property string command: installedCommand.charAt(0) === "/"
     ? installedCommand : home + "/.local/bin/zmk-layer-hud"
   readonly property string stateDir: installedState.charAt(0) === "/"
-    ? installedState : (Quickshell.env("XDG_STATE_HOME") || home + "/.local/state") + "/zmk-layer-hud"
+    ? installedState : Quickshell.env("ZMKHUD_STATE")
+      || (Quickshell.env("XDG_STATE_HOME") || home + "/.local/state") + "/zmk-layer-hud"
   // What a start runs through (uwsm-app --), so a HUD the bar started outlives a shell restart.
   readonly property var startWith: installedStartWith.indexOf("__") === 0
     ? [] : installedStartWith.split(" ").filter(w => w.length)
 
-  property string hud: "stopped"      // shown | hidden | stopped
+  property string hud: "stopped"      // shown | hidden | stopped | elsewhere (another copy's)
+  property string elsewhere: ""       // the copy a HUD runs from, when it is another copy's
   property var keys: ({})             // {"toggle": "Ctrl+Alt+L", "power": "Ctrl+Alt+Super+L"}
   property int pid: 0
   property int wpm: 0
@@ -47,26 +51,56 @@ BarWidget {
   property var rows: []               // the HUD's stats column: [[label, value], ...]
   property string rowsText: ""        // ...as it was read, so the same rows are not taken again
   property string wpmChoice: "current"    // which WPM the bar shows: current | average | top
+  property bool docked: false         // the touch keyboard: docked along the bottom, typing
+  property string typing: ""          // ok | off | denied | missing | error, as the HUD says it
+  property bool remoteOn: false       // remote mode: a paired tablet may type here (remote.live.json)
   property bool menuOpen: false
   property bool hoverOpen: false
 
   readonly property color popupText: Color.popups.text
   readonly property string fontName: root.bar ? root.bar.fontFamily : Style.font.family
 
+  // panel.json, watched: what the HUD shows and its numbers, the moment it says them. Whether a HUD
+  // stands behind it is the command line's to say (readHud).
   function read(text) {
+    const before = root.pid
     try {
       const st = JSON.parse(text)
+      if (typeof st.pid !== "number" || typeof st.shown !== "boolean") { root.stopped(); return }
       root.pid = st.pid
       root.wpm = typeof st.wpm === "number" ? st.wpm : 0
       root.avgWpm = typeof st.avg_wpm === "number" ? st.avg_wpm : null
       root.topWpm = typeof st.top_wpm === "number" ? st.top_wpm : null
       root.session = typeof st.session === "string" ? st.session : ""
       root.takeRows(Array.isArray(st.stats) ? st.stats : [])
-      root.hud = st.shown ? "shown" : "hidden"
+      root.docked = st.dock === true
+      root.typing = typeof st.typing === "string" ? st.typing : ""
+      root.hud = root.elsewhere ? "elsewhere" : st.shown ? "shown" : "hidden"
     } catch (e) {
       root.stopped()
     }
+    // A HUD that has just come (or a new one): asked now, not at the next tick. Every number it
+    // writes is not -- the WPM alone rewrites the file while typing.
+    if (root.pid !== before) root.askStatus()
   }
+  // `zmk-layer-hud status --json`, as $STATE/hud.json: the HUD as the command line and the macOS
+  // icon read it (panelstate.hud). A panel.json no HUD panel stands behind -- one left by a HUD that
+  // died, its pid handed out again -- is a stopped HUD, and remote mode is on only while its server
+  // lives.
+  function readHud(text) {
+    try {
+      const h = JSON.parse(text)
+      root.remoteOn = !!(h.remote && h.remote.serving === true)
+      if (!h.running || !h.said) { root.elsewhere = ""; root.stopped(); return }
+      if (h.icon === "another copy") { root.elsewhere = h.where || "another copy"; root.hud = "elsewhere"; return }
+      if (root.elsewhere) { root.elsewhere = ""; panelFile.reload() }
+      root.docked = h.dock === true
+      root.typing = typeof h.typing === "string" ? h.typing : ""
+    } catch (e) {
+      root.remoteOn = false
+    }
+  }
+  function askStatus() { if (!statusRun.running) statusRun.running = true }
   function takeRows(rows) {
     const text = JSON.stringify(rows)
     if (text !== root.rowsText) { root.rowsText = text; root.rows = rows }
@@ -87,6 +121,11 @@ BarWidget {
     const env = ["env", "ZMKHUD_STATE=" + root.stateDir, root.command]
     Quickshell.execDetached((verb === "start" ? root.startWith : []).concat(env, [verb], more || []))
   }
+  // In a terminal: what asks before each sudo step needs one to ask in.
+  function runInTerminal(verb, more) {
+    Quickshell.execDetached(["xdg-terminal-exec", "env", "ZMKHUD_STATE=" + root.stateDir, root.command, verb]
+      .concat(more || []))
+  }
 
   // The bar keeps one popout open at a time: it asks the one open to close when another opens.
   function close() { root.menuOpen = false }
@@ -103,7 +142,8 @@ BarWidget {
   // has left both the icon and the panel. Never over the menu, and only for a HUD that runs and has
   // said what its column shows.
   readonly property bool pointerIn: button.tooltipHovered || hoverCard.containsMouse
-  readonly property bool canHover: root.hud !== "stopped" && root.rows.length > 0 && !root.menuOpen
+  readonly property bool canHover: (root.hud === "shown" || root.hud === "hidden") && root.rows.length > 0
+    && !root.menuOpen
   onPointerInChanged: { hoverTimer.interval = root.pointerIn ? 400 : 150; hoverTimer.restart() }
   onCanHoverChanged: if (!root.canHover) root.hoverOpen = false
 
@@ -125,6 +165,14 @@ BarWidget {
     onFileChanged: reload()
     onLoaded: root.read(text())
     onLoadFailed: root.stopped()
+  }
+
+  FileView {
+    id: hudFile
+    path: root.stateDir + "/hud.json"
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: root.readHud(text())
   }
 
   FileView {
@@ -152,11 +200,13 @@ BarWidget {
     onLoadFailed: root.wpmChoice = "current"
   }
 
-  // A HUD that died without a word leaves its panel.json behind: its pid says whether it lives.
+  // The command line's word on the HUD, written whole into hud.json for hudFile to read -- this
+  // user's alone, as everything in $STATE is: it carries the WPM and the session's name.
   Process {
-    id: alive
-    command: ["kill", "-0", String(root.pid)]
-    onExited: (code, status) => { if (code !== 0) root.stopped() }
+    id: statusRun
+    command: ["env", "ZMKHUD_STATE=" + root.stateDir, "sh", "-c",
+              'umask 077 && "$1" status --json > "$2/hud.json.tmp" && mv "$2/hud.json.tmp" "$2/hud.json"',
+              "sh", root.command, root.stateDir]
   }
 
   Timer {
@@ -166,7 +216,7 @@ BarWidget {
     onTriggered: {
       panelFile.reload()
       choiceFile.reload()     // written by a rename too, and maybe not there when the watch began
-      if (root.pid > 0 && !alive.running) alive.running = true
+      root.askStatus()
     }
   }
 
@@ -185,12 +235,13 @@ BarWidget {
     // While the HUD runs the hover panel says it all. The tooltip says how to start it, or, for a
     // HUD from before it said its stats, what a click does.
     tooltipText: root.hud === "stopped" ? "ZMK layer HUD is not running: click to start it"
+      : root.hud === "elsewhere" ? "ZMK layer HUD: the one running is " + root.elsewhere + "'s to show, hide or stop"
       : root.rows.length ? ""
       : root.hud === "shown" ? "ZMK layer HUD: click to hide it (it keeps counting)"
       : "ZMK layer HUD, hidden and counting: click to show it"
     onPressed: (mouseButton) => {
       root.hoverOpen = false
-      if (mouseButton === Qt.RightButton) {
+      if (mouseButton === Qt.RightButton || root.hud === "elsewhere") {
         root.menuOpen = !root.menuOpen
       } else if (mouseButton === Qt.LeftButton) {
         root.run(root.hud === "stopped" ? "start" : "toggle")
@@ -216,7 +267,7 @@ BarWidget {
 
     Text {
       anchors.verticalCenter: parent.verticalCenter
-      visible: root.hud !== "stopped"
+      visible: root.hud === "shown" || root.hud === "hidden"
       text: root.wpmOf(root.wpmChoice)
       color: root.bar ? root.bar.barForeground : "white"
       font.family: root.fontName
@@ -242,7 +293,9 @@ BarWidget {
 
   // The right-click menu, drawn as the tray draws its menus. Its rows change only with the HUD's
   // state; the numbers in them follow the HUD while it is open.
-  readonly property var menuRows: root.hud === "stopped"
+  readonly property var menuRows: root.hud === "elsewhere"
+    ? [{ kind: "note", text: "HUD running from " + root.elsewhere }]
+    : root.hud === "stopped"
     ? [{ kind: "item", text: "Start HUD", verb: "start", shortcut: "power" }]
     : [{ kind: "wpm", text: "Current WPM", choice: "current" },
        { kind: "wpm", text: "Average WPM", choice: "average" },
@@ -250,7 +303,15 @@ BarWidget {
        { kind: "separator" },
        { kind: "item", text: root.hud === "shown" ? "Hide HUD" : "Show HUD",
          verb: root.hud === "shown" ? "hide" : "show", shortcut: "toggle" },
-       { kind: "item", text: "Quit HUD", verb: "stop", shortcut: "power" }]
+       // The touch keyboard: docked along the bottom of the touch screen, typing where it is touched.
+       { kind: "item", text: root.docked ? "Float HUD" : "Dock HUD to type on it", verb: "dock", shortcut: "dock" }]
+      .concat(root.typing === "denied" || root.typing === "missing"
+        ? [{ kind: "item", text: "Allow typing…", verb: "typing", more: ["setup"], terminal: true }] : [])
+      // A tablet's browser as the touch keyboard: the link to open on it is shown in a terminal.
+      .concat(root.remoteOn
+        ? [{ kind: "item", text: "Stop remote typing", verb: "remote", more: ["off"] }]
+        : [{ kind: "item", text: "Pair a tablet…", verb: "remote", more: ["on", "--wait"], terminal: true }])
+      .concat([{ kind: "item", text: "Quit HUD", verb: "stop", shortcut: "power" }])
 
   PopupCard {
     id: menu
@@ -347,7 +408,7 @@ BarWidget {
             id: rowMouse
             anchors.fill: parent
             hoverEnabled: true
-            enabled: !menuRow.separator
+            enabled: !menuRow.separator && menuRow.modelData.kind !== "note"
             cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
             onClicked: {
               const row = menuRow.modelData
@@ -355,8 +416,10 @@ BarWidget {
               if (row.kind === "wpm") {
                 root.wpmChoice = row.choice          // at once; the file says so too, a moment later
                 root.run("menubar", ["wpm", row.choice])
+              } else if (row.terminal) {
+                root.runInTerminal(row.verb, row.more)
               } else {
-                root.run(row.verb)
+                root.run(row.verb, row.more)
               }
             }
           }

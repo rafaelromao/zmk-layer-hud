@@ -110,6 +110,11 @@ gets no key reports either; select that host's profile (`&bt BT_SEL n`) to type 
 signal follows. Plugged in by USB, ZMK types over USB, so a build without the snippet shows nothing
 while cabled.
 
+A keyboard on a build from before that sends its signal on both while it is plugged in and paired
+to the same machine. The feed reads one: the first carrier it hears, until that connection goes,
+when the other takes over. Two different keyboards that share a name, one on each carrier, are told
+apart by what they press, and both are read.
+
 ## 4. Build and flash
 
 ```bash

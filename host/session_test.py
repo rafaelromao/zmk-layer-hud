@@ -224,6 +224,8 @@ class Commands(Base):
             session.set_pref(self.dir, "theme", "sepia")
         session.set_pref(self.dir, "opacity", 40)
         self.assertEqual(40, session.status(self.dir)[0]["opacity"])
+        session.set_pref(self.dir, "feedback", "off")              # the touch keyboard's switch
+        self.assertEqual("off", session.status(self.dir)[0]["feedback"])
         for bad in (101, -1, True, "40"):
             with self.assertRaises(session.SessionError):
                 session.set_pref(self.dir, "opacity", bad)
@@ -243,6 +245,12 @@ class Stats(Base):
         self.assertEqual({"base": {"0": "a", "1": "b", "2": "mdi:cut"}, "sym": {"0": "!", "2": "?", "3": "#"}}, legends)
         self.assertEqual(({}, {}), session.keys_of(None))
         self.assertEqual(({}, {}), session.keys_of({"layers": {"base": {}}}))     # a message with no keys
+
+    def test_a_message_with_no_map_is_in_the_firmwares_own_order(self):
+        # A hand-written demo carries no positions: the page takes position = index (view.js idxAt),
+        # and the session names its keys the same way rather than not at all.
+        bare = dict(self.MESSAGE, positions={}, layout={"keys": [{}] * 4})
+        self.assertEqual(session.keys_of(self.MESSAGE), session.keys_of(bare))
 
     def test_every_stat_the_bar_shows_is_kept_and_written_down(self):
         _, s = session.status(self.dir)
@@ -366,6 +374,19 @@ class StoreTest(Base):
         self.assertEqual({"theme": "dark"}, self.store().message()["prefs"])   # read again after a restart
         st.set_pref("theme", "sepia")
         self.assertEqual({"theme": "dark"}, st.message()["prefs"])
+
+    def test_what_a_page_says_goes_where_its_kind_says(self):
+        # The page's own panel (the macOS bridge) and the feed's socket (after its tally token) both
+        # hand over the same three kinds; anything else is not the session's.
+        st = self.store()
+        self.assertTrue(st.apply_said(batch(1, presses={"base": {"3": 2}})))
+        self.assertTrue(st.apply_said({"kind": "heatmap", "mode": "session"}))
+        self.assertTrue(st.apply_said({"kind": "pref", "name": "theme", "value": "dark"}))
+        self.assertFalse(st.apply_said({"kind": "hide"}))
+        st.flush()
+        self.assertEqual(2, self.active()["presses"]["base"]["3"])
+        self.assertEqual("session", self.sent[-1]["heatmap"])
+        self.assertEqual({"theme": "dark"}, self.sent[-1]["prefs"])
 
     def test_key_times_and_bigrams_are_kept(self):
         st = self.store()

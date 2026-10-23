@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ZMK Layer HUD</string>
+    <string name="ime_name">ZMK Layer HUD</string>
+    <string name="intro">Your ZMK keymap as this tablet\'s keyboard: it draws your layers, and each key does what it does on your keyboard. Write the keymap on your computer with `zmk-layer-hud keymap -o board.json` and share the file to this app.</string>
+    <string name="enable">1. Turn the keyboard on</string>
+    <string name="choose">2. Switch to it</string>
+    <string name="import_keymap">Import a keymap…</string>
+    <string name="haptics">Vibrate on each key</string>
+    <string name="sound">Click on each key</string>
+    <string name="try_it">Try it here</string>
+    <string name="no_keymap">No keymap yet: import one.</string>
+    <string name="keymap_is">Keymap: %1$s</string>
+    <string name="imported">Imported %1$s. The keyboard draws it the next time it opens.</string>
+    <string name="imported_draws_only">Imported %1$s, but it says nothing of what its keys do, so the keyboard only draws it: write it with `zmk-layer-hud keymap -o`.</string>
+    <string name="unreadable">That file could not be read.</string>
+</resources>

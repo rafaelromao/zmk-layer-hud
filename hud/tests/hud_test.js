@@ -278,6 +278,49 @@ function checkCapitals() {
   return fails;
 }
 
+/* Two combos on one layer can both answer a typed character: one drawn "ŵ|ŷ", which types ŵ only
+ * sometimes (an adaptive key), and one drawn "ŵ", which always does. Typing ŵ lights the one that
+ * always does, and its pill must name it: the pill is the combo whose keys are lit, not the first
+ * combo whose legend would do. */
+function checkComboPill(data) {
+  const d = JSON.parse(JSON.stringify(data));
+  const combo = (tap, positions) => ({ key: { tap, hold: "", shifted: "", type: "key" }, layers: [d.base], positions });
+  d.combos = d.combos.concat([combo("ŵ|ŷ", [2, 3]), combo("ŵ", [6, 7])]);
+  const page = loadPage();
+  page.hud.load(d);
+  page.hud.setLayers([]);
+  page.hud.key({ type: "keyDown", name: "ŵ", chars: "ŵ", flags: {}, repeat: false, combos: true });
+  const lit = page.hud.state.keyEls.flatMap((el, i) => (el.classList.contains("pressed") ? [i] : []));
+  const pills = page.board.querySelectorAll(".combo-pill").map(p => p.querySelector(".combo-tap").textContent);
+  const fails = [];
+  if (lit.join() !== "6,7") fails.push(`typed-in ŵ should light the ŵ combo's keys [6,7]; lit [${lit}]`);
+  if (pills.join() !== "ŵ") fails.push(`its pill should say ŵ; pills [${pills.map(p => JSON.stringify(p))}]`);
+  return fails;
+}
+
+/* A letter only Alpha 2 has, typed with no layers from the keyboard, is placed there: its key and
+ * the keys that bring Alpha 2 up flash. A position going down a moment later says what was really
+ * struck, and takes that guess back -- the activators with the key, not the key alone. */
+function checkAlpha2Withdrawn(data) {
+  const d = JSON.parse(JSON.stringify(data));
+  const ex = d.extras || {};
+  const q = ex.alpha2 ? (d.layers[ex.alpha2] || []).findIndex(k => k.tap === "q") : -1;
+  const e = (d.layers[d.base] || []).findIndex(k => k.tap === "e");
+  const ePos = Object.entries(d.positions || {}).find(([, i]) => Number(i) === e);
+  if (q < 0 || !ePos) return ["the fixture lacks Alpha 2's q or a positioned e on its base"];
+  d.extras = Object.assign({}, ex, { letter_combos_on: ["vim"] });   // vim is not up: letters are typing
+  const page = loadPage();
+  page.hud.load(d);
+  const lit = () => page.hud.state.keyEls.flatMap((el, i) => (el.classList.contains("pressed") ? [i] : []));
+  page.hud.key({ type: "keyDown", name: "q", chars: "q", flags: {}, repeat: false });
+  const guessed = lit();
+  if (!guessed.includes(q) || guessed.length < 2) return [`q should light Alpha 2's q (${q}) and its activators; lit [${guessed}]`];
+  page.clock.advance(5);
+  page.hud.pressAt(Number(ePos[0]));
+  if (lit().join() !== String(e)) return [`e's position should leave e (${e}) lit alone; lit [${lit()}]`];
+  return [];
+}
+
 /* A modifier rings the key that turned it on, not every key that carries it: the home-row Shift
  * held, or a Shift whose report came before its position. With no positions from the firmware
  * there is no telling which, and every key carrying it is ringed. */
@@ -315,6 +358,145 @@ function checkModRings(data) {
   flags(page, true);
   if (ringed(page).join() !== idxs.join()) fails.push(`without positions every ⇧ key should ring [${idxs}]; ringed [${ringed(page)}]`);
   return fails;
+}
+
+/* The board drawn again under a held key -- resized, docked, back from minimized -- shows what is lit
+ * and up as it was, and a chord finished on it is drawn whole: every key of it lit as a combo's. */
+function checkRebuiltBoard(data) {
+  const combo = (data.combos || []).find(c => c.layers.includes(data.base) && c.positions.length === 2);
+  const posOf = idx => Object.entries(data.positions || {}).find(([, i]) => Number(i) === idx);
+  if (!combo || !combo.positions.every(posOf)) return ["the fixture has no positioned two-key combo on its base"];
+  const [a, b] = combo.positions;
+  const page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  page.clock.advance(1000);
+  const has = (idx, cls) => page.hud.state.keyEls[idx].classList.contains(cls);
+  page.hud.pressAt(Number(posOf(a)[0]));
+  page.dispatch("resize", {});
+  const fails = [];
+  if (!has(a, "pressed")) fails.push(`key ${a}, still down, should stay lit on the board drawn again`);
+  page.hud.pressAt(Number(posOf(b)[0]));
+  for (const idx of [a, b]) {
+    for (const cls of ["pressed", "combo", "combo-key"]) if (!has(idx, cls)) fails.push(`the chord finished after it: key ${idx} should be ${cls}`);
+  }
+  return fails;
+}
+
+/* A secret being typed takes what is on screen of the typing with it: the keys lit, and every pill
+ * -- a chord's, and a guess's that a report put up. */
+function checkSecretTakesThePills(data) {
+  const z = (data.combos || []).find(c => c.layers.includes(data.base) && c.key.tap === "z");
+  if (!z) return ["the fixture has no z combo on its base"];
+  const page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  page.clock.advance(1000);
+  page.hud.key({ type: "keyDown", name: "z", chars: "z", flags: {}, repeat: false, combos: true });
+  const pills = () => page.board.querySelectorAll(".combo-pill").length;
+  if (!pills()) return ["typed-in z with combos should put the z combo's pill up"];
+  page.clock.advance(5);
+  page.hud.receive({ kind: "secure", on: true });
+  return pills() ? [`a secret should take the guess's pill down; ${pills()} up`] : [];
+}
+
+/* A key held down is lit until it comes up, whatever else lights it meanwhile: a report placed on
+ * it (a rehearsal's synthetic character, which no freshness guard holds back) flashes it, and must
+ * neither put it out while it is still down nor cancel what catches a release that never comes. */
+function checkHeldThroughAGuess(data) {
+  const e = (data.layers[data.base] || []).findIndex(k => k.tap === "e");
+  const pos = Object.entries(data.positions || {}).find(([, i]) => Number(i) === e);
+  if (e < 0 || !pos) return ["the fixture has no positioned e on its base"];
+  const T = name => Number((data.hud && data.hud[name]) || { press_ms: 320, held_timeout_ms: 5000, release_ms: 60 }[name]);
+  const page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  page.clock.advance(1000);
+  const lit = () => page.hud.state.keyEls[e].classList.contains("pressed");
+  page.hud.pressAt(Number(pos[0]));
+  page.clock.advance(5);
+  page.hud.key({ type: "keyDown", name: "e", chars: "e", code: 8, flags: {}, synthetic: true });
+  page.clock.advance(T("press_ms") + 1);
+  const fails = [];
+  if (!lit()) fails.push(`e is still down: lit past press_ms after a report flashed it`);
+  page.clock.advance(T("held_timeout_ms") + T("release_ms"));
+  if (lit() || page.hud.state.held.size) fails.push(`its release never came: let go after held_timeout_ms (lit ${lit()}, ${page.hud.state.held.size} held)`);
+  return fails;
+}
+
+/* A third key inside the combo term makes a bigger combo, and its pill takes the smaller one's
+ * place. The smaller pill is gone, and so is what it had to say about its keys: the bigger pill's
+ * keys stay marked as a combo's for as long as the bigger pill is up, not as long as the smaller
+ * one would have been. */
+function checkSupersededPill(data) {
+  const onBase = c => c.layers.includes(data.base);
+  const big = (data.combos || []).find(c => onBase(c) && c.positions.length === 3 &&
+    (data.combos || []).some(s => onBase(s) && s.positions.length === 2 && s.positions.every(p => c.positions.includes(p))));
+  const small = big && data.combos.find(s => onBase(s) && s.positions.length === 2 && s.positions.every(p => big.positions.includes(p)));
+  const posOf = idx => Object.entries(data.positions || {}).find(([, i]) => Number(i) === idx);
+  if (!big || !big.positions.every(posOf)) return ["the fixture has no positioned three-key base combo over a two-key one"];
+  const third = big.positions.find(p => !small.positions.includes(p));
+  const pillMs = Number((data.hud && data.hud.combo_pill_ms) || 1000);
+  const page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  page.clock.advance(1000);
+  const marked = () => page.hud.state.keyEls.flatMap((el, i) => (el.classList.contains("combo-key") ? [i] : []));
+  for (const p of small.positions) page.hud.pressAt(Number(posOf(p)[0]));
+  page.clock.advance(5);
+  page.hud.pressAt(Number(posOf(third)[0]));
+  const want = big.positions.slice().sort((a, b) => a - b).join();
+  page.clock.advance(pillMs - 5 + 1);           // past the smaller pill's time, inside the bigger one's
+  const during = marked().sort((a, b) => a - b).join();
+  page.clock.advance(10);                        // past the bigger one's too
+  const after = marked();
+  const fails = [];
+  if (during !== want) fails.push(`the bigger pill's keys [${want}] should stay marked while it is up; marked [${during}]`);
+  if (after.length) fails.push(`and nothing after it; marked [${after}]`);
+  return fails;
+}
+
+/* The layer and the key that brought it up are two reports, in no promised order. Until the key
+ * comes, every key that can reach the layer is marked as its activator; once its position says
+ * which one did, that one alone is -- at once, not at the next redraw. */
+function checkLateActivator(data) {
+  const id = Object.entries(data.zmk_layers || {}).find(([, z]) => z && z.drawer === "alpha2");
+  const keys = [...new Set((data.activators || []).filter(a => a.layer === "alpha2").map(a => a.idx))];
+  const posOf = idx => Object.entries(data.positions || {}).find(([, i]) => Number(i) === idx);
+  const key = keys.find(posOf);
+  if (!id || keys.length < 2 || key === undefined) return ["the fixture lacks Alpha 2 with two activators, one positioned"];
+  const page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  page.clock.advance(1000);
+  const marked = () => page.hud.state.keyEls.flatMap((el, i) => (el.classList.contains("activator") ? [i] : []));
+  page.hud.setLayers([Number(id[0])]);
+  const before = marked();
+  if (!keys.every(k => before.includes(k))) return [`before its key, every activator of Alpha 2 [${keys}] should be marked; marked [${before}]`];
+  page.clock.advance(5);
+  page.hud.pressAt(Number(posOf(key)[0]));
+  const after = marked();
+  return after.join() === String(key) ? [] : [`its key ${key} going down should leave it marked alone; marked [${after}]`];
+}
+
+/* A layer picked to look at changes what the board draws, not what the keyboard has up: the key that
+ * turned Shift on is found on the keyboard's layers. Held on the base, a home-row ⇧ rings although
+ * the layer picked over it has another key there. */
+function checkModUnderPick(data) {
+  const carries = k => !!k && ((k.hold && k.hold.includes("⇧")) || k.tap === "⇧");
+  const posOf = idx => Object.entries(data.positions || {}).find(([, i]) => Number(i) === idx);
+  const pick = (data.layer_order || []).find(l => l !== data.base && data.layers[l]);
+  const key = (data.layers[data.base] || []).findIndex((k, i) => carries(k) && posOf(i) &&
+    pick && data.layers[pick][i] && data.layers[pick][i].type !== "trans" && !carries(data.layers[pick][i]));
+  if (key < 0) return ["the fixture has no positioned ⇧ key on its base that the layer after it hides"];
+  const page = loadPage();
+  page.hud.load(data);
+  page.hud.setLayers([]);
+  page.hud.pressAt(Number(posOf(key)[0]));
+  page.hud.pickLayer(pick);
+  page.hud.key({ type: "flagsChanged", flags: { shift: true } });
+  const ringed = page.hud.state.keyEls.flatMap((el, i) => (el.classList.contains("mod") ? [i] : []));
+  return ringed.join() === String(key) ? [] : [`Shift held on ${key} with ${pick} picked should ring it; ringed [${ringed}]`];
 }
 
 /* A combo that is a hold-tap of its own -- the Diamond's q chord, Ctrl+Alt held -- is drawn as q
@@ -615,6 +797,42 @@ async function main() {
     process.exit(1);
   }
 
+  const rebuiltFailures = checkRebuiltBoard(data);
+  if (rebuiltFailures.length) {
+    for (const failure of rebuiltFailures) console.error(`FAIL rebuilt-board: ${failure}`);
+    process.exit(1);
+  }
+
+  const secretFailures = checkSecretTakesThePills(data);
+  if (secretFailures.length) {
+    for (const failure of secretFailures) console.error(`FAIL secret-takes-the-pills: ${failure}`);
+    process.exit(1);
+  }
+
+  const heldFailures = checkHeldThroughAGuess(data);
+  if (heldFailures.length) {
+    for (const failure of heldFailures) console.error(`FAIL held-through-a-guess: ${failure}`);
+    process.exit(1);
+  }
+
+  const supersededFailures = checkSupersededPill(data);
+  if (supersededFailures.length) {
+    for (const failure of supersededFailures) console.error(`FAIL superseded-pill: ${failure}`);
+    process.exit(1);
+  }
+
+  const lateFailures = checkLateActivator(data);
+  if (lateFailures.length) {
+    for (const failure of lateFailures) console.error(`FAIL late-activator: ${failure}`);
+    process.exit(1);
+  }
+
+  const modPickFailures = checkModUnderPick(data);
+  if (modPickFailures.length) {
+    for (const failure of modPickFailures) console.error(`FAIL mod-under-pick: ${failure}`);
+    process.exit(1);
+  }
+
   const holdFailures = checkComboHold(data);
   if (holdFailures.length) {
     for (const failure of holdFailures) console.error(`FAIL combo-hold: ${failure}`);
@@ -624,6 +842,18 @@ async function main() {
   const capitalFailures = checkCapitals();
   if (capitalFailures.length) {
     for (const failure of capitalFailures) console.error(`FAIL capitals: ${failure}`);
+    process.exit(1);
+  }
+
+  const alpha2Failures = checkAlpha2Withdrawn(data);
+  if (alpha2Failures.length) {
+    for (const failure of alpha2Failures) console.error(`FAIL alpha2-withdrawn: ${failure}`);
+    process.exit(1);
+  }
+
+  const pillFailures = checkComboPill(data);
+  if (pillFailures.length) {
+    for (const failure of pillFailures) console.error(`FAIL combo-pill: ${failure}`);
     process.exit(1);
   }
 

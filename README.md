@@ -23,6 +23,9 @@ between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`
 - **Live**: under `sync --watch`, edit the keymap or its drawing and the HUD redraws; every size
   and timing lives in one config file.
 - **Native panels**: a macOS overlay panel, a Hyprland layer-shell panel on Linux.
+- **A keyboard to type on**: tap a drawn key and it does what it does on your keyboard, hold-taps,
+  layers and combos included. Docked along the bottom of a touch screen, on a tablet's browser, or
+  as an iPad's or Android tablet's own keyboard ([the touch keyboard](#the-touch-keyboard)).
 
 ## Requirements
 
@@ -210,6 +213,9 @@ flags of any one of them, and [docs/cli.md](docs/cli.md) has every verb's in one
 | `show`, `hide`, `toggle` | bring the HUD on screen; take it off, still running and counting; whichever it is not |
 | `status` | is it running, and which of the keyboard's two channels is live |
 | `log` | follow the panel and feed logs |
+| `dock [toggle\|on\|off\|status]` | the touch keyboard: the HUD docked along the bottom of the screen, typing, or floating again |
+| `typing [status\|setup]` | whether the touch keyboard may type, and getting it the leave to (a uinput rule on Linux, Accessibility on macOS) |
+| `remote [on\|off\|status\|unpair]` | a tablet's browser as the touch keyboard, over the local network: the link to open on it (`--app` for the iPad app's) |
 | `session [list\|new\|save\|load\|reset\|delete\|rename-layer\|export\|history\|compare]` | the typing sessions: the active one, naming it, starting or loading another, drawing its heatmap as an SVG, its days, two side by side |
 | `heatmap [live\|session\|physical\|speed\|off]` | what the keys glow with: what was just typed, every press this session on the layer on screen or on all of them, each key's time, or nothing |
 | `doctor` | check this machine and say what is missing |
@@ -232,10 +238,52 @@ Two flags on `feed` read alike and are not: `--no-keys` sends layers only, neith
 nor the positions pressed, while `--no-hid-keys` drops just the HID half — the typed-keys strip
 and the shift flag — and keeps positions.
 
+## The touch keyboard
+
+The HUD can type. Tap a drawn key and it does what that key does on your keyboard: the HUD runs
+your keymap as the firmware would ([docs/touch.md](docs/touch.md)), from the bindings `import`
+and `sync` capture from your ZMK repo, or from the legends of a drawing without one. A long press is
+a hold, a hold let go alone latches (a one-shot, locked on a second tap), and two fingers on a
+combo's keys are the combo (`touch.combos: chips` adds a chip to tap for each). Each press clicks,
+and buzzes where the device can (`touch.sound`, `touch.haptics`); the side panel's feedback switch
+turns that off.
+
+- **Docked** (`zmk-layer-hud dock`, `start --dock`, or `dock: {start: 1}`), the HUD is a strip
+  along the bottom of the touch screen as wide as it, a split board's halves at its sides, and it
+  never takes the keyboard from the app you type into. On Hyprland it reserves its height, so
+  windows tile above it; on macOS it lies over the bottom of the screen, as macOS's own
+  Accessibility Keyboard does. The banner's arrow attaches and detaches it, as the menubar's and
+  the Omarchy bar's Dock and Float do; its chevron minimizes it to a bar, still docked, giving the
+  room back to the windows. Floating, the HUD types nothing; docked, a mouse types too.
+- **Its keys are their real size**: `touch.key_mm` apart (18 mm, Choc spacing; 19.05 for MX), from
+  the size the screen reports. A board a little too big for the screen at that size, or for the
+  dock's share of it (`dock.height_pct`, 60%), has its keys made smaller to fit, down to
+  `touch.min_key_mm` (16 mm), and `zmk-layer-hud dock status` says so. One that does not fit even
+  then is not docked: it stays a HUD, and `zmk-layer-hud dock` says how big it is and how much room
+  there was.
+- **Typing needs leave once**: `zmk-layer-hud typing setup`. On Linux the HUD types through a
+  virtual keyboard, and the setup installs a udev rule that lets the user at the seat make one
+  (asking before each sudo step); on macOS it asks for Accessibility. Either way your layout
+  applies, as it does to your keyboard.
+- **A tablet's browser** (`zmk-layer-hud remote on`): the HUD is served on the local network and
+  the command prints a link, and a code to scan with `qrencode`, for the tablet. The link pairs it;
+  the tablet's taps are typed here. Read [what plain HTTP leaves
+  open](docs/touch.md#remote-mode) before using it on a network you do not trust.
+- **A tablet's own keyboard**: an iPad keyboard and an Android input method, built from `apps/`
+  ([docs/tablets.md](docs/tablets.md)). They take your keymap as a file from
+  `zmk-layer-hud keymap -o board.json`, or on the iPad from `remote on --app`.
+
+The config's `touch:`, `dock:` and `remote:` sections tune it: how long a press is a hold, how far
+apart the keys are, the screen to dock on and its share, the port and how long pairing stays open
+([config/example.yaml](config/example.yaml)). Touch typing counts nowhere: not the session, the
+WPM or the tallies.
+
 ## Configuration
 
 `~/.config/zmk-layer-hud/config.yaml` (or `--config` / `ZMKHUD_CONFIG`). Paths may be relative to
-the file, and nothing in it is required. [config/example.yaml](config/example.yaml) is the config
+the file; a layout file (`qmk_info_json`, `dts_layout`), in the config or in a keymap-drawer YAML, is
+also looked for in the directories above the file that names it, as a keyboard repo names it from
+its root. Nothing in it is required. [config/example.yaml](config/example.yaml) is the config
 `setup` starts you with; [config/diamond.yaml](config/diamond.yaml), the author's own, shows every
 key with its default and a comment. The first three rows are what `import` and `sync` draw from;
 the HUD itself never reads them:
@@ -399,8 +447,9 @@ never leaves the HUD without the keymap it had.
 
 A URL is cloned into `~/.cache/zmk-layer-hud/repos` (`$ZMKHUD_CACHE` moves it) and fetched on every
 later sync, so a sync sees what you pushed; a path is read where it is, so it sees what you have
-not pushed yet. `sync --watch` stays, and syncs again whenever the config, the keymap-drawer files,
-or a working copy's keymap and what it includes are saved; the running HUD redraws. A repo given
+not pushed yet. `sync --watch` stays, and syncs again whenever the config, the keymap-drawer files
+and the layout files they name, or a working copy's keymap and what it includes are saved; the
+running HUD redraws, and `doctor` says when one of them is newer than the last sync. A repo given
 by URL is not watched. [config/diamond.definitions.json](config/diamond.definitions.json) and
 [config/diamond.imported.yaml](config/diamond.imported.yaml) are what it writes for the Diamond.
 
@@ -572,6 +621,11 @@ beside anything that is wrong. What it cannot see:
   on the far side of `ssh` or inside a container, whose pty is not this machine's. When the gate
   misses, a session keeps the keys as counts per key and layer, never their order (`feed.sessions:
   0` keeps none).
+- The touch keyboard emulates ZMK's core behaviours -- keys, mod-taps and layer-taps, layers,
+  sticky keys, mod-morph, tap dance, macros, key repeat, caps word, conditional layers -- and
+  types a key's legend for the rest (module behaviours: adaptive keys, leader, OS detection).
+  `sync` says how much of a keymap is emulated. Mods held on the physical keyboard and keys
+  tapped on glass do not combine.
 - The HUD's socket takes one port (`ZMKHUD_PORT`, 8766). If something else holds it when the macOS
   panel starts (a `zmk-layer-hud feed` of its own, say), the panel runs without a socket and
   `zmk-layer-hud poke` cannot reach it. Its log says so. The socket takes a token in its URL path,
@@ -585,7 +639,9 @@ From a clone, `make install` sets the machine up and puts `zmk-layer-hud` on you
 that clone; `make test` runs every suite — the firmware's wire policy in C, the host decoder and
 keymap conversion in Python, and the page under node.
 [docs/development.md](docs/development.md) covers what each suite sweeps and how the command line
-is put together.
+is put together. Commit messages start with a Conventional Commits type (`feat:`, `fix:`, `docs:`...):
+releases are made from them by release-please, and CI runs every platform's suites on each pull
+request ([Commits, CI and releases](docs/development.md#commits-ci-and-releases)).
 
 ## License
 
