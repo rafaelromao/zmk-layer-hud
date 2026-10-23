@@ -392,23 +392,16 @@ def parsed_keymap(config=None, source=None):
     """keymap-drawer's parse of the keyboard's keymap: from `source` (a URL or a working copy,
     as `import` takes), else from the source `import` recorded. A working copy is read where it
     is, so it says what you have not pushed yet."""
-    import re
     import keymap as keymap_mod
     import sync
-    config_path = config or keymap_mod.find_config()
-    imported = sync.imported_path(config_path)
-    head = ""
-    if os.path.isfile(imported):
-        with open(imported, encoding="utf-8") as f:
-            head = f.read()
-    recorded = re.search(r"^#\s+source:\s+(.+)$", head, re.M)
-    keyboard = re.search(r"^#\s+keyboard:\s+(.+)$", head, re.M)
-    spec = source or (recorded.group(1).strip() if recorded else None)
+    config_path = keymap_mod.find_config(config)
+    recorded, keyboard = sync.recorded(config_path)     # what the last import or sync read
+    spec = source or recorded
     if not spec:
-        raise SystemExit(f"ways --audit: {imported} records no source; pass --source, or run `zmk-layer-hud import`")
+        raise SystemExit(f"ways --audit: {config_path} records no source; pass --source, or run `zmk-layer-hud import`")
     try:
         root, _ = sync.resolve_source(os.path.expanduser(spec))
-        path = sync.find_keymap(root, keyboard.group(1).strip() if keyboard else None)
+        path = sync.find_keymap(root, keyboard)
         return path, sync.parse_keymap(path)
     except sync.SyncError as e:
         raise SystemExit(f"ways --audit: {e}")
@@ -429,7 +422,6 @@ def main(argv):
         config = argv[argv.index("--config") + 1] if "--config" in argv else None
         repo = argv[argv.index("--source") + 1] if "--source" in argv else None
         source = keymap_mod.KeymapSource(config)
-        source.fetch_glyphs = False
         message = source.load()
         path, parsed = parsed_keymap(source.config_path, repo)
         findings = audit(Keymap(message), parsed)
