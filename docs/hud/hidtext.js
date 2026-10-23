@@ -1,4 +1,4 @@
-/* zmk-layer-hud — what a key report types, in the page: hudfeed's SignalDecoder (host/hudfeed.py),
+/* zmk-layer-hud — what a key report types, in the page: the feed's SignalDecoder (host/hiddecode.py),
  * ported, and what a text-only keyboard does with it.
  *
  * The touch keyboard's engine sends what a keyboard sends: report snapshots, a modifier byte and the
@@ -16,12 +16,12 @@
  *          down, F-keys), or {kind:"chord", chars, name, usage, mods} for a ⌘ or Ctrl shortcut --
  *          left out with shortcuts:false, for a sink that cannot send one. Each keeps usage and mods.
  *
- * The tables are hudfeed's, written out by host/hidtables_gen.py (hud/hidtables.js). DOM-free, no
+ * The tables are the key vocabulary's, written out by host/keynames_gen.py (hud/keynames.js). DOM-free, no
  * timers: the page, node's tests and a bare JavaScriptCore all run it.
  */
 (function (root) {
   "use strict";
-  const T = (typeof module === "object" && module.exports) ? require("./hidtables.js") : root.ZmkHidTables;
+  const T = (typeof module === "object" && module.exports) ? require("./keynames.js") : root.ZmkKeyNames;
   const RALT = T.RALT;
 
   function flagsOf(mods) {
@@ -104,7 +104,7 @@
     return { feed, flush, pending: () => (pending ? pending.down.chars : null) };
   }
 
-  // The named keys a text field knows, in a text sink's words; hudfeed's NAMED spells them.
+  // The named keys a text field knows, in a text sink's words, by their key names (keynames.js).
   const TEXT_KEYS = { "return": "enter", "delete": "backspace", "forwarddelete": "delete", "tab": "tab",
     "escape": "escape", "left": "left", "right": "right", "up": "up", "down": "down", "home": "home", "end": "end",
     "pageup": "pageup", "pagedown": "pagedown", "insert": "insert" };
