@@ -47,6 +47,9 @@ BarWidget {
   property var rows: []               // the HUD's stats column: [[label, value], ...]
   property string rowsText: ""        // ...as it was read, so the same rows are not taken again
   property string wpmChoice: "current"    // which WPM the bar shows: current | average | top
+  property bool docked: false         // the touch keyboard: docked along the bottom, typing
+  property string typing: ""          // ok | off | denied | missing | error, as the HUD says it
+  property bool remoteOn: false       // remote mode: a paired tablet may type here (remote.live.json)
   property bool menuOpen: false
   property bool hoverOpen: false
 
@@ -62,6 +65,8 @@ BarWidget {
       root.topWpm = typeof st.top_wpm === "number" ? st.top_wpm : null
       root.session = typeof st.session === "string" ? st.session : ""
       root.takeRows(Array.isArray(st.stats) ? st.stats : [])
+      root.docked = st.dock === true
+      root.typing = typeof st.typing === "string" ? st.typing : ""
       root.hud = st.shown ? "shown" : "hidden"
     } catch (e) {
       root.stopped()
@@ -86,6 +91,11 @@ BarWidget {
   function run(verb, more) {
     const env = ["env", "ZMKHUD_STATE=" + root.stateDir, root.command]
     Quickshell.execDetached((verb === "start" ? root.startWith : []).concat(env, [verb], more || []))
+  }
+  // In a terminal: what asks before each sudo step needs one to ask in.
+  function runInTerminal(verb, more) {
+    Quickshell.execDetached(["xdg-terminal-exec", "env", "ZMKHUD_STATE=" + root.stateDir, root.command, verb]
+      .concat(more || []))
   }
 
   // The bar keeps one popout open at a time: it asks the one open to close when another opens.
@@ -125,6 +135,16 @@ BarWidget {
     onFileChanged: reload()
     onLoaded: root.read(text())
     onLoadFailed: root.stopped()
+  }
+
+  // Remote mode says what it is doing in a file of its own, gone when it stops.
+  FileView {
+    id: remoteFile
+    path: root.stateDir + "/remote.live.json"
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: { try { root.remoteOn = JSON.parse(text()).serving === true } catch (e) { root.remoteOn = false } }
+    onLoadFailed: root.remoteOn = false
   }
 
   FileView {
@@ -250,7 +270,15 @@ BarWidget {
        { kind: "separator" },
        { kind: "item", text: root.hud === "shown" ? "Hide HUD" : "Show HUD",
          verb: root.hud === "shown" ? "hide" : "show", shortcut: "toggle" },
-       { kind: "item", text: "Quit HUD", verb: "stop", shortcut: "power" }]
+       // The touch keyboard: docked along the bottom of the touch screen, typing where it is touched.
+       { kind: "item", text: root.docked ? "Float HUD" : "Dock HUD to type on it", verb: "dock", shortcut: "dock" }]
+      .concat(root.typing === "denied" || root.typing === "missing"
+        ? [{ kind: "item", text: "Allow typing…", verb: "typing", more: ["setup"], terminal: true }] : [])
+      // A tablet's browser as the touch keyboard: the link to open on it is shown in a terminal.
+      .concat(root.remoteOn
+        ? [{ kind: "item", text: "Stop remote typing", verb: "remote", more: ["off"] }]
+        : [{ kind: "item", text: "Pair a tablet…", verb: "remote", more: ["on", "--wait"], terminal: true }])
+      .concat([{ kind: "item", text: "Quit HUD", verb: "stop", shortcut: "power" }])
 
   PopupCard {
     id: menu
@@ -355,8 +383,10 @@ BarWidget {
               if (row.kind === "wpm") {
                 root.wpmChoice = row.choice          // at once; the file says so too, a moment later
                 root.run("menubar", ["wpm", row.choice])
+              } else if (row.terminal) {
+                root.runInTerminal(row.verb, row.more)
               } else {
-                root.run(row.verb)
+                root.run(row.verb, row.more)
               }
             }
           }

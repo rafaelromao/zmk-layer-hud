@@ -44,7 +44,10 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import actions  # noqa: E402
 import keymap as keymap_mod  # noqa: E402
+import zmk_expr  # noqa: E402
+import zmk_tables  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Where a repo given by URL is kept between syncs. $ZMKHUD_CACHE moves it.
@@ -273,32 +276,134 @@ def studio(root, keymap_path):
     return False
 
 
-def layer_list(keymap_path, root, dts=None, log=None):
-    """The keyboard's ZMK layers in id order, as [{name, drawn}]: `name` as keymap-drawer names a
-    layer (its label or display-name, else its node name), and `drawn` false for a reserved layer,
-    which `keymap parse` leaves out. A reserved layer has an id only on firmware that keeps
-    reserved layers in place (studio); elsewhere it has none, and the ids after it move up."""
-    dts = dts or device_tree(keymap_path)
-    nodes = None
-    if dts is not None:
-        try:
-            nodes = [n for p in dts.get_compatible_nodes("zmk,keymap") for n in p.children]
-        except Exception:
-            nodes = None
-    if not nodes:
-        return [{"name": n, "drawn": True} for n in layer_names(keymap_path)]
-    keeps = studio(root, keymap_path)
+def layer_nodes(dts, keeps):
+    """The keymap's layer nodes that hold a ZMK id, in id order, as [(node, name, drawn)]: `name` as
+    keymap-drawer names a layer (its label or display-name, else its node name), and `drawn` false
+    for a reserved layer, which `keymap parse` leaves out. A reserved layer has an id only on
+    firmware that keeps reserved layers in place (`keeps`, see studio()); elsewhere it has none,
+    and the ids after it move up. The layer list and the captured bindings both come from here, so
+    they cannot number the layers differently."""
+    # Two keymap nodes are one node in devicetree, and a layer node a second one names again is the
+    # same layer, written over: it keeps its place and takes the later node's properties.
+    by_name = {}
+    for node in [n for p in dts.get_compatible_nodes("zmk,keymap") for n in p.children]:
+        by_name[node.name] = node
     out = []
-    for node in nodes:
+    for node in by_name.values():
         name = node.get_string("label|display-name") or node.name.removeprefix("layer_").removesuffix("_layer")
         reserved = node.get_string("status") == "reserved"
         if reserved and not keeps:
             continue
-        out.append({"name": name, "drawn": not reserved})
+        out.append((node, name, not reserved))
+    return out
+
+
+def layer_list(keymap_path, root, dts=None, log=None):
+    """The keyboard's ZMK layers in id order, as [{name, drawn}] (layer_nodes)."""
+    dts = dts or device_tree(keymap_path)
+    nodes = None
+    if dts is not None:
+        try:
+            nodes = layer_nodes(dts, studio(root, keymap_path))
+        except Exception:
+            nodes = None
+    if not nodes:
+        return [{"name": n, "drawn": True} for n in layer_names(keymap_path)]
+    out = [{"name": name, "drawn": drawn} for _node, name, drawn in nodes]
     if log and any(not l["drawn"] for l in out[:-1]) and any(l["drawn"] for l in out):
         log("a reserved layer sits between live ones; its id is kept because the firmware keeps it in place "
             "(ZMK Studio, or CONFIG_ZMK_KEYMAP_LAYER_REORDERING)")
     return out
+
+
+def _all_nodes(dts):
+    """Every node of the keymap's tree, depth first."""
+    from keymap_drawer.dts import DTNode
+    stack = [DTNode(root, dts.ts_buffer, dts.override_nodes) for root in dts.root_nodes]
+    while stack:
+        node = stack.pop(0)
+        yield node
+        stack[:0] = node.children
+
+
+def _ints(node, prop):
+    """An array property's cells as numbers, or None when it is not there or is not numbers."""
+    raw = node.get_array(re.escape(prop) + "$")
+    if raw is None:
+        return None
+    try:
+        return [zmk_expr.evaluate(c, actions.VALUES, zmk_tables.FUNCTIONS) for c in zmk_expr.cells(raw)]
+    except zmk_expr.Unknown:
+        return None
+
+
+def capture_keymap(dts, keeps):
+    """The keymap's bindings, kept for the touch keyboard: what each position does on each layer, as
+    the text the keymap writes (`&mt LSHIFT A`), and the behaviours, overrides, combos and
+    conditional layers those need. host/actions.py compiles them; docs/touch.md has the shape. None
+    when the keymap cannot be read that far -- the touch keyboard then types from the legends."""
+    if dts is None:
+        return None
+    try:
+        nodes = layer_nodes(dts, keeps)
+        if not nodes:
+            return None
+        layers = {str(i): node.get_phandle_array("bindings") or [] for i, (node, _n, _d) in enumerate(nodes)}
+        behaviors = {}
+        for node in _all_nodes(dts):
+            compatible = node.get_string("compatible")
+            if not node.label or not compatible or not compatible.startswith(("zmk,behavior-", "zmk,macro-")):
+                continue
+            cells = _ints(node, "#binding-cells") or [0]
+            behaviors[node.label] = {"compatible": compatible, "cells": cells[0],
+                                     "props": actions.capture_props(node, compatible)}
+        overrides = {}
+        for node in dts.override_nodes:
+            label = node.name.lstrip("&")
+            builtin = zmk_tables.BEHAVIORS.get(label)
+            # A keymap's own behaviour carries its overrides already (keymap-drawer merges them).
+            if label not in behaviors and builtin:
+                props = actions.capture_props(node, builtin["compatible"])
+                if props:
+                    overrides[label] = props
+        combos = []
+        for node in [n for p in dts.get_compatible_nodes("zmk,combos") for n in p.children]:
+            positions = _ints(node, "key-positions")
+            bindings = node.get_phandle_array("bindings$")
+            if not positions or not bindings:
+                continue
+            timeout, idle = _ints(node, "timeout-ms"), _ints(node, "require-prior-idle-ms")
+            combos.append({"name": node.name, "positions": positions, "binding": bindings[0],
+                           "layers": _ints(node, "layers") or None,
+                           "timeout-ms": timeout[0] if timeout else None,
+                           "require-prior-idle-ms": idle[0] if idle else None,
+                           "slow-release": node.get_array("slow-release$") is not None})
+        conditional = []
+        for node in [n for p in dts.get_compatible_nodes("zmk,conditional-layers") for n in p.children]:
+            when, then = _ints(node, "if-layers"), _ints(node, "then-layer")
+            if when and then:
+                conditional.append({"if": when, "then": then[0]})
+        used = used_behaviors([b for bs in layers.values() for b in bs] + [c["binding"] for c in combos], behaviors)
+        return {"v": actions.KEYMAP_VERSION, "positions": max(len(b) for b in layers.values()),
+                "layers": layers, "behaviors": {k: v for k, v in behaviors.items() if k in used},
+                "overrides": overrides, "combos": combos, "conditional": conditional}
+    except Exception:
+        return None
+
+
+def used_behaviors(bindings, behaviors):
+    """The labels these bindings name, and those named by the bindings of what they name, and so
+    on: a keymap's helpers define hundreds of macros, and only the ones a key reaches are kept."""
+    seen, todo = set(), [b.strip().lstrip("&").split()[0] for b in bindings if b and b.strip().startswith("&")]
+    while todo:
+        label = todo.pop()
+        if label in seen:
+            continue
+        seen.add(label)
+        for b in (behaviors.get(label) or {}).get("props", {}).get("bindings") or []:
+            if isinstance(b, str) and b.strip().startswith("&"):
+                todo.append(b.strip().lstrip("&").split()[0])
+    return seen
 
 
 def unique_names(names):
@@ -928,6 +1033,11 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
                "combo_idle_ms": combo_idle(keymap_path, dts), "combos": coverage}
         rec = dict(zmk, source=sources["repo"], keyboard=board)
         zmk = {k: v for k, v in zmk.items() if v is not None}
+        # The bindings themselves, for the touch keyboard: the definitions only, not the record,
+        # which is written to be read.
+        captured = capture_keymap(dts, studio(root, keymap_path))
+        if captured:
+            zmk["keymap"] = captured
     else:
         # A drawing alone: what an earlier repo import said of the keymap still holds, and where it
         # came from is kept, so a later sync reads that repo again.
@@ -984,8 +1094,8 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
     # Built before anything is written: definitions that would not load are not written, so a sync
     # can never leave the HUD without a keymap it had.
     try:
-        keymap_mod.build_message(keymap_mod.merge_imported(dict(cfg), definitions.get("zmk")),
-                                 definitions["drawing"], source=short)
+        message = keymap_mod.build_message(keymap_mod.merge_imported(dict(cfg), definitions.get("zmk")),
+                                           definitions["drawing"], source=short)
     except keymap_mod.KeymapError as e:
         raise SyncError(f"the definitions would not load, so nothing was written: {e}")
     wrote = write_if_changed(defs_path, json.dumps(definitions, ensure_ascii=False, indent=1) + "\n")
@@ -1000,6 +1110,7 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
                    + ", ".join(d["missing_glyphs"][:6]) + (" …" if len(d["missing_glyphs"]) > 6 else ""))
     if rec is not None:
         say(quiet, f"{len(rec['layers'])} ZMK layers, {len(rec['combos'])} combo coverages -> {rec_path}")
+    say(quiet, actions.summary(message.get("actions")))
     if undecided:
         say(quiet, f"{len(undecided)} layer(s) have no drawing yet: "
                    + ", ".join(f"{i} {n!r}" for i, n, _ in undecided[:6])

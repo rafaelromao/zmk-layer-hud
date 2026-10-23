@@ -38,6 +38,7 @@ TOKEN_FILE = "token"
 WPM_CHOICES = ("current", "average", "top")
 ROWS_MAX = 24           # rows of the stats column, and each one's label and value at most this long:
 TEXT_MAX = 64           # a page says what its column shows, and nothing like a page of it
+NOTE_MAX = 240          # a panel says why it is not docked in a sentence
 # The landing page, which a panel opens in the browser when the stats column's heading is clicked
 # ({"kind":"site"}). The page names no address, so this is the one a panel opens.
 SITE = "https://rafaelromao.github.io/zmk-layer-hud/"
@@ -140,12 +141,42 @@ def alive(pid):
     return True
 
 
-def write(d, shown, pid=None, wpm=0, stats=None):
+def write(d, shown, pid=None, wpm=0, stats=None, extra=None):
     """The panel's word: which process it is, whether it is on screen, how fast it is being typed
-    on, and `stats` (from stats_of) once the page has said them."""
+    on, `stats` (from stats_of) once the page has said them, and `extra` -- the touch keyboard's:
+    "typing" (ok, off, denied, missing, error), "dock" (true when docked), "dock_note" (why it
+    is not: the board too big for the screen even with its keys made smaller), "dock_keys" (docked
+    with them smaller to fit: how small, host/dock.py smaller) and "dock_at" (when it last docked
+    or floated, time.time()). Remote mode says
+    what it is doing in a file of its own (host/remote.py), from whichever process serves it."""
     obj = {"pid": pid or os.getpid(), "shown": bool(shown), "wpm": int(wpm or 0)}
     obj.update(stats or {})
+    obj.update({k: v for k, v in (extra or {}).items() if k in EXTRA})
     _write(os.path.join(d, STATE_FILE), obj)
+
+
+EXTRA = ("typing", "dock", "dock_note", "dock_keys", "dock_at")
+TYPING_STATES = ("ok", "off", "denied", "missing", "error")
+# What the command line may ask a running panel for besides showing and hiding, each in a file of
+# its own (`dock.want`, ...) taken once, so one request never stands in for a later one.
+WANTS = ("dock", "typing")
+
+
+def request(d, name, value):
+    """The command line's request of the touch keyboard's kind (WANTS), written before it sends
+    SIGNAL: `dock` true or false, `typing` "request" (ask the system for leave to type)."""
+    if name not in WANTS:
+        raise ValueError(name)
+    _write(os.path.join(d, f"{name}.want"), {"value": value})
+
+
+def take_want(d, name):
+    """What the command line asked for of this kind, once: read and removed. None for nothing."""
+    path = os.path.join(d, f"{name}.want")
+    w = _load(path)
+    with contextlib.suppress(OSError):
+        os.remove(path)
+    return w.get("value") if w else None
 
 
 def _wpm_or_none(n):
@@ -181,6 +212,14 @@ def read(d):
     checked = stats_of({"avg": st.get("avg_wpm"), "top": st.get("top_wpm"), "session": st.get("session"),
                         "rows": st.get("stats")}) or {"avg_wpm": None, "top_wpm": None, "session": None, "stats": []}
     st.update(checked)
+    # The touch keyboard's, from a panel that says them; checked, as the rest is.
+    st["typing"] = st.get("typing") if st.get("typing") in TYPING_STATES else None
+    st["dock"] = st.get("dock") is True
+    for k in ("dock_note", "dock_keys"):
+        note = st.get(k)
+        st[k] = note if isinstance(note, str) and 0 < len(note) <= NOTE_MAX else None
+    at = st.get("dock_at")
+    st["dock_at"] = at if isinstance(at, (int, float)) and not isinstance(at, bool) and at > 0 else None
     return st if alive(st["pid"]) else None
 
 

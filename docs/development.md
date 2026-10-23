@@ -216,3 +216,51 @@ Starting and stopping stays in `host/macos/start.sh` and `host/linux/hud.sh`; `c
 and gives them the same verbs. `poke` and `feed` are split off before argparse sees them and
 handed their whole line, because their flags belong to `host/hudpoke.py` and `host/hudfeed.py` and
 restating them here would only give them somewhere to drift apart.
+
+## Commits, CI and releases
+
+Commit messages start with a [Conventional Commits](https://www.conventionalcommits.org/) type --
+`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `ci:`, `chore:`, and `feat!:` or a `BREAKING CHANGE:`
+footer for what breaks a config, a definitions file or a command -- then the subject as usual:
+`feat: the board types: a finger on a key is that key going down`. The commits before this rule are
+prose and stay as they are.
+
+**CI** (`.github/workflows/ci.yml`) runs on every push to main and every pull request, on each
+platform the HUD runs on:
+
+| Job | Runs |
+|---|---|
+| host (ubuntu, macos) | `make test-host` with the pinned packages |
+| host (Arch Linux) | every host module compiled with Arch's system Python, which the Linux panel runs under; then `test-host` and `test-firmware` |
+| pages, site and apps | `make test-hud test-site test-apps` |
+| firmware module | `make test-firmware` |
+| Android keyboard | the sink's tests, `ConstantsTest`, and the app built (the APK is kept as the run's artifact) |
+| iPad keyboard | Core's `swift test`, then the app and its keyboard built for the simulator, unsigned |
+
+**Releases** are release-please's (`.github/workflows/release.yml`, `release-please-config.json`).
+Each push to main keeps a release pull request up to date: the next version from the commits since
+the last release (`feat` a minor, `fix` a patch, a breaking change a major), its `CHANGELOG.md`
+entry, and the version in `version.txt`, the Android app (`appVersion`, the version code follows)
+and the iPad app (`MARKETING_VERSION`). Merging it tags `vX.Y.Z` and makes the GitHub release, which
+`install.sh` and `update` take; the Android keyboard's APK is then built from the tag and attached.
+A `Release-As: x.y.z` footer in a commit's body asks for a version outright.
+
+**The Android release key.** Every release's APK is signed with one key, so each installs over the
+one before: Android takes an update only from the key that signed what is installed, and a CI run's
+own debug key is new every time. The key is the maintainer's, made once and kept safe -- lose it and
+the next release cannot update anyone's installed app:
+
+```bash
+keytool -genkeypair -v -keystore zmkhud-release.jks -alias zmkhud -keyalg RSA -keysize 4096 -validity 10000
+```
+
+It goes to the repository's secrets as `ANDROID_KEYSTORE_BASE64` (`base64 -i zmkhud-release.jks`),
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`zmkhud`) and `ANDROID_KEY_PASSWORD`. The release
+workflow decodes it onto the runner for the build and removes it after; without the secrets it
+attaches no APK and says so. The same four, as environment variables (`ZMKHUD_KEYSTORE` the
+keystore's path), sign `gradle :app:assembleRelease` on a machine of your own.
+
+Two repository settings it needs: *Settings › Actions › General › Workflow permissions* allowing
+GitHub Actions to create and approve pull requests, or the release pull request cannot be opened.
+And a pull request opened with the workflow's own token starts no workflow, so CI does not run on
+the release pull request by itself; its commits are the ones already tested on main.

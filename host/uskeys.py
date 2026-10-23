@@ -60,6 +60,16 @@ NAME_FOR_LEGEND = {
 }
 for _i in range(1, 25):
     NAME_FOR_LEGEND[f"F{_i}"] = f"f{_i}"
+# The words keymap-drawer files spell named keys with, lowercased and without spaces. A drawer's
+# "Delete" is ZMK's DEL, the key that deletes forward; "BSpace" is Backspace.
+LEGEND_WORDS = {
+    "space": "space", "spc": "space", "enter": "return", "ret": "return", "return": "return",
+    "esc": "escape", "escape": "escape", "tab": "tab", "bspace": "delete", "bspc": "delete",
+    "backspace": "delete", "delete": "forwarddelete", "del": "forwarddelete",
+    "left": "left", "right": "right", "up": "up", "down": "down", "home": "home", "end": "end",
+    "pgup": "pageup", "pageup": "pageup", "pgdn": "pagedown", "pagedown": "pagedown",
+    "insert": "insert", "ins": "insert", "caps": "capslock", "capslock": "capslock",
+}
 
 
 def snapshot(usage, mods=0):
@@ -162,16 +172,20 @@ def main(argv):
                 print(legend)
         return 0
     if "--events" in argv:
+        altgr = "--altgr" in argv   # a Linux host's AltGr (hudfeed ALTGR_CHARS), not macOS's Option
         for line in sys.stdin:
             legend = line.rstrip("\n")
             if not legend:
                 continue
-            events = events_for(legend)
+            events = events_for(legend, altgr)
             # Another spelling of the same named key is not a wrong chip: the strip draws one
             # glyph per key, and a keymap may spell it ↹ where the strip says ⇥.
             name = NAME_FOR_LEGEND.get(legend)
             accepts = sorted({l for l, n in NAME_FOR_LEGEND.items() if name and n == name} | {legend})
-            print(json.dumps({"legend": legend, "events": events, "accepts": accepts}, ensure_ascii=False))
+            # The snapshots too: hud/tests/hidtext_test.js decodes them with the page's port of the
+            # decoder and holds it to these events.
+            print(json.dumps({"legend": legend, "events": events, "accepts": accepts,
+                              "snapshots": keystrokes_for(legend, altgr)}, ensure_ascii=False))
         return 0
     sys.stderr.write(__doc__)
     return 2

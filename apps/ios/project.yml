@@ -1,0 +1,69 @@
+# zmk-layer-hud for iPad and iPhone: the HUD as a system keyboard (docs/tablets.md).
+#
+#   cp Local.xcconfig.example Local.xcconfig     your team, a bundle id prefix and an App Group
+#   xcodegen generate                            makes ZmkHud.xcodeproj (brew install xcodegen)
+#
+# The keyboard runs the HUD's own scripts in JavaScriptCore -- the ones apps/hud-files.json lists for
+# ios, taken from hud/ as they are -- and Core (a Swift package, `swift test`) does the rest that
+# needs no UIKit. A keymap.json put in Keyboard/ is built into the keyboard, for when it cannot read
+# the app's (without Full Access, a keyboard may be kept from its App Group).
+name: ZmkHud
+options:
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+configFiles:
+  Debug: Local.xcconfig
+  Release: Local.xcconfig
+packages:
+  ZmkHudCore:
+    path: Core
+settings:
+  base:
+    DEVELOPMENT_TEAM: $(ZMKHUD_TEAM)
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.2.0" # x-release-please-version
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1,2"
+schemes:
+  ZmkHud:
+    build:
+      targets:
+        ZmkHud: all
+        Keyboard: all
+targets:
+  ZmkHud:
+    type: application
+    platform: iOS
+    sources:
+      - App
+    dependencies:
+      - target: Keyboard
+      - package: ZmkHudCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(ZMKHUD_BUNDLE_PREFIX).zmkhud
+        INFOPLIST_FILE: App/Info.plist
+        CODE_SIGN_ENTITLEMENTS: App/ZmkHud.entitlements
+  Keyboard:
+    type: app-extension
+    platform: iOS
+    sources:
+      - Keyboard
+      - path: ../../hud/hidtables.js
+        buildPhase: resources
+      - path: ../../hud/hidtext.js
+        buildPhase: resources
+      - path: ../../hud/engine.js
+        buildPhase: resources
+      - path: ../../hud/view.js
+        buildPhase: resources
+      - path: ../../hud/kbd.js
+        buildPhase: resources
+    dependencies:
+      - package: ZmkHudCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: $(ZMKHUD_BUNDLE_PREFIX).zmkhud.keyboard
+        INFOPLIST_FILE: Keyboard/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Keyboard/Keyboard.entitlements

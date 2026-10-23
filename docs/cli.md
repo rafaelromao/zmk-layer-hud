@@ -5,11 +5,14 @@ Every verb of `zmk-layer-hud`, as its own `--help` prints it. Written by `make c
 - [`start`](#start) — start the HUD
 - [`stop`](#stop) — stop the HUD
 - [`restart`](#restart) — stop the HUD, then start it
+- [`dock`](#dock) — the touch keyboard: the HUD docked along the bottom of the screen, typing, or floating
 - [`power`](#power) — start the HUD if it is not running, stop it if it is
 - [`show`](#show) — bring the HUD back on screen
 - [`hide`](#hide) — take the HUD off screen; it goes on running and counting
 - [`toggle`](#toggle) — show the HUD if it is hidden, hide it if it is shown
 - [`status`](#status) — is it running, and what is it reading
+- [`typing`](#typing) — the touch keyboard's leave to type: whether it has it, and getting it
+- [`remote`](#remote) — a tablet's browser as the touch keyboard, typing here over the local network
 - [`session`](#session) — the typing sessions: the active one, naming it, starting or loading another
 - [`heatmap`](#heatmap) — what the keys glow with: the live heatmap, the session's, or none
 - [`log`](#log) — follow the panel and feed logs
@@ -31,7 +34,7 @@ Every verb of `zmk-layer-hud`, as its own `--help` prints it. Written by `make c
 ## start
 
 ```text
-usage: zmk-layer-hud start [-h] [--reserve] [--hidden] [--foreground]
+usage: zmk-layer-hud start [-h] [--reserve] [--hidden] [--foreground] [--dock]
 
 start the HUD
 
@@ -42,6 +45,8 @@ options:
   --hidden      start it off screen, counting; `zmk-layer-hud show` or its icon brings it up
   --foreground  stay until the HUD stops, as the HUD itself (its output still goes to the log);
                 what a login item runs
+  --dock        start it docked along the bottom of the screen, where it types (the touch
+                keyboard)
 ```
 
 ## stop
@@ -58,7 +63,7 @@ options:
 ## restart
 
 ```text
-usage: zmk-layer-hud restart [-h] [--reserve] [--hidden]
+usage: zmk-layer-hud restart [-h] [--reserve] [--hidden] [--dock]
 
 stop the HUD, then start it
 
@@ -66,6 +71,22 @@ options:
   -h, --help  show this help message and exit
   --reserve   as for `start`
   --hidden    as for `start`
+  --dock      as for `start`
+```
+
+## dock
+
+```text
+usage: zmk-layer-hud dock [-h] [{toggle,on,off,status}]
+
+the touch keyboard: the HUD docked along the bottom of the screen, typing, or floating
+
+positional arguments:
+  {toggle,on,off,status}
+                        toggle (default), on, off, or status
+
+options:
+  -h, --help            show this help message and exit
 ```
 
 ## power
@@ -121,6 +142,47 @@ is it running, and what is it reading
 
 options:
   -h, --help  show this help message and exit
+```
+
+## typing
+
+```text
+usage: zmk-layer-hud typing [-h] [-y] [{status,setup}]
+
+the touch keyboard's leave to type: whether it has it, and getting it
+
+positional arguments:
+  {status,setup}  status (default), or setup: on Linux the uinput rule (asks before each sudo
+                  step), on macOS the running HUD asks for Accessibility
+
+options:
+  -h, --help      show this help message and exit
+  -y, --yes       run the privileged steps without asking
+```
+
+## remote
+
+```text
+usage: zmk-layer-hud remote [-h] [--minutes MINUTES] [--port PORT] [--bind ADDR] [--app] [--wait]
+                            [{status,on,off,unpair}]
+
+a tablet's browser as the touch keyboard, typing here over the local network
+
+positional arguments:
+  {status,on,off,unpair}
+                        status (default); on prints the link to open on the tablet; off; unpair
+                        makes every link given so far useless
+
+options:
+  -h, --help            show this help message and exit
+  --minutes MINUTES     how long it stays open with no tablet connected (default: config
+                        remote.minutes, else 30)
+  --port PORT           the port to serve on (default: config remote.port, else 8768)
+  --bind ADDR           the address to serve on, a Tailscale one say (default: this computer's on
+                        its local network; config remote.bind)
+  --app                 on: the link for the iPad app instead, which takes this computer's keymap
+                        for its keyboard
+  --wait                wait for Enter before going: for a terminal opened only to show the link
 ```
 
 ## session
@@ -317,14 +379,15 @@ options:
 ## keymap
 
 ```text
-usage: zmk-layer-hud keymap [-h] [--config CONFIG] [--dump]
+usage: zmk-layer-hud keymap [-h] [--config CONFIG] [--dump] [-o FILE]
 
 check the HUD's own files load: the config and the definitions import wrote
 
 options:
-  -h, --help       show this help message and exit
-  --config CONFIG  config file
-  --dump           print the full JSON message
+  -h, --help         show this help message and exit
+  --config CONFIG    config file
+  --dump             print the full JSON message
+  -o, --output FILE  write the full JSON message to FILE, for a tablet's touch keyboard to import
 ```
 
 ## config
@@ -402,14 +465,14 @@ options:
 usage: zmk-layer-hud feed [-h] [--config CONFIG] [--stdout] [--no-ws] [--port PORT] [--no-keymap]
                           [--no-keys] [--vid VID] [--pid PID] [--name NAME] [--serial DEV]
                           [--no-ble] [--ble-address BLE_ADDRESS] [--no-hid-keys] [--no-inject]
-                          [--no-sessions] [--debug] [--probes] [--raw]
+                          [--no-remote] [--no-sessions] [--debug] [--probes] [--raw]
 
 Host feed for the zmk-layer-hud pages. One source: the keyboard's own signal channel.
 
 options:
   -h, --help            show this help message and exit
-  --config CONFIG       zmk-layer-hud config (default: $ZMKHUD_CONFIG or
-                        ~/.config/zmk-layer-hud/config.yaml)
+  --config CONFIG       zmk-layer-hud config (default: $ZMKHUD_CONFIG or ~/.config/zmk-layer-
+                        hud/config.yaml)
   --stdout              print messages as JSON lines (macOS host)
   --no-ws               do not serve the WebSocket
   --port PORT
@@ -431,6 +494,8 @@ options:
   --no-inject           refuse messages sent in by a WebSocket client (layers, press, release,
                         key, device, heat), which host/hudpoke.py uses to drive the page without a
                         keyboard
+  --no-remote           never serve a tablet, whatever `zmk-layer-hud remote on` asks (Linux;
+                        host/remote.py)
   --no-sessions         keep no session files (config `feed.sessions: 0`): the counts last as long
                         as the page
   --debug               log layer messages to stderr

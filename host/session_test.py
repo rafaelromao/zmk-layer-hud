@@ -224,6 +224,8 @@ class Commands(Base):
             session.set_pref(self.dir, "theme", "sepia")
         session.set_pref(self.dir, "opacity", 40)
         self.assertEqual(40, session.status(self.dir)[0]["opacity"])
+        session.set_pref(self.dir, "feedback", "off")              # the touch keyboard's switch
+        self.assertEqual("off", session.status(self.dir)[0]["feedback"])
         for bad in (101, -1, True, "40"):
             with self.assertRaises(session.SessionError):
                 session.set_pref(self.dir, "opacity", bad)

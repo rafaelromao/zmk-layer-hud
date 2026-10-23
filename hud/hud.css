@@ -158,6 +158,18 @@ body.demo .key::before, body.demo #stats { display: none; }
 #stats .stat.half .row b, #stats .stat.pair .row b { text-align: left; font-size: 13px; line-height: 17px; }
 /* After the tiles' display, which would otherwise outrank it: a stat the config leaves out takes no room. */
 #stats .stat.off { display: none; }
+/* The touch keyboard's feedback switch (hud.js bar.feedback): a tile across the panel, as the
+   background's is, its label at one end and its value and a switch of the usual size at the other.
+   On, the knob right and the track lit. */
+#stats .stat.feedback:not(.off) { display: flex; align-items: center; gap: 8px; }
+#stats .stat.feedback .row { display: contents; }
+#stats .stat.feedback .row span { margin-right: auto; }
+#stats .switch { position: relative; flex: none; width: 30px; height: 16px; padding: 0; border: 0; border-radius: 8px;
+  background: rgba(122, 162, 247, 0.18); cursor: pointer; transition: background 120ms ease; }
+#stats .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px;
+  border-radius: 50%; background: #c0caf5; transition: left 120ms ease; }
+#stats .switch[aria-checked="true"] { background: #7aa2f7; }
+#stats .switch[aria-checked="true"]::after { left: 16px; background: #101420; }
 #stats .row span, #stats .row b { overflow: hidden; text-overflow: ellipsis; }
 #stats .row span { flex: none; }         /* a label is never cut: the value gives way */
 #stats .row b { flex: 0 1 auto; min-width: 0; color: #c0caf5; font-weight: 700; text-align: right; }
@@ -338,8 +350,23 @@ body.side-hidden #side svg { transform: scaleX(-1); }
 html.hideable #hide { display: inline-flex; }
 #hide:hover { background: rgba(255,255,255,0.14); color: #e6e8ef; }
 #hide svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
+/* The touch keyboard's two (hud.js setAttach, setMini). Attach: docked along the bottom of the
+   screen as a touch keyboard, its arrow down; detach, the arrow up: the floating HUD again, or on a
+   tablet the keyboard used before. Only where something can do it (html.attachable). Minimize,
+   docked only: the keyboard down to its banner, a bar, and back, still docked. */
+#mini, #attach { width: 22px; height: 22px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.06); color: #aab0c0; cursor: pointer; padding: 0;
+  display: none; align-items: center; justify-content: center; }
+html.attachable #attach, html.dock #mini { display: inline-flex; }
+#mini:hover, #attach:hover { background: rgba(255,255,255,0.14); color: #e6e8ef; }
+#mini svg, #attach svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.6;
+  stroke-linecap: round; stroke-linejoin: round; transition: transform 120ms ease; }
+html.mini #mini svg { transform: scaleY(-1); }
+html.dock #attach .arrow { transform: rotate(180deg); transform-origin: 5px 3.5px; }
+html.dock #layer button { height: 20px; }      /* the banner's 20px: DOCK_CHROME */
+html.dock.mini #board, html.dock.mini #chips, html.dock.mini #stats { display: none !important; }
 /* #layer spaces its items 12px apart: these sit 4px apart, a group */
-#side + #close, #side + #hide, #hide + #close { margin-left: -8px; }
+#side + #close, #side + #hide, #hide + #close, #mini + #attach, #attach + #side { margin-left: -8px; }
 body.demo #side { display: none; }
 
 /* Framed by another page (index.html?embed, the landing page's demo): that page sizes the frame to
@@ -347,3 +374,60 @@ body.demo #side { display: none; }
    overflow is the root's and the WebKit builds the panels run have no :has(). */
 html.embed { overflow: hidden; }
 html.embed #close, html.embed #hide { display: none; }
+
+/* The touch keyboard (touch.js): the board types. A finger is never a scroll, a zoom, a selection
+   or a callout menu there; a hold let go and still on is ringed -- one-shot in amber, locked in
+   amber and tinted -- and a key that cannot type here flashes. */
+html.touch #board { touch-action: none; }
+html.touch .key { -webkit-touch-callout: none; -webkit-tap-highlight-color: transparent; cursor: pointer; }
+/* The typed-keys strip is the HUD's, not the touch keyboard's: away while the board types. */
+html.touch #keys { display: none; }
+.key.latched { --ring: #e0af68; }
+.key.locked { --ring: #e0af68; background: #f6e3c0; }
+.key.locked::after { box-shadow: inset 0 0 0 3px var(--ring); }
+.key.refused { background: #f7768e; transition: none; }
+/* A combo as a chip between its keys (hud.js renderChips): tapped, it is the combo. */
+#chips { position: absolute; inset: 0; pointer-events: none; }
+.combo-chip { position: absolute; pointer-events: auto; display: flex; align-items: center; justify-content: center;
+  border-radius: 6px; background: #3b4261; color: #c0caf5; font: 600 12px/1 var(--font); overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.35); touch-action: none; -webkit-touch-callout: none; }
+.combo-chip.pressed { background: #7aa2f7; color: #101420; }
+.combo-chip .glyph svg { width: 70%; height: 70%; }
+
+/* Docked along the bottom of a screen (hud.js setDock): the board as wide as the window, centred,
+   and nothing around it but a thin banner. hud.js DOCK_CHROME is the height of what is not the
+   board: 4 + 6 padding, 2 border, the banner's 20 + 2 + 2, and one 4px gap -- the two agree. */
+html.dock #frame { width: 100%; }
+html.dock #hud { padding: 4px 10px 6px; gap: 4px; border-radius: 0; }
+html.dock #layer { min-height: 20px; padding: 0 4px 2px; border-bottom-width: 2px; gap: 8px; }
+html.dock #layerName { font-size: 15px; line-height: 20px; }
+html.dock #layerSub { padding-top: 0; }
+html.dock #stats, html.dock #status, html.dock #keys { display: none; }
+/* The chevron shows and hides the column between a split board's halves too; with no room there,
+   there is nothing for it to show. */
+html.dock:not(.stats-middle) #side, html.dock.mini #side { display: none; }
+/* A browser window docked (touch.js, `&touch` in development): the keyboard along its bottom, as
+   along a screen's. */
+html.dock.bottom #frame { position: fixed; left: 0; right: 0; bottom: 0; }   /* over html.stats-middle #frame: fixed holds the column as well */
+/* ...but a split board's halves at the sides leave room between them, and there the stats column
+   sits when it fits (hud.js placeStats): whole, the strip growing to hold it (fitMiddle), scrolling
+   only past the room the host allows. Hidden still when it was hidden (the chevron's choice,
+   stats_bar: 0). */
+html.stats-middle #frame { position: relative; }
+html.dock.stats-middle body:not(.side-hidden) #stats:not(.off) { display: grid; position: absolute; margin: 0;
+  overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+html.stats-middle #stats::-webkit-scrollbar { display: none; }   /* scrolled by a finger or a wheel, no bar */
+/* A keyboard's strip has no use for the column's heading, the landing page's link: the stats fit in
+   a shorter strip without it. */
+html.stats-middle #statsHead { display: none; }
+html.dock.stats-middle body:not(.side-hidden) #stats:not(.off) { padding-top: 10px; }
+
+/* The remote page (host/remote.py, remote.js): a tablet's browser, the whole window the keyboard.
+   The board sits at the bottom, where the thumbs are; the page never scrolls, bounces or selects,
+   and there is no panel for ✕ or – to close or hide. Until the keymap comes the status line says
+   what the page is waiting for. */
+html.remote, html.remote body { height: 100%; background: #1a1b26; overscroll-behavior: none; }
+html.remote body { display: flex; flex-direction: column; justify-content: flex-end; overflow: hidden;
+                   -webkit-user-select: none; -webkit-text-size-adjust: 100%; }
+html.remote #close, html.remote #hide { display: none; }
+html.remote:not(.touch) #status { display: flex; }

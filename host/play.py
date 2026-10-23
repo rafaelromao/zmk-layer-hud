@@ -45,17 +45,10 @@ STEP_HOLD_MS = 250    # how long a frame's keys stay down, played
 TAIL_MS = 2400        # after the last key: the strip fades (hud/keys.js), then the next loop
 STRIP_IDLE_MS = 1800  # a pause this long empties the strip (hud/keys.js IDLE_MS)
 
-# The characters text spells named keys with, and the words keymap-drawer files use for them. A
-# drawer's "Delete" is ZMK's DEL, the key that deletes forward; "BSpace" is Backspace.
+# The characters text spells named keys with, and the words keymap-drawer files use for them
+# (uskeys.LEGEND_WORDS, which the touch keyboard's legend fallback reads too).
 TEXT_NAMES = {" ": "space", "\n": "return", "\t": "tab"}
-DRAWER_WORDS = {
-    "space": "space", "spc": "space", "enter": "return", "ret": "return", "return": "return",
-    "esc": "escape", "escape": "escape", "tab": "tab", "bspace": "delete", "bspc": "delete",
-    "backspace": "delete", "delete": "forwarddelete", "del": "forwarddelete",
-    "left": "left", "right": "right", "up": "up", "down": "down", "home": "home", "end": "end",
-    "pgup": "pageup", "pageup": "pageup", "pgdn": "pagedown", "pagedown": "pagedown",
-    "insert": "insert", "ins": "insert", "caps": "capslock", "capslock": "capslock",
-}
+DRAWER_WORDS = uskeys.LEGEND_WORDS
 GLYPH_FOR_NAME = {}   # a named key -> a legend uskeys can type it from
 for _legend, _name in uskeys.NAME_FOR_LEGEND.items():
     if _name not in GLYPH_FOR_NAME and uskeys.keystrokes_for(_legend) is not None:
