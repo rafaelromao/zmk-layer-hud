@@ -32,6 +32,9 @@ on the `west build` command line, or a git submodule your build script hands to 
 module is the repo itself: `zephyr/module.yml` at its root points cmake, Kconfig and the
 devicetree bindings at `firmware/`.
 
+The module needs a ZMK from February 2026 on (zmkfirmware/zmk#3140, which named the endpoint
+calls it uses: `zmk_endpoint_get_selected`); `revision: main` has it.
+
 ## 2. Add the node to your keymap
 
 Anywhere at the root of your `.keymap` (or a `.dtsi` it includes):
@@ -99,6 +102,13 @@ would rather use a physical one.
 
 Over BLE the module defines its own GATT service and needs nothing but `CONFIG_BT_PERIPHERAL`.
 Subscribing requires encryption, so the signal only flows to a host the keyboard is bonded with.
+
+The signal goes where the typing goes, and nowhere else: on the serial port while ZMK types over
+USB, and over BLE while it types over BLE -- there to the selected profile's host alone. ZMK stays
+connected to the hosts bonded on its other profiles, and a HUD on one of them sees nothing, as it
+gets no key reports either; select that host's profile (`&bt BT_SEL n`) to type to it, and the
+signal follows. Plugged in by USB, ZMK types over USB, so a build without the snippet shows nothing
+while cabled.
 
 ## 4. Build and flash
 
