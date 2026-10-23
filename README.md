@@ -575,7 +575,10 @@ beside anything that is wrong. What it cannot see:
   more than one CDC interface and this was another; the feed moves on to the next by itself. If it
   says so about every port, the firmware is not sending — build it with the snippet
   (`-S layer-hud-usb-uart`), which is what creates the interface and points `zmk,layer-hud-uart` at it.
-- **Nothing over Bluetooth**: pair the keyboard with the OS first; the signal needs a bonded host.
+- **Nothing over Bluetooth**: pair the keyboard with the OS first; the signal needs a bonded host,
+  and goes to the host the keyboard is typing to alone. A keyboard with several BLE profiles stays
+  connected to the hosts on the others, which get neither the signal nor what is typed: if macOS
+  says it is connected but nothing types, select this computer's profile (`&bt BT_SEL n`).
   On macOS the feed takes a keyboard that is already connected straight from CoreBluetooth, so no
   address is needed, but whatever runs the feed needs Bluetooth permission (System Settings →
   Privacy & Security → Bluetooth). `… over BLE, not read` means it connected but found no signal
@@ -614,8 +617,7 @@ beside anything that is wrong. What it cannot see:
   `systemd-ask-password`, a pinentry, a prompt that masks with stars -- is not, and nor is a prompt
   on the far side of `ssh` or inside a container, whose pty is not this machine's. When the gate
   misses, a session keeps the keys as counts per key and layer, never their order (`feed.sessions:
-  0` keeps none), and a keyboard cabled to one machine while typing over BLE to another sends its
-  positions to the cabled one's port too.
+  0` keeps none).
 - The touch keyboard emulates ZMK's core behaviours -- keys, mod-taps and layer-taps, layers,
   sticky keys, mod-morph, tap dance, macros, key repeat, caps word, conditional layers -- and
   types a key's legend for the rest (module behaviours: adaptive keys, leader, OS detection).

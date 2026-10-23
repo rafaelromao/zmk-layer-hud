@@ -20,9 +20,11 @@ import subprocess
 import sys
 import time
 
-# WebKit's DMA-BUF renderer triggers a Wayland protocol error on this NVIDIA host.
-# Software composition also preserves the transparent webview background reliably.
-os.environ.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+# WebKit's DMA-BUF renderer triggers a Wayland protocol error on NVIDIA hosts when it hands the
+# compositor GPU buffers. Shared-memory buffers avoid that and keep the transparent background.
+# Not WEBKIT_DISABLE_DMABUF_RENDERER: from WebKitGTK 2.54 on, that fallback repaints only the
+# damaged rects, each on an opaque backdrop, so the panel draws as dark boxes around whatever changed.
+os.environ.setdefault("WEBKIT_DMABUF_RENDERER_FORCE_SHM", "1")
 
 import gi
 

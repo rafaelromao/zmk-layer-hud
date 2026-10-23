@@ -108,9 +108,9 @@ in-process; the firmware sends positions and a layer bitmap, never usages or cha
 - **When the gate misses, a session keeps the keys as a multiset**: a count per key and layer,
   no order, which for a short secret typed on an otherwise quiet day says which keys it used.
   `feed.sessions: 0` keeps no files.
-- **A keyboard cabled to one machine while typing over BLE to another** sends its positions to
+- **A keyboard cabled to one machine while typing over BLE to another** sent its positions to
   the cabled machine's serial port too (`positions;`), with no prompt of its own to tell it to
-  stop; the serial-port limit above is about the local case.
+  stop. No longer: the signal goes only where the typing goes (finding 31 below).
 - **Typing sent in (`poke`) bypasses the gate**, and the Linux strip window shows it even while
   secure input is on: only a holder of the run's token can, which is the user's own process.
 - **`hide` keeps counting and broadcasting**: it is for recording with the HUD off screen, not a
@@ -123,6 +123,17 @@ in-process; the firmware sends positions and a layer bitmap, never usages or cha
   SORT_ORDER_CANONICAL 1; a browser's login form up before `zmk-layer-hud start` hides the
   typing at once; `zmk-layer-hud doctor` names the four probes. On macOS: the lock screen's
   password field leaves `secure input · typing hidden` on a HUD left visible.
+
+## 2026-10-21: the signal reached hosts the keyboard was not typing to
+
+Found while testing the open PRs together: with the Diamond's selected BLE profile on an Omarchy
+laptop, a Mac bonded on another profile stayed connected, and its HUD lit the key positions of
+what was being typed into the laptop. Its strip stayed empty, because ZMK sends the key reports to
+the selected profile alone.
+
+| # | Severity | What | Where | Status |
+|---|---|---|---|---|
+| 31 | Medium | The signal went to every host that subscribed and to the serial port, whatever ZMK was typing to: the GATT carrier notified with a NULL connection, which is every subscriber, ZMK stays connected to the hosts on its other profiles, and the port carried it while the keyboard typed over BLE. With `positions;` on and the keymap known, that is the typing, on a host whose secure-input gate cannot see a password field on the one being typed to. | `firmware/src/signal_transport.h`, `firmware/src/signal_gatt.c` | Fixed in `1a1b809`: the signal goes on the carrier of the endpoint ZMK has selected, and over BLE to the selected profile's connection alone, when that host has subscribed. `firmware/tests/test_signal_route.c` compiles the carriers against fakes of Zephyr and ZMK. Not yet flashed and tried on a board. |
 
 ## What was looked for and found sound
 
