@@ -378,10 +378,10 @@ def live_now(d):
         return {}
     try:
         os.kill(pid, 0)
-    except ProcessLookupError:
+    except (ProcessLookupError, PermissionError):
+        # PermissionError: the pid is another user's process now, so the server is gone, as
+        # panelstate.alive says of a panel.
         return {}
-    except PermissionError:
-        pass
     return live
 
 
