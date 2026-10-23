@@ -253,9 +253,10 @@ def chip_event(k):
 
 
 def combo_on(data, strike, ids):
-    """Whether keys struck together are a combo on these layers, as the page decides it: some
-    layer up declares one on exactly those keys (hud.js pressAt). A modifier held with a key is a
-    chord of another kind, and draws no pill."""
+    """Whether keys struck together are a combo on these layers: the highest layer up declares one
+    on exactly those keys, as ZMK's combo.c matches it and the page draws it (hud.js pressAt). A
+    combo the layers below declare does not fire. A modifier held with a key is a chord of another
+    kind, and draws no pill."""
     positions = data.get("positions") or {}
     idxs = sorted(positions.get(str(p), p) if positions else p for p in strike)
     stack = []
@@ -264,7 +265,7 @@ def combo_on(data, strike, ids):
         if z and z.get("drawer") and z["drawer"] not in stack:
             stack.append(z["drawer"])
     stack.append(data.get("base"))
-    return len(idxs) > 1 and any(sorted(c["positions"]) == idxs and any(l in c["layers"] for l in stack)
+    return len(idxs) > 1 and any(sorted(c["positions"]) == idxs and stack[0] in c["layers"]
                                  for c in data.get("combos") or [])
 
 

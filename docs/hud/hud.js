@@ -1,4 +1,4 @@
-/* zmk-layer-hud — renderer + keymap resolver.
+/* zmk-layer-hud — the page: the board drawn from the keymap, the keystrokes drawn on it and counted.
  *
  * The page carries no keymap: the host sends one, built by host/keymap.py from the HUD's config
  * and the definitions `zmk-layer-hud import` wrote beside it (physical layout, layers, combos, the
@@ -15,22 +15,25 @@
  *                                      (firmware `positions;`): the exact key lights while held,
  *                                      then fades; characters then only feed the strip. `sent`:
  *                                      a press sent in, lit the same and never counted in a session
- *   hud.press([idx...])                light keys directly (tests)
  *   hud.setHeatmap(mode)               what the keys glow with: live, session or off
  *   hud.receive(message)               any feed message (the WebSocket's dispatcher), including
  *                                      {"kind":"session"}: the host's active session, which the
  *                                      page reports the keyboard's own counts to
  *   hud.stats                          the counts behind the bar and the session heatmap (tests)
  *
- * Every keystroke drawn is also counted (the ledger, once nothing can take it back), and typing
- * is timed: the bar above the panel shows words per minute, accuracy and how the keys are used.
- *
- * Two modes:
+ * What the messages mean -- which layers are up, which keys and combos were struck, where a
+ * character typed with no position behind it goes, how long each stays lit -- is read by
+ * hud/keystrokes.js, which this page hands every message to and draws as it answers. It reads in
+ * two modes:
  *   live      after the first setLayers: the stack is exactly what the keyboard reports; a key is
  *             resolved on that stack (combos included). A key that cannot be placed there lights
  *             nothing: guessing another layer would be wrong.
  *   emulated  before any setLayers (firmware without the module): only the base layer is known
  *             and everything else is inferred from the typed characters, guided by `extras`.
+ *
+ * Every keystroke drawn is also counted, once keystrokes.js says nothing can take it back, and
+ * typing is timed: the bar above the panel shows words per minute, accuracy and how the keys are
+ * used.
  *
  * In a browser (http://) it accepts real key events and `?keymap=keymap.json` loads a dumped
  * message, so the page can be developed without a host. With `?embed` it is framed by another page
@@ -44,31 +47,19 @@
   // defaults in); these are only the fallbacks for a keymap message without it. What is left as a
   // constant (HEAT_TICK_MS, WPM_TICK_MS) is how often the page redraws, not anything a user would
   // notice.
-  const DEFAULTS = { opacity: 86, press_ms: 320, release_ms: 60, held_timeout_ms: 5000, momentary_ms: 700, combo_slack_ms: 20, activator_ms: 400,
-    positions_fresh_ms: 3000, combo_pill_ms: 1000, combo_decide_ms: 300, sequence_ms: 200, sequence_max: 6, one_shot_ms: 450, heatmap_ms: 3000,
-    wpm_window_ms: 10000, wpm_idle_ms: 3000, stats_bar: 1, dark: 0 };
+  // The keystrokes' own (press_ms, combo_slack_ms, ...) are keystrokes.js's.
+  const Keystrokes = window.ZmkKeystrokes;
+  const DEFAULTS = Object.assign({ opacity: 86, heatmap_ms: 3000, wpm_window_ms: 10000, wpm_idle_ms: 3000, stats_bar: 1, dark: 0 },
+                                 Keystrokes.DEFAULTS);
   const T = name => (state.data && state.data.hud && state.data.hud[name] != null) ? state.data.hud[name] : DEFAULTS[name];
   // The stats bar's chips, from the config's `stats:` section; again only the fallback.
   const STAT_DEFAULTS = { wpm: true, session: true, accuracy: true, keys: true, layer: true, time: false,
     hands: false, sfb: false, slow: false, heatmap: true, theme: true, opacity: true };
   const statOn = name => (state.data && state.data.stats && state.data.stats[name] != null) ? !!state.data.stats[name] : STAT_DEFAULTS[name];
-  const recentPos = [];
+  // What the keyboard's messages say was struck (keystrokes.js), and the board as it last said it.
+  const ks = Keystrokes.create();
+  let board = ks.read(null, Date.now()).board;
 
-  // Named keys → the legend text keymap-drawer keymaps usually use for them.
-  const NAMED = {
-    space: "␣", return: "↵", escape: "⎋", delete: "⌫", forwarddelete: "⌦", tab: "⇥",
-    left: "←", right: "→", up: "↑", down: "↓", home: "⇱", end: "⇲",
-    pagedown: "⇟", pageup: "⇞", insert: "⎀", capslock: "⇪",
-    // Keyboard Cancel (K_CANCEL), what a cancel combo sends: without positions this is how its
-    // keys light and its pill shows.
-    cancel: "cancel",
-  };
-  // The function keys the decoder names (f1..f24): without them a keymap's F5 resolves to no
-  // token at all and the key never lights when the firmware reports no positions.
-  for (let i = 1; i <= 24; i++) NAMED["f" + i] = "F" + i;
-  // Alternative spellings a drawer file may use for the same named key.
-  const ALIASES = { "␣": ["space", "spc", "SPACE"], "↵": ["⏎", "enter", "ret", "RET"], "⎋": ["esc", "ESC"],
-    "⌫": ["bspc", "BSPC", "backspace"], "⌦": ["del", "DEL"], "⇥": ["tab", "TAB", "↹"] };
   // Modifier flags → the glyph a hold legend uses for them (home-row mods light while held).
   const MOD_GLYPH = { shift: "⇧", ctrl: "⌃", alt: "⌥", cmd: "⌘" };
   // Where the keys go and which legend each shows (hud/view.js), the same answers a native board draws from.
@@ -76,19 +67,9 @@
 
   const state = {
     data: null,
-    baseLayers: [],           // emulated mode: just the base layer
-    live: null,               // {ids: [..], at} once the keyboard has reported its layers
-    momentary: [],            // [{layer, until}]  (inference only)
-    oneShot: null,            // layer name        (inference only)
-    mods: {},                 // flag -> true while held
+    posOf: [],                // drawer idx -> ZMK position (View.posOf)                 // flag -> true while held
     device: "",               // the keyboard's HID product name
-    activatorOf: {},          // drawn layer -> the key idx that brought it in (positions)
-    modSource: {},            // modifier flag -> the key idx that turned it on, null: none known (positions)
     pick: null,               // a layer the viewer picked to look at (the stats' layer tile), until a keystroke
-    drawnSince: {},           // drawn layer -> when it appeared (applyLayers)
-    pendingLayers: null,      // a layer change held back for a flash (setLayers)
-    pendingDue: null,         // ...and when it applies, fixed at the first drop
-    held: new Set(),          // key idx currently down, by reported position
     keyEls: [],
     keyBoxes: [],             // key idx -> {l, t, r, b}: its box on the board as drawn (buildBoard)
     keyUnit: 1,               // px: the smallest key's side, what a pill's distance is measured in
@@ -106,20 +87,8 @@
     touchNote: "",            // why the board that was asked to type cannot (touch.js setTouchNote)
     watched: null,            // what the feed says sees a secret being typed ([] = nothing); null until told
     demo: false,              // a GIF still (&demo=N): drawn as it always was, no heat, no counts
-    ledger: [],               // keystrokes drawn and not counted yet (see "ledger")
-    ledgerTimer: null,
-    ledgerDue: 0,
-    comboEntry: null,         // the ledger's entry for the combo whose pill is up
-    comboHeld: null,          // the combo last fired, until one of its keys comes up (drawCombo)
-    heldPills: [],            // the pills reading a hold, each until one of its chord's keys comes up
-    keysSeen: false,          // what the keyboard types reaches this page (a combo's pill waits for it)
-    typedAt: 0,               // when it last did
-    typed: null,              // and what: its token, for a chord whose positions came after it
-    down: new Map(),          // key idx -> the ledger entry of its press, while it is down
-    strokes: [],              // counted keystrokes not yet known to be taps or holds (see "strokes")
     lastStroke: null,         // the keystroke before, for the time a key takes and same-finger bigrams
     lastOwnStroke: null,      // ...among the keyboard's own
-    posOf: [],                // drawer idx -> ZMK position
     local: emptyTally(),      // everything counted since the page loaded, from any source
     unsent: emptyTally(),     // the keyboard's own counts, not yet handed to a session
     typing: newTyping(),      // live WPM, over everything shown
@@ -138,6 +107,15 @@
     dock: null,               // docked along the bottom of the screen (setDock): {maxHeight, split, pxPerMm, width, fit}
     offsetX: 0,               // the board's left margin when docked: it is centred, not stretched
   };
+  // What the page's own tests read of the keystrokes, until they read the board, and touch.js of the
+  // keyboard's layers: read only.
+  Object.defineProperties(state, {
+    live: { get: () => board.live, enumerable: true },
+    held: { get: () => new Set(board.held), enumerable: true },
+    down: { get: () => ks.inside().down, enumerable: true },
+    strokes: { get: () => ks.inside().strokes, enumerable: true },
+    lastPress: { get: () => ks.inside().lastPress, enumerable: true },
+  });
   // What other scripts on the page hook into (hud.on): touch.js follows the keymap and the layers.
   const hooks = {};
   let attachOwn = null;      // a page's own attach and detach (hud.setAttach), else the panel's
@@ -157,7 +135,6 @@
 
   const $ = id => document.getElementById(id);
   const base = () => state.data ? state.data.base : null;
-  const extras = () => (state.data && state.data.extras) || {};
 
   // ---------- rendering ----------
 
@@ -222,6 +199,7 @@
       state.keyEls[idx] = e;
     });
     paintHeat();   // the glow lives by index, not on the elements just replaced
+    paintedAfresh();
     placeStats(g);
   }
 
@@ -332,32 +310,11 @@
   // ZMK layer id → keymap entry ({name, drawer, label, cls}); falls back to the YAML order.
   function zl(id) { return View.zl(state.data, id); }
 
-  // The live stack as drawer layer names, top first: higher ZMK ids win, undrawn layers are
-  // skipped, duplicates (two ids drawn by one layer) collapse; the base layer is always last.
-  function liveStack() { return View.drawnStack(state.data, state.live.ids.slice().sort((a, b) => b - a)); }
-
-  function baseStack() {
-    // top first
-    if (state.live) return liveStack();
-    const s = [];
-    for (let i = state.baseLayers.length - 1; i >= 0; i--) s.push(state.baseLayers[i]);
-    if (!s.includes(base())) s.push(base());
-    return s;
-  }
-
-  // The touch keyboard's layers, top first (touch.js: the engine's, which takes the keyboard's own
-  // while nothing on glass holds one), drawn as liveStack draws the keyboard's.
-  function touchStack() { return View.drawnStack(state.data, state.touch.ids); }
-
+  // The layers a key is drawn from, top first, the base last: the keyboard's as keystrokes.js reads
+  // them, or a layer picked to look at, drawn over the base alone until the next keystroke (unpick).
   function stack() {
-    // A layer picked to look at is drawn over the base alone, until the next keystroke (unpick).
     if (state.pick) return state.pick === base() ? [base()] : [state.pick, base()];
-    if (state.touch && state.touch.ids) return touchStack();
-    const s = [];
-    if (state.oneShot) s.push(state.oneShot);
-    for (let i = state.momentary.length - 1; i >= 0; i--) s.push(state.momentary[i].layer);
-    for (const name of baseStack()) if (!s.includes(name)) s.push(name);
-    return s;
+    return board.layers;
   }
 
   // The binding that wins at idx, walking the stack through transparent keys.
@@ -422,35 +379,19 @@
     else if (text.length > 2) tapEl.classList.add("mid");
   }
 
-  // The drawer key at a reported ZMK position. A position the keymap does not place lights
-  // nothing: lighting the key that happens to share the number is worse than lighting none, and
-  // the feed already says so ("key position N is not in the keymap's … drawer keys"). A message
-  // with no map at all (a hand-written demo) still means position = index.
-  function idxAt(pos) {
-    const map = (state.data && state.data.positions) || {};
-    if (map[String(pos)] !== undefined) return map[String(pos)];
-    return Object.keys(map).length ? -1 : Number(pos);
-  }
+  // The drawer key at a reported ZMK position (-1: none).
+  const idxAt = pos => View.idxAt(state.data, pos);
 
-  function activatorsOf(layer) {
-    return state.data.activators.filter(a => a.layer === layer).map(a => a.idx);
-  }
+  // A key that carries a modifier: a home-row mod (hold legend) or the modifier key itself (tap).
+  const carries = (key, glyph) => !!key && ((key.hold && key.hold.includes(glyph)) || key.tap === glyph);
 
   function renderKeys() {
     const layers = stack();
-    const activators = new Set();
-    for (const m of state.momentary) for (const a of activatorsOf(m.layer)) activators.add(a);
-    if (state.oneShot) for (const a of activatorsOf(state.oneShot)) activators.add(a);
-    if (state.live) {
-      // The key that reached each live layer lights as its activator: the one pressed right
-      // before the layer appeared when positions are reported, else every key that can reach it.
-      for (const name of liveStack()) {
-        if (name === base()) continue;
-        if (state.activatorOf[name] !== undefined) { if (state.activatorOf[name] !== null) activators.add(state.activatorOf[name]); }
-        else for (const a of activatorsOf(name)) activators.add(a);
-      }
-    }
-    const heldMods = Object.keys(state.mods).filter(f => state.mods[f] && MOD_GLYPH[f]).map(f => ({ flag: f, glyph: MOD_GLYPH[f] }));
+    // The key that reached each layer up lights as its activator (keystrokes.js): the one pressed
+    // right before the layer appeared when positions are reported, else every key that can reach it.
+    const activators = new Set(board.activators);
+    const mods = board.mods, modSource = board.modSource;
+    const heldMods = Object.keys(mods).filter(f => mods[f] && MOD_GLYPH[f]).map(f => ({ flag: f, glyph: MOD_GLYPH[f] }));
     // Shift is a modifier, not a layer, so nothing else on the board would show it. Caps word and
     // caps line have their own drawn layer and arrive as a layer change; plain shift, held or
     // tapped as a one-shot, only ever reaches us as this flag. A single lowercase letter is the
@@ -459,7 +400,7 @@
     // A Shift latched on glass (touch.js: the report's modifier byte, either Shift) shifts the
     // legends as one held on the keyboard does.
     const touch = state.touch;
-    const shifting = !!state.mods.shift || !!(touch && touch.mods & View.SHIFT_BITS);
+    const shifting = !!mods.shift || !!(touch && touch.mods & View.SHIFT_BITS);
     const shiftLegend = t => View.shiftLegend(t, shifting);
     state.data.layout.keys.forEach((k, idx) => {
       const e = state.keyEls[idx];
@@ -479,8 +420,8 @@
       // A held modifier rings the key that turned it on (modSource): the home-row mod held, or the
       // sticky shift tapped. Without positions there is no telling which, so every key that
       // carries it is ringed.
-      if (heldMods.some(({ flag, glyph }) => state.modSource[flag] !== undefined
-        ? [].concat(state.modSource[flag]).includes(idx) : carries(r.key, glyph))) e.classList.add("mod");
+      if (heldMods.some(({ flag, glyph }) => modSource[flag] !== undefined
+        ? [].concat(modSource[flag]).includes(idx) : carries(r.key, glyph))) e.classList.add("mod");
       fit(e.querySelector(".tap"), shiftLegend(r.key.tap) || "", r.key.glyph);
       setLegend(e.querySelector(".hold"), r.key.hold, r.key.glyph_hold);
       setLegend(e.querySelector(".shifted"), r.key.shifted, r.key.glyph_shifted);
@@ -497,7 +438,7 @@
 
   // Live mode: the highest active layer names the banner; the sub line lists the whole set.
   function liveSummary() {
-    const ids = state.live.ids.slice().sort((a, b) => b - a);
+    const ids = board.live.ids.slice().sort((a, b) => b - a);
     const entries = ids.map(zl).filter(Boolean);
     const names = entries.map(z => z.name);
     if (!entries.length) return { name: layerLabel(base()), cls: "off", sub: "" };
@@ -510,15 +451,15 @@
     return { name: top.label, cls, sub };
   }
 
-  function baseSummary() { return state.live ? liveSummary() : codeSummary(); }
+  function baseSummary() { return board.live ? liveSummary() : codeSummary(); }
 
   // The name of the drawing on screen, as the banner says it: a layer with no drawing of its own
   // (the Diamond's MACOS, over its base) shows the one under it, and is what the viewer knows it
   // by -- so the highest active layer that is this drawing, or sits undrawn right above it.
   function drawingLabel(drawer) {
-    if (state.live && !state.oneShot && !state.momentary.length) {
+    if (board.live && !board.oneShot && !board.momentary.length) {
       let undrawn = null;
-      for (const z of state.live.ids.slice().sort((a, b) => b - a).map(zl).filter(Boolean)) {
+      for (const z of board.live.ids.slice().sort((a, b) => b - a).map(zl).filter(Boolean)) {
         if (z.drawer == null) { undrawn = undrawn || z; continue; }
         if (z.drawer === drawer) return (undrawn || z).label;
         undrawn = null;
@@ -537,10 +478,10 @@
     if (state.pick) return { name: layerLabel(state.pick), cls: state.pick === base() ? "off" : "momentary", sub: "picked · type to follow the keyboard" };
     if (state.touch && state.touch.ids) return touchSummary();
     const b = baseSummary();
-    const top = state.oneShot || (state.momentary.length ? state.momentary[state.momentary.length - 1].layer : null);
+    const top = board.oneShot || (board.momentary.length ? board.momentary[board.momentary.length - 1] : null);
     if (!top) return b;
     return { name: layerLabel(top), cls: "momentary",
-      sub: (state.oneShot ? "one shot" : "held") + (state.live ? " (inferred)" : "") + " · over " + b.name.toLowerCase() };
+      sub: (board.oneShot ? "one shot" : "held") + (board.live ? " (inferred)" : "") + " · over " + b.name.toLowerCase() };
   }
 
   function renderBanner() {
@@ -568,30 +509,20 @@
     if (on === state.secure) { if (state.data) renderBanner(); return; }
     state.secure = on;
     document.body.classList.toggle("secure", on);
+    // What keystrokes.js keeps of the typing -- the keys down, the last few typed, what waits to be
+    // settled or told a tap from a hold -- goes with it (and nothing is read until it ends).
+    apply(ks.read({ kind: "secure", on }, Date.now()));
     if (on) {
       if (window.keys && window.keys.clear) window.keys.clear();
-      for (const id of state.timers.values()) clearTimeout(id);
-      state.timers.clear();
-      state.held.clear();
       for (const e of state.keyEls) if (e) e.classList.remove("pressed", "combo", "combo-key");
-      if (state.comboShown) { state.comboShown.remove(); state.comboShown = null; }
-      // A chord waiting to be told tapped or held would draw its pill once told (drawCombo).
-      if (state.comboHeld) { clearTimeout(state.comboHeld.timer); state.comboHeld = null; }
-      for (const h of state.heldPills) h.pill.remove();
-      state.heldPills = [];
-      recent.length = 0;
       state.heat.clear();
       paintHeat();
       // Nothing typed before it is counted or sent either: a key that slipped in as the secret
-      // began would say what it was. What waits to be counted, what waits to be known as a tap or
-      // a hold, the counts not yet handed to the session and the WPM windows go, as they do when
-      // a keymap is replaced; what was already sent (inflight) is the host's.
-      clearTimeout(state.ledgerTimer); state.ledgerTimer = null; state.ledgerDue = 0;
-      state.ledger = []; state.comboEntry = null;
-      state.down.clear(); state.strokes = []; state.lastStroke = null; state.lastOwnStroke = null;
+      // began would say what it was. The counts not yet handed to the session and the WPM windows
+      // go, as they do when a keymap is replaced; what was already sent (inflight) is the host's.
+      state.lastStroke = null; state.lastOwnStroke = null;
       state.unsent = emptyTally();
       state.typing = newTyping(); state.ownTyping = newTyping();
-      recentPos.length = 0; state.lastPress = null;
       state.viewCache = null;
     }
     if (state.data) renderBanner();
@@ -604,9 +535,9 @@
     // Only the two waiting states are worth a line; once the keyboard reports, say nothing.
     if (!state.data) { f.textContent = "waiting for the keymap…"; f.className = ""; return; }
     // A touch keyboard waits for no keyboard: there may be none plugged in.
-    const waiting = !state.live && !state.dock && !document.documentElement.classList.contains("touch");
+    const waiting = !board.live && !state.dock && !document.documentElement.classList.contains("touch");
     f.textContent = waiting ? "waiting for the keyboard's layers…" : "";
-    f.className = state.live ? "live" : "";
+    f.className = board.live ? "live" : "";
   }
 
   // Look at another layer: drawn over the base, the banner saying so, until a keystroke. null
@@ -929,152 +860,58 @@
   function zmkPos(idx) {
     return state.posOf[idx] !== undefined ? state.posOf[idx] : null;
   }
-  const comboKey = idxs => idxs.map(zmkPos).sort((a, b) => a - b).join(",");
-  const comboTerm = () => (state.data.combo_term || 50) + T("combo_slack_ms");
 
   // The keyboard's own typing, as opposed to typing sent in (which says whether combos count) or
   // a rehearsal's (synthetic).
   const fromKeyboard = ev => ev.sent !== true && typeof ev.combos !== "boolean" && !ev.synthetic;
 
-  function ledgerAdd(entry) {
-    if (state.demo) return entry;
-    state.ledger.push(entry);
-    armLedger();
-    return entry;
-  }
-
-  function armLedger() {
-    if (!state.ledger.length) return;
-    const due = Math.min(...state.ledger.map(e => e.due));
-    if (state.ledgerTimer !== null && state.ledgerDue <= due) return;
-    clearTimeout(state.ledgerTimer);
-    state.ledgerDue = due;
-    state.ledgerTimer = setTimeout(() => { state.ledgerTimer = null; ledgerCommit(Date.now()); armLedger(); },
-                                   Math.max(0, due - Date.now()));
-  }
-
-  // Count what is due (everything, with `all`: a keymap about to be replaced).
-  function ledgerCommit(now, all) {
-    const keep = [];
-    let counted = false;
-    for (const e of state.ledger) {
-      if (!all && e.due > now) { keep.push(e); continue; }
-      if (e.cancelled) continue;
-      countEntry(e);
-      // A keystroke of its own, for the time it took and whose finger struck it: a press that
-      // was not one key of a chord, and a chord.
-      if ((e.kind === "press" && !e.chord) || e.kind === "combo") state.strokes.push(e);
-      counted = true;
-    }
-    state.ledger = keep;
-    if (!all) resolveStrokes(now);
-    if (counted) { state.viewCache = null; armTally(); paintSessionHeat(); renderStats(); }
-  }
-
-  // A key counts where its binding came from on the layers that were up when it went down: a
-  // transparent key on a held layer typed the layer underneath's legend, and counts there.
-  const bindingLayer = (idx, layers) => { const r = resolveBinding(idx, layers); return r ? r.layer : layers[0]; };
-
-  function countEntry(e) {
-    const tallies = e.eligible ? [state.local, state.unsent] : [state.local];
-    const on = bindingLayer;
-    if (e.kind === "press") {
-      for (const t of tallies) bump(t.presses, on(e.idx, e.stack), e.pos);
-    } else if (e.kind === "combo") {
-      for (const t of tallies) bump(t.combos, e.layer, e.key);
-    } else {   // a guess: the keys a report lit, with no position to say so
-      for (const idx of e.idxs) {
-        const pos = zmkPos(idx);
-        if (pos !== null) for (const t of tallies) bump(t.presses, on(idx, e.stack), pos);
-        bumpHeat(idx);   // certain now, so it may glow: a guess taken back never did
+  // What keystrokes.js says was struck, once nothing can take it back, counted where it says.
+  // true when it counted something.
+  function count(f) {
+    const tallies = f.own ? [state.local, state.unsent] : [state.local];
+    if (f.say === "press") {
+      for (const t of tallies) bump(t.presses, f.layer, f.pos);
+    } else if (f.say === "combo") {
+      for (const t of tallies) bump(t.combos, f.layer, f.key);
+    } else if (f.say === "guess") {
+      for (const k of f.keys) {
+        if (k.pos !== null) for (const t of tallies) bump(t.presses, k.layer, k.pos);
+        bumpHeat(k.idx);   // certain now, so it may glow: a guess taken back never did
       }
-      if (e.idxs.length > 1 && e.idxs.every(i => zmkPos(i) !== null)) for (const t of tallies) bump(t.combos, e.layer, comboKey(e.idxs));
+      if (f.combo) for (const t of tallies) bump(t.combos, f.layer, f.combo);
+    } else if (f.say === "keystroke") {
+      state.lastStroke = strokeInto(state.local, f, state.lastStroke);
+      if (f.own) state.lastOwnStroke = strokeInto(state.unsent, f, state.lastOwnStroke);
+    } else {
+      return false;
     }
-  }
-
-  // Keys a report lit, entered against the record remember() keeps for the macro and pressAt
-  // lookups: unlight() cancels the guess, and so does any position going down.
-  function guess(rec, idxs, layer, ev) {
-    if (!idxs.length) return;
-    const now = Date.now();
-    rec.guess = ledgerAdd({ kind: "guess", idxs: idxs.slice(), layer, t: now,
-                            stack: [layer].concat(stack().filter(l => l !== layer)),
-                            due: now + Math.max(comboTerm(), T("sequence_ms")), eligible: fromKeyboard(ev) });
-  }
-
-  /* ZMK sends a layer's frame after the key that decided its hold: a hold-tap turns into a hold
-   * when the next key goes down, and that key's position is sent first. Counted on the stack it
-   * went down on, the first key typed on every held layer would count on the one below. So when a
-   * layer comes up, a press still waiting that followed the key now holding it is moved onto the
-   * new stack. A layer going away moves nothing: the key before it was typed with it up. */
-  function recredit(gained, now) {
-    const term = comboTerm(), layers = stack();
-    for (const e of state.ledger) {
-      if (e.kind !== "press" || e.cancelled || now - e.t > term) continue;
-      if (gained.some(p => e.t > p.t && e.idx !== p.idx)) e.stack = layers;
-    }
+    return true;
   }
 
   // ---------- strokes ----------
 
   /* The time each key takes and same-finger bigrams -- keybr's number and a layout analyser's --
-   * from the keystrokes in the order they went down. A chord is one keystroke, struck by no one
-   * finger. A key that can be held (a layer key, a home-row mod: anything with a hold) is a
-   * keystroke only when it was tapped; held, it typed nothing, and the key struck under it
-   * follows the keystroke before it. It was held when it stayed down past HOLD_MS, when another
-   * key went down and came up again inside it (how ZMK's balanced hold-tap tells a hold), or when
-   * a layer came up with it and another key went down on that layer. Only its release says which,
-   * so a keystroke waits in `strokes` until the ones before it are known, and counts then.
-   *
+   * from the keystrokes in the order they went down (keystrokes.js says which typed: a tap, a
+   * chord; a key held typed nothing, and the key struck under it follows the keystroke before it).
    * A key's time is from the keystroke before it, within wpm_idle_ms: after a pause the key is the
    * start of a burst, and its time says nothing about it. A bigram is two keystrokes in a row by
    * two fingers -- a thumb or a chord on either side is not one -- and it is same-finger when one
    * finger struck two different keys. Kept as totals and per key, like every other count: never
    * which key came after which. */
-  const HOLD_MS = 400;
   const fingerOf = idx => (state.data && state.data.fingers && state.data.fingers[idx]) || null;
   const isThumb = f => f === "lt" || f === "rt";
 
-  function strokeKind(e, now) {        // "tap", "hold", "chord", or null while it cannot be told
-    if (e.kind === "combo") return "chord";
-    if (!e.holder) return "tap";
-    if (e.activator && e.overlapped) return "hold";
-    const up = e.upAt === undefined ? null : e.upAt;
-    if ((up === null ? now : up) - e.t > HOLD_MS) return "hold";
-    if (up === null) return null;
-    return e.nested ? "hold" : "tap";
-  }
-
-  function resolveStrokes(now) {
-    let counted = false;
-    while (state.strokes.length) {
-      const e = state.strokes[0], kind = strokeKind(e, now);
-      if (kind === null) break;
-      state.strokes.shift();
-      if (kind === "hold") continue;
-      state.lastStroke = strokeInto(state.local, e, kind, state.lastStroke);
-      if (e.eligible) state.lastOwnStroke = strokeInto(state.unsent, e, kind, state.lastOwnStroke);
-      counted = true;
-    }
-    return counted;
-  }
-  // ...from a press or a release, which count nothing else.
-  function strokesDue(now) {
-    if (resolveStrokes(now)) { state.viewCache = null; armTally(); paintSessionHeat(); renderStats(); }
-  }
-
-  function strokeInto(tally, e, kind, last) {
-    if (kind === "tap" && last && e.t - last.t <= T("wpm_idle_ms")) {
-      const layer = bindingLayer(e.idx, e.stack);
-      bump(tally.ms, layer, e.pos, e.t - last.t);
-      bump(tally.timed, layer, e.pos);
-      const f = fingerOf(e.idx);
-      if (f && last.finger && !isThumb(f) && !isThumb(last.finger)) {
+  function strokeInto(tally, f, last) {
+    if (f.as === "tap" && last && f.t - last.t <= T("wpm_idle_ms")) {
+      bump(tally.ms, f.layer, f.pos, f.t - last.t);
+      bump(tally.timed, f.layer, f.pos);
+      const finger = fingerOf(f.idx);
+      if (finger && last.finger && !isThumb(finger) && !isThumb(last.finger)) {
         tally.bigrams++;
-        if (f === last.finger && e.pos !== last.pos) tally.sfb++;
+        if (finger === last.finger && f.pos !== last.pos) tally.sfb++;
       }
     }
-    return kind === "chord" ? { t: e.t, finger: null, pos: null } : { t: e.t, finger: fingerOf(e.idx), pos: e.pos };
+    return f.as === "chord" ? { t: f.t, finger: null, pos: null } : { t: f.t, finger: fingerOf(f.idx), pos: f.pos };
   }
 
   // ---------- typing speed ----------
@@ -1573,7 +1410,11 @@
   // A combo is drawn the way keymap-drawer draws it: a pill with the combo's legend, linked to
   // each of its keys, fading after a moment. The pill sits beside the chord rather than on it
   // (pillSpot): the keys flashing there are what it is there to explain.
-  function showCombo(positions, key) {
+  // A combo's pill beside its keys (keystrokes.js says which are up and for how long). Taken down
+  // when its time is up it fades; taken down early -- a bigger chord, a guess taken back, a secret --
+  // it goes at once.
+  function drawPill(p) {
+    const positions = p.positions, key = p.key;
     const board = $("board");
     const pill = el("div", "combo-pill");
     pill.appendChild(el("span", "combo-label", "combo"));
@@ -1604,481 +1445,100 @@
     }
     board.appendChild(svg);
     requestAnimationFrame(() => { pill.classList.add("show"); svg.classList.add("show"); });
-    for (const idx of positions) state.keyEls[idx].classList.add("combo-key");
-    const fade = () => {
-      pill.classList.remove("show"); svg.classList.remove("show");
-      for (const idx of positions) state.keyEls[idx].classList.remove("combo-key");
-      setTimeout(() => { pill.remove(); svg.remove(); }, 200);
-    };
-    let timer = setTimeout(fade, T('combo_pill_ms')), held = false;
-    // A handle to take the pill down early when a longer legend supersedes it, and to say the
-    // combo was held for its hold (holdCombo): the pill then reads the hold, and stays up for as
-    // long as the chord is down rather than fading on its timer.
-    return {
-      remove() { clearTimeout(timer); pill.remove(); svg.remove(); },
-      hold(legend) {
-        clearTimeout(timer); held = true;
+    const shown = {
+      hold: null,
+      // A chord held for its modifiers: the pill reads the hold (keystrokes.js drawCombo).
+      held(legend) {
+        shown.hold = legend;
         pill.classList.add("held");
         setLegend(tapEl, legend);
         const sub = pill.querySelector(".combo-sub");
         if (sub) sub.remove();
       },
-      letGo() { if (held) { held = false; fade(); } },
+      // Gone by itself (its time up, its chord let go) it fades; taken down early it goes at once.
+      down(fades) {
+        if (!fades) { pill.remove(); svg.remove(); return; }
+        pill.classList.remove("show"); svg.classList.remove("show");
+        setTimeout(() => { pill.remove(); svg.remove(); }, 200);
+      },
     };
+    if (p.hold) shown.held(p.hold);
+    return shown;
   }
 
-  /* A combo can be a hold-tap of its own: the Diamond's q chord types q tapped and is Ctrl+Alt
-   * held, and its drawing says only q. The keyboard says which it was, so where what it types
-   * reaches this page the pill waits to be told (pressAt), and is drawn by the first of:
-   *   - what the chord types (hud.key): q, or the ⌘S of a save macro -- the tap's legend;
-   *   - one of its keys coming up (releaseAt): tapped;
-   *   - a modifier still on, while every key is down, once the chord's own reports are in (the
-   *     combo term past it, so a macro's ⌘ before its S is not taken for a hold): held. The pill
-   *     reads the drawing's hold legend when it names those modifiers or a meh or hyper, else the
-   *     modifiers themselves, stays up while the chord is down, and its keys ring as their source;
-   *   - none of these within combo_decide_ms (just past the keymap's tapping term): the tap's.
-   * A page that is not told what is typed (the tests' sweep, the demos) draws the pill at once. */
-  const HOLD_ORDER = ["ctrl", "alt", "shift", "cmd"];
-  function heldCombo() {
-    const c = state.comboHeld;
-    return c && c.positions.every(i => state.held.has(i)) ? c : null;
-  }
-  function holdLegend(c) {
-    const on = c.typed ? [] : HOLD_ORDER.filter(f => state.mods[f] && state.modSource[f] === c.positions);
-    if (!on.length || Date.now() - c.t < comboTerm()) return null;
-    const glyphs = on.map(f => MOD_GLYPH[f]);
-    const named = c.key.hold && (glyphs.some(g => c.key.hold.includes(g)) || /\b(meh|hyper)\b/i.test(c.key.hold));
-    return named ? c.key.hold : glyphs.join("");
-  }
-  // The chord has said what it was (or had its time): its pill, the hold's when it was held.
-  function drawCombo(c) {
-    if (state.comboHeld !== c || state.secure) return;
-    clearTimeout(c.timer);
-    if (!c.pill) c.pill = state.comboShown = showCombo(c.positions, c.key);
-    const hold = heldCombo() === c && holdLegend(c);
-    if (hold) {
-      c.pill.hold(hold);
-      // Its fade waits for the chord's release now, which a chord fired after it (held q, then
-      // the z chord) must not take from it: each held pill is let go by its own keys (releaseAt).
-      if (!state.heldPills.some(h => h.pill === c.pill)) state.heldPills.push({ positions: c.positions, pill: c.pill });
+  /* What keystrokes.js answered. The layers it applied go on the board, and to the scripts that
+   * follow them (touch.js); what it says was struck is counted; the board is drawn as it says, and
+   * when it is waiting for something, it is asked again then. */
+  let ksTimer = null, ksDue = null;
+  const liveKey = b => (b.live ? b.live.ids.join(",") : "-");
+  function apply(out) {
+    const before = board;
+    board = out.board;
+    let counted = false, rendered = false;
+    for (const said of out.said) {
+      if (said.say === "layers") { render(); rendered = true; fire("layers", said.ids); }
+      else if (said.say === "down") bumpHeat(said.idx);      // a position is never taken back: it warms at once
+      else if (!state.demo && count(said)) counted = true;   // a GIF still: drawn, never counted
     }
+    if (counted) { state.viewCache = null; armTally(); paintSessionHeat(); renderStats(); }
+    if (state.data && !rendered) {
+      if (before.layers.join("\n") !== board.layers.join("\n") || liveKey(before) !== liveKey(board) ||
+          before.oneShot !== board.oneShot || before.momentary.join("\n") !== board.momentary.join("\n")) render();
+      else if (before.activators.join() !== board.activators.join() || JSON.stringify(before.mods) !== JSON.stringify(board.mods) ||
+               JSON.stringify(before.modSource) !== JSON.stringify(board.modSource)) renderKeys();
+    }
+    paintBoard(board);
+    armKs(out.next);
+    return out;
   }
-  // It typed something: a tap, or a macro whose modifiers were its own, not a hold.
-  function comboTyped(c) {
-    c.typed = true;
-    for (const f of Object.keys(state.modSource)) if (state.modSource[f] === c.positions) state.modSource[f] = null;
-    drawCombo(c);
-    renderKeys();
-  }
-  // A modifier the chord holds: looked at again once the chord's own reports are in.
-  function comboModifier(c) {
-    if (c.typed || !HOLD_ORDER.some(f => state.mods[f] && state.modSource[f] === c.positions)) return;
-    const wait = c.t + comboTerm() - Date.now();
-    if (wait > 0) setTimeout(() => drawCombo(c), wait + 1);
-    else drawCombo(c);
+  function armKs(next) {
+    if (next === ksDue) return;
+    clearTimeout(ksTimer);
+    ksTimer = null; ksDue = next;
+    if (next === null) return;
+    ksTimer = setTimeout(() => { ksTimer = null; ksDue = null; apply(ks.tick(Date.now())); }, Math.max(0, next - Date.now()));
   }
 
-  function comboFor(layer, token) {
-    return state.data.combos.find(c => c.layers.includes(layer) && legendMatches(c.key.tap, token)) || null;
-  }
-
-  function flash(indices, cls) {
-    for (const idx of indices) {
+  /* What is drawn of the board: the keys lit, and lit as a combo's; the pills up, and the keys they
+   * name. Drawn by what changed since the last answer, as the timers that drew it did, so what else
+   * marks a key -- a finger on it (touch.js) -- is left to its owner. */
+  let painted = { lit: new Map(), pills: new Map(), comboKeys: new Set() };
+  function paintBoard(b) {
+    const lit = new Map(b.lit.map(idx => [idx, b.chord.includes(idx)]));
+    for (const idx of painted.lit.keys()) {
+      if (!lit.has(idx)) { const e = state.keyEls[idx]; if (e) e.classList.remove("pressed", "combo"); }
+    }
+    for (const [idx, combo] of lit) {
       const e = state.keyEls[idx];
       if (!e) continue;
-      e.classList.add("pressed");
-      if (cls) for (const c of cls.split(" ")) if (c) e.classList.add(c);
-      clearTimeout(state.timers.get(idx));
-      state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo"), T('press_ms')));
+      if (!painted.lit.has(idx)) e.classList.add("pressed");
+      if (combo !== painted.lit.get(idx)) e.classList.toggle("combo", combo);
     }
-  }
-
-  // A legend matches a typed token exactly, through the alias table, or as one side of an
-  // "a|b" legend (a key that produces either). A multi-key sequence (a macro) matches when its
-  // printable core equals the legend's: motion keys the macro types (End, arrows) and the
-  // glyphs the legend uses to hint at them (⇥ → ⇲ …) are ignored on both sides.
-  const MOTION = /[⇥⇤→←↑↓⇲⇱⇢⇠⏎↵␣⌫⌦\s]/g;
-  const core = s => s.replace(MOTION, "");
-  // `exact`: the legend itself, not one alternative of an adaptive key's "a|b" (findOnLayer).
-  function legendMatches(legend, token, exact) {
-    if (!legend) return false;
-    if (legend === token) return true;
-    if (!exact && legend.includes("|") && legend.split("|").some(part => part.trim() === token)) return true;
-    const alts = ALIASES[token];
-    if (alts && alts.includes(legend)) return true;
-    if (token.length > 1) { const c = core(token); return c.length > 1 && c === core(legend); }
-    return false;
-  }
-
-  const isLetter = t => /^[\p{L}]$/u.test(t);
-
-  // Letter-producing combos on the base layer are commands (e.g. vim motions) rather than typing
-  // when `extras.letter_combos_on` is set: outside those layers they are ignored, so a typed
-  // letter missing from the base is attributed to the secondary alpha layer instead.
-  // `noCombos`: typing whose sender says combos are not how it is typed (handleKey).
-  function findOnLayer(layer, token, commandLayersActive, noCombos) {
-    const keys = state.data.layers[layer];
-    if (!keys) return null;
-    const gate = extras().letter_combos_on;
-    // A legend that says exactly this beats one that only sometimes does. "h|v" is an adaptive
-    // key -- h, or v right after a vowel -- while a combo drawn "v" always types v, so from a v
-    // alone the combo is the likelier and the adaptive key the fallback.
-    for (const exact of [true, false]) {
-      for (let i = 0; i < keys.length; i++) if (keys[i].type !== "trans" && legendMatches(keys[i].tap, token, exact)) return [i];
-      if (noCombos) continue;
-      for (const c of state.data.combos) {
-        if (!c.layers.includes(layer) || !legendMatches(c.key.tap, token, exact)) continue;
-        if (gate && gate.length && isLetter(token) && layer === base() && !commandLayersActive) continue;
-        return c.positions.slice();
-      }
+    const up = new Set(b.pills.map(p => p.id));
+    for (const [id, shown] of painted.pills) {
+      if (up.has(id)) continue;
+      painted.pills.delete(id);
+      if (shown) shown.down(b.faded.includes(id));
     }
-    return null;
-  }
-
-  function tokenFor(ev) {
-    if (ev.name && NAMED[ev.name]) return NAMED[ev.name];
-    if (ev.chars && ev.chars.length === 1) {
-      // On a board drawn in capitals, h is the H key (load).
-      const upper = ev.chars.toUpperCase();
-      return state.capitals && upper.length === 1 && upper !== ev.chars && isLetter(ev.chars) ? upper : ev.chars;
+    for (const p of b.pills) {
+      const shown = painted.pills.get(p.id);
+      if (!painted.pills.has(p.id)) painted.pills.set(p.id, drawPill(p));
+      else if (shown && p.hold && p.hold !== shown.hold) shown.held(p.hold);
     }
-    return null;
+    const named = new Set(b.pills.flatMap(p => p.positions));
+    for (const idx of painted.comboKeys) if (!named.has(idx)) { const e = state.keyEls[idx]; if (e) e.classList.remove("combo-key"); }
+    for (const idx of named) if (!painted.comboKeys.has(idx)) { const e = state.keyEls[idx]; if (e) e.classList.add("combo-key"); }
+    painted = { lit, pills: painted.pills, comboKeys: named };
   }
-
-  function armMomentary(layer) {
-    const now = Date.now();
-    const m = state.momentary.find(x => x.layer === layer);
-    if (m) m.until = now + T('momentary_ms'); else state.momentary.push({ layer, until: now + T('momentary_ms') });
-    setTimeout(expire, T('momentary_ms') + 20);
-  }
-
-  function expire() {
-    const now = Date.now();
-    const before = state.momentary.length;
-    state.momentary = state.momentary.filter(m => m.until > now);
-    if (state.momentary.length !== before) render();
-  }
-
-  // Resolve a typed token on the given stack (top first). Returns {hit, layer} or null.
-  // An uppercase letter may live on a shifted layer the config names among the sticky ones.
-  function resolveOnStack(token, layers, commandLayersActive, noCombos) {
-    const shiftLayers = (extras().sticky || []).filter(l => /shift/i.test(l) && !layers.includes(l));
-    // A capital the stack itself draws came from there -- Caps word up, K is its chord. Only a
-    // capital the stack has no key for came from a Shift the layers do not show, and a shift
-    // layer that is not up is where the drawer keeps it. Searched the other way round, a live
-    // Caps word's K was drawn as Shift · Alpha 2's key and that layer's activator.
-    const searchStack = /^\p{Lu}$/u.test(token) ? [...layers, ...shiftLayers] : layers;
-    for (const layer of searchStack) {
-      const hit = findOnLayer(layer, token, commandLayersActive, noCombos);
-      if (hit) return { hit, layer, viaShift: shiftLayers.includes(layer) };
-    }
-    return null;
-  }
-
-  // Recent keyDown tokens with the keys they lit, for multi-key legends ("->", "=>", "&&", "()").
-  const recent = [];
-  function remember(token, lit, pill, layer) {
-    const now = Date.now();
-    while (recent.length && now - recent[0].t > T('sequence_ms')) recent.shift();
-    const rec = { token, t: now, lit: lit || [], pill: pill || null, layer: layer || null, guess: null };
-    recent.push(rec);
-    if (recent.length > T('sequence_max')) recent.shift();
-    return rec;
-  }
-  // `inferring`: placing a key the keyboard's own stack does not speak for (handleKey).
-  function matchSequence(token, layers, cmdActive, noCombos, inferring, ev) {
-    const now = Date.now();
-    const fresh = recent.filter(r => now - r.t <= T('sequence_ms'));
-    for (let n = Math.min(fresh.length, T('sequence_max') - 1); n >= 1; n--) {
-      const parts = fresh.slice(fresh.length - n);
-      const seq = parts.map(p => p.token).join("") + token;
-      // A macro's first character can use up the one-shot layer the macro lives on (Qu on
-      // Shift · Alpha 2, ão on the Ç extension), so by its last character that layer is off the
-      // stack: look where its first characters were found, too. Without layers from the keyboard
-      // that may never have been the macro's own -- Qu's Q reads as Alpha 2's q with Shift -- so
-      // the sticky layers a macro can live on are looked at as well, and for typing sent in, which
-      // never came from the keyboard's layers at all. Otherwise the keyboard reports a one-shot
-      // layer for as long as it is up, and the live stack says all there is to say.
-      const where = [...new Set(parts.map(p => p.layer).concat(inferring ? (extras().sticky || []) : [])
-        .filter(l => l && !layers.includes(l)))];
-      const r = resolveOnStack(seq, where.concat(layers), cmdActive, noCombos);
-      if (!r) continue;
-      // The keys lit so far were the macro's steps (or a shorter legend that matched first, like
-      // "()" inside "();"): unlight them, pill included, and light the longer match.
-      for (const p of parts) unlight(p);
-      flash(r.hit, r.hit.length > 1 ? "combo" : null);
-      let pill = null;
-      if (r.hit.length > 1) { const c = comboFor(r.layer, seq); if (c) pill = showCombo(r.hit, c.key); }
-      // Keep the tokens: a still longer legend may follow (";" after "()", "⏎" after "do {").
-      guess(remember(token, r.hit, pill, r.layer), r.hit, r.layer, ev);
-      afterKey();
-      return true;
-    }
-    return false;
-  }
-  function unlight(entry) {
-    for (const idx of entry.lit) {
-      const e = state.keyEls[idx];
-      if (e) { e.classList.remove("pressed", "combo", "combo-key"); clearTimeout(state.timers.get(idx)); }
-    }
-    if (entry.pill) entry.pill.remove();
-    if (entry.guess) entry.guess.cancelled = true;   // taken back before it was counted
-    entry.lit = []; entry.pill = null;
-  }
-
-  function commandLayersActive(layers) {
-    const gate = extras().letter_combos_on;
-    return !gate || !gate.length || gate.some(l => layers.includes(l));
-  }
-
-  // A key that carries a modifier: a home-row mod (hold legend) or the modifier key itself (tap).
-  const carries = (key, glyph) => !!key && ((key.hold && key.hold.includes(glyph)) || key.tap === glyph);
-
-  /* Which key turned a modifier on, when positions say which keys went down: one still held that
-   * carries it (a home-row mod, a sticky shift still down), else the latest such key pressed within
-   * activator_ms (a sticky shift tapped and let go). A combo still held is the source when no key
-   * that carries the modifier went down after it: its keys typed nothing of their own, so the
-   * modifier is the chord's hold (holdCombo), and the answer is the chord's positions. null: none
-   * known yet -- the position may still be on its way, and pressAt takes it then. */
-  function modSourceOf(glyph, now) {
-    const layers = stack();
-    const carrying = p => { const r = resolveBinding(p.idx, layers); return r && carries(r.key, glyph); };
-    const c = heldCombo();
-    if (c && !c.typed) {
-      const at = recentPos.findIndex(p => p.entry === c.entry);   // gone from the list: held long
-      const after = at >= 0 ? recentPos.slice(at + 1) : recentPos.filter(p => p.t > c.entry.t);
-      if (!after.some(p => state.held.has(p.idx) && carrying(p))) return c.positions;
-    }
-    const latest = [...recentPos].reverse();
-    const src = latest.find(p => state.held.has(p.idx) && carrying(p))
-      || latest.find(p => now - p.t < T('activator_ms') && carrying(p));
-    return src ? src.idx : null;
-  }
-
-  function setMods(flags) {
-    const now = Date.now();
-    const positions = state.posAt && now - state.posAt < T('positions_fresh_ms');
-    for (const f of Object.keys(MOD_GLYPH)) {
-      if (!flags[f]) delete state.modSource[f];
-      else if (!state.mods[f] || state.modSource[f] === undefined) {
-        if (positions) state.modSource[f] = modSourceOf(MOD_GLYPH[f], now);
-        else delete state.modSource[f];
-      }
-    }
-    state.mods = flags;
-    const c = heldCombo();
-    if (c) comboModifier(c);
-    renderKeys();
-  }
-
-  /* A usage the feed has no name for -- usage9c, a key bound to something past F24 -- is a name no
-   * one reads. The strip says instead what the board says of the key that sent it: the last key
-   * down, from the firmware's positions, while that press is this keystroke's. When that press
-   * completed a combo, the keystroke is the combo's, and the strip says what its pill says, not
-   * whichever of its keys went down last. (Cancel, the Diamond's l+o+u, used to be the case in
-   * point; the feed names its key now, so it reads "cancel" with or without positions.) */
-  const STRIP_PRESS_MS = 1000;
-  function stripEvent(ev) {
-    if (!state.data || ev.type !== "keyDown" || !/^usage[0-9a-f]+$/.test(ev.name || "")) return ev;
-    const p = state.lastPress;
-    if (!p || Date.now() - p.t > STRIP_PRESS_MS) return ev;
-    const r = p.combo ? null : resolveBinding(p.idx, p.stack);
-    const key = p.combo || (r && r.key);
-    const legend = key && (key.tap || key.glyph);
-    return legend ? Object.assign({}, ev, { label: legend }) : ev;
-  }
-
-  function handleKey(ev) {
-    if (!state.data) return;
-    if (ev.type === "flagsChanged") {
-      if (ev.flags && !Array.isArray(ev.flags)) setMods(ev.flags);
-      return;
-    }
-    if (ev.type !== "keyDown" || ev.repeat) return;
-    unpick();                          // typing again: the board follows the keyboard
-    state.lastKeyAt = Date.now();
-    // With key positions coming from the firmware, the board is lit from them; the character
-    // only feeds the strip (hud.key forwards it).
-    // Physical character reports are redundant while firmware position reports are fresh. The
-    // rehearsal feed marks its uinput events synthetic: those have no matching firmware positions,
-    // so they must still resolve and light their key after a synthetic thumb flash.
-    if (!ev.synthetic && state.posAt && Date.now() - state.posAt < T('positions_fresh_ms')) return;
-    const token = tokenFor(ev);
-    if (!token) return;
-
-    const layers = stack();
-    // Typing sent in -- `zmk-layer-hud poke`, a WebSocket client -- carries `combos`: whether
-    // combos are part of how it is typed (the feed makes it false for a sender that does not
-    // say). It did not come from the keyboard's own layers, so it is placed the way inference
-    // places a key, live or not: on the stack, else on the layer that has it -- z as Alpha 2's key
-    // rather than the r+a chord, unless the sender says combos. A character only a combo types is
-    // still that combo: the sender said how it types, not that the keymap has another way.
-    const sent = typeof ev.combos === "boolean";
-    const noCombos = sent && !ev.combos;
-    // `letter_combos_on` is an inference hint, for a key the keyboard's live stack cannot explain.
-    // A live stack is the keyboard's own word on which combos can fire -- ZMK matches a combo
-    // against the highest active layer, and the import records each combo's real coverage -- so
-    // on it a letter combo is typing, whatever the hint says. Gating it there hid every
-    // base-layer letter combo (k w v q x z j y) whenever positions were not fresh. Typing sent in
-    // says for itself whether combos count.
-    const cmdActive = state.live || sent ? true : commandLayersActive(layers);
-
-    // Macros type several keys back to back (-> is "-" then ">"): when the last few tokens
-    // together spell a legend on the live stack, that key or combo is what was pressed.
-    if (matchSequence(token, layers, cmdActive, noCombos, !state.live || sent, ev)) return;
-
-    // Live: the keyboard told us the stack; the key must be on it (combos included). A chord
-    // (⌘c, ⌃⇧a) first tries the legend spelled with its modifier glyphs.
-    if (state.live && !sent) {
-      const f = ev.flags || {};
-      const modsGlyph = ["cmd", "ctrl", "alt", "shift"].filter(m => f[m] && (m !== "shift" || f.cmd || f.ctrl || f.alt)).map(m => MOD_GLYPH[m]).join("");
-      const r = (modsGlyph && resolveOnStack(modsGlyph + token, layers, cmdActive)) || resolveOnStack(token, layers, cmdActive);
-      if (r) {
-        const extra = r.viaShift ? activatorsOf(r.layer) : [];
-        flash(r.hit.concat(extra), r.hit.length > 1 ? "combo" : null);
-        // The pill is remembered with the keys, so whatever supersedes this guess -- a macro's
-        // longer legend, or the positions arriving after it -- takes the pill down too.
-        let pill = null;
-        if (r.hit.length > 1) { const c = comboFor(r.layer, token); if (c) pill = showCombo(r.hit, c.key); }
-        guess(remember(token, r.hit.concat(extra), pill, r.layer), r.hit, r.layer, ev);
-        touchLayer(r.layer);
-        afterKey();
-        return;
-      }
-      // Not on the real stack: a chord whose legend is a label or an icon (shortcut layers), or
-      // a legend the drawer spells differently. The keyboard is the only source, so guessing
-      // another layer would be wrong: remember the token for a possible macro and light nothing.
-      remember(token, []);
-      return;
-    }
-
-    const ex = extras();
-    const sticky = new Set(ex.sticky || []);
-    // 0. Typing goes through two alpha layers when the config names a secondary one: a letter
-    //    that is not a plain base-layer key comes from the sticky alpha2 layer (one shot).
-    if (ex.alpha2 && isLetter(token) && !cmdActive && !state.oneShot) {
-      const lower = token.toLowerCase();
-      const onBase = state.data.layers[base()].some(k => k.type !== "trans" && legendMatches(k.tap, lower));
-      const direct = state.data.layers[ex.alpha2].findIndex(k => k.type !== "trans" && legendMatches(k.tap, lower));
-      if (!onBase && direct >= 0) {
-        state.oneShot = ex.alpha2;
-        render();
-        const shiftLayer = (ex.sticky || []).find(l => /shift/i.test(l));
-        const extra = activatorsOf(ex.alpha2).concat(/^\p{Lu}$/u.test(token) && shiftLayer ? activatorsOf(shiftLayer) : []);
-        flash([direct].concat(extra));
-        guess(remember(token, [direct], null, ex.alpha2), [direct], ex.alpha2, ev);
-        afterKey();
-        return;
-      }
-    }
-    const search = ex.search || state.data.layer_order.filter(l => l !== base());
-    const order = isLetter(token)
-      ? search
-      : search.filter(l => !sticky.has(l)).concat(search.filter(l => sticky.has(l)));
-    const place = noCombos => {
-      // 1. the active stack, top first
-      const r = resolveOnStack(token, layers, cmdActive, noCombos);
-      if (r) {
-        const extra = r.viaShift ? activatorsOf(r.layer) : [];
-        flash(r.hit.concat(extra), r.hit.length > 1 ? "combo" : null);
-        let pill = null;
-        if (r.hit.length > 1) { const c = comboFor(r.layer, token); if (c) pill = showCombo(r.hit, c.key); }
-        guess(remember(token, r.hit.concat(extra), pill, r.layer), r.hit, r.layer, ev);
-        touchLayer(r.layer);
-        afterKey();
-        return true;
-      }
-      // 2. any other layer → a momentary or one-shot activation the host could not see. Letters
-      //    most likely came from a sticky layer; anything else from a held one.
-      for (const layer of order) {
-        if (layers.includes(layer)) continue;
-        const hit = findOnLayer(layer, token, cmdActive, noCombos);
-        if (hit) {
-          if (sticky.has(layer)) state.oneShot = layer; else armMomentary(layer);
-          render();
-          flash(hit.concat(activatorsOf(layer)), hit.length > 1 ? "combo" : null);
-          let pill = null;
-          if (hit.length > 1) { const c = comboFor(layer, token); if (c) pill = showCombo(hit, c.key); }
-          guess(remember(token, hit.concat(activatorsOf(layer)), pill, layer), hit, layer, ev);
-          afterKey();
-          return true;
-        }
-      }
-      return false;
-    };
-    // Without combos first; a combo only when nothing else on the keymap types this.
-    if (place(noCombos) || (noCombos && place(false))) return;
-    afterKey();
-  }
-
-  function touchLayer(layer) {
-    const m = state.momentary.find(x => x.layer === layer);
-    if (m) { m.until = Date.now() + T('momentary_ms'); return; }
-    // a key that resolved only in the base drops any inferred momentary layer
-    if (baseStack().includes(layer) && state.momentary.length) { state.momentary = []; render(); }
-  }
-
-  // A one-shot layer is consumed by the key, but stays on the banner long enough to be seen.
-  let oneShotTimer = null;
-  function afterKey() {
-    if (!state.oneShot) return;
-    clearTimeout(oneShotTimer);
-    oneShotTimer = setTimeout(() => { state.oneShot = null; render(); }, T('one_shot_ms'));
+  // The board drawn afresh (buildBoard: resized, docked, back from minimized) has nothing on it: what
+  // is lit and up is drawn on it again, so a key still down stays lit and a chord finished on it is
+  // drawn whole. Its old pills went with the old board.
+  function paintedAfresh() {
+    painted = { lit: new Map(), pills: new Map(), comboKeys: new Set() };
+    paintBoard(board);
   }
 
   // ---------- public API ----------
-
-  function applyLayers(ids) {
-    // Which key brought each new drawn layer in: the position pressed just before (its own
-    // activator among the candidates), so an alternate activator elsewhere stays dark.
-    const now = Date.now();
-    const wasDrawn = state.live ? new Set(state.live.ids.map(id => (zl(id) || {}).drawer).filter(Boolean)) : new Set();
-    for (const id of ids) {
-      const name = (zl(id) || {}).drawer;
-      if (!name || wasDrawn.has(name)) continue;
-      state.drawnSince[name] = now;
-      if (state.activatorOf[name] != null) continue;
-      // Prefer a key the drawer marks as reaching this layer; else the key pressed right
-      // before the layer appeared is the one holding it (a thumb whose legend says otherwise).
-      const candidates = activatorsOf(name);
-      // Still down: a key that was tapped and let go is not what is holding this layer, even
-      // if it was the last thing pressed before the layer arrived.
-      const fresh = [...recentPos].reverse().filter(p => now - p.t < T('activator_ms') && state.held.has(p.idx));
-      const press = fresh.find(p => candidates.includes(p.idx)) || fresh[0];
-      if (press) {
-        state.activatorOf[name] = press.idx;
-        if (press.entry) press.entry.activator = true;     // brought a layer up: held, if another key went down (strokes)
-      }
-    }
-    const drawnNow = new Set(ids.map(id => (zl(id) || {}).drawer).filter(Boolean));
-    // The presses of the keys now holding a layer that just came up (recredit).
-    const gained = [];
-    for (const name of drawnNow) {
-      if (wasDrawn.has(name) || state.activatorOf[name] == null) continue;
-      const p = [...recentPos].reverse().find(q => q.idx === state.activatorOf[name]);
-      if (p) gained.push(p);
-    }
-    for (const name of Object.keys(state.activatorOf)) if (!drawnNow.has(name)) delete state.activatorOf[name];
-    for (const name of Object.keys(state.drawnSince)) if (!drawnNow.has(name)) delete state.drawnSince[name];
-    state.live = { ids, at: now };
-    state.momentary = []; state.oneShot = null;
-    if (gained.length) recredit(gained, now);
-    render();
-    fire("layers", ids);
-  }
-
-  /* A layer change held back for a flash is the keyboard's word all the same, and the moment
-   * another key goes down it applies, so that key resolves on the layers really up. Held back
-   * any longer, a one-shot layer outlived its key for as long as typing went on: every keystroke
-   * within press_ms of the last re-armed the delay, and at 170 ms a key the chord after an Alpha 2
-   * letter drew Alpha 2's combo -- "wax" drew its x as "-", "quick" its k as a dead quote. */
-  function flushLayers() {
-    if (!state.pendingLayers) return;
-    const ids = state.pendingLayers;
-    state.pendingLayers = null; state.pendingDue = null;
-    clearTimeout(state.layersTimer);
-    applyLayers(ids);
-  }
 
   const hud = {
     // The keymap message. Re-sent by the host when a sync rewrites it: geometry and legends
@@ -2086,29 +1546,16 @@
     load(data) {
       if (typeof data === "string") data = JSON.parse(data);
       if (!data || !data.layout || !data.layers) return;
-      // What is still waiting to be counted was drawn with the keymap going away: count it with
-      // that one, whose layers and keys it names.
-      if (state.data) ledgerCommit(Date.now(), true);
       state.data = data;
+      // Read now, answered once the board is built for it -- which is drawn from the new keymap's
+      // board: nothing of the old one is lit on it.
+      const loaded = ks.read(data.kind === "keymap" ? data : Object.assign({ kind: "keymap" }, data), Date.now());
+      board = loaded.board;
       applyPrefs();                 // the config's hud.dark, until the viewer chose
-      state.momentary = []; state.oneShot = null;
-      state.activatorOf = {}; state.modSource = {}; state.pick = null; state.lastPress = null; state.drawnSince = {}; state.held.clear(); state.comboShown = null; state.comboEntry = null;
-      if (state.comboHeld) clearTimeout(state.comboHeld.timer);
-      state.comboHeld = null; state.heldPills = [];
+      state.pick = null;
+      state.posOf = View.posOf(data);   // a session is kept by ZMK position
       // Keystrokes on the keymap going away are not followed by the next one's keys.
-      state.down.clear(); state.strokes = []; state.lastStroke = null; state.lastOwnStroke = null;
-      state.baseLayers = [data.base];
-      // A board that draws its letters as capitals, as `keymap parse` does: there the legend is the
-      // keycap, not the character, so a lowercase letter placed from what was typed is its
-      // capital's key (tokenFor) -- the rule host/play.py spells text by.
-      const letters = (data.layers[data.base] || []).map(k => k.tap).filter(t => typeof t === "string" && isLetter(t));
-      state.capitals = letters.length > 0 && letters.every(t => t !== t.toLowerCase());
-      // A session is kept by ZMK position: each drawer key's, inverted from the message's map (a
-      // message with none is a keymap in the firmware's own order, where they are the same).
-      const map = data.positions || {};
-      state.posOf = [];
-      for (const [pos, idx] of Object.entries(map)) state.posOf[idx] = Number(pos);
-      if (!Object.keys(map).length) data.layout.keys.forEach((k, idx) => { state.posOf[idx] = idx; });
+      state.lastStroke = null; state.lastOwnStroke = null;
       // Heat outlives a reload (it fades in seconds anyway), but not on keys this layout lacks.
       for (const idx of [...state.heat.keys()]) if (idx >= data.layout.keys.length) state.heat.delete(idx);
       const fitNews = checkFit();   // a keyboard of another size, docked: does it still fit?
@@ -2117,47 +1564,15 @@
       renderTitle();
       postSize();
       render();
+      apply(loaded);
       fire("load", data);
     },
     // The keyboard's active ZMK layer ids (layer 0 omitted). Clears every inference: from now on
-    // the stack is what the keyboard says.
+    // the stack is what the keyboard says (keystrokes.js, which may hold a drop back for a flash).
     setLayers(ids) {
       if (typeof ids === "string") ids = JSON.parse(ids);
       if (!Array.isArray(ids)) return;
-      ids = ids.map(Number).filter(n => Number.isInteger(n) && n > 0);
-      // The change already held back, said again (a heartbeat, a re-assertion): it is on its way
-      // and keeps its deadline. Starting the wait over each time kept a dropped layer up for as
-      // long as the repeats kept coming.
-      const sameIds = (a, b) => a.length === b.length && a.every(x => b.includes(x));
-      if (state.pendingLayers && sameIds(state.pendingLayers, ids)) return;
-      clearTimeout(state.layersTimer);
-      // A one-shot layer leaves right after the key it served (and may enter another, undrawn
-      // one). Keep the board on the drawn layers while the key's flash is visible, otherwise the
-      // flash appears under the wrong legends. Layers that only appear apply at once.
-      const now = Date.now();
-      const since = now - (state.lastKeyAt || 0);
-      // A drop is due press_ms after the key it followed, and stays due then: a change arriving
-      // while it waits replaces what will apply, never when. Measured afresh each time, a run of
-      // changes a keystroke apart kept the first layer up for as long as the run lasted.
-      const due = state.pendingLayers ? state.pendingDue : now + T('press_ms') - since;
-      state.pendingLayers = null; state.pendingDue = null;
-      if (state.live && due > now) {
-        const drawn = set => new Set(set.map(id => (zl(id) || {}).drawer).filter(Boolean));
-        const before = drawn(state.live.ids), after = drawn(ids);
-        const losesDrawn = [...before].some(name => !after.has(name));
-        // Only a layer falling away is worth holding back. One that brings another drawn layer
-        // up means the next key is already on it -- ç on Alpha 2, then ão on the Ç extension --
-        // and holding the whole change back left the macro looking on Alpha 2, where it is not.
-        const gainsDrawn = [...after].some(name => !before.has(name));
-        if (losesDrawn && !gainsDrawn) {
-          // Held back for the flash only: the timer applies it outright rather than asking
-          // again, and the next key to go down applies it first (flushLayers).
-          state.pendingLayers = ids; state.pendingDue = due;
-          state.layersTimer = setTimeout(() => { state.pendingLayers = null; state.pendingDue = null; applyLayers(ids); }, due - now);
-          return;
-        }
-      }
-      applyLayers(ids);
+      apply(ks.read({ kind: "layers", ids }, Date.now()));
     },
     // Firmware `positions;`: the physical key at ZMK position `pos` was pressed. The one exact
     // source for what to light, whatever the key produced (chords, combos, macros, modifiers,
@@ -2167,202 +1582,27 @@
     pressAt(pos, sent) {
       if (!state.data || state.secure) return;
       unpick();                        // a key down: the board follows the keyboard again
-      const idx = idxAt(pos);
-      // A key already down cannot go down again before it comes up: this is the same press, told
-      // twice. A keyboard plugged in by USB and paired by BLE at once is read on both, and every
-      // position arrives once on each. Taken as a second press, the copy counted the key twice and
-      // looked like a later key held -- which took a held chord's modifiers (modSourceOf) from it.
-      if (state.held.has(idx)) return;
-      const now = Date.now();
-      // A key going down is a keystroke of its own: a layer change held back for the previous
-      // one's flash is the keyboard's state now, and this key resolves on it.
-      flushLayers();
-      // The keyboard's own combo term (config combo_term_ms) plus slack for the reports' travel.
-      const term = ((state.data.combo_term || 50) + T('combo_slack_ms'));
-      // A report can beat its own positions: they travel on separate channels. What the character
-      // drew for this keystroke was a guess the keyboard is replacing now -- take it down, pill
-      // and all, or the board shows the guess and the truth side by side (two pills for one
-      // chord). A guess older than the combo term was an earlier keystroke's, and fades by itself.
-      for (const r of recent) if (now - r.t <= term) unlight(r);
-      // Nor is a guess still waiting to be counted: with positions coming, this keystroke counts
-      // by its position, and so does the one the guess was for.
-      for (const e of state.ledger) if (e.kind === "guess") e.cancelled = true;
-      state.posAt = now; state.lastKeyAt = now;
-      if (!state.keyEls[idx]) return;
-      state.held.add(idx);
-      const entry = { kind: "press", idx, pos: Number(pos), t: now, due: now + term, stack: stack(), eligible: !sent };
-      state.lastPress = entry;          // for a keystroke the feed cannot name (stripEvent)
-      // The layer set and the key that brought it up are two reports, in no promised order. When
-      // the key comes second, setLayers had nothing to attribute the layer to: if the drawer says
-      // this key reaches a live layer and nothing is recorded as holding it, this is what did --
-      // if the layer appeared at the same moment. One already up (a one-shot tapped earlier) came
-      // with an earlier keystroke, and this press belongs to whatever chord it arrives in: with
-      // Alpha 2 waiting, the 0 chord that uses Alpha 2's own key drew nothing.
-      if (state.live) {
-        for (const name of liveStack()) {
-          if (name === base() || state.activatorOf[name] != null) continue;
-          if (now - (state.drawnSince[name] || 0) > term) continue;
-          if (activatorsOf(name).includes(idx)) {
-            state.activatorOf[name] = idx;
-            entry.activator = true;
-            // It went down on the layers below the one it brought up, and counts there.
-            entry.stack = entry.stack.filter(l => l !== name);
-          }
-        }
-      }
-      // Whether it is a keystroke of its own is for its release to say, if it can be held (strokes).
-      const r = resolveBinding(idx, entry.stack);
-      entry.holder = !!(r && r.key.hold) || (state.data.activators || []).some(a => a.idx === idx);
-      for (const d of state.down.values()) d.overlapped = true;      // down under another key: maybe held (strokeKind)
-      state.down.set(idx, entry);
-      ledgerAdd(entry);
-      strokesDue(now);    // a key waiting to be told a tap from a hold may have been down long enough
-      flash([idx]);
-      bumpHeat(idx);   // a position is never taken back, so it warms its key at once
-      // Stay lit until the release arrives (a safety timeout covers a lost report).
-      clearTimeout(state.timers.get(idx));
-      state.timers.set(idx, setTimeout(() => hud.releaseAt(pos), T('held_timeout_ms')));
-      // Older presses stay in the list for the activator lookup (setLayers); the combo group is
-      // the trailing run of presses that started within the term of this one.
-      const keepMs = Math.max(T('activator_ms'), state.data.combo_idle || 0);   // the idle rule below looks back this far
-      while (recentPos.length && now - recentPos[0].t > keepMs) recentPos.shift();
-      recentPos.push({ idx, t: now, entry });
-      // A modifier reported before the key that turned it on: this is that key, if it carries it.
-      let modFound = false;
-      for (const f of Object.keys(state.modSource)) {
-        if (state.modSource[f] === null && r && carries(r.key, MOD_GLYPH[f])) { state.modSource[f] = idx; modFound = true; }
-      }
-      if (modFound) renderKeys();
-      // The keyboard has already decided. A key still down that is what brought one of the live
-      // layers up was treated by ZMK as a layer hold, not as part of a chord — had it been half
-      // of a combo, the combo would have fired and the layer would not have changed. So the group
-      // stops there, however recently it was pressed. Without this the thumb joins the burst and
-      // the chord after it is either missed or drawn as whichever larger combo happens to contain
-      // that thumb: holding Alpha 2 and chording backspace drew Tab ([4,5] became [4,5,22]).
-      // …but only a key pressed before this burst. ZMK releases a combo's captured positions
-      // together, so they arrive in the same report and share a timestamp; a key that a combo
-      // both holds a layer with and uses as one of its own (a sticky layer's own key) is still
-      // part of the chord it arrived with.
-      const holdsALayer = idx => state.held.has(idx) && Object.values(state.activatorOf).includes(idx);
-      // ...and a key already let go ends it too. ZMK cancels a combo whose key comes up before the
-      // combo is complete and types the keys one by one, which is what a fast roll across a combo's
-      // keys is: the first key is up before the next goes down. Drawn by timing alone, every such
-      // roll was a pill, and a combo in the counts.
-      let start = recentPos.length - 1;
-      while (start > 0) {
-        const prev = recentPos[start - 1];
-        if (now - prev.t > term || !state.held.has(prev.idx) || (prev.t < now && holdsALayer(prev.idx))) break;
-        start--;
-      }
-      if (start === recentPos.length - 1) { state.comboShown = null; state.comboEntry = null; } // a new group begins
-      // Only presses within the keymap's combo term form a combo: ZMK's combo module releases the
-      // captured positions together when a combo completes, so they arrive within the term. A key
-      // pressed later while a layer is held is that layer's key, never a combo with the holder.
-      const pressedSet = recentPos.slice(start).map(p => p.idx);
-      // A keymap that asks for idle before a combo (ZMK require-prior-idle-ms, data.combo_idle)
-      // gets none from a chord that starts sooner than that after another key was struck: ZMK
-      // types it as its keys. ZMK times it from the last key that typed something, so a key that
-      // brought a layer in, and one held down as a modifier for the chord, do not count.
-      const MODS = Object.values(MOD_GLYPH);
-      const struck = p => {
-        if (Object.values(state.activatorOf).includes(p.idx)) return false;
-        if (!state.held.has(p.idx)) return true;
-        const r = resolveBinding(p.idx, stack());
-        return !(r && ((r.key.hold && MODS.some(g => r.key.hold.includes(g))) || MODS.includes(r.key.tap)));
-      };
-      const prior = recentPos.slice(0, start).reverse().find(struck);
-      const tooSoon = state.data.combo_idle > 0 && prior && recentPos[start].t - prior.t < state.data.combo_idle;
-      if (pressedSet.length > 1 && !tooSoon) {
-        // The topmost active layer that defines a combo on these keys wins: the base layer is
-        // always in the stack and often has a different combo on the same keys.
-        const samePositions = c => c.positions.length === pressedSet.length && c.positions.every(p => pressedSet.includes(p));
-        let combo = null, comboLayer = null;
-        for (const layer of stack()) {
-          combo = state.data.combos.find(c => c.layers.includes(layer) && samePositions(c));
-          if (combo) { comboLayer = layer; break; }
-        }
-        if (combo) {
-          // A third key within the term makes a bigger combo: take the smaller one's pill down,
-          // and its count with it -- one chord, one combo.
-          if (state.comboShown) state.comboShown.remove();
-          if (state.comboEntry) state.comboEntry.cancelled = true;
-          state.comboEntry = ledgerAdd({ kind: "combo", layer: comboLayer, key: comboKey(combo.positions), t: now,
-                                         due: now + term, eligible: !sent });
-          for (const p of recentPos.slice(start)) if (p.entry) p.entry.chord = true;   // one keystroke (strokes)
-          entry.combo = combo.key;      // what this keystroke is, for the strip (stripEvent)
-          // Not flash(): these keys are down, and it is their release that unlights them. flash's
-          // press_ms timer would replace the held timer each key got from its own press and take
-          // the chord out from under the user's fingers after a third of a second — along with
-          // the safety net that covers a lost release.
-          for (const p of combo.positions) { const e = state.keyEls[p]; if (e) e.classList.add("pressed", "combo"); }
-          // Its pill waits to be told whether the chord was tapped or held (drawCombo).
-          if (state.comboHeld) clearTimeout(state.comboHeld.timer);
-          const c = state.comboHeld = { positions: combo.positions, key: combo.key, entry, t: now, pill: null, typed: false, timer: null };
-          // A modifier reported before the chord's positions, or taken just now by one of its keys
-          // for a home-row mod of its own (above): the chord fired, so its keys' own bindings did
-          // not, and the modifier is its hold.
-          let held = false;
-          for (const f of Object.keys(state.modSource)) {
-            const src = state.modSource[f];
-            if (src === null || combo.positions.includes(src)) { state.modSource[f] = combo.positions; held = true; }
-          }
-          if (held) renderKeys();
-          // What it typed may have beaten its positions here: they travel on separate channels, and
-          // a Shift held for it may have gone down between the two. Only with evidence it was this
-          // chord's: typed once its first key was down, or its own legend within activator_ms. An
-          // `a` typed just before the q chord was held is the a key's, not the chord's tap.
-          const tok = state.typed, ownLegend = tok && (legendMatches(combo.key.tap, tok) || legendMatches(combo.key.tap, tok.toLowerCase()));
-          const sinceChord = state.typedAt >= recentPos[start].t;
-          if (state.keysSeen && (sinceChord || (ownLegend && now - state.typedAt <= T('activator_ms')))) comboTyped(c);
-          else if (!state.keysSeen) drawCombo(c);
-          else c.timer = setTimeout(() => drawCombo(c), T('combo_decide_ms'));
-          if (held) comboModifier(c);
-        }
-      }
+      // A layer change held back for the previous key's flash applies first (keystrokes.js).
+      apply(ks.read({ kind: "press", pos, sent: !!sent }, Date.now()));
     },
     // Leave live mode (tests, or a host that lost the keyboard).
-    clearLayers() { state.live = null; render(); },
+    clearLayers() { apply(ks.read({ kind: "layers", ids: null }, Date.now())); render(); },
     // The key at ZMK position `pos` went up: the flash fades out from now.
     releaseAt(pos) {
       if (!state.data) return;
-      const idx = idxAt(pos);
-      const e = state.keyEls[idx];
-      if (!e) return;
-      state.held.delete(idx);
-      const c = state.comboHeld;
-      if (c && c.positions.includes(idx)) { drawCombo(c); state.comboHeld = null; }
-      for (const h of state.heldPills.filter(h => h.positions.includes(idx))) h.pill.letGo();
-      state.heldPills = state.heldPills.filter(h => !h.positions.includes(idx));
-      for (const name of Object.keys(state.activatorOf)) if (state.activatorOf[name] === idx) state.activatorOf[name] = null;
-      clearTimeout(state.timers.get(idx));
-      state.timers.set(idx, setTimeout(() => e.classList.remove("pressed", "combo"), T('release_ms')));
-      // A tap or a hold, now that it is up; and any key still down that went down before it had
-      // a key go down and up inside it (strokes).
-      const now = Date.now(), press = state.down.get(idx);
-      if (press) {
-        state.down.delete(idx);
-        press.upAt = now;
-        for (const d of state.down.values()) if (d.t < press.t) d.nested = true;
-        strokesDue(now);
-      }
+      apply(ks.read({ kind: "release", pos }, Date.now()));
     },
     // The keyboard that was opened (its HID product name): the default title.
     setDevice(name) { if ((name || "") !== state.device) { state.device = name || ""; renderTitle(); } },
     key(ev) {
       if (typeof ev === "string") ev = JSON.parse(ev);
       if (state.secure) return;   // nothing typed shows while it is a secret (setSecure)
-      statsKey(ev);   // before handleKey, which has nothing to do for it while positions are fresh
-      // What the keyboard typed, not typing sent in or a rehearsal's: a combo's pill waits for it.
-      if (ev.type === "keyDown" && !ev.repeat && fromKeyboard(ev)) {
-        state.keysSeen = true; state.typedAt = Date.now(); state.typed = tokenFor(ev);
-        const c = state.comboHeld;
-        // ...as what the chord typed, unless another key went down since: that key typed it.
-        if (c && !c.typed && recentPos.length && recentPos[recentPos.length - 1].entry === c.entry) comboTyped(c);
-      }
-      handleKey(ev);
-      if (window.keys) window.keys.key(stripEvent(ev));  // the typed-keys strip on the same page
+      statsKey(ev);   // first: what it typed counts even while positions place the keys
+      if (state.data && ev.type === "keyDown" && !ev.repeat) unpick();   // typing again: the board follows the keyboard
+      const out = apply(ks.read(ev.kind === "key" ? ev : Object.assign({ kind: "key" }, ev), Date.now()));
+      // The typed-keys strip on the same page, with the board's name for a key the feed cannot name.
+      if (window.keys) window.keys.key(out.label ? Object.assign({}, ev, { label: out.label }) : ev);
     },
-    press(indices) { flash(indices); },
     // Any feed message, as a host sends it: the one dispatcher, for the WebSocket, the macOS panel
     // (for what it has no call of its own for) and the demo. Kinds this page does not know are
     // left alone.
@@ -2391,10 +1631,11 @@
     setTouchView(view) {
       const before = (state.touch && state.touch.down) || [];
       state.touch = view || null;
+      apply(ks.read({ kind: "touch", ids: view && view.ids ? view.ids : null }, Date.now()));
       const now = (view && view.down) || [];
       for (const idx of before) {
         // A finger lifted: its key goes dark, unless the keyboard itself is holding it.
-        if (!now.includes(idx) && state.keyEls[idx] && !state.held.has(idx)) state.keyEls[idx].classList.remove("pressed");
+        if (!now.includes(idx) && state.keyEls[idx] && !board.held.includes(idx)) state.keyEls[idx].classList.remove("pressed");
       }
       if (view && now.length) unpick();
       if (state.data) render();
@@ -2463,7 +1704,7 @@
     stats: {
       local: () => JSON.parse(JSON.stringify(state.local)),
       unsent: () => JSON.parse(JSON.stringify(state.unsent)),
-      pending: () => state.ledger.length,
+      pending: () => (state.demo ? 0 : ks.inside().unsettled),
       wpm: () => Math.round(wpmOf(state.typing, Date.now())),
       view: () => JSON.parse(JSON.stringify(view())),   // what the bar shows
     },
