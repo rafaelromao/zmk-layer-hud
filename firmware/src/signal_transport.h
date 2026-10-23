@@ -26,25 +26,45 @@
 #include <stdint.h>
 
 #include <zephyr/kernel.h>
+#include <zmk/endpoints.h>
 
 #if IS_ENABLED(CONFIG_ZMK_LAYER_SIGNAL_UART)
 void zls_uart_send(const uint8_t *frame, size_t len);
 #endif
 
 #if IS_ENABLED(CONFIG_ZMK_LAYER_SIGNAL_GATT)
+/* To the selected BLE profile's host alone: see signal_gatt.c. */
 void zls_gatt_send(const uint8_t *frame, size_t len);
 #endif
 
+/* The signal goes where the typing goes: on the carrier of the endpoint ZMK has selected, so to
+ * the one host the keyboard is typing to, and to no other. Key positions are the typing once the
+ * keymap is known, and a HUD on a host that is not being typed to cannot see a password field on
+ * the one that is. The serial port is the machine on the cable, which is typed to over USB; BLE is
+ * the selected profile's host. ZMK stays connected to the hosts on its other profiles, and the
+ * signal used to reach every one of them that subscribed, and the cable whatever the keyboard
+ * typed to.
+ *
+ * Changing endpoint raises zmk_endpoint_changed, which layer_signal.c answers by sending the layer
+ * set again, so the host now typed to is told at once. */
 static inline void zls_transport_send(const uint8_t *frame, size_t len) {
     if (len == 0) {
         return;
     }
+    switch (zmk_endpoint_get_selected().transport) {
 #if IS_ENABLED(CONFIG_ZMK_LAYER_SIGNAL_UART)
-    zls_uart_send(frame, len);
+    case ZMK_TRANSPORT_USB:
+        zls_uart_send(frame, len);
+        break;
 #endif
 #if IS_ENABLED(CONFIG_ZMK_LAYER_SIGNAL_GATT)
-    zls_gatt_send(frame, len);
+    case ZMK_TRANSPORT_BLE:
+        zls_gatt_send(frame, len);
+        break;
 #endif
+    default:
+        break; /* typing nowhere, or on a carrier this build does not have */
+    }
 }
 
 #endif /* ZMK_LAYER_HUD_SIGNAL_TRANSPORT_H */
