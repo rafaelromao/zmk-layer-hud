@@ -525,8 +525,10 @@ class Secure(unittest.TestCase):
         asyncio.run(hub.send({"kind": "secure", "on": True, "watched": []}))
         self.assertIn("secure", hub.cache)
 
+    @mock.patch("hudfeed.a11y.available", new=lambda: False)
     def test_the_feed_asks_the_system_and_the_terminals(self):
         # Either saying so is enough; and where neither can be asked, there is nothing to hold back.
+        # Only the probes this test supplies exist, regardless of the desktop running the suite.
         said = {"system": False, "terminal": False, "lock": False}
         probes = {"system": lambda: said["system"], "terminal": lambda: said["terminal"], "lock": lambda: said["lock"]}
 
@@ -567,6 +569,8 @@ class Secure(unittest.TestCase):
         said["lock"] = True
         self.assertTrue(feed.secure.probe())
 
+    @mock.patch("hudfeed.a11y.available", new=lambda: False)
+    @mock.patch("hudfeed.sessionlock.probe", new=lambda log=None: None)
     def test_raw_logging_is_held_while_it_is_on(self):
         # `feed --raw` logs what the readers decode, which is the typing: not while a secret is typed.
         said = {"terminal": False}
@@ -588,6 +592,7 @@ class Secure(unittest.TestCase):
             quiet = Feed(lambda msg: None, log=lambda *a: None, config=path, keys=False, sessions=False)
             self.assertFalse(quiet.reader.raw)                   # and without --raw, no log at all
 
+    @mock.patch("hudfeed.sessionlock.probe", new=lambda log=None: None)
     def test_on_linux_the_accessibility_bus_is_watched_too(self):
         # A password field with focus in a window (host/a11y.py), with the apps told to expose their
         # widgets unless the config says to leave that alone.
