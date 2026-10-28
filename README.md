@@ -562,6 +562,10 @@ empty and shift stops capitalising the legends, while everything else works.
 `zmk-layer-hud status` says which of the two is live, and `zmk-layer-hud doctor` says why when one
 is not.
 
+Right Alt defaults to AltGr on Linux (US-International: AltGr+`,` types `ç`) and Option on
+macOS. `feed: {altgr: 0}` selects Option decoding explicitly; `altgr: 1` selects AltGr.
+An explicit setting is never replaced by the host default.
+
 The message format, the WebSocket the feed serves, and what a client may inject are documented in
 [docs/protocol.md](docs/protocol.md).
 
@@ -578,7 +582,10 @@ beside anything that is wrong. What it cannot see:
   itself needs no permission on macOS, where it is open to every user; once the feed has
   recognised the signal on a port it takes the port for itself (`TIOCEXCL`), so with `positions;`
   on, the key positions it carries are not there for another process to read. A tool that needs
-  that same port (`tio`, ZMK Studio) gets it back when the HUD stops.
+  that same port (`tio`, ZMK Studio) gets it back when the HUD stops. Open failures are retried
+  every `feed.rescan_s` seconds, so a delayed permission grant or a released port recovers without
+  unplugging. Repeated identical errors are logged only once; a confirmed non-signal port is still
+  left alone until it is replugged.
 - **`cannot read what is typed on <keyboard>`**: that is the HID half, and it does need one. On
   macOS grant Input Monitoring to whatever runs the feed (your terminal, or Hammerspoon), and untick
   the keyboard under Karabiner-Elements → Devices, which seizes a keyboard whose events it modifies.

@@ -412,6 +412,11 @@ class Glyphs(unittest.TestCase):
 
 
 class Message(unittest.TestCase):
+    def test_default_altgr_matches_the_host_but_explicit_decisions_win(self):
+        self.assertEqual(sys.platform.startswith("linux"), message({}, DOC)["altgr"])
+        for value in (0, 1):
+            self.assertEqual(bool(value), message({"feed": {"altgr": value}}, DOC)["altgr"])
+
     def test_explicit_conflicts_aliases_and_stale_keys_never_spill(self):
         seed = {"0": {"name": "DISPLAY", "symbol": "HOME", "symbols": ["HOME", "ALIAS"]},
                 "1": {"name": "NEW", "symbol": "NEXT"}}

@@ -21,7 +21,7 @@
 "layer": "FUN"
 }
 ],
-"altgr": false,
+"altgr": true,
 "base": "DEF",
 "combo_idle": 0,
 "combo_term": 50,
