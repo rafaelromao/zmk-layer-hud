@@ -307,6 +307,19 @@ the HUD itself never reads them:
 When import draws the ZMK keymap itself, or a YAML `keymap parse` made, layer order and key
 order already match the keymap and none of the mapping keys are needed.
 
+For a curated drawing, key `layers.map` by the firmware's symbols, for example
+`SFT_A2: {drawer: shifted2, label: Shift · Alpha 2}` for `#define SFT_A2 17`.
+Run `zmk-layer-hud sync` after firmware layer changes: import records the symbols so
+the mapping follows the layer, not its old numeric position. Display names take precedence
+over symbols, then numeric IDs; conflicting entries are never reused on another layer.
+With source symbols available, unknown keys are reported and ignored. Only legacy maps
+without source symbols fall back to positional order. A normal sync preserves your config
+and carries earlier drawing decisions with their symbols.
+
+Symbol discovery reads decimal `#define NAME number` lines in quoted includes, not arbitrary
+preprocessor expressions. Numeric defines can also describe key positions or timings: use
+the firmware's actual layer symbols in your map; colliding numeric defines are kept as aliases.
+
 Where things live, and what moves them:
 
 | | default | |
@@ -549,6 +562,10 @@ empty and shift stops capitalising the legends, while everything else works.
 `zmk-layer-hud status` says which of the two is live, and `zmk-layer-hud doctor` says why when one
 is not.
 
+Right Alt defaults to AltGr on Linux (US-International: AltGr+`,` types `ç`) and Option on
+macOS. `feed: {altgr: 0}` selects Option decoding explicitly; `altgr: 1` selects AltGr.
+An explicit setting is never replaced by the host default.
+
 The message format, the WebSocket the feed serves, and what a client may inject are documented in
 [docs/protocol.md](docs/protocol.md).
 
@@ -565,7 +582,10 @@ beside anything that is wrong. What it cannot see:
   itself needs no permission on macOS, where it is open to every user; once the feed has
   recognised the signal on a port it takes the port for itself (`TIOCEXCL`), so with `positions;`
   on, the key positions it carries are not there for another process to read. A tool that needs
-  that same port (`tio`, ZMK Studio) gets it back when the HUD stops.
+  that same port (`tio`, ZMK Studio) gets it back when the HUD stops. Open failures are retried
+  every `feed.rescan_s` seconds, so a delayed permission grant or a released port recovers without
+  unplugging. Repeated identical errors are logged only once; a confirmed non-signal port is still
+  left alone until it is replugged.
 - **`cannot read what is typed on <keyboard>`**: that is the HID half, and it does need one. On
   macOS grant Input Monitoring to whatever runs the feed (your terminal, or Hammerspoon), and untick
   the keyboard under Karabiner-Elements → Devices, which seizes a keyboard whose events it modifies.
@@ -575,7 +595,10 @@ beside anything that is wrong. What it cannot see:
   more than one CDC interface and this was another; the feed moves on to the next by itself. If it
   says so about every port, the firmware is not sending — build it with the snippet
   (`-S layer-hud-usb-uart`), which is what creates the interface and points `zmk,layer-hud-uart` at it.
-- **Nothing over Bluetooth**: pair the keyboard with the OS first; the signal needs a bonded host.
+- **Nothing over Bluetooth**: pair the keyboard with the OS first; the signal needs a bonded host,
+  and goes to the host the keyboard is typing to alone. A keyboard with several BLE profiles stays
+  connected to the hosts on the others, which get neither the signal nor what is typed: if macOS
+  says it is connected but nothing types, select this computer's profile (`&bt BT_SEL n`).
   On macOS the feed takes a keyboard that is already connected straight from CoreBluetooth, so no
   address is needed, but whatever runs the feed needs Bluetooth permission (System Settings →
   Privacy & Security → Bluetooth). `… over BLE, not read` means it connected but found no signal
@@ -614,8 +637,7 @@ beside anything that is wrong. What it cannot see:
   `systemd-ask-password`, a pinentry, a prompt that masks with stars -- is not, and nor is a prompt
   on the far side of `ssh` or inside a container, whose pty is not this machine's. When the gate
   misses, a session keeps the keys as counts per key and layer, never their order (`feed.sessions:
-  0` keeps none), and a keyboard cabled to one machine while typing over BLE to another sends its
-  positions to the cabled one's port too.
+  0` keeps none).
 - The touch keyboard emulates ZMK's core behaviours -- keys, mod-taps and layer-taps, layers,
   sticky keys, mod-morph, tap dance, macros, key repeat, caps word, conditional layers -- and
   types a key's legend for the rest (module behaviours: adaptive keys, leader, OS detection).

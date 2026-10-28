@@ -35,10 +35,12 @@ venv: ## just the virtualenv the feed and the tests run under
 
 test: test-firmware test-host test-hud test-site test-apps ## run every test suite
 
-test-firmware: ## host-side tests for the module's pure encode/decode policy
+test-firmware: ## host-side tests for the module's pure encode/decode policy, and where the signal goes
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -O1 -o build/test_layer_signal firmware/tests/test_layer_signal.c
 	./build/test_layer_signal
+	$(CC) -std=c11 -Wall -Wextra -Werror -O1 -I firmware/tests/fakes -o build/test_signal_route firmware/tests/test_signal_route.c
+	./build/test_signal_route
 
 test-host: ## Python tests: the wire format, the signal decoder, the keymap-drawer conversion
 	$(PYTHON) -m unittest discover -s host -p '*_test.py' -v

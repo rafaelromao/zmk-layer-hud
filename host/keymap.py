@@ -31,9 +31,12 @@ The rest are read at runtime:
   serial:         {port, probe_s} of its CDC-ACM interface, when finding it fails   (optional)
   ble:            {address, enabled} for reading the signal over BLE                (optional)
   layers:         how ZMK layer ids map to drawer layers                            (optional)
-      map:   per layer (by name, by id, or by position in ZMK layer order): a drawer layer name,
-             null for a layer that is transparent or not drawn, or {drawer, label, class}. The
-             ids come from the import; without one, id n is the n-th drawn layer.
+      map:   per layer, keyed by the keyboard's own devicetree symbol for it (what `#define X 2`
+             says in the keymap's sources, which the import records beside each layer), by its
+             display name, by its id, or -- only without source symbols -- by position in ZMK layer
+             order: a drawer layer name, null for a layer that is transparent or not drawn, or
+             {drawer, label, class}. The ids come from the import; without one, id n is the n-th
+             drawn layer.
   base:           the drawer layer that is always active (default: the layer for id 0)         (optional)
   positions:      ZMK key position of each drawer key, in drawer order, when the drawer does not
                   list the keys in the keymap's binding order (firmware `positions;`)            (optional)
@@ -120,7 +123,8 @@ FEED_DEFAULTS = {
     "session_poll_s": 1,       # how often the session files are looked at for `zmk-layer-hud session` changes
     "secure_input": 1,         # while a password field has focus or a terminal asks for a password, pass on nothing typed (0: pass it all)
     "accessibility": 1,        # (Linux) tell the apps assistive technology is wanted, so a password field with focus is seen (0: leave that setting alone)
-    "altgr": 0,                # 1: the right Alt is AltGr, a Linux host's US-International (ç is AltGr+,); 0: it is macOS's Option
+    # Native default; a configured 0/1 wins. Linux: US-International (ç is AltGr+,), macOS: Option.
+    "altgr": int(sys.platform.startswith("linux")),
 }
 
 # `touch:` section: the touch keyboard, the HUD typing when its keys are tapped (docs/touch.md).
@@ -604,10 +608,46 @@ def parse_layers_and_combos(doc, n_keys):
     return layers, combos
 
 
+def resolve_layer_map(entries, names, symbols=None):
+    """Resolve map entries once for import and runtime. Explicit name > symbol > id;
+    losing explicit entries are consumed too. Positional fallback is legacy-only: once
+    source symbols are known, an unknown key is stale, never somebody else's mapping.
+    names is {id: display name}; symbols is {symbol: id}, including aliases.
+    Returns ({id: spec}, {key: first id}, [unresolved keys]).
+    """
+    entries = {str(k): v for k, v in entries.items()}
+    symbols = {s: str(i) for s, i in (symbols or {}).items() if str(i) in names}
+    candidates, placed, loose = {}, {}, []
+    for key, spec in entries.items():
+        targets = [i for i, name in names.items() if name == key]
+        rank = 0
+        if not targets and key in symbols:
+            targets, rank = [symbols[key]], 1
+        if not targets and key in names:
+            targets, rank = [key], 2
+        if not targets:
+            loose.append(key)
+            continue
+        placed[key] = targets[0]
+        for i in targets:
+            if i not in candidates or rank < candidates[i][0]:
+                candidates[i] = (rank, spec)
+    if not symbols:
+        free = [i for i in names if i not in candidates]
+        for i, key in zip(free, loose):
+            candidates[i] = (3, entries[key])
+            placed[key] = i
+    return ({i: spec for i, (_, spec) in candidates.items()}, placed,
+            [key for key in loose if key not in placed])
+
+
 def zmk_layer_table(layers_cfg, layer_names, imported=None):
-    """ZMK layer id -> {id, name, drawer, label, cls}. Ids come from an import when there is one,
-    else from the drawing's order (name = drawer layer). The config's `map` refines
-    drawer/label/class and wins over both."""
+    """ZMK layer id -> {id, name, drawer, label, cls}, plus `symbol` where the import recorded the
+    keyboard's own for it. Ids come from an import when there is one, else from the drawing's order
+    (name = drawer layer). The config's `map` refines drawer/label/class and wins over both; an
+    entry there is sought by the layer's display name, then by the devicetree symbol the keymap
+    defines, then by its id. Without source symbols, unmatched entries fill free layers in map
+    order for legacy maps; with symbols they are stale and ignored."""
     if imported:
         # A list, not a mapping: two layers may share a display name (a copy of a layer reached
         # another way), and a mapping would drop one and shift every id after it.
@@ -616,18 +656,14 @@ def zmk_layer_table(layers_cfg, layer_names, imported=None):
     else:
         pairs, seed = [(name, i) for i, name in enumerate(layer_names)], {}
     lower = {n.lower(): n for n in layer_names}
-    overrides, by_position = {}, []
-    for key, val in ((layers_cfg or {}).get("map") or {}).items():
-        overrides[str(key)] = val
-        by_position.append(val)
+    symbols = {s: i for i, row in seed.items()
+               for s in (row.get("symbols") or [row.get("symbol")]) if s}
+    resolved, _, _ = resolve_layer_map((layers_cfg or {}).get("map") or {},
+                                      {str(i): n for n, i in pairs}, symbols)
+    spec_of = {int(i): spec for i, spec in resolved.items()}
     table = {}
     for name, lid in pairs:
-        # By the keyboard's own name for the layer, by its id, or — since the map is written in ZMK
-        # layer order — by position, which is what lets a map keyed by the names in a devicetree
-        # header keep working once the ids come from the keymap itself.
-        spec = overrides.get(name, overrides.get(str(lid), "__unset__"))
-        if spec == "__unset__" and lid < len(by_position):
-            spec = by_position[lid]
+        spec = spec_of.get(lid, "__unset__")
         base = seed.get(str(lid)) or {}
         drawer = base.get("drawer", lower.get(name.lower()))
         label = base.get("label") or prettify(name)
@@ -645,7 +681,10 @@ def zmk_layer_table(layers_cfg, layer_names, imported=None):
                 raise KeymapError(f"layers.map.{name}: expected a layer name, null or a mapping")
         if drawer is not None and drawer not in layer_names:
             raise KeymapError(f"layers.map.{name}: drawer layer {drawer!r} is not in the drawing")
-        table[str(lid)] = {"id": lid, "name": name, "drawer": drawer, "label": label, "cls": cls}
+        row = {"id": lid, "name": name, "drawer": drawer, "label": label, "cls": cls}
+        if base.get("symbol"):
+            row["symbol"] = base.get("symbol")
+        table[str(lid)] = row
     return table
 
 
@@ -1151,9 +1190,10 @@ def merge_imported(cfg, imported):
     """Fold what `zmk-layer-hud import` took out of the keyboard's own keymap into the config.
 
     It is a floor, never a ceiling: the config is where a human writes things down, so anything set
-    there wins. Layer ids and names come from the import (the config's `layers.map` still refines
-    which drawing each one shows), and a combo's real layer coverage likewise, unless the config
-    names that combo itself.
+    there wins. Layer ids and names come from the import, with each layer's own devicetree symbol
+    where the keymap defines one (the config's `layers.map` still refines which drawing each shows,
+    by name, symbol or id), and a combo's real layer coverage likewise, unless the config names
+    that combo itself.
     """
     if not isinstance(imported, dict):
         return cfg

@@ -64,7 +64,9 @@ config ZMK_LAYER_SIGNAL_GATT
     help
       A primary service with one notify characteristic, beside ZMK's
       HID-over-GATT rather than inside it. Encryption is required to subscribe,
-      so the signal only flows to a bonded host.
+      so the signal only flows to a bonded host, and it goes to the selected
+      profile's host alone, while the keyboard types over BLE: the host it is
+      typing to.
 
 endif # ZMK_LAYER_SIGNAL
 
