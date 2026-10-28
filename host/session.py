@@ -816,6 +816,24 @@ class Store:
                     self.acks.pop(next(iter(self.acks)))
             self.announce()
 
+    # What the page says to the session: its counts, and the heatmap and the preferences it switched
+    # to. Its own panel hands them over as they come (the macOS bridge); the feed's socket only from
+    # the page holding the tally token (hudfeed.Hub).
+    SAID = ("tally", "heatmap", "pref")
+
+    def apply_said(self, msg):
+        """One of the page's SAID kinds, kept; False for any other kind, which is not the session's."""
+        kind = msg.get("kind")
+        if kind == "tally":
+            self.apply(msg)
+        elif kind == "heatmap":
+            self.set_heatmap(msg.get("mode"))
+        elif kind == "pref":
+            self.set_pref(msg.get("name"), msg.get("value"))
+        else:
+            return False
+        return True
+
     def set_heatmap(self, mode):
         if mode not in HEATMAP_MODES:
             return

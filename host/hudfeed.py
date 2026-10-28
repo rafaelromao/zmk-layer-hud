@@ -1525,18 +1525,13 @@ class Hub:
                     if self.sessions is not None:
                         self.sessions.flush()   # os._exit runs no cleanup: what was counted goes first
                     os._exit(0)
-                if kind in ("tally", "heatmap", "pref"):
+                if kind in session_mod.Store.SAID:
                     # A page's counts, or the heatmap or a preference it switched to: only from the
                     # page the tally token was given to -- a second secret, because a second page
                     # holding the socket's must still not count twice. `--no-inject` is about
                     # drawing, not this.
                     if self.sessions is not None and self.tally_token and self._tally_ok(msg.get("token")):
-                        if kind == "tally":
-                            self.sessions.apply(msg)
-                        elif kind == "heatmap":
-                            self.sessions.set_heatmap(msg.get("mode"))
-                        else:
-                            self.sessions.set_pref(msg.get("name"), msg.get("value"))
+                        self.sessions.apply_said(msg)
                     continue
                 if self.inject and kind in INJECTABLE:
                     await self.send_in(msg)

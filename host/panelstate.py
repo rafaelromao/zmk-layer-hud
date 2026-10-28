@@ -51,6 +51,12 @@ def default_dir():
         os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "zmk-layer-hud")
 
 
+def write_json(path, obj):
+    """A file of the panel's own beside these (its place on screen, ~/.config/zmk-layer-hud/
+    state.json), written as they are: whole or not at all, and this user's alone."""
+    _write(path, obj)
+
+
 def _write(path, obj):
     """Whole or not at all: the CLI and the bar widget read these at any moment. For this user
     alone (mkstemp's 0600): what they say -- the live WPM, the session's name -- is theirs, and

@@ -151,6 +151,14 @@ lives. Two rules it keeps, and both matter:
   `session export`, the one part of `session` that draws with keymap-drawer, in
   `host/export.py`). The rest must keep working on a half-installed machine.
 
+The panel is one module, `host/panelcore.py`, with two windows: `host/macos/panel.py` (AppKit) and
+`host/linux/panel.py` (GTK, layer-shell). What the page tells its panel (hide, attach, dock, size,
+site, wpm, stats, nodrag, the touch keyboard's keys), what the command line asks of it, and what
+`panel.json` says are `panelcore.Panel`'s; each platform's panel is a `panelcore.Window` to it, and
+owns only how the HUD is drawn, placed, moved and hidden there. Neither platform's panel imports
+without AppKit or GTK, so `host/panelcore_test.py` drives the panel with a window that records
+what it is asked, and `cli_test` signals the real panel with a window that does nothing.
+
 Showing and hiding goes to the running panel directly: `show` and `hide` write what they want to
 `$STATE/panel.want` and send the panel SIGUSR2, and the panel does it and says so in
 `$STATE/panel.json` (`{"pid", "shown", "wpm"}`), which `status` and both menubar icons read too
