@@ -8,7 +8,8 @@ again from the same sources and says what changed. They hold two things:
   with keymap-drawer from the keymap-drawer YAML the config names as `keymap:`, or, when it names
   none, from the keyboard's own ZMK keymap (`keymap parse`);
 - when a ZMK repo was imported, what its keymap says and a drawing does not: the id of every layer,
-  the layers each combo really fires on, the combo term and the idle a combo needs before it.
+  the keymap's own symbol that names each one, the layers each combo really fires on, the combo
+  term and the idle a combo needs before it.
 
     zmk-layer-hud import github.com/you/zmk-config       # or a path to a working copy
     zmk-layer-hud import ~/zmk-config --keyboard corne   # which keyboard, when it holds several
@@ -217,6 +218,21 @@ def combo_term(keymap_path):
     if not found:
         return None
     return max(found.items(), key=lambda kv: (kv[1], -kv[0]))[0]
+
+
+def layer_symbols(keymap_path):
+    """{devicetree symbol: id} of the defines the keymap's sources reach (`#define CCEDIL 16`).
+
+    The keyboard's own symbols for its layers live in the same terms as `layers.map`, and the
+    import puts each layer's beside it in the record, so a map written with them still says whose
+    drawing is whose after the keyboard adds, takes out or renumbers a layer. Not every define is
+    a layer's -- a combo term, a key position -- so a symbol is only taken for ids the keymap has
+    layers at."""
+    table = {}
+    for _, text in reachable(keymap_path):
+        for m in DEFINE_RE.finditer(text):
+            table.setdefault(m.group(1), int(m.group(2)))
+    return table
 
 
 def device_tree(keymap_path):
@@ -563,22 +579,49 @@ def normalise(name):
     return re.sub(r"[^a-z0-9]+", "", name.lower())
 
 
-def draft_layers(names, drawn, previous):
+def keeps_decision(keep, name, symbol):
+    """Whether what a record carries at an id is still the decision for the layer there now: it is
+    where the record said the layer's own devicetree symbol and still means it, and where an older
+    record, which carried only the name, says a name the layer is still called. A record with
+    neither has nothing to be doubted by and stays. Alone among these, a symbol cannot be shared
+    by two layers: those names can be (NUMBERS twice), which is how carries drifted across when a
+    board restructured its layers and every id after the change moved."""
+    if keep.get("symbol") is not None:
+        return keep.get("symbol") == symbol
+    if keep.get("name") is not None:
+        return keep.get("name") == name
+    return True
+
+
+def draft_layers(names, drawn, previous, symbols=None):
     """ZMK layer id -> {name, drawer, label}, carrying over what the config already said.
 
     Which drawing a layer belongs to is a naming choice — your names, not the keymap's — so it is
     carried over wherever the config has already made it, matched by name where that is
-    unambiguous, and otherwise left undecided rather than guessed at.
-    """
+    unambiguous, and otherwise left undecided rather than guessed at. `symbols` is each layer's
+    own devicetree symbol, by id, where the keyboard gives one, and is carried in the record: a
+    later sync tells a carried decision by it rather than by a name the keyboard renames at will."""
     by_norm = {normalise(d): d for d in drawn}
     out, undecided = {}, []
     for i, name in enumerate(names):
         keep = (previous or {}).get(str(i)) or {}
         drawer = keep.get("drawer") if "drawer" in keep else by_norm.get(normalise(name))
-        out[str(i)] = {"name": name, "drawer": drawer, "label": keep.get("label") or name.title()}
+        entry = {"name": name, "drawer": drawer, "label": keep.get("label") or name.title()}
+        if symbols and symbols[i]:
+            entry["symbol"] = symbols[i]
+        out[str(i)] = entry
         if drawer is None and "drawer" not in keep:
             undecided.append((i, name, None))
     return out, undecided
+
+
+def resolve_map(entries_map, names, symbols):
+    """Resolve using the runtime's policy, retaining drawer decisions for the record."""
+    resolved, placed, strays = keymap_mod.resolve_layer_map(
+        entries_map, {str(i): name for i, name in enumerate(names)}, symbols)
+    pins = {i: entry if isinstance(entry, dict) else {"drawer": entry}
+            for i, entry in resolved.items() if not isinstance(entry, dict) or "drawer" in entry}
+    return pins, placed, strays
 
 
 def combo_coverage(parsed, layers, positions, drawn, drawn_combos):
@@ -637,9 +680,10 @@ def render(data, undecided):
     L = ["# Written by `zmk-layer-hud import`. Do not edit: `zmk-layer-hud sync` rewrites it.",
          "#",
          "# What the keyboard's own ZMK keymap says, which a drawing does not carry: the id of every",
-         "# layer, and the layers each combo really fires on. This copy is for reading; the HUD takes",
-         "# the same from the definitions beside it. Anything you set in config.yaml wins over both,",
-         "# so corrections belong there and survive a sync.",
+         "# layer, the keymap's own symbol for each, and the layers each combo really fires on.",
+         "# This copy is for reading; the HUD takes the same from the definitions beside it.",
+         "# Anything you set in config.yaml wins over both, so corrections belong there and",
+         "# survive a sync.",
          f"#   source:   {data['source']}",
          f"#   keyboard: {data['keyboard']}",
          ""]
@@ -658,7 +702,8 @@ def render(data, undecided):
     for lid, entry in sorted(data["layers"].items(), key=lambda kv: int(kv[0])):
         drawer = entry["drawer"]
         mark = "" if drawer else "    # not drawn — set one in config.yaml if it should be"
-        L.append(f"  {lid}: {{ name: {yq(entry['name'])}, drawer: {yq(drawer) if drawer else 'null'}, "
+        symbol = f"symbol: {yq(entry['symbol'])}, " if entry.get("symbol") else ""
+        L.append(f"  {lid}: {{ name: {yq(entry['name'])}, {symbol}drawer: {yq(drawer) if drawer else 'null'}, "
                  f"label: {yq(entry['label'])} }}{mark}")
     L += ["", "combos:"]
     for c in data["combos"]:
@@ -687,7 +732,10 @@ def delta(before, after):
     ol, nl = (before or {}).get("layers", {}), after["layers"]
     for lid in sorted(set(ol) | set(nl), key=int):
         a, b = ol.get(lid), nl.get(lid)
-        if a == b:
+        # Only what the line below prints: a record gaining the layers' symbols says nothing new
+        # about a layer, and neither does a label change -- the line prints the name it draws as.
+        if a is not None and b is not None and \
+                (a.get("name"), a.get("drawer")) == (b.get("name"), b.get("drawer")):
             continue
         if not a:
             out.append(f"  + layer {lid} {b['name']!r}" + (f" -> {b['drawer']}" if b["drawer"] else " (not drawn)"))
@@ -800,13 +848,14 @@ def new_config(config_path):
 
 # ---------- the commands ----------
 
-def config_labels(cfg):
-    """[(position, key, label)] of the layers.map entries that give a layer a label of their own. The
-    map is written in ZMK layer order, so an entry's position is its layer's id."""
+def config_labels(cfg, lands=None):
+    """[(layer, key, label)] of the layers.map entries that give a layer a label of their own.
+    `lands` (resolve_map) says where the map's keys land; written without one, the map's position
+    in ZMK layer order is what its ids are taken to be."""
     out = []
     for i, (key, entry) in enumerate(((cfg.get("layers") or {}).get("map") or {}).items()):
         if isinstance(entry, dict) and entry.get("label"):
-            out.append((i, str(key), str(entry["label"])))
+            out.append(((lands or {}).get(str(key), i), str(key), str(entry["label"])))
     return out
 
 
@@ -983,23 +1032,59 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
     if source:
         names = [l["name"] for l in zlayers]
         layers_drawn, positions, drawn_combos = drawn(made["drawing"], cfg)
+        # The keyboard's own symbols for its layers (layer_symbols): recorded beside each one, so
+        # the config's `layers.map`, written with them, keeps saying whose drawing is whose when
+        # the keyboard adds, takes out or renumbers a layer. An id with no symbol define stays
+        # without one; the map then resolves as it did before there were symbols to be said.
+        defines = layer_symbols(keymap_path)
+        in_range = {sym: lid for sym, lid in defines.items() if 0 <= lid < len(names)}
+        one_of = {}
+        for sym, lid in sorted(in_range.items(), key=lambda item: item[0] not in
+                               ((cfg.get("layers") or {}).get("map") or {})):
+            one_of.setdefault(lid, sym)            # an id's first symbol, in source order
+        symbols = [one_of.get(i) for i in range(len(names))]
         if cfg.get("keymap"):
-            previous_map = dict((before_rec or {}).get("layers")
-                                or ((previous or {}).get("zmk") or {}).get("layers") or {})
-            # Whatever config.yaml already says outranks anything derived: that mapping is the one
-            # part of this a human decided. It is written in ZMK layer order, so a layer's id is its
-            # position.
-            for i, entry in enumerate(((cfg.get("layers") or {}).get("map") or {}).values()):
-                if isinstance(entry, dict) and "drawer" in entry:
-                    previous_map.setdefault(str(i), {}).update({"drawer": entry["drawer"], "label": entry.get("label")})
-            layers, undecided = draft_layers(names, layers_drawn, previous_map)
+            layers_map = ((cfg.get("layers") or {}).get("map") or {})
+            pins, lands, strays = resolve_map(layers_map, names, in_range)
+            if strays:
+                say(quiet, f"{len(strays)} key(s) of the config's `layers.map` no longer name a layer, and are "
+                           "not applied: " + ", ".join(strays) + " (the keyboard's layers have changed?)")
+            # What a record carries survives only where the keyboard still has the layer it was
+            # decided onto (keeps_decision): the rest is drafted again, never dragged to wherever
+            # the ids moved.
+            previous_map = {}
+            old_layers = ((before_rec or {}).get("layers")
+                          or ((previous or {}).get("zmk") or {}).get("layers") or {})
+            for i, name in enumerate(names):
+                matches = [row for row in old_layers.values() if row.get("symbol")
+                           and in_range.get(row["symbol"]) == i]
+                if not matches and names.count(name) == 1:
+                    matches = [row for row in old_layers.values()
+                               if not row.get("symbol") and row.get("name") == name]
+                keep_row = matches[0] if len(matches) == 1 else old_layers.get(str(i), {})
+                if keep_row and (matches or keeps_decision(keep_row, name, symbols[i])):
+                    previous_map[str(i)] = keep_row
+            # Whatever config.yaml already says outranks anything derived: the map is the one part
+            # of this a human decided, and its entries go where their layer is -- by symbol, name
+            # or id -- so a board that restructures its layers does not move them.
+            for lid, entry in pins.items():
+                update = {"drawer": entry["drawer"]}
+                if entry.get("label"):
+                    update["label"] = entry["label"]
+                previous_map[str(lid)] = dict(previous_map.get(str(lid), {}), **update)
+            # Labels reset to name.title() only where --pristine is dropping the config's own
+            # labels (the strip below): on a plain sync the map's labels are the human's part, and
+            # the pins above carry them into the record untouched.
+            labelled = config_labels(cfg, lands) if pristine else []
+            layers, undecided = draft_layers(names, layers_drawn, previous_map, symbols)
             if pristine:
                 # Mappings an earlier import settled for layers the config does not map: a fresh
                 # draft guesses them from names, or leaves them undecided.
                 old_map = (old_rec or {}).get("layers") or ((old_defs or {}).get("zmk") or {}).get("layers") or {}
                 for i, entry in sorted(layers.items(), key=lambda kv: int(kv[0])):
                     was = old_map.get(i) or {}
-                    if i in previous_map or "drawer" not in was or was.get("name", entry["name"]) != entry["name"]:
+                    if i in previous_map or "drawer" not in was or \
+                            not keeps_decision(was, entry["name"], entry.get("symbol")):
                         continue
                     if (was.get("drawer"), was.get("label")) != (entry["drawer"], entry["label"]):
                         carried.append(carry(f"layer {i} ({entry['name']})",
@@ -1012,16 +1097,28 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
             # Drawn from the keymap itself: every live layer is drawn under its own name, in order,
             # and its combos already carry the layers they fire on.
             it = iter(drawn_names)
-            layers = {str(i): {"name": l["name"], "drawer": next(it) if l["drawn"] else None,
-                               "label": l["name"].title()} for i, l in enumerate(zlayers)}
+            layers = {}
+            for i, l in enumerate(zlayers):
+                layers[str(i)] = {"name": l["name"], "drawer": next(it) if l["drawn"] else None,
+                                  "label": l["name"].title()}
+                if symbols[i]:
+                    layers[str(i)]["symbol"] = symbols[i]
+            _, lands, strays = resolve_map(((cfg.get("layers") or {}).get("map") or {}), names, in_range)
+            labelled = config_labels(cfg, lands) if pristine else []
+            if strays:
+                say(quiet, f"{len(strays)} key(s) of the config's `layers.map` no longer name a layer, "
+                           "and are not applied: " + ", ".join(strays) + " (the keyboard's layers have changed?)")
             coverage = []
         since = f"your last import of {old_rec.get('source')}" if (old_rec or {}).get("source") else "your last import"
         kept = [carried[n]["token"] for n in sorted(decide(carried, keep, ask, quiet, since))] if carried else []
         if labelled and "config_labels" not in kept:
+            resolved, _, _ = keymap_mod.resolve_layer_map(
+                (cfg.get("layers") or {}).get("map") or {},
+                {str(i): name for i, name in enumerate(names)}, in_range)
             cfg = drop_config_labels(config_path, labelled, quiet)
-            for i, _, _ in labelled:
-                if str(i) in layers:
-                    layers[str(i)]["label"] = layers[str(i)]["name"].title()
+            for i, spec in resolved.items():
+                if isinstance(spec, dict) and spec.get("label"):
+                    layers[i]["label"] = layers[i]["name"].title()
         mappings = [t for t in kept if isinstance(t, tuple)]
         if mappings:
             for _kind, i, was in mappings:
@@ -1029,6 +1126,10 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
             undecided = [u for u in undecided if str(u[0]) not in {c[1] for c in mappings}]
             if cfg.get("keymap"):
                 coverage = combo_coverage(parsed, layers, positions, layers_drawn, drawn_combos)
+        for lid, row in layers.items():
+            aliases = [sym for sym, i in in_range.items() if i == int(lid)]
+            if len(aliases) > 1:
+                row["symbols"] = aliases
         zmk = {"layers": layers, "combo_term_ms": combo_term(keymap_path),
                "combo_idle_ms": combo_idle(keymap_path, dts), "combos": coverage}
         rec = dict(zmk, source=sources["repo"], keyboard=board)
