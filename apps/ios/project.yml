@@ -50,7 +50,7 @@ targets:
     platform: iOS
     sources:
       - Keyboard
-      - path: ../../hud/hidtables.js
+      - path: ../../hud/keynames.js
         buildPhase: resources
       - path: ../../hud/hidtext.js
         buildPhase: resources

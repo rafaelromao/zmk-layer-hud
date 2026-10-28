@@ -96,7 +96,7 @@
     clearTimeout(deadTimer);
     if (decoder.pending()) {
       deadTimer = setTimeout(() => { const late = decoder.flush(Date.now()); if (sink && sink.output === "text") sendOps(late); },
-                             (window.ZmkHidTables ? window.ZmkHidTables.DEAD_KEY_MS : 60) + 5);
+                             (window.ZmkKeyNames ? window.ZmkKeyNames.DEAD_KEY_MS : 60) + 5);
     }
   }
 

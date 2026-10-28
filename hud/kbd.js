@@ -24,7 +24,7 @@
   const Engine = node ? require("./engine.js") : root.ZmkEngine;
   const HidText = node ? require("./hidtext.js") : root.ZmkHidText;
   const View = node ? require("./view.js") : root.ZmkView;
-  const Tables = node ? require("./hidtables.js") : root.ZmkHidTables;
+  const Tables = node ? require("./keynames.js") : root.ZmkKeyNames;
 
   // The gap between keys a native board starts from before docking scales it (hud.js GAP).
   const GAP = 6;

@@ -5,12 +5,12 @@
  *
  * The board is drawn from the keymap; the strip below it is drawn from the HID reports the
  * keyboard sent. This checks they agree: for every legend in the keymap that a US-layout keyboard
- * could type, host/uskeys.py sends what a keyboard would send, hudfeed's own decoder turns it back
+ * could type, host/uskeys.py sends what a keyboard would send, the feed's own decoder turns it back
  * into key events, and keys.js renders a chip — which must read as the legend.
  *
  * That is where the encoding cases live: an accented letter is a dead key and a letter, not one
  * keypress; a character on the Option layer arrives with a modifier held; a named key's glyph is
- * spelled by three separate tables. Needs python3 (PYTHON=... to choose one); skips without it.
+ * spelled by the vocabulary's spellings (host/keynames.py). Needs python3 (PYTHON=... to choose one); skips without it.
  */
 "use strict";
 
@@ -28,7 +28,7 @@ function pythons() {
   return (chosen ? [chosen] : []).concat([path.join(REPO, ".venv/bin/python3"), "python3"]);
 }
 
-// host/uskeys.py is the only thing that knows how a legend is typed; it inverts hudfeed's own
+// host/uskeys.py is the only thing that knows how a legend is typed; it inverts the key vocabulary's
 // tables, so this cannot drift from the decoder it exercises.
 function corpus(keymap) {
   let lastErr = null;
