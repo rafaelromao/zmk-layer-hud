@@ -306,7 +306,8 @@ class Reader:
     replugging just works; each found device opened and read on a thread of its own, through a
     Stream that decodes it and releases what it held when it goes. A device that could not be opened
     -- or, for the signal, never produced a frame -- is not tried again until it goes away and comes
-    back. The loop is one; what differs per transport is the hooks below.
+    back; with `retry_opens`, one that could not be opened is tried again each scan, and each new
+    reason it gives is said once. The loop is one; what differs per transport is the hooks below.
 
         available()           its library is there (said once, and the reader does nothing if not)
         find()                [(path, product)] of every device that could be the keyboard
@@ -321,6 +322,7 @@ class Reader:
 
     kind, devices = "reader", "devices"
     signal = False
+    retry_opens = False
 
     def __init__(self, emit, rescan=2.0, log=print, raw=False, dead_key_ms=DEAD_KEY_MS, altgr=False):
         self.emit, self.rescan, self.log, self.raw = emit, rescan, log, raw
@@ -331,6 +333,7 @@ class Reader:
         self._lock = threading.Lock()
         self._open = {}         # path -> connection, while it is read
         self._failed = {}       # path -> why it is not tried again until it goes away
+        self._retrying = {}     # path -> why it could not be opened last scan (retry_opens), said once
         self._streams = set()   # live Streams, for resync()
         self._stop = threading.Event()
 
@@ -382,6 +385,8 @@ class Reader:
             with self._lock:
                 for path in [p for p in self._failed if p not in live]:
                     del self._failed[path]   # unplugged: worth trying again when it returns
+                for path in [p for p in self._retrying if p not in live]:
+                    del self._retrying[path]
             for path, product in found:
                 with self._lock:
                     if path in self._open or path in self._failed:
@@ -389,12 +394,18 @@ class Reader:
                 try:
                     conn = self.open(path, product)
                 except OpenFailed as e:
-                    for line in e.lines:
-                        self.log(line)
                     with self._lock:
-                        self._failed[path] = e.lines[0]
+                        said = self._retrying.get(path)
+                        if self.retry_opens:
+                            self._retrying[path] = e.lines[0]
+                        else:
+                            self._failed[path] = e.lines[0]
+                    if said != e.lines[0]:
+                        for line in e.lines:
+                            self.log(line)
                     continue
                 with self._lock:
+                    self._retrying.pop(path, None)
                     self._open[path] = conn
                 if not self.signal:
                     self.log(f"hudfeed: reading what is typed on {product} ({self.where(path)})")
@@ -467,9 +478,12 @@ class SerialReader(Reader):
     they are indistinguishable from their descriptors. So the port is not chosen, it is tried: a
     port that produces no valid frame within `probe_s` is dropped and not tried again until it goes
     away and comes back. The firmware announces on boot and beats every heartbeat-ms, so silence
-    that long is decisive."""
+    that long is decisive. One that could not be opened is tried again each scan: enumeration can
+    beat udev's access grant, or another process may still own the port, and neither makes it a port
+    without the signal -- left alone, the HUD would stay on stale layers while typing went on."""
 
     kind, devices, signal = "serial", "serial ports", True
+    retry_opens = True
 
     def __init__(self, emit, vid=ZMK_VID, pid=ZMK_PID, name=None, port=None, rescan=2.0, log=print,
                  raw=False, dead_key_ms=DEAD_KEY_MS, probe_s=8.0, altgr=False):
@@ -514,7 +528,7 @@ class SerialReader(Reader):
         try:
             return serial.Serial(path, timeout=0.5, exclusive=False)
         except (OSError, serial.SerialException, ValueError) as e:
-            lines = [f"hudfeed: cannot open {product} ({path}): {e}"]
+            lines = [f"hudfeed: cannot open {product} ({path}): {e}; retrying each scan"]
             if sys.platform != "darwin":
                 lines.append("hudfeed: check tty permissions (contrib/udev/60-zmk-layer-hud.rules, "
                              "or add yourself to the dialout group)")

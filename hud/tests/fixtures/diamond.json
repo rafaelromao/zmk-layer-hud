@@ -221,7 +221,7 @@
 "layer": "window-management"
 }
 ],
-"altgr": false,
+"altgr": true,
 "base": "alpha1",
 "combo_idle": 150,
 "combo_term": 30,

@@ -83,6 +83,7 @@
     prefs: {},                // what the viewer chose (setPref): theme light | dark, side shown | hidden
     secure: false,            // secure input: a secret is being typed, and nothing of it shows
     mini: false,              // docked and minimized: the keyboard down to its banner (setMini)
+    dockSmaller: false,       // the panel was told the docked keys are smaller than their own (sayFit)
     touchNote: "",            // why the board that was asked to type cannot (touch.js setTouchNote)
     watched: null,            // what the feed says sees a secret being typed ([] = nothing); null until told
     demo: false,              // a GIF still (&demo=N): drawn as it always was, no heat, no counts
@@ -203,27 +204,38 @@
   }
 
   /* Docked as a touch keyboard, its keys are as big as the keyboard's own -- touch.key_mm apart, 1u
-   * being the layout's typical key (View.unitOf) -- and never made smaller to fit: what is typed on
-   * is a keyboard, not a picture of one. The host says how many CSS pixels a millimetre is on the
-   * dock's screen and how wide that screen is ({"kind":"dock", "px_per_mm", "width"}); a host that
-   * does not say (the remote page, the iPad's keyboard) gets the board fitted, as before.
+   * being the layout's typical key (View.unitOf). A board that would not fit at that size has its
+   * keys made smaller, a tenth of a millimetre at a time, down to touch.min_key_mm (MIN_KEY_MM when
+   * the keymap does not say; as big as key_mm, never smaller): a keyboard a little smaller than its
+   * own still types, where a picture of one would not. The host says how many CSS pixels a
+   * millimetre is on the dock's screen and how wide that screen is ({"kind":"dock", "px_per_mm",
+   * "width"}); a host that does not say (the remote page, the iPad's keyboard) gets the board
+   * fitted, as before.
    *
-   * A board that does not fit -- the screen too narrow for it, or the dock's share of the screen
-   * too short -- is the HUD and not a keyboard: drawn to fit, typing nothing (touch.js, the "fit"
-   * hook), the banner saying why. The panel is told ({"kind":"dock","fits":false}) and floats the
-   * HUD again; a tablet's keyboard stays, a HUD, until it is turned or another keyboard is picked.
-   * Decided from the host's numbers, not the window's, which may not have caught up yet. */
+   * A board that does not fit even at the smallest -- the screen too narrow for it, or the dock's
+   * share of the screen too short -- is the HUD and not a keyboard: drawn to fit, typing nothing
+   * (touch.js, the "fit" hook), the banner saying why. The panel is told ({"kind":"dock","fits":false},
+   * at the smallest, sayFit) and floats the HUD again; a tablet's keyboard stays, a HUD, until it is
+   * turned or another keyboard is picked. Decided from the host's numbers, not the window's, which
+   * may not have caught up yet. */
+  const MIN_KEY_MM = 16;
   function dockFit() {
     const d = state.dock;
     if (!d || !(d.pxPerMm > 0) || !state.data) return null;
-    const lay = state.data.layout;
-    const keyMm = Number(state.data.touch && state.data.touch.key_mm) || 18;
-    const scale = View.realScale(lay, keyMm, d.pxPerMm);
+    const lay = state.data.layout, touch = state.data.touch || {};
+    const wantMm = Number(touch.key_mm) || 18;
+    const leastMm = Math.min(wantMm, Number(touch.min_key_mm) || MIN_KEY_MM);
     const width = Math.max(0, (d.width || window.innerWidth || 0) - DOCK_SIDES);
     const maxHeight = d.maxHeight || window.innerHeight || 360;
-    const g = View.geometry(lay, { width, gap: GAP, chrome: DOCK_CHROME, dock: { maxHeight, split: d.split, scale } });
+    const at = (keyMm) => {
+      const scale = View.realScale(lay, keyMm, d.pxPerMm);
+      return { keyMm, scale, g: View.geometry(lay, { width, gap: GAP, chrome: DOCK_CHROME, dock: { maxHeight, split: d.split, scale } }) };
+    };
+    let t = at(wantMm);
+    for (let i = 1; !t.g.fits && t.keyMm > leastMm; i++) t = at(Math.max(leastMm, Math.round((wantMm - i / 10) * 100) / 100));
     const mm = (px) => Math.round(px / d.pxPerMm);
-    return { fits: g.fits, scale, keyMm, needMm: [mm(g.need.w), mm(g.need.h)], roomMm: [mm(width), mm(maxHeight)] };
+    return { fits: t.g.fits, scale: t.scale, keyMm: t.keyMm, wantMm,
+             needMm: [mm(t.g.need.w), mm(t.g.need.h)], roomMm: [mm(width), mm(maxHeight)] };
   }
 
   // The fit measured again, before the board is built with it: true when the answer is news, which
@@ -232,13 +244,27 @@
     if (!state.dock) return false;
     const before = state.dock.fit;
     const fit = state.dock.fit = dockFit();
-    return before === undefined || (!before || before.fits) !== (!fit || fit.fits);
+    // News: it fits or not, or it fits with keys of another size.
+    const word = (f) => !f ? "fits" : !f.fits ? "refused" : f.keyMm < f.wantMm ? f.keyMm : "fits";
+    return before === undefined || word(before) !== word(fit);
   }
 
+  // touch.js hears whether it may type, and the panel why not, or how big its keys are when they
+  // were made smaller to fit -- and that they are their own size again, after.
   function sayFit() {
     const fit = state.dock && state.dock.fit;
     fire("fit", !fit || fit.fits);
-    if (fit && !fit.fits) hud.post({ kind: "dock", fits: false, key_mm: fit.keyMm, need_mm: fit.needMm, room_mm: fit.roomMm });
+    if (!fit) return;
+    const smaller = fit.keyMm < fit.wantMm;
+    if (!fit.fits) {
+      hud.post(Object.assign({ kind: "dock", fits: false, key_mm: fit.keyMm }, smaller ? { want_mm: fit.wantMm } : {},
+                             { need_mm: fit.needMm, room_mm: fit.roomMm }));
+    } else if (smaller) {
+      hud.post({ kind: "dock", fits: true, key_mm: fit.keyMm, want_mm: fit.wantMm });
+    } else if (state.dockSmaller) {
+      hud.post({ kind: "dock", fits: true, key_mm: fit.keyMm });
+    }
+    state.dockSmaller = fit.fits && smaller;
   }
 
   // The banner's word on a board too big to type on here.
@@ -1625,7 +1651,7 @@
                           pxPerMm: Number(d.px_per_mm) || null, width: Number(d.width) || null } : null;
       document.documentElement.classList.toggle("dock", on);
       const fitNews = on ? checkFit() : !!(was && was.fit && !was.fit.fits);   // floating, there is no keyboard to refuse
-      if (!on) setMini(false);
+      if (!on) { setMini(false); state.dockSmaller = false; }   // floating: the panel forgets the key size itself
       $("attach").setAttribute("aria-pressed", String(on));
       $("attach").setAttribute("aria-label", on ? "detach" : "attach as a touch keyboard");
       $("attach").title = !on ? "attach: a touch keyboard along the bottom of the screen" :
