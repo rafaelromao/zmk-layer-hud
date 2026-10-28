@@ -29,6 +29,8 @@ import subprocess
 import sys
 import tempfile
 
+import panelstate  # noqa: E402  (host/panelstate.py: where $STATE is)
+
 DEFAULTS = {"toggle": "ctrl+alt+l", "power": "ctrl+alt+gui+l", "dock": None}
 WHAT = {"toggle": "shows or hides", "power": "starts or stops", "dock": "docks or floats"}
 BIND_NAMES = {"toggle": "show/hide", "power": "start/stop", "dock": "dock/float"}
@@ -302,8 +304,7 @@ def remove(hypr_dir=HYPR_DIR):
 def main():
     """host/linux/hud.sh's step: the binds written for the config the HUD is starting with."""
     root = os.environ.get("ZMKHUD_ROOT") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    state = os.environ.get("ZMKHUD_STATE") or os.path.join(
-        os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "zmk-layer-hud")
+    state = panelstate.default_dir()
     try:
         sets = read()
     except ShortcutError as e:

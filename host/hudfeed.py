@@ -572,7 +572,7 @@ class BleReader:
     async def _loop(self):
         from bleak import BleakClient
         # A machine with no Bluetooth fails every scan, for ever. Saying so once
-        # is useful; saying so every rescan fills run/hudfeed.log with one line
+        # is useful; saying so every rescan fills $STATE/hudfeed.log with one line
         # every couple of seconds and buries everything worth reading. So each
         # message is held until what it says changes, and a run of failures
         # backs off -- a keyboard that is not there is not found any sooner for

@@ -136,12 +136,14 @@ options:
 ## status
 
 ```text
-usage: zmk-layer-hud status [-h]
+usage: zmk-layer-hud status [-h] [--json]
 
 is it running, and what is it reading
 
 options:
   -h, --help  show this help message and exit
+  --json      the HUD's state as one JSON object, for a bar or a script: running, shown, the WPMs,
+              docked, typing, the feed, remote mode
 ```
 
 ## typing

@@ -168,7 +168,13 @@ suspends its own threads with SIGUSR1, and the GTK panel is a WebKit process. Hi
 nothing rather than closed: the window stays, transparent and taking no clicks, so WebKit never
 takes the page for a hidden one and slows the timers it counts with.
 
-The icons only read `panel.json` and run the command line, so they work the same whether the HUD
+Whether the HUD runs, and what it shows, is read one way: `panelstate.hud`. It takes `panel.json`
+only when a HUD panel stands behind it (a pid alive and a panel's, never one handed out again), says
+which copy of zmk-layer-hud that panel runs from, and adds the feed and remote mode. Every verb
+reads it, the macOS icon reads it, and the Omarchy bar, which cannot import Python, reads it as
+`zmk-layer-hud status --json`, the same object for any other bar or script.
+
+The icons read the HUD's state and run the command line, so they work the same whether the HUD
 is running or not:
 - **macOS:** `host/macos/menubar.py` is a process of its own, and stays when the HUD quits.
   `start.sh` starts it with the HUD. It holds a lock, so a second copy exits at once, because

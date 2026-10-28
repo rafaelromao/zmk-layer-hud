@@ -11,6 +11,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -230,6 +231,26 @@ class Files(unittest.TestCase):
         self.assertEqual(req, remote.read_request(self.d))
         self.assertEqual((True, 1300.0, 9000, "100.64.0.9"), (req["on"], req["until"], req["port"], req["bind"]))
         self.assertEqual({}, remote.read_live(self.d))
+
+
+class Live(unittest.TestCase):
+    """What the remote-mode server last said is believed while its process is alive -- this user's."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        with open(os.path.join(self.tmp.name, remote.LIVE_FILE), "w") as f:
+            json.dump({"pid": 4242, "serving": True}, f)
+
+    def test_a_server_whose_pid_is_now_another_users_process_is_gone(self):
+        # A pid kill(0) may not signal (EPERM) was handed to someone else's process: the server
+        # that wrote the file is gone, as panelstate.alive says of a panel's.
+        with mock.patch.object(remote.os, "kill", side_effect=PermissionError):
+            self.assertEqual({}, remote.live_now(self.tmp.name))
+
+    def test_one_alive_is_believed(self):
+        with mock.patch.object(remote.os, "kill", return_value=None):
+            self.assertTrue(remote.live_now(self.tmp.name)["serving"])
 
 
 class FakeTyping:
