@@ -83,6 +83,16 @@
 {
 "idx": 6,
 "kind": "hold",
+"layer": "alpha1"
+},
+{
+"idx": 13,
+"kind": "hold",
+"layer": "alpha1"
+},
+{
+"idx": 6,
+"kind": "hold",
 "layer": "func"
 },
 {
@@ -211,9 +221,9 @@
 "layer": "window-management"
 }
 ],
-"altgr": false,
+"altgr": true,
 "base": "alpha1",
-"combo_idle": 0,
+"combo_idle": 150,
 "combo_term": 30,
 "combos": [
 {
@@ -3112,6 +3122,7 @@
 },
 "hud": {
 "activator_ms": 400,
+"combo_decide_ms": 300,
 "combo_pill_ms": 1000,
 "combo_slack_ms": 20,
 "dark": 0,
@@ -6314,7 +6325,7 @@
 "type": "key"
 },
 {
-"hold": "shortcuts",
+"hold": "alpha1",
 "shifted": "record",
 "tap": "q",
 "type": "key"
@@ -6362,7 +6373,7 @@
 "type": "key"
 },
 {
-"hold": "shortcuts",
+"hold": "alpha1",
 "shifted": "right",
 "tap": "l",
 "type": "key"
@@ -7285,6 +7296,7 @@
 "key_mm": 18,
 "latch": 1,
 "lock_ms": 350,
+"min_key_mm": 16,
 "repeat_delay_ms": 450,
 "repeat_ms": 60,
 "sound": 30,
@@ -7296,210 +7308,232 @@
 "drawer": "alpha1",
 "id": 0,
 "label": "Alpha 1",
-"name": "OMARCHY"
+"name": "OMARCHY",
+"symbol": "ALPHA1"
 },
 "1": {
 "cls": "momentary",
 "drawer": null,
 "id": 1,
 "label": "Alt OS",
-"name": "MACOS"
+"name": "MACOS",
+"symbol": "ALT_OS"
 },
 "10": {
 "cls": "momentary",
 "drawer": "shortcuts",
 "id": 10,
 "label": "Shortcuts",
-"name": "SHORTCUTS"
+"name": "SHORTCUTS",
+"symbol": "SHORTS"
 },
 "11": {
 "cls": "momentary",
 "drawer": "toggles",
 "id": 11,
 "label": "Toggles",
-"name": "TOGGLES"
+"name": "TOGGLES",
+"symbol": "TOGS"
 },
 "12": {
 "cls": "momentary",
 "drawer": "mehs",
 "id": 12,
 "label": "Mehs",
-"name": "MEHS"
+"name": "MEHS",
+"symbol": "MEHS"
 },
 "13": {
 "cls": "momentary",
 "drawer": "alpha2",
 "id": 13,
 "label": "Alpha 2",
-"name": "ALPHA2"
+"name": "ALPHA2",
+"symbol": "ALPHA2"
 },
 "14": {
 "cls": "momentary",
 "drawer": "numbers",
 "id": 14,
 "label": "Numbers",
-"name": "NUMBERS"
+"name": "NUMBERS",
+"symbol": "NUM"
 },
 "15": {
 "cls": "momentary",
 "drawer": "symbols",
 "id": 15,
 "label": "Symbols",
-"name": "SYMBOLS"
+"name": "SYMBOLS",
+"symbol": "SYM"
 },
 "16": {
 "cls": "momentary",
-"drawer": "shifted1",
+"drawer": "ç-extension",
 "id": 16,
-"label": "Sentence case",
-"name": "SENTENCE CASE"
+"label": "Ç extension",
+"name": "Ç EXTENSION",
+"symbol": "CCEDIL"
 },
 "17": {
 "cls": "momentary",
-"drawer": "ç-extension",
+"drawer": "shifted2",
 "id": 17,
-"label": "Ç extension",
-"name": "Ç EXTENSION"
+"label": "Shift · Alpha 2",
+"name": "SHIFTED ALPHA2",
+"symbol": "SFT_A2"
 },
 "18": {
 "cls": "momentary",
 "drawer": "shifted2",
 "id": 18,
-"label": "Shift · Alpha 2",
-"name": "SHIFTED ALPHA2"
+"label": "Caps · Alpha 2",
+"name": "CASE ALPHA2",
+"symbol": "CASE_A2"
 },
 "19": {
 "cls": "momentary",
-"drawer": "shifted2",
+"drawer": "ç-extension",
 "id": 19,
-"label": "Caps · Alpha 2",
-"name": "CASE ALPHA2"
+"label": "Caps · Ç",
+"name": "CASE Ç EXTENSION",
+"symbol": "CASE_CCEDIL"
 },
 "2": {
 "cls": "vim",
 "drawer": "vim",
 "id": 2,
 "label": "Vim normal",
-"name": "NORMAL"
+"name": "NORMAL",
+"symbol": "VIM_NORMAL"
 },
 "20": {
 "cls": "momentary",
-"drawer": "ç-extension",
+"drawer": null,
 "id": 20,
-"label": "Caps · Ç",
-"name": "CASE Ç EXTENSION"
+"label": "Alt repeat",
+"name": "ALT REP 2",
+"symbol": "ALTREP2"
 },
 "21": {
 "cls": "momentary",
-"drawer": null,
+"drawer": "nav",
 "id": 21,
-"label": "Alt repeat",
-"name": "ALT REP 2"
+"label": "Navigation",
+"name": "NAVIGATION",
+"symbol": "NAV"
 },
 "22": {
 "cls": "momentary",
-"drawer": "nav",
+"drawer": "numbers",
 "id": 22,
-"label": "Navigation",
-"name": "NAVIGATION"
+"label": "Numbers",
+"name": "NUMBERS",
+"symbol": "NUM_CP"
 },
 "23": {
 "cls": "momentary",
-"drawer": "numbers",
+"drawer": "symbols",
 "id": 23,
-"label": "Numbers",
-"name": "NUMBERS"
+"label": "Symbols",
+"name": "SYMBOLS",
+"symbol": "SYM_CP"
 },
 "24": {
 "cls": "momentary",
-"drawer": "symbols",
+"drawer": "media",
 "id": 24,
-"label": "Symbols",
-"name": "SYMBOLS"
+"label": "Media / mouse",
+"name": "MOUSE",
+"symbol": "MEDIA"
 },
 "25": {
 "cls": "momentary",
-"drawer": "media",
+"drawer": "nav",
 "id": 25,
-"label": "Media / mouse",
-"name": "MOUSE"
+"label": "Navigation",
+"name": "NAVIGATION",
+"symbol": "NAV_CP"
 },
 "26": {
 "cls": "momentary",
-"drawer": "nav",
+"drawer": "text",
 "id": 26,
-"label": "Navigation",
-"name": "NAVIGATION"
+"label": "Text navigation",
+"name": "TEXT NAVIGATION",
+"symbol": "TEXT"
 },
 "27": {
 "cls": "momentary",
-"drawer": "text",
+"drawer": "func",
 "id": 27,
-"label": "Text navigation",
-"name": "TEXT NAVIGATION"
+"label": "Function keys",
+"name": "FUNCTIONS",
+"symbol": "FUN"
 },
 "28": {
 "cls": "momentary",
-"drawer": "func",
-"id": 28,
-"label": "Function keys",
-"name": "FUNCTIONS"
-},
-"29": {
-"cls": "momentary",
 "drawer": "macros",
-"id": 29,
+"id": 28,
 "label": "Macros",
-"name": "MACROS"
+"name": "MACROS",
+"symbol": "MACROS"
 },
 "3": {
 "cls": "vim",
 "drawer": "vim",
 "id": 3,
 "label": "Vim visual",
-"name": "VISUAL"
+"name": "VISUAL",
+"symbol": "VIM_VISUAL"
 },
 "4": {
 "cls": "vim",
 "drawer": "vim",
 "id": 4,
 "label": "Vim change",
-"name": "CHANGE"
+"name": "CHANGE",
+"symbol": "VIM_CHANGE"
 },
 "5": {
 "cls": "vim-insert",
 "drawer": null,
 "id": 5,
 "label": "Vim insert",
-"name": "INSERT"
+"name": "INSERT",
+"symbol": "VIM_INSERT"
 },
 "6": {
 "cls": "vim",
 "drawer": null,
 "id": 6,
 "label": "Vim replace",
-"name": "REPLACE"
+"name": "REPLACE",
+"symbol": "VIM_REPLACE"
 },
 "7": {
 "cls": "vim-cmdline",
 "drawer": null,
 "id": 7,
 "label": "Vim cmdline",
-"name": "CMDLINE"
+"name": "CMDLINE",
+"symbol": "VIM_CMDLINE"
 },
 "8": {
 "cls": "momentary",
 "drawer": "shifted1",
 "id": 8,
 "label": "Caps word",
-"name": "CAPSWORD"
+"name": "CAPSWORD",
+"symbol": "CASE_A1"
 },
 "9": {
 "cls": "momentary",
 "drawer": "shifted1",
 "id": 9,
 "label": "Caps line",
-"name": "CAPSLINE"
+"name": "CAPSLINE",
+"symbol": "CPLK_A1"
 }
 }
 }

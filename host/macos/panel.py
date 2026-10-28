@@ -525,6 +525,7 @@ class Host:
         self.typing.release()
         settings = self.settings()
         self.extra.pop("dock_note", None)
+        self.extra.pop("dock_keys", None)
         if on:
             self.dock_screen = self.target_screen()
             self.docked = True
@@ -546,8 +547,16 @@ class Host:
         save_state({"dock": self.docked})
 
     def refused_dock(self, msg):
-        """The page's word that its board, at its real size, does not fit the dock (hud.js dockFit):
-        the HUD floats again, a HUD and not a keyboard, and says why."""
+        """The page's word that its board does not fit the dock, even with its keys made smaller
+        (hud.js dockFit): the HUD floats again, a HUD and not a keyboard, and says why. Or that it
+        docked with them smaller, which `dock status` says (dock_keys)."""
+        keys = dock_mod.smaller(msg)
+        if keys is not None:
+            if self.docked and self.extra.get("dock_keys", "") != keys:
+                log(f"docked with smaller keys: {keys}" if keys else "docked, its keys their own size again")
+                self.extra["dock_keys"] = keys
+                self.write_state()
+            return
         note = dock_mod.refusal(msg, self.settings()["dock"]["height_pct"])
         if note and self.docked:
             log(f"not docked: {note}")

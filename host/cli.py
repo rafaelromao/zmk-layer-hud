@@ -217,7 +217,8 @@ def cmd_dock(args):
     dock after it was asked: dock_at)."""
     st = running_panel()
     if args.action == "status":
-        print("dock: " + ("docked, " + TYPING_SAID.get(st.get("typing") or "off", "") if st.get("dock") else
+        keys = f" {st['dock_keys']}" if st.get("dock_keys") else ""   # made smaller to fit (host/dock.py smaller)
+        print("dock: " + (f"docked{keys}, " + TYPING_SAID.get(st.get("typing") or "off", "") if st.get("dock") else
                           f"floating, a HUD only: {st['dock_note']}" if st.get("dock_note") else
                           "floating (zmk-layer-hud dock docks it)"))
         return 0

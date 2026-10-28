@@ -100,7 +100,8 @@ class PanelState(unittest.TestCase):
     def test_what_a_live_panel_says_is_read_back(self):
         panelstate.write(self.d, False)
         self.assertEqual({"pid": os.getpid(), "shown": False, "wpm": 0, "avg_wpm": None, "top_wpm": None, "session": None,
-                          "stats": [], "typing": None, "dock": False, "dock_note": None, "dock_at": None},
+                          "stats": [], "typing": None, "dock": False, "dock_note": None, "dock_keys": None,
+                          "dock_at": None},
                          panelstate.read(self.d))
         panelstate.write(self.d, True, wpm=63)
         self.assertEqual(63, panelstate.read(self.d)["wpm"])
@@ -181,8 +182,12 @@ class PanelState(unittest.TestCase):
         panelstate.write(self.d, True, extra={"dock": False, "dock_note": "too big", "dock_at": 1760000000.5})
         self.assertEqual(("too big", 1760000000.5), (panelstate.read(self.d)["dock_note"], panelstate.read(self.d)["dock_at"]))
         for bad in ("", 5, "x" * (panelstate.NOTE_MAX + 1)):
-            panelstate.write(self.d, True, extra={"dock_note": bad})
-            self.assertIsNone(panelstate.read(self.d)["dock_note"], msg=repr(bad))
+            panelstate.write(self.d, True, extra={"dock_note": bad, "dock_keys": bad})
+            self.assertEqual((None, None), (panelstate.read(self.d)["dock_note"], panelstate.read(self.d)["dock_keys"]),
+                             msg=repr(bad))
+        # Docked with smaller keys: how small, a sentence too.
+        panelstate.write(self.d, True, extra={"dock": True, "dock_keys": "at 16.9 mm a key"})
+        self.assertEqual("at 16.9 mm a key", panelstate.read(self.d)["dock_keys"])
 
     def test_a_request_is_taken_once(self):
         self.assertIsNone(panelstate.take_want(self.d, "dock"))
