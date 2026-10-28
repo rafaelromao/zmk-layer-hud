@@ -199,6 +199,73 @@ the selected profile alone.
 - **The Origin gate trusts `null`.** A `file:` page and a sandboxed frame both say `null`, which
   is why the token, not the Origin, is what admits a client.
 
+## The touch keyboard (2026-10-11)
+
+Since v1.2 the HUD types: tap a drawn key and the operating system gets that key
+([docs/touch.md](touch.md)). The page goes from something that reads the typing to something that
+can do it, so what may reach the page now matters both ways. This was reviewed by reading what was
+added, with the suite below; the tablets' apps are reviewed as code, since neither has been built
+on a device yet.
+
+**What can type, and through what.**
+
+- Only the panel's own page types on the machine it runs on, and only through the panel's native
+  bridge. The macOS panel takes `hid` only from the main frame, and its web view loads nothing but
+  the HUD's own files (`decidePolicyForNavigationAction`); the Linux panel does the same through
+  `decide-policy` and opens no new window. The feed's socket never takes `hid`
+  (`hudfeed.INJECTABLE`): its token sits in every page URL, so it is no key to typing.
+- What a page may press is a keyboard's worth (`host/inject.py`): ten keys at most, modifiers
+  folded out of them, never the Power key, messages of 512 bytes at most and 100 a second. A page
+  silent for 1.5 s has its keys let go, and so does one that reloads, hides or goes away.
+- **Any script that runs in the page can now type into the operating system.** The glyph allowlist
+  (finding 4) and the local-only URL parameters (finding 3) kept the page from being made to read
+  the typing; they now also keep it from being made to type, and must stay as strict.
+
+**The leave it takes.**
+
+- macOS: posting key events needs Accessibility, granted to the launcher that logs in, which lends
+  it to the tree's command as it lends Input Monitoring (below). `typing setup` asks for it; nothing
+  is posted until it is granted.
+- Linux: a virtual keyboard through `/dev/uinput`, which `typing setup` lets the user at the seat
+  make, with a `uaccess` udev rule (`contrib/udev/61-zmk-layer-hud-uinput.rules`), asking before
+  each sudo step. Opt-in; deleting the rule takes it back.
+
+**Remote mode** (`zmk-layer-hud remote on`) serves the page to a tablet on the local network, and
+the tablet's taps are typed here. Off until asked for; open 30 minutes, longer while a tablet is
+connected; on the default route's address only when it is a private, link-local or Tailscale one.
+
+| Who | What they can do | What stops the rest |
+|---|---|---|
+| Someone listening on the same Wi-Fi | see which keys the tablet presses: the page and its messages are plain HTTP | nothing in remote mode; serve on a Tailscale address (`--bind`), or do not use it on that network |
+| Someone on the network connecting | nothing | the key: 256 random bits in the link's fragment, which a browser never sends, proved by HMAC-SHA256 and never sent; five failed proofs turn remote mode off |
+| Someone replaying a captured connection | nothing | a key for each connection from both sides' nonces; every report MAC'd, its number only going up |
+| Someone who changes what the tablet loads while it loads the page | take the key from the page, and type | a Tailscale address; `remote unpair` after |
+| A web page, in any browser, reaching for the socket | nothing | the socket opens for the page's own Origin alone, and only to a Host header naming this address (no DNS rebinding) |
+| A page framing the remote page | nothing | `frame-ancestors 'none'`, `X-Frame-Options: DENY`; a CSP that runs the page's own scripts alone |
+| Someone with the tablet in hand | type while remote mode is on: the key is in its browser's storage | `remote unpair`, or remote mode off |
+| Someone flooding it | slow it down | four connections waiting to pair at most, 10 s to pair, 60 reports a second |
+
+A paired tablet is told the keymap, whether a secret is being typed and whether the computer can
+type. It is never sent what the physical keyboard types.
+
+**The tablets' keyboards.** The Android keyboard is the HUD's page in a WebView, served from the
+app's own assets; every other request is refused, it never navigates, and its bridge takes messages
+from the main frame alone. The app has no network permission (`apps/apps_test.py` says so of its
+manifest). The iPad keyboard asks for no Full Access and has no network; its app reaches the local
+network only to fetch a keymap from a computer in remote mode, pairing as the remote page does.
+
+**Limits this adds.**
+
+- **The uinput rule reaches further than the HUD.** With it, any process of the user at the seat
+  can make a virtual keyboard and type into any window, which Wayland otherwise keeps apps from
+  doing to one another. That is the leave a virtual keyboard needs; `typing setup` says so before
+  it installs the rule.
+- **Remote mode is plain HTTP** (the table above). TLS and sealed reports would close the
+  listener's view; they are left for later.
+- **A panel killed with a key held** (SIGKILL, a crash) cannot let it go: on macOS a modifier stays
+  down until it is pressed and released on the keyboard. A clean quit, a hide or a reload lets
+  everything go.
+
 ## Running the checks again
 
 ```bash
@@ -219,3 +286,8 @@ the session lock (`sessionlock_test`), the page's secure block (`stats_test.js`)
 (`panelstate_test.PrivateFile`, `cli_test.Autostart`) and the doctor's rows (`cli_test.Doctor`).
 The three `Socket` tests and `sessionlock_test.Wire` open a real socket and skip where the
 process may not; run `make test-host` from a terminal to see them.
+
+For the touch keyboard: what a page may press (`inject_test`), remote mode's pairing, reports, pages,
+headers and address (`remote_test`; its `Handler` tests need the venv's websockets, and `Visit` a
+port), the page's side of the pairing against the same vectors (`hud/tests/remote_test.js`), the
+iPad app's (`make test-ios`), and the tablets' builds (`make test-apps`).

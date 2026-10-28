@@ -427,6 +427,114 @@ class LayerNodes(unittest.TestCase):
         self.assertEqual([True, True, False, True], [l["drawn"] for l in got])
 
 
+@unittest.skipUnless(HAVE_DRAWER, "reading the bindings needs keymap-drawer's parser (the venv)")
+class CaptureKeymap(unittest.TestCase):
+    """The bindings kept for the touch keyboard: as the keymap writes them, with the behaviours,
+    overrides, combos and conditional layers they need (host/actions.py compiles them)."""
+    BOARD = """
+#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+#define NUM 1
+&mt { flavor = "balanced"; tapping-term-ms = <280>; };
+/ {
+    behaviors {
+        hml: home_row_mods {
+            compatible = "zmk,behavior-hold-tap";
+            #binding-cells = <2>;
+            flavor = "tap-preferred";
+            tapping-term-ms = <220>;
+            bindings = <&kp>, <&kp>;
+        };
+        dshift: double_shift {
+            compatible = "zmk,behavior-mod-morph";
+            #binding-cells = <0>;
+            bindings = <&kp A>, <&kp B>;
+            mods = <(MOD_LSFT | MOD_RSFT)>;
+        };
+        unused: unused_macro {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&kp Z>;
+        };
+        hello: hello_macro {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            wait-ms = <5>;
+            bindings = <&macro_tap &kp H &kp I>;
+        };
+    };
+    combos {
+        compatible = "zmk,combos";
+        esc { timeout-ms = <30>; key-positions = <0 1>; bindings = <&kp ESC>; layers = <0 NUM>; };
+    };
+    conditional_layers {
+        compatible = "zmk,conditional-layers";
+        tri { if-layers = <1 2>; then-layer = <3>; };
+    };
+    keymap {
+        compatible = "zmk,keymap";
+        base  { bindings = <&hml LCTRL A &mt LSHIFT B &dshift &hello>; };
+        num   { bindings = <&kp N1 &trans &mo 2 &kp LS(N1)>; };
+        spare { status = "reserved"; bindings = <&none &none &none &none>; };
+        nav   { bindings = <&kp LEFT &kp RIGHT &trans &trans>; };
+        adj   { bindings = <&bt BT_SEL 0 &trans &trans &trans>; };
+    };
+};
+"""
+
+    def capture(self, studio=False):
+        with tempfile.TemporaryDirectory() as d:
+            path = write(d, "board.keymap", self.BOARD)
+            if studio:
+                write(d, "config/board.conf", "CONFIG_ZMK_STUDIO=y\n")
+            return sync.capture_keymap(sync.device_tree(path), sync.studio(d, path))
+
+    def test_bindings_are_kept_as_written_by_layer_id(self):
+        got = self.capture()
+        self.assertEqual(4, got["positions"])
+        self.assertEqual(["0", "1", "2", "3"], sorted(got["layers"]))
+        self.assertEqual(["&hml LCTRL A", "&mt LSHIFT B", "&dshift", "&hello"], got["layers"]["0"])
+        self.assertEqual("&kp LS(N1)", got["layers"]["1"][3])
+        self.assertEqual("&bt BT_SEL 0", got["layers"]["3"][0])
+
+    def test_a_reserved_layer_is_kept_where_the_firmware_keeps_it(self):
+        got = self.capture(studio=True)
+        self.assertEqual(["&none"] * 4, got["layers"]["2"])
+        self.assertEqual("&kp LEFT", got["layers"]["3"][0])
+
+    def test_the_behaviours_a_key_reaches_come_with_their_properties(self):
+        got = self.capture()
+        self.assertEqual({"compatible": "zmk,behavior-hold-tap", "cells": 2,
+                          "props": {"bindings": ["&kp", "&kp"], "tapping-term-ms": ["220"], "flavor": "tap-preferred"}},
+                         got["behaviors"]["hml"])
+        self.assertEqual(["(MOD_LSFT", "|", "MOD_RSFT)"], got["behaviors"]["dshift"]["props"]["mods"])
+        self.assertEqual(["&macro_tap", "&kp H", "&kp I"], got["behaviors"]["hello"]["props"]["bindings"])
+        self.assertNotIn("unused", got["behaviors"])
+
+    def test_an_override_of_a_built_in(self):
+        self.assertEqual({"flavor": "balanced", "tapping-term-ms": ["280"]}, self.capture()["overrides"]["mt"])
+
+    def test_combos_and_conditional_layers(self):
+        got = self.capture()
+        self.assertEqual([{"name": "esc", "positions": [0, 1], "binding": "&kp ESC", "layers": [0, 1],
+                           "timeout-ms": 30, "require-prior-idle-ms": None, "slow-release": False}], got["combos"])
+        self.assertEqual([{"if": [1, 2], "then": 3}], got["conditional"])
+
+    def test_what_it_captures_compiles(self):
+        import actions
+        got = self.capture()
+        a = actions.build({}, {}, {}, None, {}, raw=got)
+        self.assertEqual("keymap", a["source"])
+        base = [a["table"][i] for i in a["layers"]["0"]]
+        self.assertEqual(("ht", "tap-preferred", 220), (base[0]["op"], base[0]["flavor"], base[0]["term"]))
+        self.assertEqual(("balanced", 280), (base[1]["flavor"], base[1]["term"]))
+        self.assertEqual(("morph", 0x22), (base[2]["op"], base[2]["mods"]))
+        self.assertEqual(["tap", "tap"], [next(k for k in s if k in ("tap", "press", "release")) for s in base[3]["steps"]])
+
+    def test_a_keymap_it_cannot_read_gives_nothing(self):
+        self.assertIsNone(sync.capture_keymap(None, False))
+
+
 class Layout(unittest.TestCase):
     """The physical layout a drawing of the keymap itself is drawn on."""
 

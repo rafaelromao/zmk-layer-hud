@@ -20,8 +20,10 @@ host/macos/start.sh starts it with the HUD, unless `zmk-layer-hud menubar disabl
 import ctypes
 import fcntl
 import os
+import re
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 try:
@@ -31,7 +33,8 @@ try:
                         NSCompositingOperationClear, NSCompositingOperationSourceOver, NSEventModifierFlagCommand,
                         NSEventModifierFlagControl, NSEventModifierFlagOption, NSEventModifierFlagShift,
                         NSEventMaskLeftMouseUp, NSEventMaskRightMouseUp, NSEventTypeRightMouseUp, NSGraphicsContext,
-                        NSImage, NSImageRight, NSMenu, NSMenuItem, NSStatusBar, NSVariableStatusItemLength)
+                        NSImage, NSImageRight, NSMenu, NSMenuItem, NSStatusBar, NSVariableStatusItemLength,
+                        NSAlert, NSPasteboard, NSPasteboardTypeString)
     from Foundation import NSObject, NSTimer
     from PyObjCTools import AppHelper
 except ImportError:
@@ -39,6 +42,7 @@ except ImportError:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import panelstate  # noqa: E402  (host/panelstate.py)
+import remote  # noqa: E402  (host/remote.py)
 import shortcuts  # noqa: E402  (host/shortcuts.py)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
@@ -210,7 +214,11 @@ class Icon(NSObject):
     def hotkey(self, name):
         if name == "power":
             self.run("power")
-        elif self.st is not None:       # nothing to show or hide
+        elif self.st is None:           # nothing to show, hide or dock
+            return
+        elif name == "dock":
+            self.run("dock")
+        else:
             self.run("toggle")
 
     def refresh_(self, timer):
@@ -266,7 +274,13 @@ class Icon(NSObject):
         # The third of each is the shortcut that does the same, drawn beside it by the menu.
         items = [("Start HUD", "start", "power")] if self.st is None else \
             [("Hide HUD" if self.st["shown"] else "Show HUD", "hide" if self.st["shown"] else "show", "toggle"),
-             ("Quit HUD", "stop", "power")]
+             # The touch keyboard: docked along the bottom of the screen, typing where it is clicked.
+             ("Float HUD" if self.st.get("dock") else "Dock HUD to Type on It", "dock", "dock")] + \
+            ([("Allow Typing…", "typing setup", None)] if self.st.get("typing") == "denied" else []) + \
+            [  # A tablet's browser as the touch keyboard (host/remote.py).
+                ("Stop Remote Typing", "remote off", None) if remote.live_now(RUN).get("serving") else
+                ("Pair a Tablet…", "pair", None)] + \
+            [("Quit HUD", "stop", "power")]
         for title, verb, shortcut in items:
             sc = self.shortcuts.get(shortcut)
             item = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(title, "verb:", sc[1] if sc else "")
@@ -285,7 +299,47 @@ class Icon(NSObject):
         self.item.setMenu_(None)
 
     def verb_(self, sender):
-        self.run(str(sender.representedObject()))
+        verb = str(sender.representedObject())
+        if verb == "pair":
+            threading.Thread(target=self.pair, daemon=True).start()
+            return
+        self.run(*verb.split())
+
+    @objc.python_method
+    def pair(self):
+        """`remote on`, off the main thread (it waits for the HUD's answer), and what it said shown:
+        the link, to copy and paste on the tablet (an iPad on the same Apple account pastes what this
+        Mac copied), or why not."""
+        env = dict(os.environ, ZMKHUD_STATE=RUN)
+        try:
+            res = subprocess.run([COMMAND, "remote", "on"], env=env, stdin=subprocess.DEVNULL, capture_output=True,
+                                 text=True, timeout=30)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            AppHelper.callAfter(self.paired, None, str(e))
+            return
+        link = re.search(r"^  (http://\S+#k=\S+)$", res.stdout, re.M)
+        why = (res.stderr.strip().splitlines() or ["it did not say why"])[-1]
+        AppHelper.callAfter(self.paired, link.group(1) if link else None, why)
+
+    @objc.python_method
+    def paired(self, link, why):
+        alert = NSAlert.alloc().init()
+        if link:
+            alert.setMessageText_("Open this link on the tablet")
+            alert.setInformativeText_(
+                f"{link}\n\nOn the same network as this Mac. The link is the pairing: whoever has it can "
+                "type here while remote typing is on. `zmk-layer-hud remote on` in a terminal draws a code to scan.")
+            alert.addButtonWithTitle_("Copy Link")
+            alert.addButtonWithTitle_("Close")
+        else:
+            alert.setMessageText_("Remote typing did not start")
+            alert.setInformativeText_(why)
+            alert.addButtonWithTitle_("Close")
+        NSApp().activateIgnoringOtherApps_(True)
+        if alert.runModal() == 1000 and link:          # NSAlertFirstButtonReturn
+            board = NSPasteboard.generalPasteboard()
+            board.clearContents()
+            board.setString_forType_(link, NSPasteboardTypeString)
 
     def wpm_(self, sender):
         # Through the command line like the rest; the button follows on its next look (refresh_).
