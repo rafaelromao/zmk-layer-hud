@@ -1,9 +1,10 @@
 # Written by `zmk-layer-hud import`. Do not edit: `zmk-layer-hud sync` rewrites it.
 #
 # What the keyboard's own ZMK keymap says, which a drawing does not carry: the id of every
-# layer, and the layers each combo really fires on. This copy is for reading; the HUD takes
-# the same from the definitions beside it. Anything you set in config.yaml wins over both,
-# so corrections belong there and survive a sync.
+# layer, the keymap's own symbol for each, and the layers each combo really fires on.
+# This copy is for reading; the HUD takes the same from the definitions beside it.
+# Anything you set in config.yaml wins over both, so corrections belong there and
+# survive a sync.
 #   source:   github.com/rafaelromao/keyboards
 #   keyboard: diamond
 
@@ -11,37 +12,40 @@
 # to group them the same way or it draws chords that were never struck.
 combo_term_ms: 30
 
+# How long the keyboard must be idle before a combo (ZMK require-prior-idle-ms): a
+# chord struck sooner after another key is typed as its keys, and drawn so.
+combo_idle_ms: 150
+
 layers:
-  0: { name: OMARCHY, drawer: alpha1, label: Alpha 1 }
-  1: { name: MACOS, drawer: null, label: Alt OS }    # not drawn — set one in config.yaml if it should be
-  2: { name: NORMAL, drawer: vim, label: Vim normal }
-  3: { name: VISUAL, drawer: vim, label: Vim visual }
-  4: { name: CHANGE, drawer: vim, label: Vim change }
-  5: { name: INSERT, drawer: null, label: Vim insert }    # not drawn — set one in config.yaml if it should be
-  6: { name: REPLACE, drawer: null, label: Vim replace }    # not drawn — set one in config.yaml if it should be
-  7: { name: CMDLINE, drawer: null, label: Vim cmdline }    # not drawn — set one in config.yaml if it should be
-  8: { name: CAPSWORD, drawer: shifted1, label: Caps word }
-  9: { name: CAPSLINE, drawer: shifted1, label: Caps line }
-  10: { name: SHORTCUTS, drawer: shortcuts, label: Shortcuts }
-  11: { name: TOGGLES, drawer: toggles, label: Toggles }
-  12: { name: MEHS, drawer: mehs, label: Mehs }
-  13: { name: ALPHA2, drawer: alpha2, label: Alpha 2 }
-  14: { name: NUMBERS, drawer: numbers, label: Numbers }
-  15: { name: SYMBOLS, drawer: symbols, label: Symbols }
-  16: { name: SENTENCE CASE, drawer: shifted1, label: Sentence case }
-  17: { name: "Ç EXTENSION", drawer: "ç-extension", label: "Ç extension" }
-  18: { name: SHIFTED ALPHA2, drawer: shifted2, label: "Shift · Alpha 2" }
-  19: { name: CASE ALPHA2, drawer: shifted2, label: "Caps · Alpha 2" }
-  20: { name: "CASE Ç EXTENSION", drawer: "ç-extension", label: "Caps · Ç" }
-  21: { name: ALT REP 2, drawer: null, label: Alt repeat }    # not drawn — set one in config.yaml if it should be
-  22: { name: NAVIGATION, drawer: nav, label: Navigation }
-  23: { name: NUMBERS, drawer: numbers, label: Numbers }
-  24: { name: SYMBOLS, drawer: symbols, label: Symbols }
-  25: { name: MOUSE, drawer: media, label: "Media / mouse" }
-  26: { name: NAVIGATION, drawer: nav, label: Navigation }
-  27: { name: TEXT NAVIGATION, drawer: text, label: Text navigation }
-  28: { name: FUNCTIONS, drawer: func, label: Function keys }
-  29: { name: MACROS, drawer: macros, label: Macros }
+  0: { name: OMARCHY, symbol: ALPHA1, drawer: alpha1, label: Alpha 1 }
+  1: { name: MACOS, symbol: ALT_OS, drawer: null, label: Alt OS }    # not drawn — set one in config.yaml if it should be
+  2: { name: NORMAL, symbol: VIM_NORMAL, drawer: vim, label: Vim normal }
+  3: { name: VISUAL, symbol: VIM_VISUAL, drawer: vim, label: Vim visual }
+  4: { name: CHANGE, symbol: VIM_CHANGE, drawer: vim, label: Vim change }
+  5: { name: INSERT, symbol: VIM_INSERT, drawer: null, label: Vim insert }    # not drawn — set one in config.yaml if it should be
+  6: { name: REPLACE, symbol: VIM_REPLACE, drawer: null, label: Vim replace }    # not drawn — set one in config.yaml if it should be
+  7: { name: CMDLINE, symbol: VIM_CMDLINE, drawer: null, label: Vim cmdline }    # not drawn — set one in config.yaml if it should be
+  8: { name: CAPSWORD, symbol: CASE_A1, drawer: shifted1, label: Caps word }
+  9: { name: CAPSLINE, symbol: CPLK_A1, drawer: shifted1, label: Caps line }
+  10: { name: SHORTCUTS, symbol: SHORTS, drawer: shortcuts, label: Shortcuts }
+  11: { name: TOGGLES, symbol: TOGS, drawer: toggles, label: Toggles }
+  12: { name: MEHS, symbol: MEHS, drawer: mehs, label: Mehs }
+  13: { name: ALPHA2, symbol: ALPHA2, drawer: alpha2, label: Alpha 2 }
+  14: { name: NUMBERS, symbol: NUM, drawer: numbers, label: Numbers }
+  15: { name: SYMBOLS, symbol: SYM, drawer: symbols, label: Symbols }
+  16: { name: "Ç EXTENSION", symbol: CCEDIL, drawer: "ç-extension", label: "Ç extension" }
+  17: { name: SHIFTED ALPHA2, symbol: SFT_A2, drawer: shifted2, label: "Shift · Alpha 2" }
+  18: { name: CASE ALPHA2, symbol: CASE_A2, drawer: shifted2, label: "Caps · Alpha 2" }
+  19: { name: "CASE Ç EXTENSION", symbol: CASE_CCEDIL, drawer: "ç-extension", label: "Caps · Ç" }
+  20: { name: ALT REP 2, symbol: ALTREP2, drawer: null, label: Alt repeat }    # not drawn — set one in config.yaml if it should be
+  21: { name: NAVIGATION, symbol: NAV, drawer: nav, label: Navigation }
+  22: { name: NUMBERS, symbol: NUM_CP, drawer: numbers, label: Numbers }
+  23: { name: SYMBOLS, symbol: SYM_CP, drawer: symbols, label: Symbols }
+  24: { name: MOUSE, symbol: MEDIA, drawer: media, label: "Media / mouse" }
+  25: { name: NAVIGATION, symbol: NAV_CP, drawer: nav, label: Navigation }
+  26: { name: TEXT NAVIGATION, symbol: TEXT, drawer: text, label: Text navigation }
+  27: { name: FUNCTIONS, symbol: FUN, drawer: func, label: Function keys }
+  28: { name: MACROS, symbol: MACROS, drawer: macros, label: Macros }
 
 combos:
   - positions: [11, 12, 22]    # &lm_ent_vim

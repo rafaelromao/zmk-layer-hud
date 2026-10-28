@@ -58,11 +58,11 @@
 
 # Optional: the touch keyboard (docs/touch.md). `zmk-layer-hud dock` docks the HUD along the bottom of
 # the touch screen, where it types what each key does on the keyboard, its keys their real size: key_mm
-# apart (18 Choc spacing, 19.05 MX). hold_ms is how long a touch is a hold; a hold let go alone latches
+# apart (18 Choc spacing, 19.05 MX), or smaller to fit, down to min_key_mm (16). hold_ms is how long a touch is a hold; a hold let go alone latches
 # (one-shot, locked on a second tap). sound is the volume of a key's click (0 silent), haptics a buzz
 # where the device has one. The dock takes at most height_pct of the screen, a split board's halves at
 # its sides; a board too big for it stays a HUD. start: 1 starts it docked.
-# touch: { key_mm: 18, hold_ms: 280, lock_ms: 350, sound: 30, haptics: 1 }
+# touch: { key_mm: 18, min_key_mm: 16, hold_ms: 280, lock_ms: 350, sound: 30, haptics: 1 }
 # dock: { screen: eDP-1, height_pct: 60, split: 1, start: 0 }
 # `zmk-layer-hud remote on` lets a tablet's browser type here over the local network: open for
 # `minutes` with no tablet connected, and `bind` serves on an address of your choosing (a Tailscale one).

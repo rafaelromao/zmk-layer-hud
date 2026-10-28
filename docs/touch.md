@@ -79,7 +79,7 @@ without an import. The keymap message gains three fields:
   "conditional": [ { "if": [1, 2], "then": 3 } ],
   "coverage": { "keymap": 1010, "legend": 52, "unsupported": 18,
                 "why": { "zmk,behavior-adaptive-key": 11 } } },
-"touch": { "enabled": 1, "key_mm": 18, "hold_ms": 280, "flavor": "balanced", "latch": 1, "lock_ms": 350,
+"touch": { "enabled": 1, "key_mm": 18, "min_key_mm": 16, "hold_ms": 280, "flavor": "balanced", "latch": 1, "lock_ms": 350,
            "sticky_ms": 0, "repeat_delay_ms": 450, "repeat_ms": 60, "combos": "chords",
            "heat": 1, "sound": 30, "haptics": 1 }
 ```
@@ -203,7 +203,7 @@ set, glass changes a few things:
   between key columns is a third of a key or more and lies in the middle half of the board (a split
   board's thumb clusters can come close; a unibody's nav cluster sits apart near one end).
 - **Its keys are their real size.** Docked as a touch keyboard, a key is as big as the keyboard's
-  own and never made smaller to fit: what is typed on is a keyboard, not a picture of one. Keys are
+  own when the board fits: what is typed on is a keyboard, not a picture of one. Keys are
   `touch.key_mm` apart (18 by default, Choc spacing; 19.05 for MX), 1u being the layout's typical
   key (`view.js unitOf`, its median key width), and the host says how many CSS pixels a millimetre
   is on the dock's screen (`px_per_mm`) and how wide the screen is (`width`): the panels from the
@@ -211,11 +211,16 @@ set, glass changes a few things:
   that does not say), the Android keyboard from the screen's dpi. A host that does not say (the
   remote page, the iPad's keyboard) gets the board fitted to the room, as above.
 
-  **A board that does not fit** -- the screen narrower than it, or the dock's share of the screen
-  (`dock.height_pct`, 60% by default) shorter -- **is a HUD only**: drawn to fit, it types nothing,
-  and the banner says how big it is and how much room it has. The page tells the panel
-  (`{"kind":"dock","fits":false,...}`), which floats the HUD again; `zmk-layer-hud dock` says why it
-  did not dock, and `dock status` keeps saying it. The Android keyboard stays up, a HUD, until the
+  **A board a little too big** for the screen at that size has its keys made smaller, a tenth of a
+  millimetre at a time, until it fits -- down to `touch.min_key_mm` (16 by default; as big as
+  `key_mm`, they are never made smaller). It docks and types, a keyboard a little smaller than its
+  own, and `zmk-layer-hud dock status` says how small its keys are.
+
+  **A board that does not fit even then** -- the screen narrower than it, or the dock's share of the
+  screen (`dock.height_pct`, 60% by default) shorter -- **is a HUD only**: drawn to fit, it types
+  nothing, and the banner says how big it is at the smallest and how much room it has. The page
+  tells the panel (`{"kind":"dock","fits":false,...}`), which floats the HUD again; `zmk-layer-hud
+  dock` says why it did not dock, and `dock status` keeps saying it. The Android keyboard stays up, a HUD, until the
   tablet is turned or the 🌐 key picks another keyboard.
 - **Attach and detach.** The banner's arrow attaches the HUD as a touch keyboard -- docked along
   the bottom, its keys their real size, a split board's halves at the sides -- and detaches it to
@@ -288,15 +293,26 @@ Page → host, the banner's attach and detach (the same as the menu's Dock and F
 {"kind":"attach","on":true}
 ```
 
-Page → host, the board too big to type on here at its real size, once for each dock:
+Page → host, the board too big to type on here even with its keys at `touch.min_key_mm`, once for
+each dock:
 
 ```json
-{"kind":"dock","fits":false,"key_mm":18,"need_mm":[191,115],"room_mm":[286,103]}
+{"kind":"dock","fits":false,"key_mm":16,"want_mm":18,"need_mm":[400,102],"room_mm":[286,103]}
 ```
 
-- `need_mm` is the board at its real size, the banner included; `room_mm` the screen's width and
-  the dock's height. The panel floats the HUD again and keeps the reason in `panel.json`
-  (`dock_note`), where `zmk-layer-hud dock` reads it.
+- `need_mm` is the board with its keys `key_mm` apart, the banner included; `room_mm` the screen's
+  width and the dock's height. `want_mm` is `touch.key_mm`, when `key_mm` is smaller: the smallest
+  they may be. The panel floats the HUD again and keeps the reason in `panel.json` (`dock_note`),
+  where `zmk-layer-hud dock` reads it.
+
+Page → host, the board docked with its keys made smaller to fit, and then their own size again:
+
+```json
+{"kind":"dock","fits":true,"key_mm":16.9,"want_mm":18}
+{"kind":"dock","fits":true,"key_mm":18}
+```
+
+- The panel keeps how small they are in `panel.json` (`dock_keys`), and `dock status` says it.
 
 For a text sink, `ZmkHidText.textEvents` turns reports into `{kind:"text", text}`,
 `{kind:"key", key, mods}` (backspace, delete, enter, tab, escape, arrows, home, end, page up and

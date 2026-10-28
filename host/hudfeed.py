@@ -178,6 +178,7 @@ class SerialReader:
         self._open = {}   # device path -> serial.Serial
         self._streams = set()  # live Streams, for resync()
         self._quiet = {}  # device path -> why we stopped reading it
+        self._failed = {}  # device path -> last open error (reported once, retried each scan)
         self._stop = threading.Event()
 
     def start(self):
@@ -225,6 +226,8 @@ class SerialReader:
             live = {path for path, _ in ports}
             for path in [p for p in self._quiet if p not in live]:
                 del self._quiet[path]  # unplugged: worth trying again when it returns
+            for path in [p for p in self._failed if p not in live]:
+                del self._failed[path]
             for path, product in ports:
                 if path in self._open or path in self._quiet:
                     continue
@@ -236,12 +239,17 @@ class SerialReader:
         try:
             dev = serial.Serial(path, timeout=0.5, exclusive=False)
         except (OSError, serial.SerialException, ValueError) as e:
-            self._quiet[path] = str(e)
-            self.log(f"hudfeed: cannot open {product} ({path}): {e}")
-            if sys.platform != "darwin":
-                self.log("hudfeed: check tty permissions (contrib/udev/60-zmk-layer-hud.rules, "
-                         "or add yourself to the dialout group)")
+            # Enumeration can beat udev's access grant, or another process may still own
+            # the port. Neither means this is a non-signal port: try again next scan.
+            error = str(e)
+            if self._failed.get(path) != error:
+                self.log(f"hudfeed: cannot open {product} ({path}): {e}; retrying each scan")
+                if sys.platform != "darwin":
+                    self.log("hudfeed: check tty permissions (contrib/udev/60-zmk-layer-hud.rules, "
+                             "or add yourself to the dialout group)")
+            self._failed[path] = error
             return
+        self._failed.pop(path, None)
         self._open[path] = dev
         threading.Thread(target=self._read_loop, args=(path, dev, product),
                          name="serial-read", daemon=True).start()
