@@ -11,155 +11,272 @@
    "0": {
     "name": "OMARCHY",
     "drawer": "alpha1",
-    "label": "Alpha 1"
+    "label": "Alpha 1",
+    "symbol": "ALPHA1"
    },
    "1": {
     "name": "MACOS",
     "drawer": null,
-    "label": "Alt OS"
+    "label": "Alt OS",
+    "symbol": "ALT_OS",
+    "symbols": [
+     "ALT_OS",
+     "LTR"
+    ]
    },
    "2": {
     "name": "NORMAL",
     "drawer": "vim",
-    "label": "Vim normal"
+    "label": "Vim normal",
+    "symbol": "VIM_NORMAL",
+    "symbols": [
+     "VIM_NORMAL",
+     "LTM"
+    ]
    },
    "3": {
     "name": "VISUAL",
     "drawer": "vim",
-    "label": "Vim visual"
+    "label": "Vim visual",
+    "symbol": "VIM_VISUAL",
+    "symbols": [
+     "VIM_VISUAL",
+     "LTI"
+    ]
    },
    "4": {
     "name": "CHANGE",
     "drawer": "vim",
-    "label": "Vim change"
+    "label": "Vim change",
+    "symbol": "VIM_CHANGE",
+    "symbols": [
+     "VIM_CHANGE",
+     "LTC"
+    ]
    },
    "5": {
     "name": "INSERT",
     "drawer": null,
-    "label": "Vim insert"
+    "label": "Vim insert",
+    "symbol": "VIM_INSERT"
    },
    "6": {
     "name": "REPLACE",
     "drawer": null,
-    "label": "Vim replace"
+    "label": "Vim replace",
+    "symbol": "VIM_REPLACE",
+    "symbols": [
+     "VIM_REPLACE",
+     "RTI"
+    ]
    },
    "7": {
     "name": "CMDLINE",
     "drawer": null,
-    "label": "Vim cmdline"
+    "label": "Vim cmdline",
+    "symbol": "VIM_CMDLINE",
+    "symbols": [
+     "VIM_CMDLINE",
+     "RTM"
+    ]
    },
    "8": {
     "name": "CAPSWORD",
     "drawer": "shifted1",
-    "label": "Caps word"
+    "label": "Caps word",
+    "symbol": "CASE_A1",
+    "symbols": [
+     "CASE_A1",
+     "RTR"
+    ]
    },
    "9": {
     "name": "CAPSLINE",
     "drawer": "shifted1",
-    "label": "Caps line"
+    "label": "Caps line",
+    "symbol": "CPLK_A1",
+    "symbols": [
+     "CPLK_A1",
+     "RTP"
+    ]
    },
    "10": {
     "name": "SHORTCUTS",
     "drawer": "shortcuts",
-    "label": "Shortcuts"
+    "label": "Shortcuts",
+    "symbol": "SHORTS"
    },
    "11": {
     "name": "TOGGLES",
     "drawer": "toggles",
-    "label": "Toggles"
+    "label": "Toggles",
+    "symbol": "TOGS",
+    "symbols": [
+     "TOGS",
+     "LHR"
+    ]
    },
    "12": {
     "name": "MEHS",
     "drawer": "mehs",
-    "label": "Mehs"
+    "label": "Mehs",
+    "symbol": "MEHS",
+    "symbols": [
+     "MEHS",
+     "LHM"
+    ]
    },
    "13": {
     "name": "ALPHA2",
     "drawer": "alpha2",
-    "label": "Alpha 2"
+    "label": "Alpha 2",
+    "symbol": "ALPHA2",
+    "symbols": [
+     "ALPHA2",
+     "LHI"
+    ]
    },
    "14": {
     "name": "NUMBERS",
     "drawer": "numbers",
-    "label": "Numbers"
+    "label": "Numbers",
+    "symbol": "NUM",
+    "symbols": [
+     "NUM",
+     "LHC"
+    ]
    },
    "15": {
     "name": "SYMBOLS",
     "drawer": "symbols",
-    "label": "Symbols"
+    "label": "Symbols",
+    "symbol": "SYM"
    },
    "16": {
-    "name": "SENTENCE CASE",
-    "drawer": "shifted1",
-    "label": "Sentence case"
-   },
-   "17": {
     "name": "Ç EXTENSION",
     "drawer": "ç-extension",
-    "label": "Ç extension"
+    "label": "Ç extension",
+    "symbol": "CCEDIL",
+    "symbols": [
+     "CCEDIL",
+     "RHI"
+    ]
    },
-   "18": {
+   "17": {
     "name": "SHIFTED ALPHA2",
     "drawer": "shifted2",
-    "label": "Shift · Alpha 2"
+    "label": "Shift · Alpha 2",
+    "symbol": "SFT_A2",
+    "symbols": [
+     "SFT_A2",
+     "RHM"
+    ]
    },
-   "19": {
+   "18": {
     "name": "CASE ALPHA2",
     "drawer": "shifted2",
-    "label": "Caps · Alpha 2"
+    "label": "Caps · Alpha 2",
+    "symbol": "CASE_A2",
+    "symbols": [
+     "CASE_A2",
+     "RHR"
+    ]
    },
-   "20": {
+   "19": {
     "name": "CASE Ç EXTENSION",
     "drawer": "ç-extension",
-    "label": "Caps · Ç"
+    "label": "Caps · Ç",
+    "symbol": "CASE_CCEDIL",
+    "symbols": [
+     "CASE_CCEDIL",
+     "RHP"
+    ]
    },
-   "21": {
+   "20": {
     "name": "ALT REP 2",
     "drawer": null,
-    "label": "Alt repeat"
+    "label": "Alt repeat",
+    "symbol": "ALTREP2"
+   },
+   "21": {
+    "name": "NAVIGATION",
+    "drawer": "nav",
+    "label": "Navigation",
+    "symbol": "NAV",
+    "symbols": [
+     "NAV",
+     "LBR"
+    ]
    },
    "22": {
-    "name": "NAVIGATION",
-    "drawer": "nav",
-    "label": "Navigation"
-   },
-   "23": {
     "name": "NUMBERS",
     "drawer": "numbers",
-    "label": "Numbers"
+    "label": "Numbers",
+    "symbol": "NUM_CP",
+    "symbols": [
+     "NUM_CP",
+     "LBM"
+    ]
    },
-   "24": {
+   "23": {
     "name": "SYMBOLS",
     "drawer": "symbols",
-    "label": "Symbols"
+    "label": "Symbols",
+    "symbol": "SYM_CP",
+    "symbols": [
+     "SYM_CP",
+     "LBI"
+    ]
    },
-   "25": {
+   "24": {
     "name": "MOUSE",
     "drawer": "media",
-    "label": "Media / mouse"
+    "label": "Media / mouse",
+    "symbol": "MEDIA",
+    "symbols": [
+     "MEDIA",
+     "LBC"
+    ]
    },
-   "26": {
+   "25": {
     "name": "NAVIGATION",
     "drawer": "nav",
-    "label": "Navigation"
+    "label": "Navigation",
+    "symbol": "NAV_CP"
    },
-   "27": {
+   "26": {
     "name": "TEXT NAVIGATION",
     "drawer": "text",
-    "label": "Text navigation"
+    "label": "Text navigation",
+    "symbol": "TEXT",
+    "symbols": [
+     "TEXT",
+     "RBI"
+    ]
    },
-   "28": {
+   "27": {
     "name": "FUNCTIONS",
     "drawer": "func",
-    "label": "Function keys"
+    "label": "Function keys",
+    "symbol": "FUN",
+    "symbols": [
+     "FUN",
+     "RBM"
+    ]
    },
-   "29": {
+   "28": {
     "name": "MACROS",
     "drawer": "macros",
-    "label": "Macros"
+    "label": "Macros",
+    "symbol": "MACROS",
+    "symbols": [
+     "MACROS",
+     "RBR"
+    ]
    }
   },
   "combo_term_ms": 30,
+  "combo_idle_ms": 150,
   "combos": [
    {
     "positions": [
@@ -912,176 +1029,176 @@
  },
  "drawing": {
   "layout": {
-   "width": 660.0,
-   "height": 272.0,
+   "width": 720.6731926858882,
+   "height": 403.8100726850031,
    "keys": [
     {
-     "x": 105.0,
-     "y": 34.0,
-     "w": 70.0,
+     "x": 126.00859634294414,
+     "y": 40.7475016430907,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": 6.9
     },
     {
-     "x": 175.0,
-     "y": 34.0,
-     "w": 70.0,
+     "x": 208.76459634294415,
+     "y": 39.3875016430907,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": 10.0
     },
     {
-     "x": 245.0,
-     "y": 34.0,
-     "w": 70.0,
+     "x": 273.2285963429441,
+     "y": 73.86350164309069,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": 10.0
     },
     {
-     "x": 415.0,
-     "y": 34.0,
-     "w": 70.0,
+     "x": 447.4445963429441,
+     "y": 73.86350164309069,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": -10.0
     },
     {
-     "x": 485.0,
-     "y": 34.0,
-     "w": 70.0,
+     "x": 511.9085963429441,
+     "y": 39.3875016430907,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": -10.0
     },
     {
-     "x": 555.0,
-     "y": 34.0,
-     "w": 70.0,
+     "x": 594.6645963429442,
+     "y": 40.7475016430907,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": -6.9
     },
     {
-     "x": 35.0,
-     "y": 102.0,
-     "w": 70.0,
-     "h": 68.0,
-     "r": 0
+     "x": 36.24859634294415,
+     "y": 146.8955016430907,
+     "w": 68.0,
+     "h": 85.0,
+     "r": 3.1
     },
     {
-     "x": 105.0,
-     "y": 102.0,
-     "w": 70.0,
+     "x": 116.28459634294416,
+     "y": 120.9875016430907,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": 6.9
     },
     {
-     "x": 175.0,
-     "y": 102.0,
-     "w": 70.0,
+     "x": 194.68859634294415,
+     "y": 118.9475016430907,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": 10.0
     },
     {
-     "x": 245.0,
-     "y": 102.0,
-     "w": 70.0,
+     "x": 259.22059634294413,
+     "y": 153.42350164309073,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": 10.0
     },
     {
-     "x": 415.0,
-     "y": 102.0,
-     "w": 70.0,
+     "x": 461.4525963429441,
+     "y": 153.42350164309073,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": -10.0
     },
     {
-     "x": 485.0,
-     "y": 102.0,
-     "w": 70.0,
+     "x": 525.9845963429442,
+     "y": 118.9475016430907,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": -10.0
     },
     {
-     "x": 555.0,
-     "y": 102.0,
-     "w": 70.0,
+     "x": 604.3885963429442,
+     "y": 120.9875016430907,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": -6.9
     },
     {
-     "x": 625.0,
-     "y": 102.0,
-     "w": 70.0,
-     "h": 68.0,
-     "r": 0
+     "x": 684.4245963429441,
+     "y": 146.8955016430907,
+     "w": 68.0,
+     "h": 85.0,
+     "r": -3.1
     },
     {
-     "x": 105.0,
-     "y": 170.0,
-     "w": 70.0,
+     "x": 106.62859634294415,
+     "y": 201.15950164309072,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": 6.9
     },
     {
-     "x": 175.0,
-     "y": 170.0,
-     "w": 70.0,
+     "x": 180.68059634294414,
+     "y": 198.50750164309068,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": 10.0
     },
     {
-     "x": 245.0,
-     "y": 170.0,
-     "w": 70.0,
+     "x": 245.14459634294414,
+     "y": 232.98350164309073,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": 10.0
     },
     {
-     "x": 415.0,
-     "y": 170.0,
-     "w": 70.0,
+     "x": 475.5285963429441,
+     "y": 232.98350164309073,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": -10.0
     },
     {
-     "x": 485.0,
-     "y": 170.0,
-     "w": 70.0,
+     "x": 539.9925963429441,
+     "y": 198.50750164309068,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": -10.0
     },
     {
-     "x": 555.0,
-     "y": 170.0,
-     "w": 70.0,
+     "x": 614.0445963429441,
+     "y": 201.15950164309072,
+     "w": 68.0,
      "h": 68.0,
-     "r": 0
+     "r": -6.9
     },
     {
-     "x": 210.0,
-     "y": 238.0,
-     "w": 70.0,
-     "h": 68.0,
-     "r": 0
+     "x": 230.18459634294413,
+     "y": 317.98350164309073,
+     "w": 68.0,
+     "h": 85.0,
+     "r": 27.1
     },
     {
-     "x": 280.0,
-     "y": 238.0,
-     "w": 70.0,
-     "h": 68.0,
-     "r": 0
+     "x": 293.69659634294413,
+     "y": 350.4875016430907,
+     "w": 68.0,
+     "h": 85.0,
+     "r": 27.1
     },
     {
-     "x": 380.0,
-     "y": 238.0,
-     "w": 70.0,
-     "h": 68.0,
-     "r": 0
+     "x": 426.9765963429441,
+     "y": 350.4875016430907,
+     "w": 68.0,
+     "h": 85.0,
+     "r": -27.1
     },
     {
-     "x": 450.0,
-     "y": 238.0,
-     "w": 70.0,
-     "h": 68.0,
-     "r": 0
+     "x": 490.4885963429441,
+     "y": 317.98350164309073,
+     "w": 68.0,
+     "h": 85.0,
+     "r": -27.1
     }
    ]
   },
@@ -1104,10 +1221,13 @@
    "macros",
    "left-meh-morphs",
    "right-meh-morphs",
-   "coding-meh",
-   "coding-hyper",
    "desktop-management",
-   "window-management"
+   "window-management",
+   "intellij-meh",
+   "intellij-hyper",
+   "vscode-meh",
+   "vscode-hyper",
+   "nvim-meh"
   ],
   "layers": {
    "alpha1": [
@@ -1906,7 +2026,7 @@
     },
     {
      "tap": "q",
-     "hold": "shortcuts",
+     "hold": "alpha1",
      "shifted": "record",
      "type": "key"
     },
@@ -1954,7 +2074,7 @@
     },
     {
      "tap": "l",
-     "hold": "shortcuts",
+     "hold": "alpha1",
      "shifted": "right",
      "type": "key"
     },
@@ -3881,335 +4001,6 @@
      "type": "ghost"
     }
    ],
-   "coding-meh": [
-    {
-     "tap": "file-multiple",
-     "hold": "",
-     "shifted": "project",
-     "type": "key",
-     "glyph": "mdi:file-multiple"
-    },
-    {
-     "tap": "🔧",
-     "hold": "",
-     "shifted": "build",
-     "type": "key",
-     "glyph": "mdi:wrench"
-    },
-    {
-     "tap": "format-indent-increase",
-     "hold": "code",
-     "shifted": "format",
-     "type": "key",
-     "glyph": "mdi:format-indent-increase"
-    },
-    {
-     "tap": "debug-step-out",
-     "hold": "out",
-     "shifted": "step",
-     "type": "key",
-     "glyph": "mdi:debug-step-out"
-    },
-    {
-     "tap": "debug-step-over",
-     "hold": "over",
-     "shifted": "step",
-     "type": "key",
-     "glyph": "mdi:debug-step-over"
-    },
-    {
-     "tap": "debug-step-into",
-     "hold": "into",
-     "shifted": "step",
-     "type": "key",
-     "glyph": "mdi:debug-step-into"
-    },
-    {
-     "tap": "",
-     "hold": "",
-     "shifted": "",
-     "type": "blank"
-    },
-    {
-     "tap": "code-block-braces",
-     "hold": "match",
-     "shifted": "type",
-     "type": "key",
-     "glyph": "mdi:code-block-braces"
-    },
-    {
-     "tap": "()",
-     "hold": "statement",
-     "shifted": "complete",
-     "type": "key"
-    },
-    {
-     "tap": "history",
-     "hold": "files",
-     "shifted": "recent",
-     "type": "key",
-     "glyph": "mdi:history"
-    },
-    {
-     "tap": "play",
-     "hold": "run",
-     "shifted": "",
-     "type": "key",
-     "glyph": "mdi:play"
-    },
-    {
-     "tap": "bug-play",
-     "hold": "debug",
-     "shifted": "",
-     "type": "key",
-     "glyph": "mdi:bug-play"
-    },
-    {
-     "tap": "circle",
-     "hold": "breakpoint",
-     "shifted": "toggle",
-     "type": "key",
-     "glyph": "mdi:circle"
-    },
-    {
-     "tap": "",
-     "hold": "",
-     "shifted": "",
-     "type": "blank"
-    },
-    {
-     "tap": "variable",
-     "hold": "expression",
-     "shifted": "evaluate",
-     "type": "key",
-     "glyph": "mdi:variable"
-    },
-    {
-     "tap": "//",
-     "hold": "line",
-     "shifted": "comment",
-     "type": "key"
-    },
-    {
-     "tap": "feather",
-     "hold": "def",
-     "shifted": "quick",
-     "type": "key",
-     "glyph": "mdi:feather"
-    },
-    {
-     "tap": "book-open-outline",
-     "hold": "docs",
-     "shifted": "quick",
-     "type": "key",
-     "glyph": "mdi:book-open-outline"
-    },
-    {
-     "tap": "page-previous-outline",
-     "hold": "error",
-     "shifted": "previous",
-     "type": "key",
-     "glyph": "mdi:page-previous-outline"
-    },
-    {
-     "tap": "page-next-outline",
-     "hold": "error",
-     "shifted": "next",
-     "type": "key",
-     "glyph": "mdi:page-next-outline"
-    },
-    {
-     "tap": "",
-     "hold": "",
-     "shifted": "",
-     "type": "trans"
-    },
-    {
-     "tap": "brain",
-     "hold": "⌘",
-     "shifted": "ai chat",
-     "type": "key",
-     "glyph": "mdi:brain",
-     "glyph_hold": "mdi:apple-keyboard-command"
-    },
-    {
-     "tap": "gesture-tap",
-     "hold": "⌘",
-     "shifted": "actions",
-     "type": "key",
-     "glyph": "mdi:gesture-tap",
-     "glyph_hold": "mdi:apple-keyboard-command"
-    },
-    {
-     "tap": "",
-     "hold": "",
-     "shifted": "",
-     "type": "trans"
-    }
-   ],
-   "coding-hyper": [
-    {
-     "tap": "form-select",
-     "hold": "",
-     "shifted": "select in",
-     "type": "key",
-     "glyph": "mdi:form-select"
-    },
-    {
-     "tap": "wrench-outline",
-     "hold": "",
-     "shifted": "rebuild",
-     "type": "key",
-     "glyph": "mdi:wrench-outline"
-    },
-    {
-     "tap": "sine-wave",
-     "hold": "code",
-     "shifted": "analyze",
-     "type": "key",
-     "glyph": "mdi:sine-wave"
-    },
-    {
-     "tap": "🔍",
-     "hold": "everywhere",
-     "shifted": "search",
-     "type": "key",
-     "glyph": "mdi:database-search-outline"
-    },
-    {
-     "tap": "text-box-search-outline",
-     "hold": "symbol",
-     "shifted": "go to",
-     "type": "key",
-     "glyph": "mdi:text-box-search-outline"
-    },
-    {
-     "tap": "feature-search-outline",
-     "hold": "action",
-     "shifted": "find",
-     "type": "key",
-     "glyph": "mdi:feature-search-outline"
-    },
-    {
-     "tap": "",
-     "hold": "",
-     "shifted": "",
-     "type": "blank"
-    },
-    {
-     "tap": "code-block-parentheses",
-     "hold": "complete",
-     "shifted": "code",
-     "type": "key",
-     "glyph": "mdi:code-block-parentheses"
-    },
-    {
-     "tap": "file-code-outline",
-     "hold": "this",
-     "shifted": "refactor",
-     "type": "key",
-     "glyph": "mdi:file-code-outline"
-    },
-    {
-     "tap": "view-compact",
-     "hold": "scheme",
-     "shifted": "switch",
-     "type": "key",
-     "glyph": "mdi:view-compact"
-    },
-    {
-     "tap": "stop",
-     "hold": "",
-     "shifted": "stop",
-     "type": "key",
-     "glyph": "mdi:stop"
-    },
-    {
-     "tap": "⏯",
-     "hold": "",
-     "shifted": "resume",
-     "type": "key",
-     "glyph": "mdi:play-pause"
-    },
-    {
-     "tap": "circle-multiple",
-     "hold": "breakpoints",
-     "shifted": "view",
-     "type": "key",
-     "glyph": "mdi:circle-multiple"
-    },
-    {
-     "tap": "",
-     "hold": "",
-     "shifted": "",
-     "type": "blank"
-    },
-    {
-     "tap": "code-array",
-     "hold": "code",
-     "shifted": "generate",
-     "type": "key",
-     "glyph": "mdi:code-array"
-    },
-    {
-     "tap": "/**/",
-     "hold": "block",
-     "shifted": "comment",
-     "type": "key"
-    },
-    {
-     "tap": "book-open-variant-outline",
-     "hold": "usages",
-     "shifted": "find",
-     "type": "key",
-     "glyph": "mdi:book-open-variant-outline"
-    },
-    {
-     "tap": "bookmark-box",
-     "hold": "bookmark",
-     "shifted": "toggle",
-     "type": "key",
-     "glyph": "mdi:bookmark-box"
-    },
-    {
-     "tap": "page-previous",
-     "hold": "bookmark",
-     "shifted": "previous",
-     "type": "key",
-     "glyph": "mdi:page-previous"
-    },
-    {
-     "tap": "page-next",
-     "hold": "bookmark",
-     "shifted": "next",
-     "type": "key",
-     "glyph": "mdi:page-next"
-    },
-    {
-     "tap": "",
-     "hold": "",
-     "shifted": "",
-     "type": "trans"
-    },
-    {
-     "tap": "",
-     "hold": "",
-     "shifted": "",
-     "type": "blank"
-    },
-    {
-     "tap": "",
-     "hold": "",
-     "shifted": "",
-     "type": "blank"
-    },
-    {
-     "tap": "",
-     "hold": "",
-     "shifted": "",
-     "type": "trans"
-    }
-   ],
    "desktop-management": [
     {
      "tap": "",
@@ -4520,6 +4311,821 @@
      "hold": "",
      "shifted": "",
      "type": "blank"
+    }
+   ],
+   "intellij-meh": [
+    {
+     "tap": "file-multiple",
+     "hold": "",
+     "shifted": "project",
+     "type": "key",
+     "glyph": "mdi:file-multiple"
+    },
+    {
+     "tap": "🔧",
+     "hold": "project",
+     "shifted": "build",
+     "type": "key",
+     "glyph": "mdi:wrench"
+    },
+    {
+     "tap": "format-indent-increase",
+     "hold": "code",
+     "shifted": "reformat",
+     "type": "key",
+     "glyph": "mdi:format-indent-increase"
+    },
+    {
+     "tap": "debug-step-out",
+     "hold": "out",
+     "shifted": "step",
+     "type": "key",
+     "glyph": "mdi:debug-step-out"
+    },
+    {
+     "tap": "debug-step-over",
+     "hold": "over",
+     "shifted": "step",
+     "type": "key",
+     "glyph": "mdi:debug-step-over"
+    },
+    {
+     "tap": "debug-step-into",
+     "hold": "into",
+     "shifted": "step",
+     "type": "key",
+     "glyph": "mdi:debug-step-into"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "blank"
+    },
+    {
+     "tap": "code-block-braces",
+     "hold": "matching",
+     "shifted": "type",
+     "type": "key",
+     "glyph": "mdi:code-block-braces"
+    },
+    {
+     "tap": "()",
+     "hold": "statement",
+     "shifted": "complete",
+     "type": "key"
+    },
+    {
+     "tap": "history",
+     "hold": "files",
+     "shifted": "recent",
+     "type": "key",
+     "glyph": "mdi:history"
+    },
+    {
+     "tap": "play",
+     "hold": "run",
+     "shifted": "",
+     "type": "key",
+     "glyph": "mdi:play"
+    },
+    {
+     "tap": "bug-play",
+     "hold": "debug",
+     "shifted": "",
+     "type": "key",
+     "glyph": "mdi:bug-play"
+    },
+    {
+     "tap": "circle",
+     "hold": "breakpoint",
+     "shifted": "toggle",
+     "type": "key",
+     "glyph": "mdi:circle"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "blank"
+    },
+    {
+     "tap": "variable",
+     "hold": "expression",
+     "shifted": "evaluate",
+     "type": "key",
+     "glyph": "mdi:variable"
+    },
+    {
+     "tap": "//",
+     "hold": "line",
+     "shifted": "comment",
+     "type": "key"
+    },
+    {
+     "tap": "feather",
+     "hold": "definition",
+     "shifted": "quick",
+     "type": "key",
+     "glyph": "mdi:feather"
+    },
+    {
+     "tap": "book-open-outline",
+     "hold": "docs",
+     "shifted": "quick",
+     "type": "key",
+     "glyph": "mdi:book-open-outline"
+    },
+    {
+     "tap": "page-previous-outline",
+     "hold": "error",
+     "shifted": "previous",
+     "type": "key",
+     "glyph": "mdi:page-previous-outline"
+    },
+    {
+     "tap": "page-next-outline",
+     "hold": "error",
+     "shifted": "next",
+     "type": "key",
+     "glyph": "mdi:page-next-outline"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "trans"
+    },
+    {
+     "tap": "brain",
+     "hold": "⌘",
+     "shifted": "assistant",
+     "type": "key",
+     "glyph": "mdi:brain",
+     "glyph_hold": "mdi:apple-keyboard-command"
+    },
+    {
+     "tap": "gesture-tap",
+     "hold": "⌘",
+     "shifted": "actions",
+     "type": "key",
+     "glyph": "mdi:gesture-tap",
+     "glyph_hold": "mdi:apple-keyboard-command"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "trans"
+    }
+   ],
+   "intellij-hyper": [
+    {
+     "tap": "form-select",
+     "hold": "",
+     "shifted": "select in",
+     "type": "key",
+     "glyph": "mdi:form-select"
+    },
+    {
+     "tap": "wrench-outline",
+     "hold": "project",
+     "shifted": "rebuild",
+     "type": "key",
+     "glyph": "mdi:wrench-outline"
+    },
+    {
+     "tap": "sine-wave",
+     "hold": "code",
+     "shifted": "inspect",
+     "type": "key",
+     "glyph": "mdi:sine-wave"
+    },
+    {
+     "tap": "🔍",
+     "hold": "everywhere",
+     "shifted": "search",
+     "type": "key",
+     "glyph": "mdi:database-search-outline"
+    },
+    {
+     "tap": "text-box-search-outline",
+     "hold": "symbol",
+     "shifted": "go to",
+     "type": "key",
+     "glyph": "mdi:text-box-search-outline"
+    },
+    {
+     "tap": "feature-search-outline",
+     "hold": "action",
+     "shifted": "find",
+     "type": "key",
+     "glyph": "mdi:feature-search-outline"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "blank"
+    },
+    {
+     "tap": "code-block-parentheses",
+     "hold": "completion",
+     "shifted": "basic",
+     "type": "key",
+     "glyph": "mdi:code-block-parentheses"
+    },
+    {
+     "tap": "file-code-outline",
+     "hold": "this",
+     "shifted": "refactor",
+     "type": "key",
+     "glyph": "mdi:file-code-outline"
+    },
+    {
+     "tap": "view-compact",
+     "hold": "scheme",
+     "shifted": "switch",
+     "type": "key",
+     "glyph": "mdi:view-compact"
+    },
+    {
+     "tap": "stop",
+     "hold": "",
+     "shifted": "stop",
+     "type": "key",
+     "glyph": "mdi:stop"
+    },
+    {
+     "tap": "⏯",
+     "hold": "",
+     "shifted": "resume",
+     "type": "key",
+     "glyph": "mdi:play-pause"
+    },
+    {
+     "tap": "circle-multiple",
+     "hold": "breakpoints",
+     "shifted": "view",
+     "type": "key",
+     "glyph": "mdi:circle-multiple"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "blank"
+    },
+    {
+     "tap": "code-array",
+     "hold": "code",
+     "shifted": "generate",
+     "type": "key",
+     "glyph": "mdi:code-array"
+    },
+    {
+     "tap": "/**/",
+     "hold": "block",
+     "shifted": "comment",
+     "type": "key"
+    },
+    {
+     "tap": "book-open-variant-outline",
+     "hold": "usages",
+     "shifted": "find",
+     "type": "key",
+     "glyph": "mdi:book-open-variant-outline"
+    },
+    {
+     "tap": "bookmark-box",
+     "hold": "bookmark",
+     "shifted": "toggle",
+     "type": "key",
+     "glyph": "mdi:bookmark-box"
+    },
+    {
+     "tap": "page-previous",
+     "hold": "bookmark",
+     "shifted": "previous",
+     "type": "key",
+     "glyph": "mdi:page-previous"
+    },
+    {
+     "tap": "page-next",
+     "hold": "bookmark",
+     "shifted": "next",
+     "type": "key",
+     "glyph": "mdi:page-next"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "trans"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "blank"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "blank"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "trans"
+    }
+   ],
+   "vscode-meh": [
+    {
+     "tap": "file-multiple",
+     "hold": "",
+     "shifted": "explorer",
+     "type": "key",
+     "glyph": "mdi:file-multiple"
+    },
+    {
+     "tap": "🔧",
+     "hold": "task",
+     "shifted": "build",
+     "type": "key",
+     "glyph": "mdi:wrench"
+    },
+    {
+     "tap": "format-indent-increase",
+     "hold": "document",
+     "shifted": "format",
+     "type": "key",
+     "glyph": "mdi:format-indent-increase"
+    },
+    {
+     "tap": "debug-step-out",
+     "hold": "out",
+     "shifted": "step",
+     "type": "key",
+     "glyph": "mdi:debug-step-out"
+    },
+    {
+     "tap": "debug-step-over",
+     "hold": "over",
+     "shifted": "step",
+     "type": "key",
+     "glyph": "mdi:debug-step-over"
+    },
+    {
+     "tap": "debug-step-into",
+     "hold": "into",
+     "shifted": "step",
+     "type": "key",
+     "glyph": "mdi:debug-step-into"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "blank"
+    },
+    {
+     "tap": "code-block-parentheses",
+     "hold": "suggest",
+     "shifted": "trigger",
+     "type": "key",
+     "glyph": "mdi:code-block-parentheses"
+    },
+    {
+     "tap": "table-row-plus-after",
+     "hold": "line below",
+     "shifted": "insert",
+     "type": "key",
+     "glyph": "mdi:table-row-plus-after"
+    },
+    {
+     "tap": "history",
+     "hold": "editors",
+     "shifted": "recent",
+     "type": "key",
+     "glyph": "mdi:history"
+    },
+    {
+     "tap": "play",
+     "hold": "run",
+     "shifted": "",
+     "type": "key",
+     "glyph": "mdi:play"
+    },
+    {
+     "tap": "bug-play",
+     "hold": "debug",
+     "shifted": "",
+     "type": "key",
+     "glyph": "mdi:bug-play"
+    },
+    {
+     "tap": "circle",
+     "hold": "breakpoint",
+     "shifted": "toggle",
+     "type": "key",
+     "glyph": "mdi:circle"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "blank"
+    },
+    {
+     "tap": "variable",
+     "hold": "in console",
+     "shifted": "evaluate",
+     "type": "key",
+     "glyph": "mdi:variable"
+    },
+    {
+     "tap": "//",
+     "hold": "line",
+     "shifted": "comment",
+     "type": "key"
+    },
+    {
+     "tap": "feather",
+     "hold": "definition",
+     "shifted": "peek",
+     "type": "key",
+     "glyph": "mdi:feather"
+    },
+    {
+     "tap": "book-open-outline",
+     "hold": "hover",
+     "shifted": "show",
+     "type": "key",
+     "glyph": "mdi:book-open-outline"
+    },
+    {
+     "tap": "page-previous-outline",
+     "hold": "problem",
+     "shifted": "previous",
+     "type": "key",
+     "glyph": "mdi:page-previous-outline"
+    },
+    {
+     "tap": "page-next-outline",
+     "hold": "problem",
+     "shifted": "next",
+     "type": "key",
+     "glyph": "mdi:page-next-outline"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "trans"
+    },
+    {
+     "tap": "brain",
+     "hold": "⌘",
+     "shifted": "chat",
+     "type": "key",
+     "glyph": "mdi:brain",
+     "glyph_hold": "mdi:apple-keyboard-command"
+    },
+    {
+     "tap": "gesture-tap",
+     "hold": "⌘",
+     "shifted": "quick fix",
+     "type": "key",
+     "glyph": "mdi:gesture-tap",
+     "glyph_hold": "mdi:apple-keyboard-command"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "trans"
+    }
+   ],
+   "vscode-hyper": [
+    {
+     "tap": "form-select",
+     "hold": "explorer",
+     "shifted": "reveal in",
+     "type": "key",
+     "glyph": "mdi:form-select"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "ghost"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "ghost"
+    },
+    {
+     "tap": "file-search-outline",
+     "hold": "open",
+     "shifted": "quick",
+     "type": "key",
+     "glyph": "mdi:file-search-outline"
+    },
+    {
+     "tap": "text-box-search-outline",
+     "hold": "symbol",
+     "shifted": "go to",
+     "type": "key",
+     "glyph": "mdi:text-box-search-outline"
+    },
+    {
+     "tap": "feature-search-outline",
+     "hold": "palette",
+     "shifted": "command",
+     "type": "key",
+     "glyph": "mdi:feature-search-outline"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "blank"
+    },
+    {
+     "tap": "code-block-parentheses",
+     "hold": "suggest",
+     "shifted": "trigger",
+     "type": "key",
+     "glyph": "mdi:code-block-parentheses"
+    },
+    {
+     "tap": "file-code-outline",
+     "hold": "",
+     "shifted": "refactor",
+     "type": "key",
+     "glyph": "mdi:file-code-outline"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "ghost"
+    },
+    {
+     "tap": "stop",
+     "hold": "",
+     "shifted": "stop",
+     "type": "key",
+     "glyph": "mdi:stop"
+    },
+    {
+     "tap": "⏯",
+     "hold": "",
+     "shifted": "continue",
+     "type": "key",
+     "glyph": "mdi:play-pause"
+    },
+    {
+     "tap": "circle-multiple",
+     "hold": "breakpoints",
+     "shifted": "view",
+     "type": "key",
+     "glyph": "mdi:circle-multiple"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "blank"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "ghost"
+    },
+    {
+     "tap": "/**/",
+     "hold": "block",
+     "shifted": "comment",
+     "type": "key"
+    },
+    {
+     "tap": "book-open-variant-outline",
+     "hold": "references",
+     "shifted": "find",
+     "type": "key",
+     "glyph": "mdi:book-open-variant-outline"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "ghost"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "ghost"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "ghost"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "trans"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "blank"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "blank"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "trans"
+    }
+   ],
+   "nvim-meh": [
+    {
+     "tap": "file-multiple",
+     "hold": "",
+     "shifted": "explorer",
+     "type": "key",
+     "glyph": "mdi:file-multiple"
+    },
+    {
+     "tap": "🔧",
+     "hold": "",
+     "shifted": "make",
+     "type": "key",
+     "glyph": "mdi:wrench"
+    },
+    {
+     "tap": "format-indent-increase",
+     "hold": "format",
+     "shifted": "lsp",
+     "type": "key",
+     "glyph": "mdi:format-indent-increase"
+    },
+    {
+     "tap": "debug-step-out",
+     "hold": "out",
+     "shifted": "step",
+     "type": "key",
+     "glyph": "mdi:debug-step-out"
+    },
+    {
+     "tap": "debug-step-over",
+     "hold": "over",
+     "shifted": "step",
+     "type": "key",
+     "glyph": "mdi:debug-step-over"
+    },
+    {
+     "tap": "debug-step-into",
+     "hold": "into",
+     "shifted": "step",
+     "type": "key",
+     "glyph": "mdi:debug-step-into"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "blank"
+    },
+    {
+     "tap": "code-block-parentheses",
+     "hold": "complete",
+     "shifted": "omni",
+     "type": "key",
+     "glyph": "mdi:code-block-parentheses"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "ghost"
+    },
+    {
+     "tap": "history",
+     "hold": "files",
+     "shifted": "recent",
+     "type": "key",
+     "glyph": "mdi:history"
+    },
+    {
+     "tap": "⏯",
+     "hold": "",
+     "shifted": "continue",
+     "type": "key",
+     "glyph": "mdi:play-pause"
+    },
+    {
+     "tap": "⏯",
+     "hold": "",
+     "shifted": "continue",
+     "type": "key",
+     "glyph": "mdi:play-pause"
+    },
+    {
+     "tap": "circle",
+     "hold": "breakpoint",
+     "shifted": "toggle",
+     "type": "key",
+     "glyph": "mdi:circle"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "blank"
+    },
+    {
+     "tap": "variable",
+     "hold": "hover",
+     "shifted": "evaluate",
+     "type": "key",
+     "glyph": "mdi:variable"
+    },
+    {
+     "tap": "//",
+     "hold": "gcc",
+     "shifted": "comment",
+     "type": "key"
+    },
+    {
+     "tap": "location-enter",
+     "hold": "definition",
+     "shifted": "go to",
+     "type": "key",
+     "glyph": "mdi:location-enter"
+    },
+    {
+     "tap": "book-open-outline",
+     "hold": "hover",
+     "shifted": "lsp",
+     "type": "key",
+     "glyph": "mdi:book-open-outline"
+    },
+    {
+     "tap": "page-previous-outline",
+     "hold": "diagnostic",
+     "shifted": "previous",
+     "type": "key",
+     "glyph": "mdi:page-previous-outline"
+    },
+    {
+     "tap": "page-next-outline",
+     "hold": "diagnostic",
+     "shifted": "next",
+     "type": "key",
+     "glyph": "mdi:page-next-outline"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "trans"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "ghost"
+    },
+    {
+     "tap": "gesture-tap",
+     "hold": "",
+     "shifted": "code action",
+     "type": "key",
+     "glyph": "mdi:gesture-tap"
+    },
+    {
+     "tap": "",
+     "hold": "",
+     "shifted": "",
+     "type": "trans"
     }
    ]
   },
@@ -6818,7 +7424,9 @@
      "type": "key"
     },
     "layers": [
-     "coding-meh"
+     "intellij-meh",
+     "vscode-meh",
+     "nvim-meh"
     ]
    },
    {
@@ -6833,7 +7441,22 @@
      "type": "key"
     },
     "layers": [
-     "coding-hyper"
+     "intellij-hyper"
+    ]
+   },
+   {
+    "positions": [
+     11,
+     12
+    ],
+    "key": {
+     "tap": "to def",
+     "hold": "",
+     "shifted": "",
+     "type": "key"
+    },
+    "layers": [
+     "vscode-hyper"
     ]
    }
   ],
@@ -6895,6 +7518,7 @@
    "mdi:feature-search-outline": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-feature-search-outline\" viewBox=\"0 0 24 24\"><path d=\"M15.5,2C13,2 11,4 11,6.5C11,9 13,11 15.5,11C16.4,11 17.2,10.7 17.9,10.3L21,13.4L22.4,12L19.3,8.9C19.7,8.2 20,7.4 20,6.5C20,4 18,2 15.5,2M4,4A2,2 0 0,0 2,6V20A2,2 0 0,0 4,22H18A2,2 0 0,0 20,20V15L18,13V20H4V6H9.03C9.09,5.3 9.26,4.65 9.5,4H4M15.5,4C16.9,4 18,5.1 18,6.5C18,7.9 16.9,9 15.5,9C14.1,9 13,7.9 13,6.5C13,5.1 14.1,4 15.5,4Z\" /></svg>",
    "mdi:file-code-outline": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-file-code-outline\" viewBox=\"0 0 24 24\"><path d=\"M14 2H6C4.89 2 4 2.9 4 4V20C4 21.11 4.89 22 6 22H18C19.11 22 20 21.11 20 20V8L14 2M18 20H6V4H13V9H18V20M9.54 15.65L11.63 17.74L10.35 19L7 15.65L10.35 12.3L11.63 13.56L9.54 15.65M17 15.65L13.65 19L12.38 17.74L14.47 15.65L12.38 13.56L13.65 12.3L17 15.65Z\" /></svg>",
    "mdi:file-multiple": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-file-multiple\" viewBox=\"0 0 24 24\"><path d=\"M15,7H20.5L15,1.5V7M8,0H16L22,6V18A2,2 0 0,1 20,20H8C6.89,20 6,19.1 6,18V2A2,2 0 0,1 8,0M4,4V22H20V24H4A2,2 0 0,1 2,22V4H4Z\" /></svg>",
+   "mdi:file-search-outline": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-file-search-outline\" viewBox=\"0 0 24 24\"><path d=\"M14,2H6A2,2 0 0,0 4,4V20A2,2 0 0,0 6,22H13C12.59,21.75 12.2,21.44 11.86,21.1C11.53,20.77 11.25,20.4 11,20H6V4H13V9H18V10.18C18.71,10.34 19.39,10.61 20,11V8L14,2M20.31,18.9C21.64,16.79 21,14 18.91,12.68C16.8,11.35 14,12 12.69,14.08C11.35,16.19 12,18.97 14.09,20.3C15.55,21.23 17.41,21.23 18.88,20.32L22,23.39L23.39,22L20.31,18.9M16.5,19A2.5,2.5 0 0,1 14,16.5A2.5,2.5 0 0,1 16.5,14A2.5,2.5 0 0,1 19,16.5A2.5,2.5 0 0,1 16.5,19Z\" /></svg>",
    "mdi:flash": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-flash\" viewBox=\"0 0 24 24\"><path d=\"M7,2V13H10V22L17,10H13L17,2H7Z\" /></svg>",
    "mdi:folder-open": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-folder-open\" viewBox=\"0 0 24 24\"><path d=\"M19,20H4C2.89,20 2,19.1 2,18V6C2,4.89 2.89,4 4,4H10L12,6H19A2,2 0 0,1 21,8H21L4,8V18L6.14,10H23.21L20.93,18.5C20.7,19.37 19.92,20 19,20Z\" /></svg>",
    "mdi:form-select": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-form-select\" viewBox=\"0 0 24 24\"><path d=\"M15 5H18L16.5 7L15 5M5 2H19C20.11 2 21 2.9 21 4V20C21 21.11 20.11 22 19 22H5C3.9 22 3 21.11 3 20V4C3 2.9 3.9 2 5 2M5 4V8H19V4H5M5 20H19V10H5V20M7 12H17V14H7V12M7 16H17V18H7V16Z\" /></svg>",
@@ -6910,6 +7534,7 @@
    "mdi:keyboard-space": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-keyboard-space\" viewBox=\"0 0 24 24\"><path d=\"M3 15H5V19H19V15H21V19C21 20.1 20.1 21 19 21H5C3.9 21 3 20.1 3 19V15Z\" /></svg>",
    "mdi:keyboard-tab": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-keyboard-tab\" viewBox=\"0 0 24 24\"><path d=\"M20,18H22V6H20M11.59,7.41L15.17,11H1V13H15.17L11.59,16.58L13,18L19,12L13,6L11.59,7.41Z\" /></svg>",
    "mdi:layers-search-outline": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-layers-search-outline\" viewBox=\"0 0 24 24\"><path d=\"M19.31 18.9C19.75 18.21 20 17.38 20 16.5C20 14 18 12 15.5 12S11 14 11 16.5 13 21 15.5 21C16.37 21 17.19 20.75 17.88 20.32L21 23.39L22.39 22L19.31 18.9M15.5 19C14.12 19 13 17.88 13 16.5S14.12 14 15.5 14 18 15.12 18 16.5 16.88 19 15.5 19M9.59 19.2L3 14.07L4.62 12.81L9 16.22C9 16.32 9 16.41 9 16.5C9 17.46 9.22 18.38 9.59 19.2M9.5 14.04L3 9L12 2L21 9L18.66 10.82C17.96 10.44 17.19 10.18 16.37 10.07L17.74 9L12 4.53L6.26 9L10.53 12.32C10.1 12.84 9.74 13.42 9.5 14.04Z\" /></svg>",
+   "mdi:location-enter": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-location-enter\" viewBox=\"0 0 24 24\"><path d=\"M14 12L10 8V11H2V13H10V16M22 12A10 10 0 0 1 2.46 15H4.59A8 8 0 1 0 4.59 9H2.46A10 10 0 0 1 22 12Z\" /></svg>",
    "mdi:lock": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-lock\" viewBox=\"0 0 24 24\"><path d=\"M12,17A2,2 0 0,0 14,15C14,13.89 13.1,13 12,13A2,2 0 0,0 10,15A2,2 0 0,0 12,17M18,8A2,2 0 0,1 20,10V20A2,2 0 0,1 18,22H6A2,2 0 0,1 4,20V10C4,8.89 4.9,8 6,8H7V6A5,5 0 0,1 12,1A5,5 0 0,1 17,6V8H18M12,3A3,3 0 0,0 9,6V8H15V6A3,3 0 0,0 12,3Z\" /></svg>",
    "mdi:loupe": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-loupe\" viewBox=\"0 0 24 24\"><path d=\"M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22H20A2,2 0 0,0 22,20V12A10,10 0 0,0 12,2M13,7H11V11H7V13H11V17H13V13H17V11H13V7Z\" /></svg>",
    "mdi:magnify": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-magnify\" viewBox=\"0 0 24 24\"><path d=\"M9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.44,13.73L14.71,14H15.5L20.5,19L19,20.5L14,15.5V14.71L13.73,14.44C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3M9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5Z\" /></svg>",
@@ -6945,6 +7570,7 @@
    "mdi:skip-forward": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-skip-forward\" viewBox=\"0 0 24 24\"><path d=\"M4,5V19L11,12M18,5V19H20V5M11,5V19L18,12\" /></svg>",
    "mdi:stop": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-stop\" viewBox=\"0 0 24 24\"><path d=\"M18,18H6V6H18V18Z\" /></svg>",
    "mdi:tab-search": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-tab-search\" viewBox=\"0 0 24 24\"><path d=\"M7.5 11C5 11 3 13 3 15.5C3 16.38 3.25 17.21 3.69 17.9L.61 21L2 22.39L5.12 19.32C5.81 19.75 6.63 20 7.5 20C10 20 12 18 12 15.5S10 11 7.5 11M7.5 18C6.12 18 5 16.88 5 15.5S6.12 13 7.5 13 10 14.12 10 15.5 8.88 18 7.5 18M23 5V19C23 20.11 22.11 21 21 21H10.95C11.76 20.5 12.45 19.81 12.97 19H21V9H13V5H3V10.82C1.77 12 1 13.66 1 15.5V5C1 3.9 1.9 3 3 3H21C22.11 3 23 3.9 23 5Z\" /></svg>",
+   "mdi:table-row-plus-after": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-table-row-plus-after\" viewBox=\"0 0 24 24\"><path d=\"M22,10A2,2 0 0,1 20,12H4A2,2 0 0,1 2,10V3H4V5H8V3H10V5H14V3H16V5H20V3H22V10M4,10H8V7H4V10M10,10H14V7H10V10M20,10V7H16V10H20M11,14H13V17H16V19H13V22H11V19H8V17H11V14Z\" /></svg>",
    "mdi:text-box-search-outline": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-text-box-search-outline\" viewBox=\"0 0 24 24\"><path d=\"M15.5,12C18,12 20,14 20,16.5C20,17.38 19.75,18.21 19.31,18.9L22.39,22L21,23.39L17.88,20.32C17.19,20.75 16.37,21 15.5,21C13,21 11,19 11,16.5C11,14 13,12 15.5,12M15.5,14A2.5,2.5 0 0,0 13,16.5A2.5,2.5 0 0,0 15.5,19A2.5,2.5 0 0,0 18,16.5A2.5,2.5 0 0,0 15.5,14M5,3H19C20.11,3 21,3.89 21,5V13.03C20.5,12.23 19.81,11.54 19,11V5H5V19H9.5C9.81,19.75 10.26,20.42 10.81,21H5C3.89,21 3,20.11 3,19V5C3,3.89 3.89,3 5,3M7,7H17V9H7V7M7,11H12.03C11.23,11.5 10.54,12.19 10,13H7V11M7,15H9.17C9.06,15.5 9,16 9,16.5V17H7V15Z\" /></svg>",
    "mdi:undo": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-undo\" viewBox=\"0 0 24 24\"><path d=\"M12.5,8C9.85,8 7.45,9 5.6,10.6L2,7V16H11L7.38,12.38C8.77,11.22 10.54,10.5 12.5,10.5C16.04,10.5 19.05,12.81 20.1,16L22.47,15.22C21.08,11.03 17.15,8 12.5,8Z\" /></svg>",
    "mdi:variable": "<svg xmlns=\"http://www.w3.org/2000/svg\" id=\"mdi-variable\" viewBox=\"0 0 24 24\"><path d=\"M20.41,3C21.8,5.71 22.35,8.84 22,12C21.8,15.16 20.7,18.29 18.83,21L17.3,20C18.91,17.57 19.85,14.8 20,12C20.34,9.2 19.89,6.43 18.7,4L20.41,3M5.17,3L6.7,4C5.09,6.43 4.15,9.2 4,12C3.66,14.8 4.12,17.57 5.3,20L3.61,21C2.21,18.29 1.65,15.17 2,12C2.2,8.84 3.3,5.71 5.17,3M12.08,10.68L14.4,7.45H16.93L13.15,12.45L15.35,17.37H13.09L11.71,14L9.28,17.33H6.76L10.66,12.21L8.53,7.45H10.8L12.08,10.68Z\" /></svg>",
@@ -6962,148 +7588,220 @@
  "keymap_drawer": {
   "layout": [
    {
-    "x": 1.0294117647058825,
-    "y": 0.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 1.3530675932785903,
+    "y": 0.09922796533956912,
+    "w": 1.0,
+    "h": 1.0,
+    "r": 6.9,
+    "rx": 1.8530675932785903,
+    "ry": 0.5992279653395691
    },
    {
-    "x": 2.058823529411765,
-    "y": 0.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 2.5700675932785906,
+    "y": 0.0792279653395691,
+    "w": 1.0,
+    "h": 1.0,
+    "r": 10.0,
+    "rx": 3.0700675932785906,
+    "ry": 0.5792279653395691
    },
    {
-    "x": 3.088235294117647,
-    "y": 0.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 3.51806759327859,
+    "y": 0.586227965339569,
+    "w": 1.0,
+    "h": 1.0,
+    "r": 10.0,
+    "rx": 4.01806759327859,
+    "ry": 1.086227965339569
    },
    {
-    "x": 5.588235294117647,
-    "y": 0.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 6.08006759327859,
+    "y": 0.586227965339569,
+    "w": 1.0,
+    "h": 1.0,
+    "r": -10.0,
+    "rx": 6.58006759327859,
+    "ry": 1.086227965339569
    },
    {
-    "x": 6.61764705882353,
-    "y": 0.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 7.02806759327859,
+    "y": 0.0792279653395691,
+    "w": 1.0,
+    "h": 1.0,
+    "r": -10.0,
+    "rx": 7.52806759327859,
+    "ry": 0.5792279653395691
    },
    {
-    "x": 7.647058823529412,
-    "y": 0.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 8.245067593278591,
+    "y": 0.09922796533956912,
+    "w": 1.0,
+    "h": 1.0,
+    "r": -6.9,
+    "rx": 8.745067593278591,
+    "ry": 0.5992279653395691
    },
    {
-    "x": 0.0,
-    "y": 1.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 0.033067593278590435,
+    "y": 1.535227965339569,
+    "w": 1.0,
+    "h": 1.25,
+    "r": 3.1,
+    "rx": 0.5330675932785904,
+    "ry": 2.160227965339569
    },
    {
-    "x": 1.0294117647058825,
-    "y": 1.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 1.2100675932785905,
+    "y": 1.279227965339569,
+    "w": 1.0,
+    "h": 1.0,
+    "r": 6.9,
+    "rx": 1.7100675932785905,
+    "ry": 1.779227965339569
    },
    {
-    "x": 2.058823529411765,
-    "y": 1.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 2.3630675932785903,
+    "y": 1.2492279653395693,
+    "w": 1.0,
+    "h": 1.0,
+    "r": 10.0,
+    "rx": 2.8630675932785903,
+    "ry": 1.7492279653395693
    },
    {
-    "x": 3.088235294117647,
-    "y": 1.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 3.31206759327859,
+    "y": 1.7562279653395696,
+    "w": 1.0,
+    "h": 1.0,
+    "r": 10.0,
+    "rx": 3.81206759327859,
+    "ry": 2.2562279653395696
    },
    {
-    "x": 5.588235294117647,
-    "y": 1.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 6.28606759327859,
+    "y": 1.7562279653395696,
+    "w": 1.0,
+    "h": 1.0,
+    "r": -10.0,
+    "rx": 6.78606759327859,
+    "ry": 2.2562279653395696
    },
    {
-    "x": 6.61764705882353,
-    "y": 1.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 7.2350675932785915,
+    "y": 1.2492279653395693,
+    "w": 1.0,
+    "h": 1.0,
+    "r": -10.0,
+    "rx": 7.7350675932785915,
+    "ry": 1.7492279653395693
    },
    {
-    "x": 7.647058823529412,
-    "y": 1.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 8.388067593278592,
+    "y": 1.279227965339569,
+    "w": 1.0,
+    "h": 1.0,
+    "r": -6.9,
+    "rx": 8.888067593278592,
+    "ry": 1.779227965339569
    },
    {
-    "x": 8.676470588235293,
-    "y": 1.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 9.56506759327859,
+    "y": 1.535227965339569,
+    "w": 1.0,
+    "h": 1.25,
+    "r": -3.1,
+    "rx": 10.06506759327859,
+    "ry": 2.160227965339569
    },
    {
-    "x": 1.0294117647058825,
-    "y": 2.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 1.0680675932785904,
+    "y": 2.4582279653395696,
+    "w": 1.0,
+    "h": 1.0,
+    "r": 6.9,
+    "rx": 1.5680675932785904,
+    "ry": 2.9582279653395696
    },
    {
-    "x": 2.058823529411765,
-    "y": 2.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 2.1570675932785903,
+    "y": 2.419227965339569,
+    "w": 1.0,
+    "h": 1.0,
+    "r": 10.0,
+    "rx": 2.6570675932785903,
+    "ry": 2.919227965339569
    },
    {
-    "x": 3.088235294117647,
-    "y": 2.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 3.1050675932785903,
+    "y": 2.9262279653395695,
+    "w": 1.0,
+    "h": 1.0,
+    "r": 10.0,
+    "rx": 3.6050675932785903,
+    "ry": 3.4262279653395695
    },
    {
-    "x": 5.588235294117647,
-    "y": 2.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 6.49306759327859,
+    "y": 2.9262279653395695,
+    "w": 1.0,
+    "h": 1.0,
+    "r": -10.0,
+    "rx": 6.99306759327859,
+    "ry": 3.4262279653395695
    },
    {
-    "x": 6.61764705882353,
-    "y": 2.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 7.44106759327859,
+    "y": 2.419227965339569,
+    "w": 1.0,
+    "h": 1.0,
+    "r": -10.0,
+    "rx": 7.94106759327859,
+    "ry": 2.919227965339569
    },
    {
-    "x": 7.647058823529412,
-    "y": 2.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 8.53006759327859,
+    "y": 2.4582279653395696,
+    "w": 1.0,
+    "h": 1.0,
+    "r": -6.9,
+    "rx": 9.03006759327859,
+    "ry": 2.9582279653395696
    },
    {
-    "x": 2.573529411764706,
-    "y": 3.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 2.88506759327859,
+    "y": 4.05122796533957,
+    "w": 1.0,
+    "h": 1.25,
+    "r": 27.1,
+    "rx": 3.38506759327859,
+    "ry": 4.67622796533957
    },
    {
-    "x": 3.602941176470588,
-    "y": 3.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 3.8190675932785902,
+    "y": 4.529227965339569,
+    "w": 1.0,
+    "h": 1.25,
+    "r": 27.1,
+    "rx": 4.31906759327859,
+    "ry": 5.154227965339569
    },
    {
-    "x": 5.073529411764706,
-    "y": 3.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 5.77906759327859,
+    "y": 4.529227965339569,
+    "w": 1.0,
+    "h": 1.25,
+    "r": -27.1,
+    "rx": 6.27906759327859,
+    "ry": 5.154227965339569
    },
    {
-    "x": 6.102941176470588,
-    "y": 3.0,
-    "w": 1.0294117647058822,
-    "h": 1.0
+    "x": 6.7130675932785895,
+    "y": 4.05122796533957,
+    "w": 1.0,
+    "h": 1.25,
+    "r": -27.1,
+    "rx": 7.2130675932785895,
+    "ry": 4.67622796533957
    }
   ],
   "layers": {
@@ -7490,7 +8188,7 @@
     ],
     [
      {
-      "h": "shortcuts",
+      "h": "alpha1",
       "t": "q",
       "s": "record"
      },
@@ -7525,7 +8223,7 @@
       "s": "up"
      },
      {
-      "h": "shortcuts",
+      "h": "alpha1",
       "t": "l",
       "s": "right"
      }
@@ -8600,222 +9298,6 @@
      "type": "ghost"
     }
    ],
-   "coding-meh": [
-    [
-     {
-      "s": "project",
-      "t": "$$mdi:file-multiple$$"
-     },
-     {
-      "s": "build",
-      "t": "$$mdi:wrench$$"
-     },
-     {
-      "s": "format",
-      "h": "code",
-      "t": "$$mdi:format-indent-increase$$"
-     },
-     {
-      "s": "step",
-      "h": "out",
-      "t": "$$mdi:debug-step-out$$"
-     },
-     {
-      "s": "step",
-      "h": "over",
-      "t": "$$mdi:debug-step-over$$"
-     },
-     {
-      "s": "step",
-      "h": "into",
-      "t": "$$mdi:debug-step-into$$"
-     }
-    ],
-    [
-     null,
-     {
-      "s": "type",
-      "h": "match",
-      "t": "$$mdi:code-block-braces$$"
-     },
-     {
-      "s": "complete",
-      "h": "statement",
-      "t": "()"
-     },
-     {
-      "s": "recent",
-      "h": "files",
-      "t": "$$mdi:history$$"
-     },
-     {
-      "h": "run",
-      "t": "$$mdi:play$$"
-     },
-     {
-      "h": "debug",
-      "t": "$$mdi:bug-play$$"
-     },
-     {
-      "s": "toggle",
-      "h": "breakpoint",
-      "t": "$$mdi:circle$$"
-     },
-     null
-    ],
-    [
-     {
-      "s": "evaluate",
-      "h": "expression",
-      "t": "$$mdi:variable$$"
-     },
-     {
-      "s": "comment",
-      "h": "line",
-      "t": "//"
-     },
-     {
-      "s": "quick",
-      "h": "def",
-      "t": "$$mdi:feather$$"
-     },
-     {
-      "s": "quick",
-      "h": "docs",
-      "t": "$$mdi:book-open-outline$$"
-     },
-     {
-      "s": "previous",
-      "h": "error",
-      "t": "$$mdi:page-previous-outline$$"
-     },
-     {
-      "s": "next",
-      "h": "error",
-      "t": "$$mdi:page-next-outline$$"
-     }
-    ],
-    {
-     "t": "▽"
-    },
-    {
-     "h": "$$mdi:apple-keyboard-command$$",
-     "s": "ai chat",
-     "t": "$$mdi:brain$$"
-    },
-    {
-     "h": "$$mdi:apple-keyboard-command$$",
-     "s": "actions",
-     "t": "$$mdi:gesture-tap$$"
-    },
-    {
-     "t": "▽"
-    }
-   ],
-   "coding-hyper": [
-    [
-     {
-      "s": "select in",
-      "t": "$$mdi:form-select$$"
-     },
-     {
-      "s": "rebuild",
-      "t": "$$mdi:wrench-outline$$"
-     },
-     {
-      "s": "analyze",
-      "h": "code",
-      "t": "$$mdi:sine-wave$$"
-     },
-     {
-      "s": "search",
-      "h": "everywhere",
-      "t": "$$mdi:database-search-outline$$"
-     },
-     {
-      "s": "go to",
-      "h": "symbol",
-      "t": "$$mdi:text-box-search-outline$$"
-     },
-     {
-      "s": "find",
-      "h": "action",
-      "t": "$$mdi:feature-search-outline$$"
-     }
-    ],
-    [
-     null,
-     {
-      "s": "code",
-      "h": "complete",
-      "t": "$$mdi:code-block-parentheses$$"
-     },
-     {
-      "s": "refactor",
-      "h": "this",
-      "t": "$$mdi:file-code-outline$$"
-     },
-     {
-      "s": "switch",
-      "h": "scheme",
-      "t": "$$mdi:view-compact$$"
-     },
-     {
-      "s": "stop",
-      "t": "$$mdi:stop$$"
-     },
-     {
-      "s": "resume",
-      "t": "$$mdi:play-pause$$"
-     },
-     {
-      "s": "view",
-      "h": "breakpoints",
-      "t": "$$mdi:circle-multiple$$"
-     },
-     null
-    ],
-    [
-     {
-      "s": "generate",
-      "h": "code",
-      "t": "$$mdi:code-array$$"
-     },
-     {
-      "s": "comment",
-      "h": "block",
-      "t": "/**/"
-     },
-     {
-      "s": "find",
-      "h": "usages",
-      "t": "$$mdi:book-open-variant-outline$$"
-     },
-     {
-      "s": "toggle",
-      "h": "bookmark",
-      "t": "$$mdi:bookmark-box$$"
-     },
-     {
-      "s": "previous",
-      "h": "bookmark",
-      "t": "$$mdi:page-previous$$"
-     },
-     {
-      "s": "next",
-      "h": "bookmark",
-      "t": "$$mdi:page-next$$"
-     }
-    ],
-    {
-     "t": "▽"
-    },
-    null,
-    null,
-    {
-     "t": "▽"
-    }
-   ],
    "desktop-management": [
     [
      null,
@@ -8973,6 +9455,535 @@
     null,
     null,
     null
+   ],
+   "intellij-meh": [
+    [
+     {
+      "s": "project",
+      "t": "$$mdi:file-multiple$$"
+     },
+     {
+      "s": "build",
+      "h": "project",
+      "t": "$$mdi:wrench$$"
+     },
+     {
+      "s": "reformat",
+      "h": "code",
+      "t": "$$mdi:format-indent-increase$$"
+     },
+     {
+      "s": "step",
+      "h": "out",
+      "t": "$$mdi:debug-step-out$$"
+     },
+     {
+      "s": "step",
+      "h": "over",
+      "t": "$$mdi:debug-step-over$$"
+     },
+     {
+      "s": "step",
+      "h": "into",
+      "t": "$$mdi:debug-step-into$$"
+     }
+    ],
+    [
+     null,
+     {
+      "s": "type",
+      "h": "matching",
+      "t": "$$mdi:code-block-braces$$"
+     },
+     {
+      "s": "complete",
+      "h": "statement",
+      "t": "()"
+     },
+     {
+      "s": "recent",
+      "h": "files",
+      "t": "$$mdi:history$$"
+     },
+     {
+      "h": "run",
+      "t": "$$mdi:play$$"
+     },
+     {
+      "h": "debug",
+      "t": "$$mdi:bug-play$$"
+     },
+     {
+      "s": "toggle",
+      "h": "breakpoint",
+      "t": "$$mdi:circle$$"
+     },
+     null
+    ],
+    [
+     {
+      "s": "evaluate",
+      "h": "expression",
+      "t": "$$mdi:variable$$"
+     },
+     {
+      "s": "comment",
+      "h": "line",
+      "t": "//"
+     },
+     {
+      "s": "quick",
+      "h": "definition",
+      "t": "$$mdi:feather$$"
+     },
+     {
+      "s": "quick",
+      "h": "docs",
+      "t": "$$mdi:book-open-outline$$"
+     },
+     {
+      "s": "previous",
+      "h": "error",
+      "t": "$$mdi:page-previous-outline$$"
+     },
+     {
+      "s": "next",
+      "h": "error",
+      "t": "$$mdi:page-next-outline$$"
+     }
+    ],
+    {
+     "t": "▽"
+    },
+    {
+     "h": "$$mdi:apple-keyboard-command$$",
+     "s": "assistant",
+     "t": "$$mdi:brain$$"
+    },
+    {
+     "h": "$$mdi:apple-keyboard-command$$",
+     "s": "actions",
+     "t": "$$mdi:gesture-tap$$"
+    },
+    {
+     "t": "▽"
+    }
+   ],
+   "intellij-hyper": [
+    [
+     {
+      "s": "select in",
+      "t": "$$mdi:form-select$$"
+     },
+     {
+      "s": "rebuild",
+      "h": "project",
+      "t": "$$mdi:wrench-outline$$"
+     },
+     {
+      "s": "inspect",
+      "h": "code",
+      "t": "$$mdi:sine-wave$$"
+     },
+     {
+      "s": "search",
+      "h": "everywhere",
+      "t": "$$mdi:database-search-outline$$"
+     },
+     {
+      "s": "go to",
+      "h": "symbol",
+      "t": "$$mdi:text-box-search-outline$$"
+     },
+     {
+      "s": "find",
+      "h": "action",
+      "t": "$$mdi:feature-search-outline$$"
+     }
+    ],
+    [
+     null,
+     {
+      "s": "basic",
+      "h": "completion",
+      "t": "$$mdi:code-block-parentheses$$"
+     },
+     {
+      "s": "refactor",
+      "h": "this",
+      "t": "$$mdi:file-code-outline$$"
+     },
+     {
+      "s": "switch",
+      "h": "scheme",
+      "t": "$$mdi:view-compact$$"
+     },
+     {
+      "s": "stop",
+      "t": "$$mdi:stop$$"
+     },
+     {
+      "s": "resume",
+      "t": "$$mdi:play-pause$$"
+     },
+     {
+      "s": "view",
+      "h": "breakpoints",
+      "t": "$$mdi:circle-multiple$$"
+     },
+     null
+    ],
+    [
+     {
+      "s": "generate",
+      "h": "code",
+      "t": "$$mdi:code-array$$"
+     },
+     {
+      "s": "comment",
+      "h": "block",
+      "t": "/**/"
+     },
+     {
+      "s": "find",
+      "h": "usages",
+      "t": "$$mdi:book-open-variant-outline$$"
+     },
+     {
+      "s": "toggle",
+      "h": "bookmark",
+      "t": "$$mdi:bookmark-box$$"
+     },
+     {
+      "s": "previous",
+      "h": "bookmark",
+      "t": "$$mdi:page-previous$$"
+     },
+     {
+      "s": "next",
+      "h": "bookmark",
+      "t": "$$mdi:page-next$$"
+     }
+    ],
+    {
+     "t": "▽"
+    },
+    null,
+    null,
+    {
+     "t": "▽"
+    }
+   ],
+   "vscode-meh": [
+    [
+     {
+      "s": "explorer",
+      "t": "$$mdi:file-multiple$$"
+     },
+     {
+      "s": "build",
+      "h": "task",
+      "t": "$$mdi:wrench$$"
+     },
+     {
+      "s": "format",
+      "h": "document",
+      "t": "$$mdi:format-indent-increase$$"
+     },
+     {
+      "s": "step",
+      "h": "out",
+      "t": "$$mdi:debug-step-out$$"
+     },
+     {
+      "s": "step",
+      "h": "over",
+      "t": "$$mdi:debug-step-over$$"
+     },
+     {
+      "s": "step",
+      "h": "into",
+      "t": "$$mdi:debug-step-into$$"
+     }
+    ],
+    [
+     null,
+     {
+      "s": "trigger",
+      "h": "suggest",
+      "t": "$$mdi:code-block-parentheses$$"
+     },
+     {
+      "s": "insert",
+      "h": "line below",
+      "t": "$$mdi:table-row-plus-after$$"
+     },
+     {
+      "s": "recent",
+      "h": "editors",
+      "t": "$$mdi:history$$"
+     },
+     {
+      "h": "run",
+      "t": "$$mdi:play$$"
+     },
+     {
+      "h": "debug",
+      "t": "$$mdi:bug-play$$"
+     },
+     {
+      "s": "toggle",
+      "h": "breakpoint",
+      "t": "$$mdi:circle$$"
+     },
+     null
+    ],
+    [
+     {
+      "s": "evaluate",
+      "h": "in console",
+      "t": "$$mdi:variable$$"
+     },
+     {
+      "s": "comment",
+      "h": "line",
+      "t": "//"
+     },
+     {
+      "s": "peek",
+      "h": "definition",
+      "t": "$$mdi:feather$$"
+     },
+     {
+      "s": "show",
+      "h": "hover",
+      "t": "$$mdi:book-open-outline$$"
+     },
+     {
+      "s": "previous",
+      "h": "problem",
+      "t": "$$mdi:page-previous-outline$$"
+     },
+     {
+      "s": "next",
+      "h": "problem",
+      "t": "$$mdi:page-next-outline$$"
+     }
+    ],
+    {
+     "t": "▽"
+    },
+    {
+     "h": "$$mdi:apple-keyboard-command$$",
+     "s": "chat",
+     "t": "$$mdi:brain$$"
+    },
+    {
+     "h": "$$mdi:apple-keyboard-command$$",
+     "s": "quick fix",
+     "t": "$$mdi:gesture-tap$$"
+    },
+    {
+     "t": "▽"
+    }
+   ],
+   "vscode-hyper": [
+    [
+     {
+      "s": "reveal in",
+      "h": "explorer",
+      "t": "$$mdi:form-select$$"
+     },
+     {
+      "type": "ghost"
+     },
+     {
+      "type": "ghost"
+     },
+     {
+      "s": "quick",
+      "h": "open",
+      "t": "$$mdi:file-search-outline$$"
+     },
+     {
+      "s": "go to",
+      "h": "symbol",
+      "t": "$$mdi:text-box-search-outline$$"
+     },
+     {
+      "s": "command",
+      "h": "palette",
+      "t": "$$mdi:feature-search-outline$$"
+     }
+    ],
+    [
+     null,
+     {
+      "s": "trigger",
+      "h": "suggest",
+      "t": "$$mdi:code-block-parentheses$$"
+     },
+     {
+      "s": "refactor",
+      "t": "$$mdi:file-code-outline$$"
+     },
+     {
+      "type": "ghost"
+     },
+     {
+      "s": "stop",
+      "t": "$$mdi:stop$$"
+     },
+     {
+      "s": "continue",
+      "t": "$$mdi:play-pause$$"
+     },
+     {
+      "s": "view",
+      "h": "breakpoints",
+      "t": "$$mdi:circle-multiple$$"
+     },
+     null
+    ],
+    [
+     {
+      "type": "ghost"
+     },
+     {
+      "s": "comment",
+      "h": "block",
+      "t": "/**/"
+     },
+     {
+      "s": "find",
+      "h": "references",
+      "t": "$$mdi:book-open-variant-outline$$"
+     },
+     {
+      "type": "ghost"
+     },
+     {
+      "type": "ghost"
+     },
+     {
+      "type": "ghost"
+     }
+    ],
+    {
+     "t": "▽"
+    },
+    null,
+    null,
+    {
+     "t": "▽"
+    }
+   ],
+   "nvim-meh": [
+    [
+     {
+      "s": "explorer",
+      "t": "$$mdi:file-multiple$$"
+     },
+     {
+      "s": "make",
+      "t": "$$mdi:wrench$$"
+     },
+     {
+      "s": "lsp",
+      "h": "format",
+      "t": "$$mdi:format-indent-increase$$"
+     },
+     {
+      "s": "step",
+      "h": "out",
+      "t": "$$mdi:debug-step-out$$"
+     },
+     {
+      "s": "step",
+      "h": "over",
+      "t": "$$mdi:debug-step-over$$"
+     },
+     {
+      "s": "step",
+      "h": "into",
+      "t": "$$mdi:debug-step-into$$"
+     }
+    ],
+    [
+     null,
+     {
+      "s": "omni",
+      "h": "complete",
+      "t": "$$mdi:code-block-parentheses$$"
+     },
+     {
+      "type": "ghost"
+     },
+     {
+      "s": "recent",
+      "h": "files",
+      "t": "$$mdi:history$$"
+     },
+     {
+      "s": "continue",
+      "t": "$$mdi:play-pause$$"
+     },
+     {
+      "s": "continue",
+      "t": "$$mdi:play-pause$$"
+     },
+     {
+      "s": "toggle",
+      "h": "breakpoint",
+      "t": "$$mdi:circle$$"
+     },
+     null
+    ],
+    [
+     {
+      "s": "evaluate",
+      "h": "hover",
+      "t": "$$mdi:variable$$"
+     },
+     {
+      "s": "comment",
+      "h": "gcc",
+      "t": "//"
+     },
+     {
+      "s": "go to",
+      "h": "definition",
+      "t": "$$mdi:location-enter$$"
+     },
+     {
+      "s": "lsp",
+      "h": "hover",
+      "t": "$$mdi:book-open-outline$$"
+     },
+     {
+      "s": "previous",
+      "h": "diagnostic",
+      "t": "$$mdi:page-previous-outline$$"
+     },
+     {
+      "s": "next",
+      "h": "diagnostic",
+      "t": "$$mdi:page-next-outline$$"
+     }
+    ],
+    {
+     "t": "▽"
+    },
+    {
+     "type": "ghost"
+    },
+    {
+     "s": "code action",
+     "t": "$$mdi:gesture-tap$$"
+    },
+    {
+     "t": "▽"
+    }
    ]
   },
   "combos": [
@@ -10945,7 +11956,9 @@
     },
     "w": 48,
     "layers": [
-     "coding-meh"
+     "intellij-meh",
+     "vscode-meh",
+     "nvim-meh"
     ]
    },
    {
@@ -10957,7 +11970,20 @@
      "t": "go to"
     },
     "layers": [
-     "coding-hyper"
+     "intellij-hyper"
+    ]
+   },
+   {
+    "p": [
+     11,
+     12
+    ],
+    "k": {
+     "t": "to def"
+    },
+    "w": 48,
+    "layers": [
+     "vscode-hyper"
     ]
    }
   ],
