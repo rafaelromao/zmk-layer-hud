@@ -35,10 +35,12 @@ venv: ## just the virtualenv the feed and the tests run under
 
 test: test-firmware test-host test-hud test-site test-apps ## run every test suite
 
-test-firmware: ## host-side tests for the module's pure encode/decode policy
+test-firmware: ## host-side tests for the module's pure encode/decode policy, and where the signal goes
 	@mkdir -p build
 	$(CC) -std=c11 -Wall -Wextra -Werror -O1 -o build/test_layer_signal firmware/tests/test_layer_signal.c
 	./build/test_layer_signal
+	$(CC) -std=c11 -Wall -Wextra -Werror -O1 -I firmware/tests/fakes -o build/test_signal_route firmware/tests/test_signal_route.c
+	./build/test_signal_route
 
 test-host: ## Python tests: the wire format, the signal decoder, the keymap-drawer conversion
 	$(PYTHON) -m unittest discover -s host -p '*_test.py' -v
@@ -95,12 +97,17 @@ test-android: ## the Android keyboard's sink (apps/android/sink): Gradle and a J
 	fi
 
 SWIFT ?= $(shell command -v swift)
+# With the Command Line Tools alone, Swift Testing's macros are in host/plugins/testing, where the
+# build system `swift test` defaults to does not look for them: "plugin for module 'TestingMacros'
+# not found" on every @Test. Xcode's toolchain finds its own, so the path is passed only for these.
+SWIFT_DEVELOPER ?= $(shell xcode-select -p 2>/dev/null)
+SWIFT_TESTING_PLUGINS ?= $(if $(findstring CommandLineTools,$(SWIFT_DEVELOPER)),$(wildcard $(SWIFT_DEVELOPER)/usr/lib/swift/host/plugins/testing))
 
 test-ios: ## the iPad keyboard's Core (apps/ios/Core): JavaScriptCore, the text sink, hit-testing; a Mac, no Xcode
 	@if [ -z "$(SWIFT)" ]; then \
 	  echo "test-ios: swift not found, skipping (xcode-select --install)"; \
 	else \
-	  cd apps/ios/Core && $(SWIFT) test; \
+	  cd apps/ios/Core && $(SWIFT) test$(if $(SWIFT_TESTING_PLUGINS), -Xswiftc -plugin-path -Xswiftc $(SWIFT_TESTING_PLUGINS)); \
 	fi
 
 site: ## build the landing page into docs/, which GitHub Pages serves; commit what it writes (STRICT=1: every board, or fail)

@@ -86,18 +86,32 @@ def px_per_mm(width_px, height_px, width_mm, height_mm):
     return round(ppmm, 4), True
 
 
-def refusal(msg, pct=DEFAULT_PCT):
-    """The page's word that its board, at its real size, does not fit the dock ({"kind": "dock",
-    "fits": false, "key_mm", "need_mm": [w, h], "room_mm": [w, h]}, hud.js dockFit) as the sentence
-    the panel logs and `zmk-layer-hud dock` prints; None for a message that is not one."""
-    def mm(v):
-        return isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v < 10000
+def _mm(v):
+    return isinstance(v, (int, float)) and not isinstance(v, bool) and 0 <= v < 10000
 
+
+def refusal(msg, pct=DEFAULT_PCT):
+    """The page's word that its board does not fit the dock, even with its keys made as small as
+    touch.min_key_mm lets them be ({"kind": "dock", "fits": false, "key_mm", "want_mm" when that is
+    smaller than touch.key_mm, "need_mm": [w, h], "room_mm": [w, h]}, hud.js dockFit) as the
+    sentence the panel logs and `zmk-layer-hud dock` prints; None for a message that is not one."""
     if not isinstance(msg, dict) or msg.get("fits") is not False:
         return None
-    need, room, key = msg.get("need_mm"), msg.get("room_mm"), msg.get("key_mm")
-    if not all(isinstance(p, list) and len(p) == 2 and all(mm(v) for v in p) for p in (need, room)) or not mm(key):
+    need, room, key, want = msg.get("need_mm"), msg.get("room_mm"), msg.get("key_mm"), msg.get("want_mm")
+    if not all(isinstance(p, list) and len(p) == 2 and all(_mm(v) for v in p) for p in (need, room)) or not _mm(key):
         return None
     where = (f"the screen is {room[0]:g} mm across" if need[0] > room[0] else
              f"the dock may be {room[1]:g} mm tall (dock.height_pct, {pct or DEFAULT_PCT}% of the screen)")
-    return f"at {key:g} mm a key (touch.key_mm) the board is {need[0]:g} x {need[1]:g} mm, and {where}"
+    size = (f"even at {key:g} mm a key, the smallest touch.min_key_mm lets them be (touch.key_mm is {want:g}), the"
+            if _mm(want) and want > key else f"at {key:g} mm a key (touch.key_mm) the")
+    return f"{size} board is {need[0]:g} x {need[1]:g} mm, and {where}"
+
+
+def smaller(msg):
+    """The page's word that its board docked with its keys made smaller than touch.key_mm to fit
+    ({"kind": "dock", "fits": true, "key_mm", "want_mm"}) as what `zmk-layer-hud dock status` adds;
+    "" when they are their own size again ({"fits": true, "key_mm"} alone); None for any other."""
+    if not isinstance(msg, dict) or msg.get("fits") is not True or not _mm(msg.get("key_mm")):
+        return None
+    key, want = msg["key_mm"], msg.get("want_mm")
+    return f"at {key:g} mm a key, smaller than touch.key_mm's {want:g} to fit" if _mm(want) and want > key else ""
