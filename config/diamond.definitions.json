@@ -11,155 +11,272 @@
    "0": {
     "name": "OMARCHY",
     "drawer": "alpha1",
-    "label": "Alpha 1"
+    "label": "Alpha 1",
+    "symbol": "ALPHA1"
    },
    "1": {
     "name": "MACOS",
     "drawer": null,
-    "label": "Alt OS"
+    "label": "Alt OS",
+    "symbol": "ALT_OS",
+    "symbols": [
+     "ALT_OS",
+     "LTR"
+    ]
    },
    "2": {
     "name": "NORMAL",
     "drawer": "vim",
-    "label": "Vim normal"
+    "label": "Vim normal",
+    "symbol": "VIM_NORMAL",
+    "symbols": [
+     "VIM_NORMAL",
+     "LTM"
+    ]
    },
    "3": {
     "name": "VISUAL",
     "drawer": "vim",
-    "label": "Vim visual"
+    "label": "Vim visual",
+    "symbol": "VIM_VISUAL",
+    "symbols": [
+     "VIM_VISUAL",
+     "LTI"
+    ]
    },
    "4": {
     "name": "CHANGE",
     "drawer": "vim",
-    "label": "Vim change"
+    "label": "Vim change",
+    "symbol": "VIM_CHANGE",
+    "symbols": [
+     "VIM_CHANGE",
+     "LTC"
+    ]
    },
    "5": {
     "name": "INSERT",
     "drawer": null,
-    "label": "Vim insert"
+    "label": "Vim insert",
+    "symbol": "VIM_INSERT"
    },
    "6": {
     "name": "REPLACE",
     "drawer": null,
-    "label": "Vim replace"
+    "label": "Vim replace",
+    "symbol": "VIM_REPLACE",
+    "symbols": [
+     "VIM_REPLACE",
+     "RTI"
+    ]
    },
    "7": {
     "name": "CMDLINE",
     "drawer": null,
-    "label": "Vim cmdline"
+    "label": "Vim cmdline",
+    "symbol": "VIM_CMDLINE",
+    "symbols": [
+     "VIM_CMDLINE",
+     "RTM"
+    ]
    },
    "8": {
     "name": "CAPSWORD",
     "drawer": "shifted1",
-    "label": "Caps word"
+    "label": "Caps word",
+    "symbol": "CASE_A1",
+    "symbols": [
+     "CASE_A1",
+     "RTR"
+    ]
    },
    "9": {
     "name": "CAPSLINE",
     "drawer": "shifted1",
-    "label": "Caps line"
+    "label": "Caps line",
+    "symbol": "CPLK_A1",
+    "symbols": [
+     "CPLK_A1",
+     "RTP"
+    ]
    },
    "10": {
     "name": "SHORTCUTS",
     "drawer": "shortcuts",
-    "label": "Shortcuts"
+    "label": "Shortcuts",
+    "symbol": "SHORTS"
    },
    "11": {
     "name": "TOGGLES",
     "drawer": "toggles",
-    "label": "Toggles"
+    "label": "Toggles",
+    "symbol": "TOGS",
+    "symbols": [
+     "TOGS",
+     "LHR"
+    ]
    },
    "12": {
     "name": "MEHS",
     "drawer": "mehs",
-    "label": "Mehs"
+    "label": "Mehs",
+    "symbol": "MEHS",
+    "symbols": [
+     "MEHS",
+     "LHM"
+    ]
    },
    "13": {
     "name": "ALPHA2",
     "drawer": "alpha2",
-    "label": "Alpha 2"
+    "label": "Alpha 2",
+    "symbol": "ALPHA2",
+    "symbols": [
+     "ALPHA2",
+     "LHI"
+    ]
    },
    "14": {
     "name": "NUMBERS",
     "drawer": "numbers",
-    "label": "Numbers"
+    "label": "Numbers",
+    "symbol": "NUM",
+    "symbols": [
+     "NUM",
+     "LHC"
+    ]
    },
    "15": {
     "name": "SYMBOLS",
     "drawer": "symbols",
-    "label": "Symbols"
+    "label": "Symbols",
+    "symbol": "SYM"
    },
    "16": {
-    "name": "SENTENCE CASE",
-    "drawer": "shifted1",
-    "label": "Sentence case"
-   },
-   "17": {
     "name": "Ç EXTENSION",
     "drawer": "ç-extension",
-    "label": "Ç extension"
+    "label": "Ç extension",
+    "symbol": "CCEDIL",
+    "symbols": [
+     "CCEDIL",
+     "RHI"
+    ]
    },
-   "18": {
+   "17": {
     "name": "SHIFTED ALPHA2",
     "drawer": "shifted2",
-    "label": "Shift · Alpha 2"
+    "label": "Shift · Alpha 2",
+    "symbol": "SFT_A2",
+    "symbols": [
+     "SFT_A2",
+     "RHM"
+    ]
    },
-   "19": {
+   "18": {
     "name": "CASE ALPHA2",
     "drawer": "shifted2",
-    "label": "Caps · Alpha 2"
+    "label": "Caps · Alpha 2",
+    "symbol": "CASE_A2",
+    "symbols": [
+     "CASE_A2",
+     "RHR"
+    ]
    },
-   "20": {
+   "19": {
     "name": "CASE Ç EXTENSION",
     "drawer": "ç-extension",
-    "label": "Caps · Ç"
+    "label": "Caps · Ç",
+    "symbol": "CASE_CCEDIL",
+    "symbols": [
+     "CASE_CCEDIL",
+     "RHP"
+    ]
    },
-   "21": {
+   "20": {
     "name": "ALT REP 2",
     "drawer": null,
-    "label": "Alt repeat"
+    "label": "Alt repeat",
+    "symbol": "ALTREP2"
+   },
+   "21": {
+    "name": "NAVIGATION",
+    "drawer": "nav",
+    "label": "Navigation",
+    "symbol": "NAV",
+    "symbols": [
+     "NAV",
+     "LBR"
+    ]
    },
    "22": {
-    "name": "NAVIGATION",
-    "drawer": "nav",
-    "label": "Navigation"
-   },
-   "23": {
     "name": "NUMBERS",
     "drawer": "numbers",
-    "label": "Numbers"
+    "label": "Numbers",
+    "symbol": "NUM_CP",
+    "symbols": [
+     "NUM_CP",
+     "LBM"
+    ]
    },
-   "24": {
+   "23": {
     "name": "SYMBOLS",
     "drawer": "symbols",
-    "label": "Symbols"
+    "label": "Symbols",
+    "symbol": "SYM_CP",
+    "symbols": [
+     "SYM_CP",
+     "LBI"
+    ]
    },
-   "25": {
+   "24": {
     "name": "MOUSE",
     "drawer": "media",
-    "label": "Media / mouse"
+    "label": "Media / mouse",
+    "symbol": "MEDIA",
+    "symbols": [
+     "MEDIA",
+     "LBC"
+    ]
    },
-   "26": {
+   "25": {
     "name": "NAVIGATION",
     "drawer": "nav",
-    "label": "Navigation"
+    "label": "Navigation",
+    "symbol": "NAV_CP"
    },
-   "27": {
+   "26": {
     "name": "TEXT NAVIGATION",
     "drawer": "text",
-    "label": "Text navigation"
+    "label": "Text navigation",
+    "symbol": "TEXT",
+    "symbols": [
+     "TEXT",
+     "RBI"
+    ]
    },
-   "28": {
+   "27": {
     "name": "FUNCTIONS",
     "drawer": "func",
-    "label": "Function keys"
+    "label": "Function keys",
+    "symbol": "FUN",
+    "symbols": [
+     "FUN",
+     "RBM"
+    ]
    },
-   "29": {
+   "28": {
     "name": "MACROS",
     "drawer": "macros",
-    "label": "Macros"
+    "label": "Macros",
+    "symbol": "MACROS",
+    "symbols": [
+     "MACROS",
+     "RBR"
+    ]
    }
   },
   "combo_term_ms": 30,
+  "combo_idle_ms": 150,
   "combos": [
    {
     "positions": [
@@ -934,7 +1051,7 @@
      "&mt LALT A",
      "&mt LCTL E",
      "&lt 10 I",
-     "&kp Y",
+     "&lt 10 D",
      "&mt LS(LGUI) F",
      "&mt LS(LGUI) C",
      "&mt LGUI P",
@@ -943,12 +1060,12 @@
      "&ht_magic LGUI 0",
      "&th_comma 0 0",
      "&th_dot 0 0",
-     "&kp SLASH",
+     "&lt 10 I",
      "&mkp RCLK",
-     "&ht_repeat 22 0",
+     "&ht_repeat 21 0",
      "&ltn_num_spc 0 0",
-     "&msl_sym_a2 0 0",
-     "&ht_shift 25 0",
+     "&sentence_alpha2",
+     "&ht_shift 24 0",
      "&mkp LCLK"
     ],
     "1": [
@@ -1000,7 +1117,7 @@
      "&mc_o_vim",
      "&kp U",
      "&none",
-     "&lt_q_vim 10 0",
+     "&lt_q_vim 6 0",
      "&mt LCTL N",
      "&mt_s_vim LALT 0",
      "&mt_r_vim LSFT 0",
@@ -1009,8 +1126,8 @@
      "&mt LSFT H",
      "&mt LALT J",
      "&mt LCTL K",
-     "&lt 10 L",
-     "&none",
+     "&lt 6 L",
+     "&lt_q_vim 6 0",
      "&mt LS(LGUI) F",
      "&mt_c_vim LS(LGUI) 0",
      "&mt LGUI T",
@@ -1019,12 +1136,12 @@
      "&mt_i_vim LGUI 0",
      "&mc_a_vim",
      "&kp DOT",
+     "&lt 6 L",
      "&none",
-     "&none",
-     "&ht_repeat 22 0",
+     "&ht_repeat 21 0",
      "&lt_spc_vim 14 0",
-     "&msl_sym_a2 0 0",
-     "&ht_shift 25 0",
+     "&sentence_alpha2",
+     "&ht_shift 24 0",
      "&none"
     ],
     "3": [
@@ -1095,7 +1212,7 @@
      "&mc_ci_vim",
      "&mc_ca_vim",
      "&none",
-     "&none",
+     "&kp L",
      "&trans",
      "&trans",
      "&trans",
@@ -1152,7 +1269,7 @@
      "&kp O",
      "&kp U",
      "&kp SEMICOLON",
-     "&lt 10 D",
+     "&kp D",
      "&mt LCTL N",
      "&mt LALT S",
      "&mt LSFT T",
@@ -1161,8 +1278,8 @@
      "&mt LSFT R",
      "&mt LALT A",
      "&mt LCTL E",
-     "&lt 10 I",
-     "&kp Y",
+     "&kp I",
+     "&kp D",
      "&mt LS(LGUI) F",
      "&mt LS(LGUI) C",
      "&mt LGUI P",
@@ -1171,12 +1288,12 @@
      "&ht_magic LGUI 0",
      "&th_comma 0 0",
      "&th_dot 0 0",
-     "&kp SLASH",
+     "&kp I",
      "&mkp RCLK",
-     "&ht_repeat 22 0",
+     "&ht_repeat 21 0",
      "&ltn_num_spc 0 0",
-     "&msl_sym_a2 0 0",
-     "&ht_sft_vim 25 0",
+     "&sentence_alpha2",
+     "&ht_sft_vim 24 0",
      "&mkp LCLK"
     ],
     "7": [
@@ -1238,7 +1355,7 @@
      "&mt LALT RS(A)",
      "&mt LCTL RS(E)",
      "&lt 10 RS(I)",
-     "&kp RS(Y)",
+     "&lt 10 RS(D)",
      "&mt LS(LGUI) RS(F)",
      "&mt LS(LGUI) RS(C)",
      "&mt LGUI RS(P)",
@@ -1247,12 +1364,12 @@
      "&ht_magic_c LGUI 0",
      "&th_comma 0 0",
      "&th_dot 0 0",
-     "&trans",
+     "&lt 10 RS(I)",
      "&trans",
      "&trans",
      "&msk_spc 14 0",
      "&msl_case2 15 0",
-     "&lt_cancel 25 0",
+     "&lt_cancel 24 0",
      "&trans"
     ],
     "9": [
@@ -1276,7 +1393,7 @@
      "&mt LALT RS(A)",
      "&mt LCTL RS(E)",
      "&lt 10 RS(I)",
-     "&kp RS(Y)",
+     "&lt 10 RS(D)",
      "&mt LS(LGUI) RS(F)",
      "&mt LS(LGUI) RS(C)",
      "&mt LGUI RS(P)",
@@ -1285,12 +1402,12 @@
      "&ht_magic_c LGUI 0",
      "&th_comma 0 0",
      "&th_dot 0 0",
-     "&trans",
+     "&lt 10 RS(I)",
      "&trans",
      "&trans",
      "&trans",
      "&msl_case2 15 0",
-     "&lt_cancel 25 0",
+     "&lt_cancel 24 0",
      "&trans"
     ],
     "10": [
@@ -1325,10 +1442,10 @@
      "&mc_term",
      "&none",
      "&none",
-     "&mo 27",
+     "&mo 26",
+     "&lt 27 SPACE",
      "&lt 28 SPACE",
-     "&lt 29 SPACE",
-     "&mo 27",
+     "&mo 26",
      "&none"
     ],
     "11": [
@@ -1338,8 +1455,8 @@
      "&bt BT_CLR",
      "&none",
      "&none",
-     "&tog 22",
-     "&tog 28",
+     "&tog 21",
+     "&tog 27",
      "&none",
      "&none",
      "&none",
@@ -1349,7 +1466,7 @@
      "&none",
      "&none",
      "&tog 14",
-     "&tog 25",
+     "&tog 24",
      "&none",
      "&none",
      "&none",
@@ -1390,7 +1507,7 @@
      "&mc_meh_a",
      "&mc_meh_e",
      "&mc_meh_i",
-     "&none",
+     "&mc_meh_d",
      "&mt_meh_f LGUI 0",
      "&mt_meh_c LGUI 0",
      "&mt_meh_p LGUI 0",
@@ -1399,7 +1516,7 @@
      "&mt_meh_h LGUI 0",
      "&mt_meh_comm LGUI 0",
      "&mt_meh_dot LGUI 0",
-     "&none",
+     "&mc_meh_i",
      "&none",
      "&trans",
      "&mt_meh_spc LGUI 0",
@@ -1428,7 +1545,7 @@
      "&ac_aacu",
      "&ac_eacu",
      "&ac_iacu",
-     "&none",
+     "&kp Y",
      "&kp J",
      "&mc_ced",
      "&reversed_magic",
@@ -1437,7 +1554,7 @@
      "&ac_otil",
      "&ac_acir",
      "&ac_ecir",
-     "&none",
+     "&ac_iacu",
      "&none",
      "&key_repeat",
      "&kp UNDER",
@@ -1456,7 +1573,7 @@
      "&mc_n8",
      "&mc_n9",
      "&none",
-     "&lt_comma 28 0",
+     "&lt_comma 27 0",
      "&kp AMPS",
      "&th_lpar 0 0",
      "&th_rpar 0 0",
@@ -1466,7 +1583,7 @@
      "&mc_n5",
      "&mc_n6",
      "&kp DOT",
-     "&none",
+     "&lt_comma 27 0",
      "&kp PIPE",
      "&th_lbkt 0 0",
      "&th_rbkt 0 0",
@@ -1475,12 +1592,12 @@
      "&mc_n1",
      "&mc_n2",
      "&mc_n3",
-     "&none",
+     "&kp DOT",
      "&none",
      "&trans",
      "&trans",
      "&hlt 15 SPACE",
-     "&lt_n0 25 0",
+     "&lt_n0 24 0",
      "&none"
     ],
     "15": [
@@ -1503,8 +1620,8 @@
      "&th_qmark 0 0",
      "&th_minus 0 0",
      "&th_plus 0 0",
-     "&lt 29 UNDER",
-     "&none",
+     "&lt 28 UNDER",
+     "&kp AT",
      "&th_lt 0 0",
      "&th_gt 0 0",
      "&th_bti 0 0",
@@ -1513,53 +1630,15 @@
      "&th_excl 0 0",
      "&th_slash 0 0",
      "&th_star 0 0",
-     "&none",
+     "&lt 28 UNDER",
      "&none",
      "&trans",
-     "&hlt 23 SPACE",
+     "&hlt 22 SPACE",
      "&none",
      "&trans",
      "&none"
     ],
     "16": [
-     "&kp LS(Q)",
-     "&kp LS(B)",
-     "&kp LS(M)",
-     "&kp LS(G)",
-     "&kp LS(K)",
-     "&kp LS(X)",
-     "&kp LS(L)",
-     "&kp LS(O)",
-     "&kp LS(U)",
-     "&trans",
-     "&kp LS(D)",
-     "&mt LCTL LS(N)",
-     "&mt LALT LS(S)",
-     "&mt LSFT LS(T)",
-     "&kp LS(W)",
-     "&kp LS(Z)",
-     "&mt LSFT LS(R)",
-     "&mt LALT LS(A)",
-     "&mt LCTL LS(E)",
-     "&kp LS(I)",
-     "&kp LS(Y)",
-     "&mt LS(LGUI) LS(F)",
-     "&mt LS(LGUI) LS(C)",
-     "&mt LGUI LS(P)",
-     "&kp LS(V)",
-     "&kp LS(J)",
-     "&ht_magic_c LGUI 0",
-     "&th_comma 0 0",
-     "&th_dot 0 0",
-     "&trans",
-     "&trans",
-     "&trans",
-     "&ltn_numcp_spc 23 0",
-     "&lt_sft_a2 24 0",
-     "&trans",
-     "&trans"
-    ],
-    "17": [
      "&none",
      "&none",
      "&none",
@@ -1597,7 +1676,7 @@
      "&trans",
      "&none"
     ],
-    "18": [
+    "17": [
      "&none",
      "&kp LS(Q)",
      "&mc_qu_s",
@@ -1618,7 +1697,7 @@
      "&ac_aacu_s",
      "&ac_eacu_s",
      "&ac_iacu_s",
-     "&none",
+     "&kp LS(Y)",
      "&kp LS(J)",
      "&mc_ced_s",
      "&reversed_magic_c",
@@ -1627,7 +1706,7 @@
      "&ac_otil_s",
      "&ac_acir_s",
      "&ac_ecir_s",
-     "&none",
+     "&ac_iacu_s",
      "&none",
      "&key_repeat",
      "&kp UNDER",
@@ -1635,7 +1714,7 @@
      "&mc_sqo",
      "&none"
     ],
-    "19": [
+    "18": [
      "&none",
      "&kp RS(Q)",
      "&mc_qu_c",
@@ -1656,7 +1735,7 @@
      "&ac_aacu_c",
      "&ac_eacu_c",
      "&ac_iacu_c",
-     "&none",
+     "&kp RS(Y)",
      "&kp RS(J)",
      "&mc_ced_c",
      "&reversed_magic_c",
@@ -1665,7 +1744,7 @@
      "&ac_otil_c",
      "&ac_acir_c",
      "&ac_ecir_c",
-     "&none",
+     "&ac_iacu_c",
      "&none",
      "&key_repeat",
      "&kp UNDER",
@@ -1673,7 +1752,7 @@
      "&mc_sqo",
      "&none"
     ],
-    "20": [
+    "19": [
      "&none",
      "&none",
      "&none",
@@ -1705,13 +1784,13 @@
      "&trans",
      "&none",
      "&none",
-     "&sl 19",
+     "&sl 18",
      "&trans",
      "&trans",
      "&trans",
      "&none"
     ],
-    "21": [
+    "20": [
      "&trans",
      "&trans",
      "&trans",
@@ -1743,13 +1822,13 @@
      "&trans",
      "&trans",
      "&trans",
-     "&ht_alt_rep 22 0",
+     "&ht_alt_rep 21 0",
      "&trans",
      "&trans",
      "&trans",
      "&trans"
     ],
-    "22": [
+    "21": [
      "&none",
      "&mc_swapper",
      "&mc_tabs",
@@ -1760,7 +1839,7 @@
      "&lm_ent_vim",
      "&lm_esc_vim",
      "&none",
-     "&lt_system 27 0",
+     "&lt_system 26 0",
      "&mod_num LCTL LCTL",
      "&mod_num LALT LALT",
      "&mod_num LSFT LSFT",
@@ -1770,7 +1849,7 @@
      "&kp DOWN",
      "&kp UP",
      "&kp RIGHT",
-     "&none",
+     "&lt_system 26 0",
      "&mod_num LS(LGUI) LS(LGUI)",
      "&mod_num LS(LGUI) LS(LGUI)",
      "&mod_num LGUI LGUI",
@@ -1779,15 +1858,15 @@
      "&kp DEL",
      "&kp HOME",
      "&kp END",
-     "&none",
+     "&kp RIGHT",
      "&none",
      "&trans",
-     "&mo 23",
-     "&hlt 24 SPACE",
-     "&lt 25 INS",
+     "&mo 22",
+     "&hlt 23 SPACE",
+     "&lt 24 INS",
      "&none"
     ],
-    "23": [
+    "22": [
      "&none",
      "&kp BSLH",
      "&th_lbrc 0 0",
@@ -1808,7 +1887,7 @@
      "&mc_n5",
      "&mc_n6",
      "&kp DOT",
-     "&none",
+     "&kp COMMA",
      "&kp PIPE",
      "&th_lbkt 0 0",
      "&th_rbkt 0 0",
@@ -1817,15 +1896,15 @@
      "&mc_n1",
      "&mc_n2",
      "&mc_n3",
-     "&none",
+     "&kp DOT",
      "&none",
      "&trans",
      "&trans",
-     "&hlt 24 SPACE",
-     "&lt_n0 25 0",
+     "&hlt 23 SPACE",
+     "&lt_n0 24 0",
      "&none"
     ],
-    "24": [
+    "23": [
      "&none",
      "&mc_tilde",
      "&kp HASH",
@@ -1846,7 +1925,7 @@
      "&th_minus 0 0",
      "&th_plus 0 0",
      "&kp UNDER",
-     "&none",
+     "&kp AT",
      "&th_lt 0 0",
      "&th_gt 0 0",
      "&th_bti 0 0",
@@ -1855,7 +1934,7 @@
      "&th_excl 0 0",
      "&th_slash 0 0",
      "&th_star 0 0",
-     "&none",
+     "&kp UNDER",
      "&none",
      "&trans",
      "&kp SPACE",
@@ -1863,7 +1942,7 @@
      "&trans",
      "&none"
     ],
-    "25": [
+    "24": [
      "&none",
      "&none",
      "&mkp LCLK",
@@ -1883,7 +1962,7 @@
      "&mc_mic",
      "&mt C_MUTE C_VOL_DN",
      "&kp C_VOL_UP",
-     "&lt_cam 27 0",
+     "&lt_cam 26 0",
      "&none",
      "&msc SCRL_DOWN",
      "&mmv MOVE_DOWN",
@@ -1893,15 +1972,15 @@
      "&kp C_PP",
      "&kp C_PREV",
      "&kp C_NEXT",
+     "&lt_cam 26 0",
      "&none",
-     "&none",
-     "&mo 26",
+     "&mo 25",
      "&kp SPACE",
      "&none",
      "&trans",
      "&none"
     ],
-    "26": [
+    "25": [
      "&none",
      "&mc_swapper",
      "&mc_tabs",
@@ -1922,7 +2001,7 @@
      "&kp DOWN",
      "&kp UP",
      "&kp RIGHT",
-     "&none",
+     "&mc_system",
      "&kp LS(LGUI)",
      "&kp LS(LGUI)",
      "&kp LGUI",
@@ -1931,7 +2010,7 @@
      "&kp DEL",
      "&kp HOME",
      "&kp END",
-     "&none",
+     "&kp RIGHT",
      "&none",
      "&trans",
      "&trans",
@@ -1939,7 +2018,7 @@
      "&kp INS",
      "&none"
     ],
-    "27": [
+    "26": [
      "&none",
      "&select_home",
      "&select_word",
@@ -1969,7 +2048,7 @@
      "&mc_del_word",
      "&kp HOME",
      "&kp END",
-     "&none",
+     "&mc_next_word",
      "&none",
      "&none",
      "&none",
@@ -1977,7 +2056,7 @@
      "&none",
      "&none"
     ],
-    "28": [
+    "27": [
      "&none",
      "&kp F13",
      "&kp F14",
@@ -2007,7 +2086,7 @@
      "&kp F1",
      "&kp F2",
      "&kp F3",
-     "&none",
+     "&kp F12",
      "&none",
      "&none",
      "&none",
@@ -2015,7 +2094,7 @@
      "&kp F11",
      "&none"
     ],
-    "29": [
+    "28": [
      "&none",
      "&mc_tisl",
      "&mc_ds",
@@ -2036,7 +2115,7 @@
      "&mc_dqt0p",
      "&mc_dqt1p",
      "&none",
-     "&none",
+     "&mc_exit",
      "&lm_os",
      "&mc_comment",
      "&mc_haha",
@@ -2138,7 +2217,7 @@
      "props": {
       "bindings": [
        "&vim_reset",
-       "&kp LG(LC(LA(LS(ESC))))"
+       "&kp LG(LC(LA(LS(F20))))"
       ],
       "wait-ms": [
        "5"
@@ -3263,7 +3342,7 @@
        "&macro_tap",
        "&kp A",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3290,7 +3369,7 @@
        "&macro_release",
        "&kp RSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3317,7 +3396,7 @@
        "&macro_release",
        "&kp LSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3337,7 +3416,7 @@
        "&macro_tap",
        "&kp A",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3364,7 +3443,7 @@
        "&macro_release",
        "&kp RSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3391,7 +3470,7 @@
        "&macro_release",
        "&kp LSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3411,7 +3490,7 @@
        "&macro_tap",
        "&kp A",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3438,7 +3517,7 @@
        "&macro_release",
        "&kp RSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3465,7 +3544,7 @@
        "&macro_release",
        "&kp LSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3485,7 +3564,7 @@
        "&macro_tap",
        "&kp A",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3512,7 +3591,7 @@
        "&macro_release",
        "&kp RSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3539,7 +3618,7 @@
        "&macro_release",
        "&kp LSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3559,7 +3638,7 @@
        "&macro_tap",
        "&kp E",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3586,7 +3665,7 @@
        "&macro_release",
        "&kp RSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3613,7 +3692,7 @@
        "&macro_release",
        "&kp LSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3633,7 +3712,7 @@
        "&macro_tap",
        "&kp E",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3660,7 +3739,7 @@
        "&macro_release",
        "&kp RSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3687,7 +3766,7 @@
        "&macro_release",
        "&kp LSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3707,7 +3786,7 @@
        "&macro_tap",
        "&kp I",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3734,7 +3813,7 @@
        "&macro_release",
        "&kp RSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3761,7 +3840,7 @@
        "&macro_release",
        "&kp LSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3781,7 +3860,7 @@
        "&macro_tap",
        "&kp O",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3808,7 +3887,7 @@
        "&macro_release",
        "&kp RSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3835,7 +3914,7 @@
        "&macro_release",
        "&kp LSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3855,7 +3934,7 @@
        "&macro_tap",
        "&kp O",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3882,7 +3961,7 @@
        "&macro_release",
        "&kp RSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3909,7 +3988,7 @@
        "&macro_release",
        "&kp LSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3929,7 +4008,7 @@
        "&macro_tap",
        "&kp O",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3956,7 +4035,7 @@
        "&macro_release",
        "&kp RSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -3983,7 +4062,7 @@
        "&macro_release",
        "&kp LSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -4003,7 +4082,7 @@
        "&macro_tap",
        "&kp U",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -4030,7 +4109,7 @@
        "&macro_release",
        "&kp RSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -4057,7 +4136,7 @@
        "&macro_release",
        "&kp LSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -4074,7 +4153,7 @@
       "bindings": [
        "&kp Q",
        "&kp U",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "5"
@@ -4091,7 +4170,7 @@
       "bindings": [
        "&kp LS(Q)",
        "&kp U",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "5"
@@ -4108,7 +4187,7 @@
       "bindings": [
        "&kp RS(Q)",
        "&kp RS(U)",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "5"
@@ -4204,7 +4283,7 @@
        "&macro_tap",
        "&kp C",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -4231,7 +4310,7 @@
        "&macro_release",
        "&kp RSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -4258,7 +4337,7 @@
        "&macro_release",
        "&kp LSHFT",
        "&macro_tap",
-       "&sl 21"
+       "&sl 20"
       ],
       "wait-ms": [
        "0"
@@ -4394,7 +4473,7 @@
      "props": {
       "bindings": [
        "&ac_cced",
-       "&sl 17"
+       "&sl 16"
       ],
       "wait-ms": [
        "5"
@@ -4410,7 +4489,7 @@
      "props": {
       "bindings": [
        "&ac_cced_c",
-       "&sl 20"
+       "&sl 19"
       ],
       "wait-ms": [
        "5"
@@ -4426,7 +4505,7 @@
      "props": {
       "bindings": [
        "&ac_cced_s",
-       "&sl 17"
+       "&sl 16"
       ],
       "wait-ms": [
        "5"
@@ -7601,7 +7680,7 @@
       "bindings": [
        "&macro_param_1to1",
        "&sk 0",
-       "&sl 23"
+       "&sl 22"
       ]
      }
     },
@@ -7747,12 +7826,23 @@
       ]
      }
     },
-    "ak_space": {
-     "compatible": "zmk,behavior-adaptive-key",
+    "sentence_shift": {
+     "compatible": "zmk,behavior-sentence-morph",
      "cells": 0,
      "props": {
       "bindings": [
-       "&kp SPACE"
+       "&mm_shift",
+       "&none"
+      ]
+     }
+    },
+    "sentence_alpha2": {
+     "compatible": "zmk,behavior-sentence-morph",
+     "cells": 0,
+     "props": {
+      "bindings": [
+       "&msl_sym_a2 0 0",
+       "&lt_sft_a2 23 0"
       ]
      }
     },
@@ -7781,21 +7871,20 @@
       "bindings": [
        "&vim_off",
        "&lock_off 14",
-       "&lock_off 23",
+       "&lock_off 22",
        "&lock_off 8",
        "&lock_off 9",
        "&lock_off 13",
-       "&lock_off 18",
-       "&lock_off 19",
        "&lock_off 17",
-       "&lock_off 20",
+       "&lock_off 18",
        "&lock_off 16",
-       "&lock_off 21",
+       "&lock_off 19",
+       "&lock_off 20",
        "&lock_off 12",
-       "&lock_off 22",
-       "&lock_off 26",
+       "&lock_off 21",
        "&lock_off 25",
-       "&lock_off 28"
+       "&lock_off 24",
+       "&lock_off 27"
       ],
       "wait-ms": [
        "0"
@@ -7849,7 +7938,7 @@
      "props": {
       "bindings": [
        "&macro_tap",
-       "&smart_num 23"
+       "&smart_num 22"
       ],
       "wait-ms": [
        "0"
@@ -7950,7 +8039,7 @@
      "props": {
       "bindings": [
        "&mo",
-       "&mm_shift"
+       "&sentence_shift"
       ],
       "tapping-term-ms": [
        "175"
@@ -7981,7 +8070,9 @@
      "cells": 0,
      "props": {
       "bindings": [
-       "&sl 18"
+       "&sl 17",
+       "&macro_release",
+       "&kp LSHFT"
       ],
       "wait-ms": [
        "5"
@@ -8009,7 +8100,7 @@
      "cells": 0,
      "props": {
       "bindings": [
-       "&sl 19"
+       "&sl 18"
       ],
       "wait-ms": [
        "5"
@@ -8224,7 +8315,7 @@
      "cells": 0,
      "props": {
       "bindings": [
-       "&ak_space"
+       "&sentence_space"
       ],
       "wait-ms": [
        "5"
@@ -8407,7 +8498,7 @@
       "bindings": [
        "&kp SPACE",
        "&lock_off 14",
-       "&lock_off 23"
+       "&lock_off 22"
       ],
       "wait-ms": [
        "5"
@@ -8424,23 +8515,6 @@
       "bindings": [
        "&mo",
        "&mc_msk_space"
-      ],
-      "tapping-term-ms": [
-       "175"
-      ],
-      "quick-tap-ms": [
-       "0"
-      ],
-      "flavor": "tap-preferred"
-     }
-    },
-    "ltn_numcp_spc": {
-     "compatible": "zmk,behavior-hold-tap",
-     "cells": 2,
-     "props": {
-      "bindings": [
-       "&mo",
-       "&mm_tap_alt_space_gui"
       ],
       "tapping-term-ms": [
        "175"
@@ -12472,10 +12546,10 @@
        "&macro_press",
        "&kp LCTL",
        "&kp LALT",
-       "&mo 22",
+       "&mo 21",
        "&macro_pause_for_release",
        "&macro_release",
-       "&mo 22",
+       "&mo 21",
        "&kp LCTL",
        "&kp LALT"
       ],
@@ -12496,10 +12570,10 @@
        "&kp LGUI",
        "&kp LCTL",
        "&kp LSFT",
-       "&mo 22",
+       "&mo 21",
        "&macro_pause_for_release",
        "&macro_release",
-       "&mo 22",
+       "&mo 21",
        "&kp LGUI",
        "&kp LCTL",
        "&kp LSFT"
@@ -12521,10 +12595,10 @@
        "&kp LCTL",
        "&kp LALT",
        "&kp LGUI",
-       "&mo 22",
+       "&mo 21",
        "&macro_pause_for_release",
        "&macro_release",
-       "&mo 22",
+       "&mo 21",
        "&kp LCTL",
        "&kp LALT",
        "&kp LGUI"
@@ -12924,8 +12998,7 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       5,
       6,
       7,
@@ -12934,7 +13007,7 @@
       4
      ],
      "timeout-ms": 30,
-     "require-prior-idle-ms": null,
+     "require-prior-idle-ms": 150,
      "slow-release": false
     },
     {
@@ -12950,21 +13023,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       5,
       6,
       7
@@ -12985,19 +13057,18 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
+      21,
+      25,
       15,
-      24,
+      23,
       5,
       6,
       7
@@ -13018,13 +13089,12 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       12,
       5,
       6,
@@ -13050,21 +13120,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13117,21 +13186,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13156,21 +13224,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13196,15 +13263,14 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       14,
-      23,
-      25,
       22,
-      26,
+      24,
+      21,
+      25,
       12,
-      28,
+      27,
       5,
       6,
       7,
@@ -13229,21 +13295,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13269,21 +13334,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13309,21 +13373,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13349,21 +13412,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13389,21 +13451,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13429,21 +13490,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13469,21 +13529,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13509,21 +13568,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13550,21 +13608,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13591,21 +13648,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13630,21 +13686,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13669,21 +13724,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13708,21 +13762,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13741,27 +13794,26 @@
       19,
       34
      ],
-     "binding": "&lt_right 29 0",
+     "binding": "&lt_right 28 0",
      "layers": [
       0,
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13786,21 +13838,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13825,21 +13876,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13864,21 +13914,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13903,21 +13952,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13942,21 +13990,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -13981,21 +14028,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -14020,21 +14066,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -14059,21 +14104,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -14098,21 +14142,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -14137,21 +14180,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -14176,21 +14218,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -14215,21 +14256,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -14254,21 +14294,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -14293,21 +14332,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -14332,21 +14370,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -14371,21 +14408,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -14410,21 +14446,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -14449,21 +14484,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -14488,21 +14522,20 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       13,
-      19,
       18,
       17,
-      20,
+      16,
+      19,
       14,
-      23,
       22,
-      26,
-      15,
-      24,
+      21,
       25,
-      27,
+      15,
+      23,
+      24,
+      26,
       10,
       5,
       6,
@@ -14527,24 +14560,10 @@
       1,
       8,
       9,
-      21,
+      20,
       5,
       6,
       7
-     ],
-     "timeout-ms": 30,
-     "require-prior-idle-ms": null,
-     "slow-release": false
-    },
-    {
-     "name": "cb_numword_sc",
-     "positions": [
-      21,
-      22
-     ],
-     "binding": "&tc_num_word_cp",
-     "layers": [
-      16
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -14563,8 +14582,7 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       5,
       6,
       7,
@@ -14590,8 +14608,7 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       5,
       6,
       7,
@@ -14617,8 +14634,7 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       5,
       6,
       7,
@@ -14644,8 +14660,7 @@
       1,
       8,
       9,
-      21,
-      16
+      20
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -14664,8 +14679,7 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       5,
       6,
       7
@@ -14687,8 +14701,7 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       5,
       6,
       7
@@ -14710,8 +14723,7 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       5,
       6,
       7
@@ -14733,8 +14745,7 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       5,
       6,
       7
@@ -14755,10 +14766,9 @@
       1,
       8,
       9,
-      21,
-      16,
+      20,
       14,
-      23,
+      22,
       5,
       6,
       7,
@@ -14780,7 +14790,7 @@
      "layers": [
       0,
       1,
-      21,
+      20,
       5,
       6,
       7
@@ -14799,7 +14809,7 @@
      "layers": [
       0,
       1,
-      21,
+      20,
       5,
       6,
       7
@@ -14818,7 +14828,7 @@
      "layers": [
       0,
       1,
-      21,
+      20,
       5,
       6,
       7
@@ -14837,66 +14847,10 @@
      "layers": [
       0,
       1,
-      21,
+      20,
       5,
       6,
       7
-     ],
-     "timeout-ms": 30,
-     "require-prior-idle-ms": null,
-     "slow-release": false
-    },
-    {
-     "name": "cb_ks",
-     "positions": [
-      2,
-      3
-     ],
-     "binding": "&kp LS(K)",
-     "layers": [
-      16
-     ],
-     "timeout-ms": 30,
-     "require-prior-idle-ms": null,
-     "slow-release": false
-    },
-    {
-     "name": "cb_ws",
-     "positions": [
-      12,
-      13
-     ],
-     "binding": "&kp LS(W)",
-     "layers": [
-      16
-     ],
-     "timeout-ms": 30,
-     "require-prior-idle-ms": null,
-     "slow-release": false
-    },
-    {
-     "name": "cb_vs",
-     "positions": [
-      23,
-      22
-     ],
-     "binding": "&kp LS(V)",
-     "layers": [
-      16
-     ],
-     "timeout-ms": 30,
-     "require-prior-idle-ms": null,
-     "slow-release": false
-    },
-    {
-     "name": "cb_qs",
-     "positions": [
-      11,
-      12
-     ],
-     "binding": "&kp LS(Q)",
-     "layers": [
-      16
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -14972,7 +14926,7 @@
      "layers": [
       0,
       1,
-      21,
+      20,
       5,
       6,
       7
@@ -14991,7 +14945,7 @@
      "layers": [
       0,
       1,
-      21,
+      20,
       5,
       6,
       7
@@ -15010,7 +14964,7 @@
      "layers": [
       0,
       1,
-      21,
+      20,
       5,
       6,
       7
@@ -15029,66 +14983,10 @@
      "layers": [
       0,
       1,
-      21,
+      20,
       5,
       6,
       7
-     ],
-     "timeout-ms": 30,
-     "require-prior-idle-ms": null,
-     "slow-release": false
-    },
-    {
-     "name": "cb_xs",
-     "positions": [
-      6,
-      7
-     ],
-     "binding": "&kp LS(X)",
-     "layers": [
-      16
-     ],
-     "timeout-ms": 30,
-     "require-prior-idle-ms": null,
-     "slow-release": false
-    },
-    {
-     "name": "cb_zs",
-     "positions": [
-      16,
-      17
-     ],
-     "binding": "&kp LS(Z)",
-     "layers": [
-      16
-     ],
-     "timeout-ms": 30,
-     "require-prior-idle-ms": null,
-     "slow-release": false
-    },
-    {
-     "name": "cb_js",
-     "positions": [
-      26,
-      27
-     ],
-     "binding": "&kp LS(J)",
-     "layers": [
-      16
-     ],
-     "timeout-ms": 30,
-     "require-prior-idle-ms": null,
-     "slow-release": false
-    },
-    {
-     "name": "cb_ys",
-     "positions": [
-      17,
-      18
-     ],
-     "binding": "&kp LS(Y)",
-     "layers": [
-      16
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15537,7 +15435,7 @@
      "binding": "&kp COMMA",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15552,7 +15450,7 @@
      "binding": "&kp LS(G)",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15567,7 +15465,7 @@
      "binding": "&kp J",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15582,7 +15480,7 @@
      "binding": "&kp K",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15597,7 +15495,7 @@
      "binding": "&kp PIPE",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15612,7 +15510,7 @@
      "binding": "&mc_braces_new",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15627,7 +15525,7 @@
      "binding": "&th_braces 0 0",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15642,7 +15540,7 @@
      "binding": "&th_pars 0 0",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15657,7 +15555,7 @@
      "binding": "&th_brackets 0 0",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15672,7 +15570,7 @@
      "binding": "&th_and 0 0",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15687,7 +15585,7 @@
      "binding": "&th_or 0 0",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15703,7 +15601,7 @@
      "binding": "&mc_end_do_ent",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15719,7 +15617,7 @@
      "binding": "&th_pars_semi 0 0",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15735,7 +15633,7 @@
      "binding": "&th_end_ltgtlprp 0 0",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15751,7 +15649,7 @@
      "binding": "&th_ord_o_a 0 0",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15767,7 +15665,7 @@
      "binding": "&mc_deg",
      "layers": [
       14,
-      23
+      22
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15782,7 +15680,7 @@
      "binding": "&th_darrow 0 0",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15797,7 +15695,7 @@
      "binding": "&th_sarrow 0 0",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15812,7 +15710,7 @@
      "binding": "&th_concat 0 0",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15827,7 +15725,7 @@
      "binding": "&mc_hcurly",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15842,7 +15740,7 @@
      "binding": "&mc_dcurly",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15857,7 +15755,7 @@
      "binding": "&th_forward 0 0",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15873,7 +15771,7 @@
      "binding": "&th_bslash_quo 0 0",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15889,7 +15787,7 @@
      "binding": "&th_tdqo 0 0",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15905,7 +15803,7 @@
      "binding": "&th_tbti 0 0",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15921,7 +15819,7 @@
      "binding": "&th_eur 0 0",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15937,7 +15835,7 @@
      "binding": "&th_br 0 0",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15953,7 +15851,7 @@
      "binding": "&th_us 0 0",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15968,7 +15866,7 @@
      "binding": "&mc_pcurly",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15983,7 +15881,7 @@
      "binding": "&th_eqeq 0 0",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -15998,7 +15896,7 @@
      "binding": "&th_noteq 0 0",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16013,7 +15911,7 @@
      "binding": "&th_backward 0 0",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16028,7 +15926,7 @@
      "binding": "&th_dcolon 0 0",
      "layers": [
       15,
-      24
+      23
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16042,7 +15940,7 @@
      ],
      "binding": "&bt BT_CLR",
      "layers": [
-      28
+      27
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16056,7 +15954,7 @@
      ],
      "binding": "&kp F10",
      "layers": [
-      28
+      27
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16070,7 +15968,7 @@
      ],
      "binding": "&kp F11",
      "layers": [
-      28
+      27
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16084,7 +15982,7 @@
      ],
      "binding": "&kp F12",
      "layers": [
-      28
+      27
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16098,7 +15996,7 @@
      ],
      "binding": "&kp F13",
      "layers": [
-      28
+      27
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16112,7 +16010,7 @@
      ],
      "binding": "&kp F14",
      "layers": [
-      28
+      27
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16126,7 +16024,7 @@
      ],
      "binding": "&kp F15",
      "layers": [
-      28
+      27
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16141,8 +16039,8 @@
      "binding": "&kp MINUS",
      "layers": [
       13,
-      19,
-      18
+      18,
+      17
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16157,8 +16055,8 @@
      "binding": "&kp DQT",
      "layers": [
       13,
-      19,
-      18
+      18,
+      17
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16173,8 +16071,8 @@
      "binding": "&kp SQT",
      "layers": [
       13,
-      19,
-      18
+      18,
+      17
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16189,8 +16087,8 @@
      "binding": "&kp GRAVE",
      "layers": [
       13,
-      19,
-      18
+      18,
+      17
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16205,8 +16103,8 @@
      "binding": "&kp CARET",
      "layers": [
       13,
-      19,
-      18
+      18,
+      17
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16221,8 +16119,8 @@
      "binding": "&kp TILDE",
      "layers": [
       13,
-      19,
-      18
+      18,
+      17
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16237,8 +16135,8 @@
      "binding": "&kp QMARK",
      "layers": [
       13,
-      19,
-      18
+      18,
+      17
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16253,8 +16151,8 @@
      "binding": "&kp EXCL",
      "layers": [
       13,
-      19,
-      18
+      18,
+      17
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16269,8 +16167,8 @@
      "binding": "&kp COLON",
      "layers": [
       13,
-      19,
-      18
+      18,
+      17
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16298,7 +16196,7 @@
      ],
      "binding": "&ac_agrv_s",
      "layers": [
-      18
+      17
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16312,7 +16210,7 @@
      ],
      "binding": "&ac_agrv_c",
      "layers": [
-      19
+      18
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16326,7 +16224,7 @@
      ],
      "binding": "&mc_bsp_word",
      "layers": [
-      27
+      26
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16340,7 +16238,7 @@
      ],
      "binding": "&mc_o_esc",
      "layers": [
-      27
+      26
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16354,7 +16252,7 @@
      ],
      "binding": "&mc_sft_o_esc",
      "layers": [
-      27
+      26
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16369,7 +16267,7 @@
      ],
      "binding": "&mc_dqt0p",
      "layers": [
-      27
+      26
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16384,7 +16282,7 @@
      ],
      "binding": "&kp V",
      "layers": [
-      27
+      26
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16398,7 +16296,7 @@
      ],
      "binding": "&kp LS(V)",
      "layers": [
-      27
+      26
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16412,7 +16310,7 @@
      ],
      "binding": "&kp LC(V)",
      "layers": [
-      27
+      26
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16426,7 +16324,7 @@
      ],
      "binding": "&vim_mode_on",
      "layers": [
-      29
+      28
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16440,7 +16338,7 @@
      ],
      "binding": "&vim_mode_off",
      "layers": [
-      29
+      28
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16454,8 +16352,8 @@
      ],
      "binding": "&kp LC(LALT)",
      "layers": [
-      22,
-      26
+      21,
+      25
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16469,8 +16367,8 @@
      ],
      "binding": "&mc_down_end",
      "layers": [
-      22,
-      26
+      21,
+      25
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16482,10 +16380,10 @@
       27,
       28
      ],
-     "binding": "&mo 23",
+     "binding": "&mo 22",
      "layers": [
-      22,
-      26
+      21,
+      25
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16499,8 +16397,8 @@
      ],
      "binding": "&mc_up_end_del",
      "layers": [
-      22,
-      26
+      21,
+      25
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16514,8 +16412,8 @@
      ],
      "binding": "&kp PAGE_DOWN",
      "layers": [
-      22,
-      26
+      21,
+      25
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16529,8 +16427,8 @@
      ],
      "binding": "&kp PAGE_UP",
      "layers": [
-      22,
-      26
+      21,
+      25
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16544,7 +16442,7 @@
      ],
      "binding": "&mc_hand",
      "layers": [
-      25
+      24
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16558,7 +16456,7 @@
      ],
      "binding": "&mkp LCLK",
      "layers": [
-      25
+      24
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -16572,7 +16470,7 @@
      ],
      "binding": "&mkp RCLK",
      "layers": [
-      25
+      24
      ],
      "timeout-ms": 30,
      "require-prior-idle-ms": null,
@@ -17581,7 +17479,7 @@
     },
     {
      "tap": "q",
-     "hold": "shortcuts",
+     "hold": "alpha1",
      "shifted": "record",
      "type": "key"
     },
@@ -17629,7 +17527,7 @@
     },
     {
      "tap": "l",
-     "hold": "shortcuts",
+     "hold": "alpha1",
      "shifted": "right",
      "type": "key"
     },
@@ -23743,7 +23641,7 @@
     ],
     [
      {
-      "h": "shortcuts",
+      "h": "alpha1",
       "t": "q",
       "s": "record"
      },
@@ -23778,7 +23676,7 @@
       "s": "up"
      },
      {
-      "h": "shortcuts",
+      "h": "alpha1",
       "t": "l",
       "s": "right"
      }

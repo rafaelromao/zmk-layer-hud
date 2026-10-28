@@ -20,9 +20,11 @@ import subprocess
 import sys
 import time
 
-# WebKit's DMA-BUF renderer triggers a Wayland protocol error on this NVIDIA host.
-# Software composition also preserves the transparent webview background reliably.
-os.environ.setdefault("WEBKIT_DISABLE_DMABUF_RENDERER", "1")
+# WebKit's DMA-BUF renderer triggers a Wayland protocol error on NVIDIA hosts when it hands the
+# compositor GPU buffers. Shared-memory buffers avoid that and keep the transparent background.
+# Not WEBKIT_DISABLE_DMABUF_RENDERER: from WebKitGTK 2.54 on, that fallback repaints only the
+# damaged rects, each on an opaque backdrop, so the panel draws as dark boxes around whatever changed.
+os.environ.setdefault("WEBKIT_DMABUF_RENDERER_FORCE_SHM", "1")
 
 import gi
 
@@ -479,6 +481,7 @@ def main():
         typing.release()
         hud.hide()
         extra.pop("dock_note", None)
+        extra.pop("dock_keys", None)
         if on:
             if not apply_dock():
                 hud.show_all()
@@ -551,7 +554,15 @@ def main():
         elif kind == "attach":  # the banner's attach/detach: docked as a touch keyboard, or floating
             if isinstance(msg.get("on"), bool):
                 set_dock(msg["on"])
-        elif kind == "dock":    # the board too big to type on here at its real size: a HUD, floating
+        elif kind == "dock":    # the board too big to type on here even with smaller keys: a HUD, floating
+            keys = dock_mod.smaller(msg)
+            if keys is not None:   # ...or docked with them smaller, which `dock status` says
+                if docked[0] and extra.get("dock_keys", "") != keys:
+                    print(f"panel: docked with smaller keys: {keys}" if keys else
+                          "panel: docked, its keys their own size again", file=sys.stderr, flush=True)
+                    extra["dock_keys"] = keys
+                    panelstate.write(RUN, shown[0], wpm=wpm[0], stats=stats[0], extra=extra)
+                return
             note = dock_mod.refusal(msg, pct)
             if note and docked[0]:
                 print(f"panel: not docked: {note}", file=sys.stderr, flush=True)
