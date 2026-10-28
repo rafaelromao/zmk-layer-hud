@@ -11,155 +11,272 @@
    "0": {
     "name": "OMARCHY",
     "drawer": "alpha1",
-    "label": "Alpha 1"
+    "label": "Alpha 1",
+    "symbol": "ALPHA1"
    },
    "1": {
     "name": "MACOS",
     "drawer": null,
-    "label": "Alt OS"
+    "label": "Alt OS",
+    "symbol": "ALT_OS",
+    "symbols": [
+     "ALT_OS",
+     "LTR"
+    ]
    },
    "2": {
     "name": "NORMAL",
     "drawer": "vim",
-    "label": "Vim normal"
+    "label": "Vim normal",
+    "symbol": "VIM_NORMAL",
+    "symbols": [
+     "VIM_NORMAL",
+     "LTM"
+    ]
    },
    "3": {
     "name": "VISUAL",
     "drawer": "vim",
-    "label": "Vim visual"
+    "label": "Vim visual",
+    "symbol": "VIM_VISUAL",
+    "symbols": [
+     "VIM_VISUAL",
+     "LTI"
+    ]
    },
    "4": {
     "name": "CHANGE",
     "drawer": "vim",
-    "label": "Vim change"
+    "label": "Vim change",
+    "symbol": "VIM_CHANGE",
+    "symbols": [
+     "VIM_CHANGE",
+     "LTC"
+    ]
    },
    "5": {
     "name": "INSERT",
     "drawer": null,
-    "label": "Vim insert"
+    "label": "Vim insert",
+    "symbol": "VIM_INSERT"
    },
    "6": {
     "name": "REPLACE",
     "drawer": null,
-    "label": "Vim replace"
+    "label": "Vim replace",
+    "symbol": "VIM_REPLACE",
+    "symbols": [
+     "VIM_REPLACE",
+     "RTI"
+    ]
    },
    "7": {
     "name": "CMDLINE",
     "drawer": null,
-    "label": "Vim cmdline"
+    "label": "Vim cmdline",
+    "symbol": "VIM_CMDLINE",
+    "symbols": [
+     "VIM_CMDLINE",
+     "RTM"
+    ]
    },
    "8": {
     "name": "CAPSWORD",
     "drawer": "shifted1",
-    "label": "Caps word"
+    "label": "Caps word",
+    "symbol": "CASE_A1",
+    "symbols": [
+     "CASE_A1",
+     "RTR"
+    ]
    },
    "9": {
     "name": "CAPSLINE",
     "drawer": "shifted1",
-    "label": "Caps line"
+    "label": "Caps line",
+    "symbol": "CPLK_A1",
+    "symbols": [
+     "CPLK_A1",
+     "RTP"
+    ]
    },
    "10": {
     "name": "SHORTCUTS",
     "drawer": "shortcuts",
-    "label": "Shortcuts"
+    "label": "Shortcuts",
+    "symbol": "SHORTS"
    },
    "11": {
     "name": "TOGGLES",
     "drawer": "toggles",
-    "label": "Toggles"
+    "label": "Toggles",
+    "symbol": "TOGS",
+    "symbols": [
+     "TOGS",
+     "LHR"
+    ]
    },
    "12": {
     "name": "MEHS",
     "drawer": "mehs",
-    "label": "Mehs"
+    "label": "Mehs",
+    "symbol": "MEHS",
+    "symbols": [
+     "MEHS",
+     "LHM"
+    ]
    },
    "13": {
     "name": "ALPHA2",
     "drawer": "alpha2",
-    "label": "Alpha 2"
+    "label": "Alpha 2",
+    "symbol": "ALPHA2",
+    "symbols": [
+     "ALPHA2",
+     "LHI"
+    ]
    },
    "14": {
     "name": "NUMBERS",
     "drawer": "numbers",
-    "label": "Numbers"
+    "label": "Numbers",
+    "symbol": "NUM",
+    "symbols": [
+     "NUM",
+     "LHC"
+    ]
    },
    "15": {
     "name": "SYMBOLS",
     "drawer": "symbols",
-    "label": "Symbols"
+    "label": "Symbols",
+    "symbol": "SYM"
    },
    "16": {
-    "name": "SENTENCE CASE",
-    "drawer": "shifted1",
-    "label": "Sentence case"
-   },
-   "17": {
     "name": "Ç EXTENSION",
     "drawer": "ç-extension",
-    "label": "Ç extension"
+    "label": "Ç extension",
+    "symbol": "CCEDIL",
+    "symbols": [
+     "CCEDIL",
+     "RHI"
+    ]
    },
-   "18": {
+   "17": {
     "name": "SHIFTED ALPHA2",
     "drawer": "shifted2",
-    "label": "Shift · Alpha 2"
+    "label": "Shift · Alpha 2",
+    "symbol": "SFT_A2",
+    "symbols": [
+     "SFT_A2",
+     "RHM"
+    ]
    },
-   "19": {
+   "18": {
     "name": "CASE ALPHA2",
     "drawer": "shifted2",
-    "label": "Caps · Alpha 2"
+    "label": "Caps · Alpha 2",
+    "symbol": "CASE_A2",
+    "symbols": [
+     "CASE_A2",
+     "RHR"
+    ]
    },
-   "20": {
+   "19": {
     "name": "CASE Ç EXTENSION",
     "drawer": "ç-extension",
-    "label": "Caps · Ç"
+    "label": "Caps · Ç",
+    "symbol": "CASE_CCEDIL",
+    "symbols": [
+     "CASE_CCEDIL",
+     "RHP"
+    ]
    },
-   "21": {
+   "20": {
     "name": "ALT REP 2",
     "drawer": null,
-    "label": "Alt repeat"
+    "label": "Alt repeat",
+    "symbol": "ALTREP2"
+   },
+   "21": {
+    "name": "NAVIGATION",
+    "drawer": "nav",
+    "label": "Navigation",
+    "symbol": "NAV",
+    "symbols": [
+     "NAV",
+     "LBR"
+    ]
    },
    "22": {
-    "name": "NAVIGATION",
-    "drawer": "nav",
-    "label": "Navigation"
-   },
-   "23": {
     "name": "NUMBERS",
     "drawer": "numbers",
-    "label": "Numbers"
+    "label": "Numbers",
+    "symbol": "NUM_CP",
+    "symbols": [
+     "NUM_CP",
+     "LBM"
+    ]
    },
-   "24": {
+   "23": {
     "name": "SYMBOLS",
     "drawer": "symbols",
-    "label": "Symbols"
+    "label": "Symbols",
+    "symbol": "SYM_CP",
+    "symbols": [
+     "SYM_CP",
+     "LBI"
+    ]
    },
-   "25": {
+   "24": {
     "name": "MOUSE",
     "drawer": "media",
-    "label": "Media / mouse"
+    "label": "Media / mouse",
+    "symbol": "MEDIA",
+    "symbols": [
+     "MEDIA",
+     "LBC"
+    ]
    },
-   "26": {
+   "25": {
     "name": "NAVIGATION",
     "drawer": "nav",
-    "label": "Navigation"
+    "label": "Navigation",
+    "symbol": "NAV_CP"
    },
-   "27": {
+   "26": {
     "name": "TEXT NAVIGATION",
     "drawer": "text",
-    "label": "Text navigation"
+    "label": "Text navigation",
+    "symbol": "TEXT",
+    "symbols": [
+     "TEXT",
+     "RBI"
+    ]
    },
-   "28": {
+   "27": {
     "name": "FUNCTIONS",
     "drawer": "func",
-    "label": "Function keys"
+    "label": "Function keys",
+    "symbol": "FUN",
+    "symbols": [
+     "FUN",
+     "RBM"
+    ]
    },
-   "29": {
+   "28": {
     "name": "MACROS",
     "drawer": "macros",
-    "label": "Macros"
+    "label": "Macros",
+    "symbol": "MACROS",
+    "symbols": [
+     "MACROS",
+     "RBR"
+    ]
    }
   },
   "combo_term_ms": 30,
+  "combo_idle_ms": 150,
   "combos": [
    {
     "positions": [
@@ -17581,7 +17698,7 @@
     },
     {
      "tap": "q",
-     "hold": "shortcuts",
+     "hold": "alpha1",
      "shifted": "record",
      "type": "key"
     },
@@ -17629,7 +17746,7 @@
     },
     {
      "tap": "l",
-     "hold": "shortcuts",
+     "hold": "alpha1",
      "shifted": "right",
      "type": "key"
     },
@@ -23743,7 +23860,7 @@
     ],
     [
      {
-      "h": "shortcuts",
+      "h": "alpha1",
       "t": "q",
       "s": "record"
      },
@@ -23778,7 +23895,7 @@
       "s": "up"
      },
      {
-      "h": "shortcuts",
+      "h": "alpha1",
       "t": "l",
       "s": "right"
      }

@@ -309,6 +309,19 @@ the HUD itself never reads them:
 When import draws the ZMK keymap itself, or a YAML `keymap parse` made, layer order and key
 order already match the keymap and none of the mapping keys are needed.
 
+For a curated drawing, key `layers.map` by the firmware's symbols, for example
+`SFT_A2: {drawer: shifted2, label: Shift · Alpha 2}` for `#define SFT_A2 17`.
+Run `zmk-layer-hud sync` after firmware layer changes: import records the symbols so
+the mapping follows the layer, not its old numeric position. Display names take precedence
+over symbols, then numeric IDs; conflicting entries are never reused on another layer.
+With source symbols available, unknown keys are reported and ignored. Only legacy maps
+without source symbols fall back to positional order. A normal sync preserves your config
+and carries earlier drawing decisions with their symbols.
+
+Symbol discovery reads decimal `#define NAME number` lines in quoted includes, not arbitrary
+preprocessor expressions. Numeric defines can also describe key positions or timings: use
+the firmware's actual layer symbols in your map; colliding numeric defines are kept as aliases.
+
 Where things live, and what moves them:
 
 | | default | |

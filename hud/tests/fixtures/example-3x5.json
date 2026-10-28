@@ -21,7 +21,9 @@
 "layer": "FUN"
 }
 ],
+"altgr": false,
 "base": "DEF",
+"combo_idle": 0,
 "combo_term": 50,
 "combos": [
 {
@@ -169,11 +171,51 @@
 ],
 "sticky": []
 },
+"fingers": [
+"lp",
+"lr",
+"lm",
+"li",
+"li",
+"ri",
+"ri",
+"rm",
+"rr",
+"rp",
+"lp",
+"lr",
+"lm",
+"li",
+"li",
+"ri",
+"ri",
+"rm",
+"rr",
+"rp",
+"lp",
+"lr",
+"lm",
+"li",
+"li",
+"ri",
+"ri",
+"rm",
+"rr",
+"rp",
+"lt",
+"lt",
+"lt",
+"rt",
+"rt",
+"rt"
+],
 "glyphs": {},
 "hud": {
 "activator_ms": 400,
+"combo_decide_ms": 300,
 "combo_pill_ms": 1000,
 "combo_slack_ms": 20,
+"dark": 0,
 "heatmap_ms": 3000,
 "held_timeout_ms": 5000,
 "momentary_ms": 700,
@@ -1367,6 +1409,20 @@
 "9": 9
 },
 "source": "examples/3x5.yaml",
+"stats": {
+"accuracy": true,
+"hands": false,
+"heatmap": true,
+"keys": true,
+"layer": true,
+"opacity": true,
+"session": true,
+"sfb": false,
+"slow": false,
+"theme": true,
+"time": false,
+"wpm": true
+},
 "title": "3x5 example",
 "zmk_layers": {
 "0": {
