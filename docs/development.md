@@ -72,6 +72,13 @@ that outlives its key, a chord inside a combo term, a macro across two layers. I
 chords a layer rules out -- a base combo's keys struck with a layer up that declares none on them --
 and each is struck as ZMK types it: its keys one by one, and no pill.
 
+The Python tools read a keymap message one way, `host/keymap_message.py`, the page's `view.js` in
+Python: which drawer layer a ZMK layer is, where a ZMK position is on the board, the stack live
+layers draw, a key through transparent ones. `ways.py`, `play.py`, `export.py`, `session.py` and
+`actions.py` all read that. What stays the oracle's own is how a legend is typed: `ways.typed` and
+the touch keyboard's `actions.Legends` each say it for themselves, and `engine_legends_test`
+holds one to the other.
+
 `make audit` checks what those cases cannot: the drawing itself. One drawer layer stands for every
 ZMK layer drawn as it, so where two of them fire different things on the same keys, the HUD can be
 right for only one. It reads the keyboard's keymap with keymap-drawer's own parser (what `import`
