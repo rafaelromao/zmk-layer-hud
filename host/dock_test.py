@@ -61,5 +61,28 @@ class Measure(unittest.TestCase):
         self.assertEqual(nominal, dock.px_per_mm(0, 0, 300, 200))
 
 
+class PagesWord(unittest.TestCase):
+    """What the page says of its board docked (hud.js dockFit, sayFit), as the panels say it."""
+
+    def test_a_board_too_big_at_its_real_size(self):
+        msg = {"kind": "dock", "fits": False, "key_mm": 18, "need_mm": [191, 115], "room_mm": [286, 103]}
+        self.assertEqual("at 18 mm a key (touch.key_mm) the board is 191 x 115 mm, and the dock may be 103 mm tall "
+                         "(dock.height_pct, 60% of the screen)", dock.refusal(msg))
+
+    def test_a_board_too_big_even_with_smaller_keys(self):
+        msg = {"kind": "dock", "fits": False, "key_mm": 16, "want_mm": 18, "need_mm": [400, 102], "room_mm": [286, 103]}
+        self.assertEqual("even at 16 mm a key, the smallest touch.min_key_mm lets them be (touch.key_mm is 18), the "
+                         "board is 400 x 102 mm, and the screen is 286 mm across", dock.refusal(msg))
+
+    def test_a_board_docked_with_smaller_keys_is_said_and_not_refused(self):
+        msg = {"kind": "dock", "fits": True, "key_mm": 16.9, "want_mm": 18}
+        self.assertIsNone(dock.refusal(msg))
+        self.assertEqual("at 16.9 mm a key, smaller than touch.key_mm's 18 to fit", dock.smaller(msg))
+        self.assertEqual("", dock.smaller({"kind": "dock", "fits": True, "key_mm": 18}))       # its own size again
+        for other in ({"kind": "dock", "fits": False, "key_mm": 16}, {"kind": "dock", "on": True}, "fits",
+                      {"kind": "dock", "fits": True, "key_mm": "16"}, {"kind": "dock", "fits": True, "key_mm": True}):
+            self.assertIsNone(dock.smaller(other), msg=repr(other))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -45,6 +45,14 @@ DOC = {
     "combos": [{"p": [0, 1], "k": "⎋", "layers": ["Base"]}, {"p": [2, 3], "k": "⇥"}],
 }
 
+# A drawing with a layer in the middle, for a map written in the keyboard's own symbols: when the
+# keyboard takes a layer out, the ids after it move, and a symbol-keyed map must not move anything
+# by position.
+DOC_SHIFTED = dict(DOC, layers={"Base": DOC["layers"]["Base"],
+                                "Num": [["1", "2", "3", "4"], ["5", "6", "7", "8"], "9", "0"],
+                                "Nav": DOC["layers"]["Nav"],
+                                "Sym": DOC["layers"]["Sym"]})
+
 # A 3x5+3 split drawn from its key count alone: examples/3x5.yaml's shape, and most 3x5s'.
 DOC_3X5 = {
     "layout": {"cols_thumbs_notation": "33333+3 3+33333"},
@@ -409,6 +417,24 @@ class Glyphs(unittest.TestCase):
 
 
 class Message(unittest.TestCase):
+    def test_default_altgr_matches_the_host_but_explicit_decisions_win(self):
+        self.assertEqual(sys.platform.startswith("linux"), message({}, DOC)["altgr"])
+        for value in (0, 1):
+            self.assertEqual(bool(value), message({"feed": {"altgr": value}}, DOC)["altgr"])
+
+    def test_explicit_conflicts_aliases_and_stale_keys_never_spill(self):
+        seed = {"0": {"name": "DISPLAY", "symbol": "HOME", "symbols": ["HOME", "ALIAS"]},
+                "1": {"name": "NEW", "symbol": "NEXT"}}
+        cases = [({"0": "Sym", "HOME": "Nav"}, "Nav"),
+                 ({"HOME": "Nav", "DISPLAY": "Base"}, "Base"),
+                 ({"HOME": "Base", "ALIAS": "Sym"}, "Base"),
+                 ({"HOME": "Base", "DELETED": "Sym"}, "Base")]
+        for mapping, want in cases:
+            with self.subTest(mapping=mapping):
+                table = km.zmk_layer_table({"map": mapping}, list(DOC["layers"]), seed)
+                self.assertEqual(want, table["0"]["drawer"])
+                self.assertIsNone(table["1"]["drawer"])
+
     def test_default_layer_ids_follow_yaml_order(self):
         msg = message({}, DOC)
         self.assertEqual([z["name"] for z in msg["zmk_layers"].values()], ["Base", "Nav", "Sym"])
@@ -420,6 +446,39 @@ class Message(unittest.TestCase):
         cfg = {"_imported_layers": {"0": {"name": "BASE"}, "1": {"name": "NAV"}, "2": {"name": "SYM"}}}
         msg = message(cfg, DOC)
         self.assertEqual(msg["zmk_layers"]["2"], {"id": 2, "name": "SYM", "drawer": "Sym", "label": "Sym", "cls": "momentary"})
+
+    def test_a_map_keyed_by_the_boards_symbols_stays_when_the_ids_move(self):
+        # The Diamond's bug, in miniature: the map written in the keyboard's own symbols, the layer
+        # one of them named taken out, so every id after it moved one down. Resolved by position an
+        # entry landed on the layer above -- oneshot-shift+alpha2 showed the Ç extension's drawing.
+        # The symbols the import records beside each layer (`#define CCEDIL 16` …) pin the entries.
+        cfg = {"_imported_layers": {"0": {"name": "FIRST", "symbol": "L_A"},
+                                    "1": {"name": "SECOND", "symbol": "L_C"},
+                                    "2": {"name": "THIRD", "symbol": "L_D"}},
+               "layers": {"map": {"L_B": "Num", "L_A": "Base", "L_C": "Nav", "L_D": "Sym"}}}
+        msg = message(cfg, DOC_SHIFTED)
+        self.assertEqual(["Base", "Nav", "Sym"],
+                         [msg["zmk_layers"][str(i)]["drawer"] for i in range(3)])
+        self.assertEqual("L_C", msg["zmk_layers"]["1"]["symbol"])    # and the record's symbol shows
+
+    def test_an_entry_a_layer_claimed_by_symbol_is_not_dealt_out_by_position(self):
+        # SECOND names nothing in the map: the one entry its symbol claimed was spent on it, and is
+        # not dealt out again by position to the neighbours that are left over.
+        cfg = {"_imported_layers": {"0": {"name": "FIRST"},
+                                    "1": {"name": "SECOND", "symbol": "SFT"},
+                                    "2": {"name": "THIRD"}},
+               "layers": {"map": {"SFT": "Nav"}}}
+        msg = message(cfg, DOC)
+        self.assertEqual("Nav", msg["zmk_layers"]["1"]["drawer"])
+        self.assertIsNone(msg["zmk_layers"]["0"]["drawer"])
+        self.assertIsNone(msg["zmk_layers"]["2"]["drawer"])
+
+    def test_a_symbol_keyed_mapping_gives_label_and_class(self):
+        cfg = {"_imported_layers": {"1": {"name": "SECOND", "symbol": "SFT_2"}},
+               "layers": {"map": {"SFT_2": {"label": "Shift · Alpha 2", "class": "vim"}}}}
+        msg = message(cfg, DOC)
+        row = msg["zmk_layers"]["1"]
+        self.assertEqual(("Shift · Alpha 2", "vim", "SFT_2"), (row["label"], row["cls"], row["symbol"]))
 
     def test_map_overrides(self):
         cfg = {"layers": {"map": {"Nav": {"label": "Navigation", "class": "vim"}, "2": None}}}
@@ -481,8 +540,12 @@ class Touch(unittest.TestCase):
         # A key's spacing: Choc's 18 mm unless said, MX's 19.05 kept to the hundredth.
         self.assertEqual(18, msg["touch"]["key_mm"])
         self.assertEqual(19.05, message({"touch": {"key_mm": 19.05}}, DOC)["touch"]["key_mm"])
+        # The smallest the dock makes them to fit: 16 mm unless said, a key spacing too.
+        self.assertEqual(16, msg["touch"]["min_key_mm"])
+        self.assertEqual(17.5, message({"touch": {"min_key_mm": 17.5}}, DOC)["touch"]["min_key_mm"])
         for bad in ({"nope": 1}, {"hold_ms": "slow"}, {"hold_ms": -5}, {"latch": True}, {"combos": "both"}, "yes",
-                    {"sound": 101}, {"key_mm": 5}, {"key_mm": "19"}, {"key_mm": True}, {"floating": 1}):
+                    {"sound": 101}, {"key_mm": 5}, {"key_mm": "19"}, {"key_mm": True}, {"floating": 1},
+                    {"min_key_mm": 5}, {"min_key_mm": "16"}):
             with self.assertRaises(km.KeymapError, msg=repr(bad)):
                 message({"touch": bad}, DOC)
 

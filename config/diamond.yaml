@@ -71,9 +71,11 @@ feed:
 keyboard: { vid: 0x1d50, pid: 0x615e }
 
 # The drawer YAML is a curated view (six vim layers drawn as one, copy layers folded into their
-# originals), so which drawing shows which ZMK layer has to be said. The ids and the keyboard's own
-# name for each come from imported.yaml; this is in the same order, and says what to draw for each.
-# null = transparent or not drawn.
+# originals), so which drawing shows which ZMK layer has to be said. This is keyed by the
+# keyboard's own symbols for its layers (`#define CCEDIL 16` in its sources), which the import
+# records beside each layer in imported.yaml: the map says its piece about the layer it names,
+# whatever the keyboard does to its numbering. `drawer:` is the drawing (null = transparent or
+# not drawn), `label:` the banner's word, `class:` how the banner styles it.
 layers:
   map:
     ALPHA1:      { drawer: alpha1, label: Alpha 1, class: "off" }
@@ -95,7 +97,6 @@ layers:
     ALPHA2:      { drawer: alpha2, label: Alpha 2 }
     NUM:         { drawer: numbers, label: Numbers }
     SYM:         { drawer: symbols, label: Symbols }
-    SEN_CASE:    { drawer: shifted1, label: Sentence case }
     CCEDIL:      { drawer: ç-extension, label: Ç extension }
     SFT_A2:      { drawer: shifted2, label: Shift · Alpha 2 }
     CASE_A2:     { drawer: shifted2, label: Caps · Alpha 2 }

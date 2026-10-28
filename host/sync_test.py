@@ -134,6 +134,16 @@ class ComboTerm(unittest.TestCase):
             self.assertIsNone(sync.combo_term(write(d, "board.keymap", KEYMAP)))
 
 
+class LayerSymbols(unittest.TestCase):
+    def test_the_defines_reached_through_the_includes(self):
+        # The Diamond's layers are named where its combo term is: a config.dtsi another include away.
+        with tempfile.TemporaryDirectory() as d:
+            write(d, "defs/config.dtsi", "#define CCEDIL 16\n#define SFT_A2 17\n#define COMBO_TERM 30\n")
+            path = write(d, "board.keymap", '#include "defs/config.dtsi"\n' + KEYMAP)
+            table = sync.layer_symbols(path)
+        self.assertEqual((table["CCEDIL"], table["SFT_A2"], table["COMBO_TERM"]), (16, 17, 30))
+
+
 @unittest.skipUnless(HAVE_DRAWER, "reading combo nodes needs keymap-drawer's parser (the venv)")
 class ComboIdle(unittest.TestCase):
     # The same property name means two things: on a combo, how long the keyboard must have been
@@ -210,6 +220,98 @@ class Mapping(unittest.TestCase):
         layers, undecided = sync.draft_layers(["DEFAULT"], self.DRAWN, {"0": {"drawer": None}})
         self.assertIsNone(layers["0"]["drawer"])
         self.assertEqual(undecided, [])
+
+    def test_a_keyboard_defines_its_layers_symbols_and_the_record_carries_them(self):
+        layers, _ = sync.draft_layers(["OMARCHY", "NAV"], self.DRAWN, None, symbols=["ALPHA1", "NAV"])
+        self.assertEqual(layers["0"]["symbol"], "ALPHA1")
+        self.assertEqual(layers["1"]["symbol"], "NAV")
+
+    def test_a_layer_the_keyboard_takes_out_leaves_the_next_known_undecided(self):
+        # draft_layers carries exactly what do_import hands it: whether a record's row still
+        # belongs to the layer at its id is keeps_decision's call, made before anything lands
+        # here (the pair is covered end to end by the Import test a layer taken out). Guarded
+        # away, the next layer is drafted from its name alone -- and none of them say it.
+        previous = {"0": {"name": "GONE", "drawer": "numbers", "label": "Gone"}}
+        layers, _ = sync.draft_layers(["NAVIGATION"], self.DRAWN, previous)
+        self.assertEqual("numbers", layers["0"]["drawer"])        # carried as given ...
+        layers, undecided = sync.draft_layers(["NAVIGATION"], self.DRAWN, {})
+        self.assertIsNone(layers["0"]["drawer"])                  # ... or not carried at all
+        self.assertEqual([n for _, n, _ in undecided], ["NAVIGATION"])
+
+
+class CarriesDecisions(unittest.TestCase):
+    """Whether what a record carries at an id is still the decision for the layer there."""
+
+    def test_a_carry_it_named_by_symbol_stays_while_it_means_it(self):
+        self.assertTrue(sync.keeps_decision({"symbol": "CCEDIL", "drawer": "x"}, "SHIFTED ALPHA2", "CCEDIL"))
+        self.assertFalse(sync.keeps_decision({"symbol": "CCEDIL", "drawer": "x"}, "SHIFTED ALPHA2", "SFT_A2"))
+        self.assertFalse(sync.keeps_decision({"symbol": "CCEDIL", "drawer": "x"}, "SHIFTED ALPHA2", None))
+
+    def test_a_carry_that_carried_only_a_name_stays_while_it_is_still_called_so(self):
+        self.assertTrue(sync.keeps_decision({"name": "NUMBERS", "drawer": "x"}, "NUMBERS", None))
+        # An older record that carries no symbol answers to the name alone: a symbol the keyboard
+        # defines from now on does not undo what was decided under that name.
+        self.assertTrue(sync.keeps_decision({"name": "NUMBERS", "drawer": "x"}, "NUMBERS", "X"))
+        self.assertFalse(sync.keeps_decision({"name": "NUMBERS", "drawer": "x"}, "NAVIGATION", None))
+
+    def test_a_carry_that_said_neither_is_not_doubted(self):
+        self.assertTrue(sync.keeps_decision({"drawer": "x", "label": "X"}, "ANYTHING", None))
+
+
+class Resolve(unittest.TestCase):
+    """Where layers.map entries land (resolve_map). """
+
+    NAMES = ["OMARCHY", "MACOS", "NORMAL", "NAVIGATION", "NUMBERS", "NUMBERS"]
+    SYMBOLS = {"ALPHA1": 0, "ALT_OS": 1, "NORMAL": 2, "NAV": 3, "NUM": 4, "NUM_CP": 5,
+               "COMBO_TERM": 30, "LTP": 40}
+
+    def resolve(self, **entries):
+        return sync.resolve_map(entries, self.NAMES, self.SYMBOLS)
+
+    def test_by_symbol_name_and_id(self):
+        # "2" is a key whose name is an id: it comes in as a dict entry, not a keyword.
+        pins, lands, strays = self.resolve(**{"ALPHA1": {"drawer": "a"}, "MACOS": {"drawer": "b"},
+                                              "2": {"drawer": "c"}, "NAV": {"drawer": "n"},
+                                              "MISSING": {"drawer": "m"}})
+        self.assertEqual({"0": {"drawer": "a"}, "1": {"drawer": "b"}, "2": {"drawer": "c"},
+                          "3": {"drawer": "n"}}, pins)
+        # The layout: MISSing names nothing, and lands, in order, on the layer(s) still unmapped.
+        self.assertEqual(lands, {"ALPHA1": "0", "MACOS": "1", "2": "2", "NAV": "3"})
+        self.assertEqual(strays, ["MISSING"])
+
+    def test_a_display_name_two_layers_share_names_each_of_them(self):
+        pins, lands, _ = self.resolve(NUMBERS={"drawer": "numbers"})
+        self.assertEqual({"4": {"drawer": "numbers"}, "5": {"drawer": "numbers"}}, pins)
+        self.assertEqual(lands, {"NUMBERS": "4"})
+
+    def test_a_define_that_is_no_layer_is_not_a_place(self):
+        # The keymap defines a combo term, key positions, whatever else: only symbols at ids the
+        # keymap has layers at land a map entry somewhere.
+        entries = {str(i): {"drawer": f"d{i}"} for i in range(6)}
+        entries.update(LTP={"drawer": "x"}, COMBO_TERM={"drawer": "x"}, ALPHA1={"drawer": "a"})
+        pins, lands, strays = self.resolve(**entries)
+        self.assertEqual("0", lands["ALPHA1"])                    # ALPHA1 is layer 0's symbol
+        self.assertEqual("a", pins["0"]["drawer"])                # a symbol outranks an id
+        self.assertEqual(strays, ["LTP", "COMBO_TERM"])
+
+    def test_a_leftover_entry_fills_the_first_layer_still_unmapped(self):
+        pins, lands, strays = sync.resolve_map(
+            {"NAVS": {"drawer": "nav"}, "NUMBERS": {"drawer": "numbers"},
+             "FIRST": {"drawer": "first"}}, self.NAMES, {})
+        self.assertEqual(lands, {"NAVS": "0", "NUMBERS": "4", "FIRST": "1"})
+        self.assertEqual(strays, [])
+
+    def test_an_entry_without_a_drawer_is_placed_but_not_pinned(self):
+        pins, lands, strays = self.resolve(ALPHA1={"label": "Home"}, NAV={"drawer": "nav"})
+        self.assertEqual(lands, {"ALPHA1": "0", "NAV": "3"})
+        self.assertEqual(pins, {"3": {"drawer": "nav"}})
+        self.assertEqual(strays, [])
+
+    def test_an_id_outside_the_layers_is_no_place_and_said(self):
+        entries = {str(i): {"drawer": f"d{i}"} for i in range(6)}
+        entries["99"] = {"drawer": "x"}
+        pins, lands, strays = self.resolve(**entries)
+        self.assertEqual(strays, ["99"])
 
 
 class Coverage(unittest.TestCase):
@@ -485,6 +587,36 @@ combos:
   - {p: [0, 1], k: C}
 """
 
+# A board (RENUMBER_KEYMAP) whose map is written in its own symbols, and the same one after it
+# takes NUMBERS out: every id after it moves, and a sync must not move the mapping with it.
+RENUMBER_KEYMAP = """
+#include "defs/config.dtsi"
+/ {
+    keymap {
+        compatible = "zmk,keymap";
+        base    { display-name = "ALPHA"; bindings = <&kp A>; };
+        numbers { display-name = "NUMBERS"; bindings = <&kp N1>; };
+        nav     { display-name = "NAVIGATION"; bindings = <&kp LEFT>; };
+    };
+};
+"""
+RENUMBER_KEYMAP_AFTER = """
+#include "defs/config.dtsi"
+/ {
+    keymap {
+        compatible = "zmk,keymap";
+        base { display-name = "ALPHA"; bindings = <&kp A>; };
+        nav  { display-name = "NAVIGATION"; bindings = <&kp LEFT>; };
+    };
+};
+"""
+RENUMBER_YAML = """layout: {ortho_layout: {rows: 2, columns: 4}}
+layers:
+  Base: [a, b, c, d, e, f, g, h]
+  Num:  ["1", "2", "3", "4", "5", "6", "7", "8"]
+  Nav:  [q, w, e, r, t, z, u, i]
+"""
+
 
 @unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
 class ResolveSource(unittest.TestCase):
@@ -711,6 +843,116 @@ class Import(unittest.TestCase):
         self.assertEqual(["NAV"], defs["drawing"]["combos"][0]["layers"])
         self.assertEqual(sync.os.path.abspath(repo), defs["sources"]["repo"])
         self.assertTrue(os.path.isfile(sync.imported_path(self.config)))
+
+    def test_a_layer_taken_out_moves_no_mapping_across_and_says_what_stopped_applying(self):
+        # The Diamond's bug: the map is written in the keyboard's own symbols, a layer in the
+        # middle is taken out, every id after it moves one down -- resolving by position put an
+        # entry on the layer above its one. The record carries the symbols beside each layer, so
+        # the carries are told against them and the map lands on the layers it still names; the
+        # entry for a layer that is gone is said, never quietly dropped onto a neighbour.
+        repo = os.path.join(self.d, "repo")
+        write(repo, "boards/dia/defs/config.dtsi", "#define BASE 0\n#define NUM 1\n#define NAV 2\n")
+        write(repo, "boards/dia/dia.keymap", RENUMBER_KEYMAP)
+        write(self.d, "board.yaml", RENUMBER_YAML)
+        write(self.d, "config.yaml", "keymap: board.yaml\ntitle: T\n"
+                                     "layers:\n  map:\n"
+                                     "    BASE: { drawer: Base }\n"
+                                     "    NUM:  { drawer: Num }\n"
+                                     "    NAV:  { drawer: Nav }\n")
+        with mock.patch.object(sync, "parse_keymap", return_value={"combos": []}):
+            self.run_import(repo, "dia")
+            with open(self.defs, encoding="utf-8") as f:
+                layers = json.load(f)["zmk"]["layers"]
+            self.assertEqual(["ALPHA", "NUMBERS", "NAVIGATION"], [layers[str(i)]["name"] for i in range(3)])
+            self.assertEqual(["Base", "Num", "Nav"], [layers[str(i)]["drawer"] for i in range(3)])
+            self.assertEqual(["BASE", "NUM", "NAV"], [layers[str(i)].get("symbol") for i in range(3)])
+
+        write(repo, "boards/dia/defs/config.dtsi", "#define BASE 0\n#define NAV 1\n")
+        write(repo, "boards/dia/dia.keymap", RENUMBER_KEYMAP_AFTER)
+        with mock.patch.object(sync, "parse_keymap", return_value={"combos": []}), \
+                contextlib.redirect_stderr(io.StringIO()) as err:
+            sync.do_import(repo, "dia", self.config, quiet=False, fetch=False)
+        said = err.getvalue()
+        self.assertIn("no longer name a layer", said)
+        self.assertIn("not applied: NUM (the keyboard's layers have changed?)", said)
+        with open(self.defs, encoding="utf-8") as f:
+            layers = json.load(f)["zmk"]["layers"]
+        self.assertEqual(["ALPHA", "NAVIGATION"], [layers[str(i)]["name"] for i in range(2)])
+        self.assertEqual(["Base", "Nav"], [layers[str(i)]["drawer"] for i in range(2)])
+        self.assertEqual(["BASE", "NAV"], [layers[str(i)].get("symbol") for i in range(2)])
+        with open(sync.imported_path(self.config), encoding="utf-8") as f:
+            self.assertEqual(2, f.read().count("symbol: "))
+
+    def test_a_plain_sync_leaves_the_labels_a_human_wrote_alone(self):
+        # The labels in the map are part of what the human wrote: a sync carries them into the
+        # record and never takes them out of config.yaml (only --pristine, asked, does).
+        repo = os.path.join(self.d, "repo")
+        write(repo, "boards/dia/defs/config.dtsi", "#define BASE 0\n#define NAV 1\n")
+        write(repo, "boards/dia/dia.keymap", RENUMBER_KEYMAP_AFTER)
+        write(self.d, "board.yaml", RENUMBER_YAML)
+        write(self.d, "config.yaml", "keymap: board.yaml\ntitle: T\n"
+                                     "layers:\n  map:\n"
+                                     "    BASE: { drawer: Base, label: Base camp }\n"
+                                     "    NAV:  { drawer: Nav }\n")
+        with mock.patch.object(sync, "parse_keymap", return_value={"combos": []}):
+            self.run_import(repo, "dia")
+            self.run_import(repo, "dia")                       # and a sync over a sync: no drift
+        with open(self.config, encoding="utf-8") as f:
+            self.assertIn("label: Base camp", f.read())
+        with open(sync.imported_path(self.config), encoding="utf-8") as f:
+            rec = f.read()
+        self.assertIn("label: Base camp", rec)                 # ... and carried where it lands
+        with open(self.defs, encoding="utf-8") as f:
+            self.assertEqual("Base camp", json.load(f)["zmk"]["layers"]["0"]["label"])
+
+    def test_a_carried_decision_follows_its_symbol_to_a_new_id(self):
+        repo = os.path.join(self.d, "repo")
+        write(repo, "boards/dia/defs/config.dtsi", "#define BASE 0\n#define NUM 1\n#define NAV 2\n")
+        write(repo, "boards/dia/dia.keymap", RENUMBER_KEYMAP)
+        write(self.d, "board.yaml", RENUMBER_YAML)
+        with mock.patch.object(sync, "parse_keymap", return_value={"combos": []}):
+            self.run_import(repo, "dia")
+            # A decision carried by an earlier import, with no config pin to recreate it.
+            rec = sync.read_imported(sync.imported_path(self.config))
+            rec.update(source=repo, keyboard="dia")
+            rec["layers"]["2"].update(drawer="Num", label="My navigation")
+            sync.write_if_changed(sync.imported_path(self.config), sync.render(rec, []))
+            write(repo, "boards/dia/defs/config.dtsi", "#define BASE 0\n#define NAV 1\n")
+            write(repo, "boards/dia/dia.keymap", RENUMBER_KEYMAP_AFTER)
+            self.run_import(repo, "dia")
+        with open(self.defs, encoding="utf-8") as f:
+            row = json.load(f)["zmk"]["layers"]["1"]
+        self.assertEqual(("Num", "My navigation", "NAV"),
+                         (row["drawer"], row["label"], row["symbol"]))
+
+    def test_pristine_offers_to_keep_a_repo_mapping(self):
+        repo = os.path.join(self.d, "repo")
+        write(repo, "b.keymap", KEYMAP)
+        with mock.patch.object(sync, "parse_keymap", return_value={"combos": []}):
+            self.run_import(repo, "b")
+            rec = sync.read_imported(sync.imported_path(self.config))
+            rec.update(source=repo, keyboard="b")
+            rec["layers"]["0"].update(drawer="Nav", label="Handmade")
+            sync.write_if_changed(sync.imported_path(self.config), sync.render(rec, []))
+            asked = []
+            with contextlib.redirect_stderr(io.StringIO()):
+                sync.do_import(repo, "b", self.config, pristine=True, fetch=False,
+                               ask=lambda q: asked.append(q) or True)
+        self.assertTrue(any("layer 0" in q for q in asked), asked)
+        with open(self.defs, encoding="utf-8") as f:
+            self.assertEqual("Handmade", json.load(f)["zmk"]["layers"]["0"]["label"])
+
+    def test_pristine_drops_labels_from_all_layers_sharing_a_name(self):
+        repo = os.path.join(self.d, "repo")
+        write(repo, "b.keymap", KEYMAP)
+        write(self.d, "config.yaml", "keymap: board.yaml\nlayers:\n  map:\n"
+                                     "    NUMBERS: {drawer: Nav, label: Human}\n")
+        with mock.patch.object(sync, "parse_keymap", return_value={"combos": []}):
+            self.run_import(repo, "b")
+            sync.do_import(repo, "b", self.config, quiet=True, pristine=True, keep=False, fetch=False)
+        with open(self.defs, encoding="utf-8") as f:
+            layers = json.load(f)["zmk"]["layers"]
+        self.assertEqual(["Numbers", "Numbers"], [layers[i]["label"] for i in ("1", "2")])
 
 
 
