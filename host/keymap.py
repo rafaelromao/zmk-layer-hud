@@ -122,7 +122,8 @@ FEED_DEFAULTS = {
     "session_poll_s": 1,       # how often the session files are looked at for `zmk-layer-hud session` changes
     "secure_input": 1,         # while a password field has focus or a terminal asks for a password, pass on nothing typed (0: pass it all)
     "accessibility": 1,        # (Linux) tell the apps assistive technology is wanted, so a password field with focus is seen (0: leave that setting alone)
-    "altgr": 0,                # 1: the right Alt is AltGr, a Linux host's US-International (ç is AltGr+,); 0: it is macOS's Option
+    # Native default; a configured 0/1 wins. Linux: US-International (ç is AltGr+,), macOS: Option.
+    "altgr": int(sys.platform.startswith("linux")),
 }
 
 # keymap-drawer glyph names -> text the HUD can show. The glyph id is kept too.

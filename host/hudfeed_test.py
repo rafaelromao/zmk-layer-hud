@@ -962,6 +962,38 @@ class PortTaken(unittest.TestCase):
         self.assertTrue(any("could not take the port" in s for s in said), said)
         self.assertTrue(any("reading Test Board" in s for s in said), said)
 
+    def test_a_permission_failure_is_retried_without_unplugging(self):
+        # udev can grant access after enumeration. HID typing keeps arriving meanwhile,
+        # but without the serial layer signal Alpha 2's k looks like Alpha 1's combo.
+        emitted, said = [], []
+        reader = SerialReader(emitted.append, log=said.append)
+        dev = self.Dev([self.frame(signal_frame.KIND_LAYERS, (1 << 13).to_bytes(4, "little"))], reader)
+        serial = types.ModuleType("serial")
+        serial.SerialException = OSError
+        serial.Serial = mock.Mock(side_effect=[PermissionError(13, "Permission denied"),
+                                              PermissionError(13, "Permission denied"), dev])
+        ports = types.ModuleType("serial.tools")
+        ports.list_ports = mock.Mock()
+
+        def start_read(**kwargs):
+            return types.SimpleNamespace(start=lambda: kwargs["target"](*kwargs["args"]))
+
+        def scan_wait(_):
+            # The port stays connected, and access is granted after two failed scans.
+            if serial.Serial.call_count >= 3 or reader._stop.wait.call_count >= 3:
+                reader.stop()
+
+        with mock.patch.dict(sys.modules, {"serial": serial, "serial.tools": ports}), \
+             mock.patch.object(reader, "_ports", return_value=[("/dev/cu.test", "Test Board")]), \
+             mock.patch.object(reader._stop, "wait", side_effect=scan_wait), \
+             mock.patch("hudfeed.threading.Thread", side_effect=start_read), mock.patch("fcntl.ioctl"):
+            reader._scan_loop()
+        self.assertIn({"kind": "layers", "ids": [13], "device": "Test Board"}, emitted)
+        self.assertEqual(3, serial.Serial.call_count)
+        self.assertNotIn("/dev/cu.test", reader._quiet)
+        self.assertNotIn("/dev/cu.test", reader._failed)
+        self.assertEqual(1, sum("cannot open" in line for line in said))
+
 
 @unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
 class ReaderSettings(unittest.TestCase):
@@ -1015,6 +1047,20 @@ class ReaderSettings(unittest.TestCase):
 
     def test_a_config_with_no_keymap_yet(self):
         self.check(*self.feed_for(self.SETTINGS))
+
+    def test_default_right_alt_decoding_matches_the_host(self):
+        feed, _ = self.feed_for(self.SETTINGS)
+        decoder = SignalDecoder(altgr=feed.reader.altgr)
+        typed = [m["chars"] for m in decoder.feed(K(0x40, 0x36), 0) if m["type"] == "keyDown"]
+        self.assertEqual(["ç" if sys.platform.startswith("linux") else "≤"], typed)
+
+    def test_explicit_right_alt_decoding_wins_over_the_host_default(self):
+        for altgr, expected in ((0, "≤"), (1, "ç")):
+            with self.subTest(altgr=altgr):
+                feed, _ = self.feed_for(self.SETTINGS.replace("rescan_s: 7,", f"rescan_s: 7, altgr: {altgr},"))
+                decoder = SignalDecoder(altgr=feed.reader.altgr)
+                typed = [m["chars"] for m in decoder.feed(K(0x40, 0x36), 0) if m["type"] == "keyDown"]
+                self.assertEqual([expected], typed)
 
 
 if __name__ == "__main__":
