@@ -2,20 +2,27 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>ZMK layer HUD</title>
 <link rel="stylesheet" href="hud.css">
 </head>
 <body>
 <div id="frame">
 <div id="hud">
-  <div id="layer"><span id="layerName"></span><span id="layerSub"></span><button id="side" title="hide the stats" aria-label="hide the stats" aria-pressed="true"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M6.5 2 L3.5 5 L6.5 8"/></svg></button><button id="hide" title="hide the HUD: it keeps counting, and its icon or `zmk-layer-hud show` brings it back" aria-label="hide"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 5 H7.5"/></svg></button><button id="close" title="close the HUD" aria-label="close">✕</button></div>
+  <div id="layer"><span id="layerName"></span><span id="layerSub"></span><button id="mini" title="minimize: the keyboard down to this bar, still docked" aria-label="minimize the keyboard" aria-pressed="false"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 L5 6.5 L8 3.5"/></svg></button><button id="attach" title="attach: a touch keyboard along the bottom of the screen" aria-label="attach as a touch keyboard" aria-pressed="false"><svg viewBox="0 0 10 10" aria-hidden="true"><path class="arrow" d="M5 1 V6 M3 4 L5 6 L7 4"/><path d="M1.5 8.5 H8.5"/></svg></button><button id="side" title="hide the stats" aria-label="hide the stats" aria-pressed="true"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M6.5 2 L3.5 5 L6.5 8"/></svg></button><button id="hide" title="hide the HUD: it keeps counting, and its icon or `zmk-layer-hud show` brings it back" aria-label="hide"><svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2.5 5 H7.5"/></svg></button><button id="close" title="close the HUD" aria-label="close">✕</button></div>
   <div id="board"></div>
   <div id="status"><span id="feed">waiting for the keymap…</span><span id="title"></span></div>
 </div>
 <div id="stats"><a id="statsHead" href="https://rafaelromao.github.io/zmk-layer-hud/" target="_blank" rel="noopener" title="the landing page, in a browser">ZMK Layer HUD</a></div>
 </div>
 <div id="keys"></div>
+<script src="keynames.js"></script>
 <script src="keys.js"></script>
+<script src="hidtext.js"></script>
+<script src="engine.js"></script>
+<script src="view.js"></script>
+<script src="keystrokes.js"></script>
 <script src="hud.js"></script>
+<script src="touch.js"></script>
 </body>
 </html>

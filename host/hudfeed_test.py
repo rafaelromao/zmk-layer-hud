@@ -1,7 +1,7 @@
-"""Decoder tests for host/hudfeed.py: the keyboard's signal messages -> the pages' messages.
+"""Tests for host/hudfeed.py: the readers, the stream, the socket and what watches for secrets.
 
 The wire format itself is host/signal_frame.py's business and is tested in signal_frame_test.py;
-what is tested here is what the HUD gets told. Stream ties the two together.
+what a report means is host/hiddecode.py's, tested in hiddecode_test.py. Stream ties the two together.
 """
 
 import asyncio
@@ -11,6 +11,7 @@ import re
 import shutil
 import sys
 import tempfile
+import threading
 import termios
 import types
 import unittest
@@ -18,9 +19,11 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import session  # noqa: E402
 import signal_frame  # noqa: E402
-from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SerialReader, any_of, probe_report,  # noqa: E402
-                     SignalDecoder, Stream, asks_secret, hid_scan_note, hidraw_match, sent_in, serve_hub,
+from hiddecode import SignalDecoder  # noqa: E402
+from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Carriers, Feed, Hub, HubThread, SecureInput, SerialReader, any_of, probe_report,  # noqa: E402
+                     Stream, asks_secret, hid_scan_note, hidraw_match, sent_in, serve_hub,
                      split_report, terminal_probe)
 
 try:
@@ -28,169 +31,6 @@ try:
     HAVE_YAML = True
 except ImportError:
     HAVE_YAML = bool(shutil.which("yq"))   # keymap.load_yaml's other way to read a config
-
-
-def K(mods=0, *keys):
-    """A `keys` message: the report snapshot the firmware sends."""
-    return {"kind": "keys", "mods": mods, "keys": list(keys)}
-
-
-def L(*ids):
-    return {"kind": "layers", "ids": list(ids)}
-
-
-class Layers(unittest.TestCase):
-    def test_only_when_changed(self):
-        d = SignalDecoder()
-        self.assertEqual(d.feed(L(2)), [{"kind": "layers", "ids": [2]}])
-        self.assertEqual(d.feed(L(2)), [])                      # the heartbeat: unchanged
-        self.assertEqual(d.feed(L()), [{"kind": "layers", "ids": []}])
-
-    def test_layer_zero_is_never_drawn(self):
-        # The firmware sends the bitmap as the keymap holds it; the default layer is always on and
-        # the page's stack does not include it.
-        d = SignalDecoder()
-        self.assertEqual(d.feed(L(0, 22)), [{"kind": "layers", "ids": [22]}])
-        self.assertEqual(d.feed(L(22)), [])                     # the same set, spelled differently
-
-    def test_several_layers_keep_their_order(self):
-        d = SignalDecoder()
-        self.assertEqual(d.feed(L(2, 14, 22)), [{"kind": "layers", "ids": [2, 14, 22]}])
-
-
-class Positions(unittest.TestCase):
-    """Firmware `positions;`: each press and release names the key that moved."""
-
-    def test_press_and_release_pass_through(self):
-        d = SignalDecoder()
-        self.assertEqual(d.feed({"kind": "press", "pos": 13}), [{"kind": "press", "pos": 13}])
-        self.assertEqual(d.feed({"kind": "release", "pos": 13}), [{"kind": "release", "pos": 13}])
-
-    def test_a_position_is_not_swallowed_by_a_repeat(self):
-        # Unlike the report encoding, the same key pressed twice is two messages.
-        d = SignalDecoder()
-        self.assertEqual(d.feed({"kind": "press", "pos": 0}), [{"kind": "press", "pos": 0}])
-        self.assertEqual(d.feed({"kind": "press", "pos": 0}), [{"kind": "press", "pos": 0}])
-
-
-class Keys(unittest.TestCase):
-    def test_key_press_and_release(self):
-        d = SignalDecoder()
-        down = d.feed(K(0, 0x04))
-        self.assertEqual(len(down), 1)
-        self.assertEqual((down[0]["type"], down[0]["name"], down[0]["chars"], down[0]["code"]), ("keyDown", "a", "a", 4))
-        up = d.feed(K(0))
-        self.assertEqual((up[0]["type"], up[0]["chars"]), ("keyUp", "a"))
-
-    def test_shift_gives_uppercase_and_symbols(self):
-        d = SignalDecoder()
-        msgs = d.feed(K(0x02, 0x04))                             # left shift + a
-        self.assertEqual(msgs[0]["type"], "flagsChanged")
-        self.assertTrue(msgs[0]["flags"]["shift"])
-        self.assertEqual((msgs[1]["type"], msgs[1]["chars"]), ("keyDown", "A"))
-        d.feed(K(0x02))
-        msgs = d.feed(K(0x20, 0x1E))                             # right shift + 1
-        self.assertEqual(msgs[-1]["chars"], "!")
-
-    def test_named_keys(self):
-        d = SignalDecoder()
-        self.assertEqual(d.feed(K(0, 0x28))[0]["name"], "return")
-        d.feed(K(0))
-        self.assertEqual(d.feed(K(0, 0x50))[0]["name"], "left")
-        d.feed(K(0))
-        self.assertEqual(d.feed(K(0, 0x68))[0]["name"], "f13")
-        d.feed(K(0))
-        m = d.feed(K(0, 0x2C))[0]
-        self.assertEqual((m["name"], m["chars"]), ("space", " "))
-
-    def test_modifier_only_change(self):
-        d = SignalDecoder()
-        msgs = d.feed(K(0x08))                                   # cmd down
-        self.assertEqual([m["type"] for m in msgs], ["flagsChanged"])
-        self.assertTrue(msgs[0]["flags"]["cmd"])
-        self.assertEqual(d.feed(K(0))[0]["flags"]["cmd"], False)
-
-    def test_chord_reports_each_key_once(self):
-        d = SignalDecoder()
-        self.assertEqual([m["chars"] for m in d.feed(K(0, 0x04, 0x05))], ["a", "b"])
-        self.assertEqual(d.feed(K(0, 0x04, 0x05)), [])           # resent unchanged: nothing new
-        self.assertEqual([m["chars"] for m in d.feed(K(0, 0x05))], ["a"])  # a released
-
-    def test_a_kind_this_version_does_not_know_is_ignored(self):
-        # The firmware can add kinds without the host having to understand them.
-        self.assertEqual(SignalDecoder().feed({"kind": "battery", "pct": 80}), [])
-
-
-class DeadKeys(unittest.TestCase):
-    """Accent macros type a US-International dead key then the letter, back to back."""
-
-    def test_acute_a(self):
-        d = SignalDecoder()
-        self.assertEqual(d.feed(K(0, 0x34), now_ms=1000), [])          # ' held back
-        self.assertEqual(d.feed(K(0), now_ms=1001), [])                 # its release: nothing yet...
-        msgs = d.feed(K(0, 0x04), now_ms=1002)                          # a
-        downs = [m for m in msgs if m.get("type") == "keyDown"]
-        self.assertEqual(len(downs), 1)
-        self.assertEqual((downs[0]["chars"], downs[0]["name"], downs[0]["composed"]), ("á", "á", [0x34, 0x04]))
-
-    def test_tilde_and_umlaut_use_shift(self):
-        d = SignalDecoder()
-        d.feed(K(0x02, 0x35), now_ms=0)      # shift + ` = ~
-        d.feed(K(0x02), now_ms=1)
-        msgs = d.feed(K(0, 0x11), now_ms=2)  # n
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["ñ"])
-        d.feed(K(0), now_ms=3)
-        d.feed(K(0x02, 0x34), now_ms=10)     # shift + ' = "
-        d.feed(K(0x02), now_ms=11)
-        msgs = d.feed(K(0x02, 0x18), now_ms=12)  # shift + u
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["Ü"])
-
-    def test_cedilla_is_the_us_international_special_case(self):
-        d = SignalDecoder()
-        d.feed(K(0, 0x34), now_ms=0)         # '
-        d.feed(K(0), now_ms=1)
-        msgs = d.feed(K(0, 0x06), now_ms=2)  # c -> ç, not ć
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["ç"])
-        d.feed(K(0), now_ms=3)
-        d.feed(K(0, 0x34), now_ms=10)
-        d.feed(K(0), now_ms=11)
-        msgs = d.feed(K(0x02, 0x06), now_ms=12)  # shift + c -> Ç
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["Ç"])
-
-    def test_plain_apostrophe_is_released_on_timeout(self):
-        d = SignalDecoder()
-        self.assertEqual(d.feed(K(0, 0x34), now_ms=0), [])
-        self.assertEqual(d.feed(K(0), now_ms=5), [])                     # release held with it
-        self.assertEqual(d.flush(30), [])                                # not yet
-        out = d.flush(61)
-        self.assertEqual([(m["type"], m["chars"]) for m in out], [("keyDown", "'"), ("keyUp", "'")])
-
-    def test_apostrophe_then_slow_letter_stays_two_keys(self):
-        d = SignalDecoder()
-        d.feed(K(0, 0x34), now_ms=0)
-        d.feed(K(0), now_ms=5)
-        msgs = d.feed(K(0, 0x04), now_ms=200)                             # too late to compose
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["'", "a"])
-
-    def test_apostrophe_then_non_letter(self):
-        d = SignalDecoder()
-        d.feed(K(0, 0x34), now_ms=0)
-        d.feed(K(0), now_ms=1)
-        msgs = d.feed(K(0, 0x2C), now_ms=2)                               # space
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["'", " "])
-
-    def test_option_layer_characters(self):
-        d = SignalDecoder()
-        msgs = d.feed(K(0x02 | 0x04, 0x1F), now_ms=0)                    # shift + alt + 2 = €
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["€"])
-        d.feed(K(0), now_ms=1)
-        msgs = d.feed(K(0x04, 0x2D), now_ms=2)                           # alt + - = en dash
-        self.assertEqual([m["chars"] for m in msgs if m.get("type") == "keyDown"], ["–"])
-
-    def test_compose_can_be_disabled(self):
-        d = SignalDecoder(compose=False)
-        msgs = d.feed(K(0, 0x34), now_ms=0)
-        self.assertEqual([m["chars"] for m in msgs], ["'"])
 
 
 class StreamTest(unittest.TestCase):
@@ -255,12 +95,263 @@ class StreamTest(unittest.TestCase):
         plain.message({"kind": "layers", "ids": [1]}, 2)
         self.assertEqual(2, len(said))
 
+    def test_closing_lets_a_held_modifier_go(self):
+        # Shift held as the keyboard was unplugged: the page draws it held until it is told otherwise.
+        self.stream.message({"kind": "keys", "mods": 0x02, "keys": []}, 0)
+        self.out.clear()
+        self.stream.close()
+        self.assertEqual([("flagsChanged", False)], [(m["type"], m["flags"]["shift"]) for m in self.out])
+
+    def test_closing_leaves_held_a_modifier_another_keyboard_holds(self):
+        # Shift held on both keyboards, one unplugged: the other still holds it, and will not say
+        # so again until it lets it go -- so the pages are not told it came up.
+        self.stream.message({"kind": "keys", "mods": 0x02, "keys": [0x04]}, 0)
+        self.out.clear()
+        self.stream.close(held_elsewhere=0x02)
+        self.assertEqual([("keyUp", "A")], [(m["type"], m["chars"]) for m in self.out])
+        # Ctrl and Shift here, Shift there: Ctrl comes up, Shift stays.
+        stream = Stream(self.out.append, "Diamond")
+        stream.message({"kind": "keys", "mods": 0x03, "keys": []}, 0)
+        self.out.clear()
+        stream.close(held_elsewhere=0x02)
+        self.assertEqual([("flagsChanged", False, True)],
+                         [(m["type"], m["flags"]["ctrl"], m["flags"]["shift"]) for m in self.out])
+
+    def test_closing_types_a_dead_key_that_was_waiting_for_its_letter(self):
+        # ' held back for the letter that would make it an accent: the keyboard went away instead,
+        # so it is the plain key it was -- down, then up -- never an up with no down.
+        self.stream.message({"kind": "keys", "mods": 0, "keys": [0x34]}, 0)
+        self.assertEqual([], self.out)
+        self.stream.close()
+        self.assertEqual([("keyDown", "'"), ("keyUp", "'")], [(m["type"], m["chars"]) for m in self.out])
+
     def test_closing_releases_what_was_held(self):
         self.stream.message({"kind": "keys", "mods": 0, "keys": [0x04]}, 0)
         self.out.clear()
         self.stream.close()
         self.assertEqual([(m["type"], m["chars"], m["device"]) for m in self.out],
-                         [("keyUp", "a", "Diamond")])
+                         [("keyUp", "a", "Diamond")])   # no `gone`: no signal frame came on it (Carriers)
+
+
+class CarriersTest(unittest.TestCase):
+    """A keyboard plugged in by USB and paired by BLE sends its signal on both: one is read."""
+
+    def press(self, pos):
+        return {"kind": "press", "pos": pos, "device": "Diamond"}
+
+    def release(self, pos):
+        return {"kind": "release", "pos": pos, "device": "Diamond"}
+
+    def both(self, carriers, msgs, first="ble"):
+        """Each message as both carriers deliver it, `first` a little ahead: what goes on."""
+        second = "usb" if first == "ble" else "ble"
+        out = []
+        for m in msgs:
+            for carrier in (first, second):
+                if carriers.take(carrier, dict(m)):
+                    out.append((carrier, m["kind"], m.get("pos")))
+        return out
+
+    def test_a_chord_on_two_carriers_is_one_chord(self):
+        # The q chord held, as the Diamond on USB and BLE recorded it: each position came twice.
+        msgs = [self.press(11), self.press(12), self.release(12), self.release(11)]
+        out = self.both(Carriers(), msgs)
+        self.assertEqual([("ble", "press", 11), ("ble", "press", 12), ("ble", "release", 12), ("ble", "release", 11)], out)
+
+    def test_the_first_carrier_keeps_it_while_both_are_up(self):
+        carriers = Carriers()
+        self.assertTrue(carriers.take("ble", self.press(11)))     # BLE heard first: BLE's
+        self.assertFalse(carriers.take("usb", self.press(11)))
+        self.assertTrue(carriers.take("ble", self.release(11)))
+        self.assertFalse(carriers.take("usb", self.release(11)))
+        self.assertTrue(carriers.take("ble", self.press(12)))     # idle, and still BLE's
+        self.assertFalse(carriers.take("usb", self.press(12)))
+        out = self.both(Carriers(), [self.press(3), self.release(3), self.press(3), self.release(3)], first="usb")
+        self.assertEqual({"usb"}, {c for c, _, _ in out})
+        self.assertEqual(4, len(out))
+
+    def test_a_lagging_copy_of_a_tap_is_not_sent_again(self):
+        # BLE delivers a quick tap before USB's copy of it starts: both look idle when USB's press
+        # comes. Handed over there, the tap would go out twice.
+        carriers = Carriers()
+        self.assertTrue(carriers.take("ble", self.press(5)))
+        self.assertTrue(carriers.take("ble", self.release(5)))
+        self.assertFalse(carriers.take("usb", self.press(5)))
+        self.assertFalse(carriers.take("usb", self.release(5)))
+
+    def clocked(self):
+        now = [0.0]
+        return Carriers(clock=lambda: now[0]), now
+
+    def test_two_keyboards_with_one_name_are_both_read(self):
+        # Another keyboard called Diamond on BLE: its presses are never the owner's.
+        carriers, now = self.clocked()
+        self.assertTrue(carriers.take("usb", self.press(1)))
+        for i, pos in enumerate([20, 21, 22, 23]):
+            now[0] += 1.0
+            carriers.take("ble", self.press(pos))
+        self.assertIn("Diamond", carriers.split)
+        self.assertTrue(carriers.take("ble", self.press(24)))
+        self.assertTrue(carriers.take("usb", self.press(2)))
+
+    def test_two_keyboards_gone_leave_the_name_to_be_judged_again(self):
+        carriers, now = self.clocked()
+        carriers.take("usb", self.press(1))
+        for pos in [20, 21, 22, 23]:
+            now[0] += 1.0
+            carriers.take("ble", self.press(pos))
+        self.assertIn("Diamond", carriers.split)
+        carriers.take("usb", {"kind": "gone", "device": "Diamond"})
+        self.assertIn("Diamond", carriers.split)            # one of them is still there
+        carriers.take("ble", {"kind": "gone", "device": "Diamond"})
+        self.assertNotIn("Diamond", carriers.split)
+        # One of them back on both carriers: one carrier read again.
+        self.assertTrue(carriers.take("usb", self.press(3)))
+        self.assertFalse(carriers.take("ble", self.press(3)))
+
+    def test_a_copy_ahead_or_behind_is_a_copy(self):
+        carriers, now = self.clocked()
+        for pos in range(12):
+            now[0] += 1.0
+            carriers.take("usb", self.press(pos))
+            now[0] += 0.1
+            carriers.take("ble", self.press(pos))           # behind the owner
+            now[0] += 1.0
+            carriers.take("ble", self.press(pos + 100))    # ahead of the owner
+            now[0] += 0.1
+            carriers.take("usb", self.press(pos + 100))
+        self.assertNotIn("Diamond", carriers.split)
+
+    def test_one_frame_the_owner_lost_does_not_split_it(self):
+        carriers, now = self.clocked()
+        carriers.take("usb", self.press(1))
+        now[0] += 0.05
+        carriers.take("ble", self.press(1))
+        now[0] += 1.0
+        carriers.take("ble", self.press(9))                 # the owner dropped this one
+        for pos in range(2, 8):
+            now[0] += 1.0
+            carriers.take("usb", self.press(pos))
+            now[0] += 0.05
+            carriers.take("ble", self.press(pos))
+        self.assertNotIn("Diamond", carriers.split)
+
+    def test_the_other_carrier_takes_over_when_one_goes(self):
+        carriers = Carriers()
+        self.assertTrue(carriers.take("usb", {"kind": "layers", "ids": [1], "device": "Diamond"}))
+        self.assertFalse(carriers.take("ble", {"kind": "layers", "ids": [1], "device": "Diamond"}))
+        self.assertFalse(carriers.take("usb", {"kind": "gone", "device": "Diamond"}))   # unplugged
+        self.assertTrue(carriers.take("ble", self.press(5)))
+        self.assertTrue(carriers.take("ble", self.release(5)))
+        # Plugged in again: BLE keeps it while it lasts.
+        self.assertFalse(carriers.take("usb", self.press(6)))
+        self.assertTrue(carriers.take("ble", self.press(6)))
+
+    def test_a_layer_change_heard_only_on_the_other_carrier_is_handed_on(self):
+        # BLE decoded the new layers first and was set aside; USB went before it said them, and
+        # BLE's decoder will not say an unchanged set again: the takeover says it.
+        carriers = Carriers()
+        layers = lambda ids: {"kind": "layers", "ids": ids, "device": "Diamond"}
+        self.assertTrue(carriers.take("usb", layers([1])))
+        self.assertFalse(carriers.take("ble", layers([1])))
+        self.assertFalse(carriers.take("ble", layers([1, 3])))
+        self.assertEqual([], carriers.drain())
+        self.assertFalse(carriers.take("usb", {"kind": "gone", "device": "Diamond"}))
+        self.assertEqual([layers([1, 3])], carriers.drain())
+        self.assertEqual([], carriers.drain())
+        self.assertTrue(carriers.take("ble", self.press(4)))      # BLE is read at once
+        # The same set as the pages have: nothing to say.
+        carriers = Carriers()
+        carriers.take("usb", layers([2])); carriers.take("ble", layers([2]))
+        carriers.take("usb", {"kind": "gone", "device": "Diamond"})
+        self.assertEqual([], carriers.drain())
+
+    def test_the_feed_says_the_takeovers_layers(self):
+        told = []
+        with mock.patch("hudfeed.carbon_probe", return_value=None), mock.patch("hudfeed.terminal_probe", return_value=None), \
+             mock.patch("hudfeed.sessionlock.probe", return_value=None), tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("keyboard: {name: Diamond}\nserial: {port: /dev/cu.test}\n")
+            feed = Feed(told.append, log=lambda *a: None, config=path, sessions=False, keymap=False, hid_keys=False)
+        feed.reader.emit({"kind": "layers", "ids": [1], "device": "Diamond"})
+        feed.ble.emit({"kind": "layers", "ids": [1, 3], "device": "Diamond"})
+        feed.reader.emit({"kind": "gone", "device": "Diamond"})
+        self.assertEqual([[1], [1, 3]], [m["ids"] for m in told if m["kind"] == "layers"])
+
+    def test_a_takeover_goes_out_before_the_other_thread_says_anything(self):
+        # USB goes on its reader's thread while BLE has a newer layer set on its own: the takeover
+        # must be out before BLE's message is decided, or the older set would follow the newer.
+        told, order = [], []
+        with mock.patch("hudfeed.carbon_probe", return_value=None), mock.patch("hudfeed.terminal_probe", return_value=None), \
+             mock.patch("hudfeed.sessionlock.probe", return_value=None), tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("keyboard: {name: Diamond}\nserial: {port: /dev/cu.test}\n")
+            feed = Feed(told.append, log=lambda *a: None, config=path, sessions=False, keymap=False, hid_keys=False)
+        feed.reader.emit({"kind": "layers", "ids": [1], "device": "Diamond"})
+        feed.ble.emit({"kind": "layers", "ids": [1, 3], "device": "Diamond"})
+        taken, ble_sent = threading.Event(), threading.Event()
+        real_take = feed.carriers.take
+
+        def slow_take(carrier, msg):
+            out = real_take(carrier, msg)
+            if msg.get("kind") == "gone":
+                taken.set()
+                ble_sent.wait(0.3)      # BLE's newer set tries to get in between take and drain
+            return out
+        feed.carriers.take = slow_take
+        ble = threading.Thread(target=lambda: (taken.wait(2), feed.ble.emit({"kind": "layers", "ids": [1, 3, 4], "device": "Diamond"}), ble_sent.set()))
+        ble.start()
+        feed.reader.emit({"kind": "gone", "device": "Diamond"})
+        ble.join(3)
+        self.assertEqual([[1], [1, 3], [1, 3, 4]], [m["ids"] for m in told if m["kind"] == "layers"])
+
+    def test_two_keyboards_are_read_apart(self):
+        carriers = Carriers()
+        self.assertTrue(carriers.take("ble", self.press(1)))
+        other = {"kind": "press", "pos": 1, "device": "Romak"}
+        self.assertTrue(carriers.take("usb", other))
+        self.assertFalse(carriers.take("ble", dict(other)))
+
+    def test_a_ble_keyboard_without_a_name_takes_the_configured_one(self):
+        # Found by its address, BLE may give no name: the configured one keeps it one keyboard.
+        from hudfeed import BleReader
+        dev = mock.Mock(address="AA:BB:CC:DD:EE:FF")
+        dev.name = None
+        named = mock.Mock(address="AA:BB:CC:DD:EE:FF")
+        named.name = "Diamond"
+        reader = mock.Mock()
+        reader.name = "Diamond"                          # keyboard: {name: Diamond}
+        self.assertEqual("Diamond", BleReader._label(reader, dev))
+        reader.name = None
+        self.assertEqual("AA:BB:CC:DD:EE:FF", BleReader._label(reader, dev))
+        reader.name = "Dia"
+        self.assertEqual("Diamond", BleReader._label(reader, named))
+
+    def test_what_names_no_keyboard_passes(self):
+        carriers = Carriers()
+        self.assertTrue(carriers.take("ble", {"kind": "device", "name": "Diamond"}))
+        self.assertTrue(carriers.take("usb", {"kind": "device", "name": "Diamond"}))
+        self.assertFalse(carriers.take("usb", {"kind": "gone"}))
+
+    def test_the_feed_forwards_one_copy(self):
+        told = []
+        with mock.patch("hudfeed.carbon_probe", return_value=None), mock.patch("hudfeed.terminal_probe", return_value=None), \
+             mock.patch("hudfeed.sessionlock.probe", return_value=None), tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("keyboard: {name: Diamond}\nserial: {port: /dev/cu.test}\n")
+            feed = Feed(told.append, log=lambda *a: None, config=path, sessions=False, keymap=False, hid_keys=False)
+        self.assertIsNotNone(feed.ble)
+        for m in [self.press(11), self.press(12), self.release(12), self.release(11)]:
+            feed.ble.emit(dict(m))
+            feed.reader.emit(dict(m))
+        feed.reader.emit({"kind": "gone", "device": "Diamond"})
+        feed.ble.emit({"kind": "gone", "device": "Diamond"})
+        self.assertEqual([("press", 11), ("press", 12), ("release", 12), ("release", 11)],
+                         [(m["kind"], m["pos"]) for m in told if m["kind"] in ("press", "release")])
+        self.assertNotIn("gone", [m["kind"] for m in told])
 
 
 class Reports(unittest.TestCase):
@@ -533,8 +624,11 @@ class Secure(unittest.TestCase):
         probes = {"system": lambda: said["system"], "terminal": lambda: said["terminal"], "lock": lambda: said["lock"]}
 
         def feed_with(**have):
+            # No accessibility bus: the next test has it. A Linux machine with one (CI's) would
+            # otherwise always have something to ask.
             with mock.patch("hudfeed.carbon_probe", return_value=probes["system"] if have.get("system") else None), \
                  mock.patch("hudfeed.terminal_probe", return_value=probes["terminal"] if have.get("terminal") else None), \
+                 mock.patch("hudfeed.a11y.available", return_value=False), \
                  mock.patch("hudfeed.sessionlock.probe", return_value=probes["lock"] if have.get("lock") else None), \
                  tempfile.TemporaryDirectory() as tmp:
                 path = os.path.join(tmp, "config.yaml")
@@ -552,9 +646,11 @@ class Secure(unittest.TestCase):
         feed = feed_with()
         self.assertIsNone(feed.secure)
         self.assertEqual((), feed.watched)
-        # Nothing watching is said when it starts, in the log and to the page, so nobody trusts it.
+        # Nothing watching is said when it starts, in the log and to the page, so nobody trusts it. No
+        # accessibility bus either, as above: a Linux machine with one (CI's) would have it watching.
         told, logged = [], []
         with mock.patch("hudfeed.carbon_probe", return_value=None), mock.patch("hudfeed.terminal_probe", return_value=None), \
+             mock.patch("hudfeed.a11y.available", return_value=False), \
              mock.patch("hudfeed.sessionlock.probe", return_value=None), mock.patch("hudfeed.SerialReader.start"), \
              tempfile.TemporaryDirectory() as tmp:
             path = os.path.join(tmp, "config.yaml")
@@ -687,6 +783,8 @@ class FakeSocket:
 
 
 class FakeStore:
+    apply_said = session.Store.apply_said     # the real routing, onto the recording methods below
+
     def __init__(self):
         self.applied, self.modes, self.prefs, self.flushed = [], [], [], 0
 
@@ -943,16 +1041,20 @@ class PortTaken(unittest.TestCase):
         with mock.patch("fcntl.ioctl") as ioctl:
             dev = self.read_once([self.frame(signal_frame.KIND_LAYERS, (0b110).to_bytes(4, "little"))], reader)
         ioctl.assert_called_once_with(42, termios.TIOCEXCL)
-        self.assertEqual([{"kind": "layers", "ids": [1, 2]}, {"kind": "device", "name": "Test Board"}],
+        # ...and `gone` when the port closes, for the feed's Carriers (it goes no further).
+        self.assertEqual([{"kind": "layers", "ids": [1, 2]}, {"kind": "device", "name": "Test Board"}, {"kind": "gone"}],
                          [{k: v for k, v in m.items() if k != "device"} if m["kind"] != "device" else m for m in emitted])
         self.assertTrue(dev.closed)
 
     def test_a_port_that_is_not_the_signal_is_left_as_it_was(self):
-        reader = SerialReader(lambda m: None, log=lambda *a: None)
+        emitted = []
+        reader = SerialReader(emitted.append, log=lambda *a: None)
         with mock.patch("fcntl.ioctl") as ioctl:
             self.read_once([b"\x00\x01\x02 not a frame"], reader)
         ioctl.assert_not_called()
-        self.assertEqual("no frames", reader._quiet.get("/dev/cu.test"))
+        # ...nor is its closing said: it shares the signal port's carrier and name (Carriers).
+        self.assertEqual([], emitted)
+        self.assertEqual("no frames", reader._failed.get("/dev/cu.test"))
 
     def test_a_port_that_cannot_be_taken_is_still_read(self):
         said = []
@@ -984,15 +1086,255 @@ class PortTaken(unittest.TestCase):
                 reader.stop()
 
         with mock.patch.dict(sys.modules, {"serial": serial, "serial.tools": ports}), \
-             mock.patch.object(reader, "_ports", return_value=[("/dev/cu.test", "Test Board")]), \
+             mock.patch.object(reader, "find", return_value=[("/dev/cu.test", "Test Board")]), \
              mock.patch.object(reader._stop, "wait", side_effect=scan_wait), \
              mock.patch("hudfeed.threading.Thread", side_effect=start_read), mock.patch("fcntl.ioctl"):
             reader._scan_loop()
         self.assertIn({"kind": "layers", "ids": [13], "device": "Test Board"}, emitted)
         self.assertEqual(3, serial.Serial.call_count)
-        self.assertNotIn("/dev/cu.test", reader._quiet)
         self.assertNotIn("/dev/cu.test", reader._failed)
+        self.assertNotIn("/dev/cu.test", reader._retrying)
         self.assertEqual(1, sum("cannot open" in line for line in said))
+
+
+class SerialScan(unittest.TestCase):
+    """The serial reader's scan with a pyserial that lists what each round says."""
+
+    def scan(self, *rounds):
+        said = []
+        reader = SerialReader(lambda m: None, log=said.append)
+        left = list(rounds)
+
+        def comports():
+            got = left[0]
+            if isinstance(got, Exception):
+                raise got
+            return got
+        list_ports = types.SimpleNamespace(comports=comports)
+        serial = types.ModuleType("serial")
+        tools = types.ModuleType("serial.tools")
+        tools.list_ports = list_ports
+        serial.tools = tools
+
+        def next_round(_s):
+            left.pop(0)
+            if not left:
+                reader._stop.set()
+        with mock.patch.dict(sys.modules, {"serial": serial, "serial.tools": tools, "serial.tools.list_ports": list_ports}), \
+                mock.patch.object(reader._stop, "wait", side_effect=next_round):
+            reader._scan_loop()
+        return said
+
+    def test_no_port_is_said_once_and_not_every_rescan(self):
+        said = self.scan([], [], [])
+        self.assertEqual(1, len(said), said)
+        self.assertIn("no serial port 1d50:615e", said[0])
+
+    def test_a_port_that_cannot_be_listed_is_said_once_per_change(self):
+        said = self.scan(OSError("busy"), OSError("busy"), OSError("busy"))
+        self.assertEqual(1, len([s for s in said if "cannot list serial ports" in s]), said)
+
+
+class ReaderLoop(unittest.TestCase):
+    """The one loop every keyboard connection is read by (hudfeed.Reader), on a transport that finds
+    what each scan says and reads what it is given."""
+
+    class Fake:
+        def __init__(self, reports):
+            self.reports, self.closed = list(reports), False
+
+        def close(self):
+            self.closed = True
+
+    def reader(self, rounds, refuse=(), reports=()):
+        import hudfeed
+        test = self
+
+        class Fake(hudfeed.Reader):
+            kind = "fake"
+
+            def find(self):
+                return [(p, "Board") for p in rounds[0]]
+
+            def note(self, found):
+                return None if found else "hudfeed: no fake keyboard"
+
+            def open(self, path, product):
+                test.opened.append(path)
+                if path in refuse:
+                    raise hudfeed.OpenFailed(f"hudfeed: cannot open {path}", "hudfeed: replug it")
+                return test.Fake(reports)
+
+            def read(self, conn, timeout):
+                return conn.reports.pop(0) if conn.reports else self.stop()
+        self.opened, self.said, self.out = [], [], []
+        r = Fake(self.out.append, log=self.said.append, dead_key_ms=20)
+
+        def next_round(_s):
+            rounds.pop(0)
+            if not rounds:
+                r._stop.set()
+        r._stop.wait = next_round
+        return r
+
+    def test_a_device_that_would_not_open_is_tried_again_once_it_comes_back(self):
+        r = self.reader([["a"], ["a"], [], ["a"]], refuse=("a",))
+        r._scan_loop()
+        self.assertEqual(["a", "a"], self.opened)                   # not every scan: after the replug
+        self.assertEqual(["hudfeed: cannot open a", "hudfeed: replug it", "hudfeed: no fake keyboard",
+                          "hudfeed: cannot open a", "hudfeed: replug it"], self.said)
+
+    def test_with_retry_opens_a_device_that_would_not_open_is_tried_each_scan_and_said_once(self):
+        r = self.reader([["a"], ["a"], ["a"], ["a"]], refuse=("a",))
+        r.retry_opens = True
+        r._scan_loop()
+        self.assertEqual(["a", "a", "a", "a"], self.opened)
+        self.assertEqual(["hudfeed: cannot open a", "hudfeed: replug it"], self.said)
+        self.assertNotIn("a", r._failed)
+
+    def test_a_keyboard_is_read_said_and_its_keys_released_when_it_ends(self):
+        r = self.reader([["a"]], reports=[{"kind": "keys", "mods": 0x02, "keys": [0x04]}])
+        conn = self.Fake([{"kind": "keys", "mods": 0x02, "keys": [0x04]}])
+        with r._lock:
+            r._open["a"] = conn
+        r._read_loop("a", conn, "Board")
+        self.assertTrue(conn.closed)
+        self.assertNotIn("a", r._open)
+        said = [(m["type"], m["chars"] if m["type"] != "flagsChanged" else m["flags"]["shift"]) for m in self.out]
+        self.assertEqual([("flagsChanged", True), ("keyDown", "A"), ("flagsChanged", False), ("keyUp", "a")], said)
+
+    def test_a_keyboard_that_ends_leaves_held_what_another_still_holds(self):
+        import hudfeed
+        r = self.reader([["a"]])
+        other = hudfeed.Stream(lambda m: None, "Other")
+        other.message({"kind": "keys", "mods": 0x02, "keys": []}, 0)   # Shift, on the other keyboard
+        r._streams.add(other)
+        conn = self.Fake([{"kind": "keys", "mods": 0x02, "keys": [0x04]}])
+        r._read_loop("a", conn, "Board")
+        said = [(m["type"], m["chars"] if m["type"] != "flagsChanged" else m["flags"]["shift"]) for m in self.out]
+        self.assertEqual([("flagsChanged", True), ("keyDown", "A"), ("keyUp", "A")], said)
+
+    def test_a_listing_that_fails_is_said_and_the_scan_goes_on(self):
+        r = self.reader([["a"], ["a"]])
+        r.find = mock.Mock(side_effect=[OSError("bus"), []])
+        r._scan_loop()
+        self.assertEqual(["hudfeed: cannot list devices: OSError: bus", "hudfeed: no fake keyboard"], self.said)
+
+
+class BleReading(unittest.TestCase):
+    """The BLE reader's session and loop with a client that connects at once and is let go when the
+    test says: bleak's interface as hudfeed uses it, no adapter."""
+
+    def reader(self, rescan=2.0):
+        import hudfeed
+        self.said, self.out = [], []
+        return hudfeed.BleReader(self.out.append, log=self.said.append, rescan=rescan)
+
+    @staticmethod
+    def client(drop_after):
+        class Client:
+            def __init__(self, device, disconnected_callback):
+                self.gone = disconnected_callback
+
+            async def __aenter__(self):
+                asyncio.get_running_loop().call_later(drop_after, self.gone, self)
+                return self
+
+            async def __aexit__(self, *exc):
+                return False
+
+            async def start_notify(self, uuid, callback):
+                pass
+        return Client
+
+    def test_a_keyboard_that_disconnects_is_said_gone(self):
+        r = self.reader()
+        device = types.SimpleNamespace(name="Diamond", address="AA")
+        self.assertIsNone(asyncio.run(r._session(self.client(0.05), device)))
+        self.assertIn("hudfeed: reading Diamond over BLE", self.said)
+        self.assertTrue(any("Diamond over BLE gone" in s for s in self.said), self.said)
+
+    def test_a_connection_with_nothing_to_wait_for_is_not_woken_every_few_milliseconds(self):
+        import hudfeed
+        r = self.reader()
+        device = types.SimpleNamespace(name="Diamond", address="AA")
+        with mock.patch.object(hudfeed.Stream, "idle") as idle:
+            asyncio.run(r._session(self.client(0.4), device))
+        self.assertLessEqual(idle.call_count, 1)          # not once every dead_key_ms (60) for 400 ms
+
+    def test_stop_ends_a_backoff_at_once(self):
+        import time
+        r = self.reader(rescan=3.0)
+
+        async def nothing():
+            return None
+        r._find = nothing
+        threading.Timer(0.1, r.stop).start()
+        started = time.monotonic()
+        with mock.patch.dict(sys.modules, {"bleak": types.SimpleNamespace(BleakClient=None)}):
+            asyncio.run(r._loop())
+        self.assertLess(time.monotonic() - started, 1.0)       # not the 3 s backoff
+
+
+class HidKeys(unittest.TestCase):
+    """The HID keys reader (hidapi, macOS) with a hid module that answers as the test says."""
+
+    def module(self, opens=True):
+        dev = mock.Mock()
+        if not opens:
+            dev.open_path.side_effect = OSError("open failed")
+        dev.read.side_effect = [[1, 0, 0, 0x04, 0, 0, 0, 0, 0], []]
+        return types.SimpleNamespace(device=lambda: dev, __file__="/nowhere/hid.so",
+                                     enumerate=lambda vid, pid: [{"path": b"DevSrvsID:1", "product_string": "Diamond"},
+                                                                 {"path": b"DevSrvsID:1", "product_string": "Diamond"},
+                                                                 {"path": b"DevSrvsID:2", "product_string": "Other"}]), dev
+
+    def test_one_path_per_keyboard_its_name_matched(self):
+        import hudfeed
+        r = hudfeed.HidKeysReader(lambda m: None, name="diamond", log=lambda *a: None)
+        r.hid, _ = self.module()
+        self.assertEqual([(b"DevSrvsID:1", "Diamond")], r.find())
+
+    def test_a_report_is_what_is_typed(self):
+        import hudfeed
+        r = hudfeed.HidKeysReader(lambda m: None, log=lambda *a: None)
+        r.hid, dev = self.module()
+        conn = r.open(b"DevSrvsID:1", "Diamond")
+        self.assertEqual({"kind": "keys", "mods": 0, "keys": [0x04, 0, 0, 0, 0, 0]}, r.read(conn, 0.5))
+        self.assertIsNone(r.read(conn, 0.5))
+        dev.read.assert_called_with(64, timeout_ms=500)
+
+    def test_a_keyboard_it_may_not_open_says_where_and_why(self):
+        import hudfeed
+        r = hudfeed.HidKeysReader(lambda m: None, log=lambda *a: None)
+        r.hid, _ = self.module(opens=False)
+        with mock.patch.object(hudfeed.sys, "platform", "darwin"):
+            with self.assertRaises(hudfeed.OpenFailed) as e:
+                r.open(b"DevSrvsID:1", "Diamond")
+        self.assertIn("(DevSrvsID:1)", e.exception.lines[0])
+        self.assertIn("Input Monitoring", e.exception.lines[1])
+
+
+class HidrawReading(unittest.TestCase):
+    """The hidraw reader's loop on a pipe: what /dev/hidrawN is to it, one report per read."""
+
+    def setUp(self):
+        import hudfeed
+        self.out, self.said = [], []
+        self.reader = hudfeed.HidrawReader(self.out.append, log=self.said.append, dead_key_ms=20)
+        self.rfd, self.wfd = os.pipe()
+        self.addCleanup(lambda: [os.close(fd) for fd in (self.wfd,) if fd is not None])
+
+    def test_an_error_reading_ends_the_connection_and_is_said(self):
+        # OSError is the unplug; anything else the read raises must end the connection the same way
+        # -- said, the node closed and forgotten so a replug opens it -- not as a thread's traceback.
+        import hudfeed
+        os.write(self.wfd, bytes([1, 0x02, 0, 0x04, 0, 0, 0, 0, 0]))
+        self.reader._open["/dev/hidraw9"] = self.rfd
+        with mock.patch.object(hudfeed, "split_report", side_effect=ValueError("a report it cannot take")):
+            self.reader._read_loop("/dev/hidraw9", self.rfd, "Diamond")
+        self.assertTrue(any("Diamond gone" in s for s in self.said), self.said)
+        self.assertNotIn("/dev/hidraw9", self.reader._open)
 
 
 @unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
@@ -1051,7 +1393,7 @@ class ReaderSettings(unittest.TestCase):
     def test_default_right_alt_decoding_matches_the_host(self):
         feed, _ = self.feed_for(self.SETTINGS)
         decoder = SignalDecoder(altgr=feed.reader.altgr)
-        typed = [m["chars"] for m in decoder.feed(K(0x40, 0x36), 0) if m["type"] == "keyDown"]
+        typed = [m["chars"] for m in decoder.feed({"kind": "keys", "mods": 0x40, "keys": [0x36]}, 0) if m["type"] == "keyDown"]
         self.assertEqual(["ç" if sys.platform.startswith("linux") else "≤"], typed)
 
     def test_explicit_right_alt_decoding_wins_over_the_host_default(self):
@@ -1059,7 +1401,7 @@ class ReaderSettings(unittest.TestCase):
             with self.subTest(altgr=altgr):
                 feed, _ = self.feed_for(self.SETTINGS.replace("rescan_s: 7,", f"rescan_s: 7, altgr: {altgr},"))
                 decoder = SignalDecoder(altgr=feed.reader.altgr)
-                typed = [m["chars"] for m in decoder.feed(K(0x40, 0x36), 0) if m["type"] == "keyDown"]
+                typed = [m["chars"] for m in decoder.feed({"kind": "keys", "mods": 0x40, "keys": [0x36]}, 0) if m["type"] == "keyDown"]
                 self.assertEqual([expected], typed)
 
 

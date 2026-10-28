@@ -32,12 +32,13 @@ class Parse(unittest.TestCase):
 
 class Settings(unittest.TestCase):
     def test_the_defaults(self):
-        self.assertEqual({"toggle": (("ctrl", "alt"), "l"), "power": (("ctrl", "alt", "gui"), "l")},
+        # Docking has none until the config gives it keys.
+        self.assertEqual({"toggle": (("ctrl", "alt"), "l"), "power": (("ctrl", "alt", "gui"), "l"), "dock": None},
                          shortcuts.settings({}))
 
     def test_the_config_changes_one_and_null_turns_one_off(self):
-        sets = shortcuts.settings({"shortcuts": {"toggle": "ctrl+alt+h", "power": None}})
-        self.assertEqual({"toggle": (("ctrl", "alt"), "h"), "power": None}, sets)
+        sets = shortcuts.settings({"shortcuts": {"toggle": "ctrl+alt+h", "power": None, "dock": "ctrl+alt+k"}})
+        self.assertEqual({"toggle": (("ctrl", "alt"), "h"), "power": None, "dock": (("ctrl", "alt"), "k")}, sets)
 
     def test_unknown_names_and_twice_the_same_keys_are_refused(self):
         with self.assertRaises(shortcuts.ShortcutError):
@@ -166,7 +167,7 @@ class Hyprland(unittest.TestCase):
         self.assertTrue(text.startswith("source = ~/.config/hypr/bindings.conf\n"))
         self.assertTrue(text.rstrip().endswith(shortcuts.HYPR_SOURCE))
         with open(os.path.join(self.state, shortcuts.JSON_FILE)) as f:
-            self.assertEqual({"toggle": "Ctrl+Alt+L", "power": "Ctrl+Alt+Super+L"}, json.load(f))
+            self.assertEqual({"toggle": "Ctrl+Alt+L", "power": "Ctrl+Alt+Super+L", "dock": ""}, json.load(f))
         self.assertTrue(self.install(shortcuts.settings({"shortcuts": {"power": None}})))
         with open(os.path.join(self.hypr, shortcuts.HYPR_FILE)) as f:
             self.assertNotIn("power", f.read())

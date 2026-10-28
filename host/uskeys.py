@@ -1,4 +1,4 @@
-"""What a US-layout keyboard sends to type a legend — the inverse of hudfeed's decode.
+"""What a US-layout keyboard sends to type a legend — the inverse of the feed's decode (host/hiddecode.py).
 
 The HUD draws two things for one keypress: the key on the board, which comes from the keymap, and
 the character in the strip below, which comes from the report snapshot the keyboard actually sent.
@@ -6,9 +6,9 @@ They can disagree. An accented letter is not one keypress but a dead key and a l
 need Option; Return is a named key whose glyph each table spells its own way. The only way to test
 the strip is to send it what a keyboard would send and see what comes out.
 
-The character tables are inverted from hudfeed's own at import, so they cannot drift from the
-decoder they are meant to exercise. What is written down here is the part hudfeed has no opinion
-about: which legend means which named key.
+The tables are the key vocabulary's (host/keynames.py), inverted at import, so they cannot drift
+from the decoder they are meant to exercise: which character a key types, and which legend means
+which named key (name_of), are written down there once.
 
   python3 host/uskeys.py --events < legends    one JSON object per line, for hud/tests/strip_test.js
   python3 host/uskeys.py --corpus KEYMAP.json  the legends of a keymap message, ready for --events
@@ -21,8 +21,9 @@ import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from hudfeed import (ALT_CHARS, ALTGR_CHARS, CHARS, DEAD_KEY_SPECIAL, DEAD_KEYS, NAMED, RALT,  # noqa: E402
-                     SignalDecoder)
+from hiddecode import SignalDecoder  # noqa: E402
+from keynames import (ALT_CHARS, ALTGR_CHARS, CHARS, DEAD_KEY_SPECIAL, DEAD_KEYS, NAMED, RALT,  # noqa: E402
+                      name_of, spellings)
 
 MOD_SHIFT, MOD_ALT = 0x02, 0x04
 
@@ -44,24 +45,6 @@ USAGE_FOR_NAME = {}
 for _usage in sorted(NAMED, reverse=True):
     USAGE_FOR_NAME[NAMED[_usage]] = _usage
 
-# The one place a legend is tied to a named key. keymap-drawer files spell these with glyphs, and
-# hud.js and keys.js each carry their own table; this is the union, written down once.
-NAME_FOR_LEGEND = {
-    "␣": "space", "spc": "space", "space": "space",
-    "↵": "return", "⏎": "return", "ret": "return", "enter": "return", "return": "return",
-    "⎋": "escape", "esc": "escape", "escape": "escape",
-    "⌫": "delete", "bspc": "delete", "backspace": "delete",
-    "⌦": "forwarddelete", "del": "forwarddelete",
-    "⇥": "tab", "↹": "tab", "tab": "tab",
-    "←": "left", "→": "right", "↑": "up", "↓": "down",
-    "⇱": "home", "⇲": "end", "⇞": "pageup", "⇟": "pagedown",
-    "⎀": "insert", "⇪": "capslock",
-    "cancel": "cancel",
-}
-for _i in range(1, 25):
-    NAME_FOR_LEGEND[f"F{_i}"] = f"f{_i}"
-
-
 def snapshot(usage, mods=0):
     """One `keys` message: the keyboard's report snapshot holding a single key."""
     return {"kind": "keys", "mods": mods, "keys": [usage] if usage else []}
@@ -82,14 +65,14 @@ def keystrokes_for(legend, altgr=False):
 
     Order matters: a plain or shifted key first, then the dead-key pair an accent is really typed
     as (the US-International layout, which is how the keymap's accent macros type on the host),
-    then the Option layer. With `altgr` (a Linux host, hudfeed ALTGR_CHARS), what the keymap types
+    then the Option layer. With `altgr` (a Linux host, keynames ALTGR_CHARS), what the keymap types
     with AltGr there comes first: ç is AltGr+, rather than ' then c.
     """
     if altgr and legend in ALTGR_USAGE_FOR:
         usage, shift = ALTGR_USAGE_FOR[legend]
         m = RALT | (MOD_SHIFT if shift else 0)
         return [snapshot(usage, m), snapshot(0, m), snapshot(0)]
-    name = NAME_FOR_LEGEND.get(legend)
+    name = name_of(legend)
     if name and name in USAGE_FOR_NAME:
         return _tap(USAGE_FOR_NAME[name])
     if len(legend) != 1:
@@ -162,16 +145,20 @@ def main(argv):
                 print(legend)
         return 0
     if "--events" in argv:
+        altgr = "--altgr" in argv   # a Linux host's AltGr (keynames ALTGR_CHARS), not macOS's Option
         for line in sys.stdin:
             legend = line.rstrip("\n")
             if not legend:
                 continue
-            events = events_for(legend)
+            events = events_for(legend, altgr)
             # Another spelling of the same named key is not a wrong chip: the strip draws one
             # glyph per key, and a keymap may spell it ↹ where the strip says ⇥.
-            name = NAME_FOR_LEGEND.get(legend)
-            accepts = sorted({l for l, n in NAME_FOR_LEGEND.items() if name and n == name} | {legend})
-            print(json.dumps({"legend": legend, "events": events, "accepts": accepts}, ensure_ascii=False))
+            name = name_of(legend)
+            accepts = sorted(set(spellings(name)) | {legend})
+            # The snapshots too: hud/tests/hidtext_test.js decodes them with the page's port of the
+            # decoder and holds it to these events.
+            print(json.dumps({"legend": legend, "events": events, "accepts": accepts,
+                              "snapshots": keystrokes_for(legend, altgr)}, ensure_ascii=False))
         return 0
     sys.stderr.write(__doc__)
     return 2

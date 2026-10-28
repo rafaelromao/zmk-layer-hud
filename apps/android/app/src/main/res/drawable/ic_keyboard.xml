@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- A keyboard: a rounded board with two rows of keys and a space bar cut out of it. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FF7AA2F7"
+        android:fillType="evenOdd"
+        android:pathData="M4,5h16a2,2 0 0 1 2,2v10a2,2 0 0 1 -2,2h-16a2,2 0 0 1 -2,-2v-10a2,2 0 0 1 2,-2z
+            M5,8h2v2h-2z M8,8h2v2h-2z M11,8h2v2h-2z M14,8h2v2h-2z M17,8h2v2h-2z
+            M5,11h2v2h-2z M8,11h2v2h-2z M11,11h2v2h-2z M14,11h2v2h-2z M17,11h2v2h-2z
+            M7,15h10v2h-10z" />
+</vector>

@@ -45,7 +45,10 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import actions  # noqa: E402
 import keymap as keymap_mod  # noqa: E402
+import zmk_expr  # noqa: E402
+import zmk_tables  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Where a repo given by URL is kept between syncs. $ZMKHUD_CACHE moves it.
@@ -289,32 +292,134 @@ def studio(root, keymap_path):
     return False
 
 
-def layer_list(keymap_path, root, dts=None, log=None):
-    """The keyboard's ZMK layers in id order, as [{name, drawn}]: `name` as keymap-drawer names a
-    layer (its label or display-name, else its node name), and `drawn` false for a reserved layer,
-    which `keymap parse` leaves out. A reserved layer has an id only on firmware that keeps
-    reserved layers in place (studio); elsewhere it has none, and the ids after it move up."""
-    dts = dts or device_tree(keymap_path)
-    nodes = None
-    if dts is not None:
-        try:
-            nodes = [n for p in dts.get_compatible_nodes("zmk,keymap") for n in p.children]
-        except Exception:
-            nodes = None
-    if not nodes:
-        return [{"name": n, "drawn": True} for n in layer_names(keymap_path)]
-    keeps = studio(root, keymap_path)
+def layer_nodes(dts, keeps):
+    """The keymap's layer nodes that hold a ZMK id, in id order, as [(node, name, drawn)]: `name` as
+    keymap-drawer names a layer (its label or display-name, else its node name), and `drawn` false
+    for a reserved layer, which `keymap parse` leaves out. A reserved layer has an id only on
+    firmware that keeps reserved layers in place (`keeps`, see studio()); elsewhere it has none,
+    and the ids after it move up. The layer list and the captured bindings both come from here, so
+    they cannot number the layers differently."""
+    # Two keymap nodes are one node in devicetree, and a layer node a second one names again is the
+    # same layer, written over: it keeps its place and takes the later node's properties.
+    by_name = {}
+    for node in [n for p in dts.get_compatible_nodes("zmk,keymap") for n in p.children]:
+        by_name[node.name] = node
     out = []
-    for node in nodes:
+    for node in by_name.values():
         name = node.get_string("label|display-name") or node.name.removeprefix("layer_").removesuffix("_layer")
         reserved = node.get_string("status") == "reserved"
         if reserved and not keeps:
             continue
-        out.append({"name": name, "drawn": not reserved})
+        out.append((node, name, not reserved))
+    return out
+
+
+def layer_list(keymap_path, root, dts=None, log=None):
+    """The keyboard's ZMK layers in id order, as [{name, drawn}] (layer_nodes)."""
+    dts = dts or device_tree(keymap_path)
+    nodes = None
+    if dts is not None:
+        try:
+            nodes = layer_nodes(dts, studio(root, keymap_path))
+        except Exception:
+            nodes = None
+    if not nodes:
+        return [{"name": n, "drawn": True} for n in layer_names(keymap_path)]
+    out = [{"name": name, "drawn": drawn} for _node, name, drawn in nodes]
     if log and any(not l["drawn"] for l in out[:-1]) and any(l["drawn"] for l in out):
         log("a reserved layer sits between live ones; its id is kept because the firmware keeps it in place "
             "(ZMK Studio, or CONFIG_ZMK_KEYMAP_LAYER_REORDERING)")
     return out
+
+
+def _all_nodes(dts):
+    """Every node of the keymap's tree, depth first."""
+    from keymap_drawer.dts import DTNode
+    stack = [DTNode(root, dts.ts_buffer, dts.override_nodes) for root in dts.root_nodes]
+    while stack:
+        node = stack.pop(0)
+        yield node
+        stack[:0] = node.children
+
+
+def _ints(node, prop):
+    """An array property's cells as numbers, or None when it is not there or is not numbers."""
+    raw = node.get_array(re.escape(prop) + "$")
+    if raw is None:
+        return None
+    try:
+        return [zmk_expr.evaluate(c, actions.VALUES, zmk_tables.FUNCTIONS) for c in zmk_expr.cells(raw)]
+    except zmk_expr.Unknown:
+        return None
+
+
+def capture_keymap(dts, keeps):
+    """The keymap's bindings, kept for the touch keyboard: what each position does on each layer, as
+    the text the keymap writes (`&mt LSHIFT A`), and the behaviours, overrides, combos and
+    conditional layers those need. host/actions.py compiles them; docs/touch.md has the shape. None
+    when the keymap cannot be read that far -- the touch keyboard then types from the legends."""
+    if dts is None:
+        return None
+    try:
+        nodes = layer_nodes(dts, keeps)
+        if not nodes:
+            return None
+        layers = {str(i): node.get_phandle_array("bindings") or [] for i, (node, _n, _d) in enumerate(nodes)}
+        behaviors = {}
+        for node in _all_nodes(dts):
+            compatible = node.get_string("compatible")
+            if not node.label or not compatible or not compatible.startswith(("zmk,behavior-", "zmk,macro-")):
+                continue
+            cells = _ints(node, "#binding-cells") or [0]
+            behaviors[node.label] = {"compatible": compatible, "cells": cells[0],
+                                     "props": actions.capture_props(node, compatible)}
+        overrides = {}
+        for node in dts.override_nodes:
+            label = node.name.lstrip("&")
+            builtin = zmk_tables.BEHAVIORS.get(label)
+            # A keymap's own behaviour carries its overrides already (keymap-drawer merges them).
+            if label not in behaviors and builtin:
+                props = actions.capture_props(node, builtin["compatible"])
+                if props:
+                    overrides[label] = props
+        combos = []
+        for node in [n for p in dts.get_compatible_nodes("zmk,combos") for n in p.children]:
+            positions = _ints(node, "key-positions")
+            bindings = node.get_phandle_array("bindings$")
+            if not positions or not bindings:
+                continue
+            timeout, idle = _ints(node, "timeout-ms"), _ints(node, "require-prior-idle-ms")
+            combos.append({"name": node.name, "positions": positions, "binding": bindings[0],
+                           "layers": _ints(node, "layers") or None,
+                           "timeout-ms": timeout[0] if timeout else None,
+                           "require-prior-idle-ms": idle[0] if idle else None,
+                           "slow-release": node.get_array("slow-release$") is not None})
+        conditional = []
+        for node in [n for p in dts.get_compatible_nodes("zmk,conditional-layers") for n in p.children]:
+            when, then = _ints(node, "if-layers"), _ints(node, "then-layer")
+            if when and then:
+                conditional.append({"if": when, "then": then[0]})
+        used = used_behaviors([b for bs in layers.values() for b in bs] + [c["binding"] for c in combos], behaviors)
+        return {"v": actions.KEYMAP_VERSION, "positions": max(len(b) for b in layers.values()),
+                "layers": layers, "behaviors": {k: v for k, v in behaviors.items() if k in used},
+                "overrides": overrides, "combos": combos, "conditional": conditional}
+    except Exception:
+        return None
+
+
+def used_behaviors(bindings, behaviors):
+    """The labels these bindings name, and those named by the bindings of what they name, and so
+    on: a keymap's helpers define hundreds of macros, and only the ones a key reaches are kept."""
+    seen, todo = set(), [b.strip().lstrip("&").split()[0] for b in bindings if b and b.strip().startswith("&")]
+    while todo:
+        label = todo.pop()
+        if label in seen:
+            continue
+        seen.add(label)
+        for b in (behaviors.get(label) or {}).get("props", {}).get("bindings") or []:
+            if isinstance(b, str) and b.strip().startswith("&"):
+                todo.append(b.strip().lstrip("&").split()[0])
+    return seen
 
 
 def unique_names(names):
@@ -386,17 +491,18 @@ def dts_layouts(path):
         return {}
 
 
+def given_layout(cfg, config_path):
+    """The config's `layout:` with its files found, or None when it says none: then the layout a
+    drawing made from the ZMK keymap is drawn on is looked for in the keyboard's own files."""
+    return keymap_mod.layout_files(cfg["layout"], config_path) if cfg.get("layout") else None
+
+
 def layout_for_keymap(cfg, config_path, root, keymap_path, parsed):
     """The keymap-drawer layout spec a drawing made from the ZMK keymap is drawn on: the config's
     `layout:`; else a zmk,physical-layout node in the keyboard's own files -- the one the keymap or
     the board chooses, else the one with as many keys as the keymap has bindings; else ZMK's shared
     layout the board includes; else keymap-drawer's guess from the keyboard's name."""
-    if cfg.get("layout"):
-        spec = dict(cfg["layout"])
-        base = os.path.dirname(os.path.abspath(config_path))
-        for key in ("qmk_info_json", "dts_layout"):
-            if isinstance(spec.get(key), str):
-                spec[key] = keymap_mod.expand(spec[key], base)
+    if spec := given_layout(cfg, config_path):
         return spec
     guess = parsed.get("layout") or {}
     bindings = len(next(iter((parsed.get("layers") or {}).values()), []))
@@ -435,11 +541,10 @@ def layout_for_keymap(cfg, config_path, root, keymap_path, parsed):
 
 def drawing_from_yaml(cfg, config_path, previous, fetch, log):
     """The drawing of the keymap-drawer YAML the config names, with its drawer config."""
-    base = os.path.dirname(os.path.abspath(config_path))
     try:
-        path = keymap_mod.expand(cfg["keymap"], base)
+        path = keymap_mod.resolve(cfg["keymap"], config_path)
         doc = keymap_mod.load_yaml(path)
-        drawer_cfg = keymap_mod.load_yaml(keymap_mod.expand(cfg["drawer_config"], base)) if cfg.get("drawer_config") else None
+        drawer_cfg = keymap_mod.load_yaml(keymap_mod.resolve(cfg["drawer_config"], config_path)) if cfg.get("drawer_config") else None
     except Exception as e:   # the YAML parser's own errors too: a file saved half-edited
         raise SyncError(f"could not read the keymap-drawer file the config names: {e}")
     if isinstance(doc, dict) and "layout" in doc:
@@ -454,8 +559,7 @@ def drawing_from_yaml(cfg, config_path, previous, fetch, log):
 def drawing_from_keymap(cfg, config_path, root, keymap_path, zlayers, previous, fetch, log):
     """The drawing of the ZMK keymap itself: keymap-drawer's parse of it, every layer under a name
     of its own, on the physical layout layout_for_keymap finds."""
-    base = os.path.dirname(os.path.abspath(config_path))
-    drawer_config = keymap_mod.expand(cfg["drawer_config"], base) if cfg.get("drawer_config") else None
+    drawer_config = keymap_mod.resolve(cfg["drawer_config"], config_path) if cfg.get("drawer_config") else None
     names = unique_names([l["name"] for l in zlayers if l["drawn"]])
     parsed = parse_keymap(keymap_path, drawer_config, names)
     try:
@@ -859,7 +963,7 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
     not make again (carried(), below) is said first; keep=True keeps just that and makes the rest
     anew, keep=False drops it, and keep=None asks `ask` (a question -> yes/no), or refuses with the
     list when there is no one to ask. config.yaml is never written either way."""
-    config_path = os.path.abspath(os.path.expanduser(config_path))
+    config_path = keymap_mod.config_path(config_path)
     if not os.path.exists(config_path):
         new_config(config_path)
         say(quiet, f"no config yet; wrote one to start from: {config_path}")
@@ -890,7 +994,7 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
         # A keymap-drawer YAML, not a repo. The config is what says where the drawing lives -- sync
         # reads it again from there -- so the file is taken only when that is what it already names.
         given = os.path.realpath(os.path.expanduser(source))
-        named = cfg.get("keymap") and keymap_mod.expand(cfg["keymap"], os.path.dirname(config_path))
+        named = cfg.get("keymap") and keymap_mod.resolve(cfg["keymap"], config_path)
         if not named or os.path.realpath(named) != given:
             raise SyncError(f"to draw from {source}, name it as `keymap: {source}` in {config_path} "
                             "and run `zmk-layer-hud import`")
@@ -911,7 +1015,7 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
     if cfg.get("keymap"):
         made = drawing_from_yaml(cfg, config_path, previous, fetch, log)
         sources["drawing"] = str(cfg["keymap"])
-        short = os.path.basename(keymap_mod.expand(cfg["keymap"], os.path.dirname(config_path)))
+        short = os.path.basename(keymap_mod.resolve(cfg["keymap"], config_path))
     else:
         made, drawn_names = drawing_from_keymap(cfg, config_path, root, keymap_path, zlayers, previous, fetch, log)
         sources["drawing"] = "the ZMK keymap"
@@ -1029,6 +1133,11 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
                "combo_idle_ms": combo_idle(keymap_path, dts), "combos": coverage}
         rec = dict(zmk, source=sources["repo"], keyboard=board)
         zmk = {k: v for k, v in zmk.items() if v is not None}
+        # The bindings themselves, for the touch keyboard: the definitions only, not the record,
+        # which is written to be read.
+        captured = capture_keymap(dts, studio(root, keymap_path))
+        if captured:
+            zmk["keymap"] = captured
     else:
         # A drawing alone: what an earlier repo import said of the keymap still holds, and where it
         # came from is kept, so a later sync reads that repo again.
@@ -1085,8 +1194,7 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
     # Built before anything is written: definitions that would not load are not written, so a sync
     # can never leave the HUD without a keymap it had.
     try:
-        keymap_mod.build_message(keymap_mod.merge_imported(dict(cfg), definitions.get("zmk")),
-                                 definitions["drawing"], source=short)
+        message = keymap_mod.build_message(cfg, definitions)
     except keymap_mod.KeymapError as e:
         raise SyncError(f"the definitions would not load, so nothing was written: {e}")
     wrote = write_if_changed(defs_path, json.dumps(definitions, ensure_ascii=False, indent=1) + "\n")
@@ -1101,6 +1209,7 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
                    + ", ".join(d["missing_glyphs"][:6]) + (" …" if len(d["missing_glyphs"]) > 6 else ""))
     if rec is not None:
         say(quiet, f"{len(rec['layers'])} ZMK layers, {len(rec['combos'])} combo coverages -> {rec_path}")
+    say(quiet, actions.summary(message.get("actions")))
     if undecided:
         say(quiet, f"{len(undecided)} layer(s) have no drawing yet: "
                    + ", ".join(f"{i} {n!r}" for i, n, _ in undecided[:6])
@@ -1146,30 +1255,46 @@ def is_url(repo):
     return "://" in repo or repo.startswith("git@")
 
 
-def watched(config_path, repo=None, keyboard=None):
-    """The files a sync of this config reads where they are: the config, the keymap-drawer YAML,
-    the drawer config and the layout files it names, and in a working copy, the keyboard's keymap,
-    everything it includes, and the files its physical layout can be in."""
+def inputs(config_path, repo=None, keyboard=None):
+    """The files a config's definitions are made from, where they are: the config, the keymap-drawer
+    YAML, the drawer config and the layout files it names, and in a working copy, the keyboard's
+    keymap, everything it includes, and, when its physical layout is looked for there, the files it
+    can be in. What `sync --watch` watches, and what doctor looks at for a sync that is due."""
     config_path = os.path.abspath(config_path)
-    base = os.path.dirname(config_path)
     files = [config_path]
+    searched = False                      # the keyboard's own files read for its physical layout
     try:
         cfg = keymap_mod.load_yaml(config_path)
     except Exception:
         cfg = None                        # saved half-edited: the config alone, until it reads again
     if isinstance(cfg, dict):
-        named = [cfg.get("keymap"), cfg.get("drawer_config")]
-        if isinstance(cfg.get("layout"), dict):
-            named += [cfg["layout"].get(k) for k in ("qmk_info_json", "dts_layout")]
-        files += [keymap_mod.expand(p, base) for p in named if isinstance(p, str) and "://" not in p]
+        local = [p for p in (cfg.get("keymap"), cfg.get("drawer_config")) if isinstance(p, str) and "://" not in p]
+        files += [keymap_mod.resolve(p, config_path) for p in local]
+        if isinstance(cfg.get("keymap"), str):
+            # The drawing's own layout files: read with it, and as much the board's.
+            drawing = keymap_mod.resolve(cfg["keymap"], config_path)
+            try:
+                doc = keymap_mod.load_yaml(drawing)
+            except Exception:
+                doc = None                # not there yet, or saved half-edited: watched for when it reads
+            layout = keymap_mod.layout_files(doc.get("layout"), drawing) if isinstance(doc, dict) else None
+        else:
+            # Drawn from the ZMK keymap: the config's own layout, the one layout_for_keymap reads,
+            # and without one, the keyboard's files it looks in.
+            layout = given_layout(cfg, config_path)
+            searched = layout is None
+        if isinstance(layout, dict):
+            files += [layout[k] for k in keymap_mod.LAYOUT_FILES if isinstance(layout.get(k), str)]
     if repo and os.path.isdir(repo):
         try:
             keymap_path = find_keymap(repo, keyboard)
         except SyncError:
             keymap_path = None
         if keymap_path:
-            own, beside = boards_files(repo, keymap_path)
-            files += [path for path, _ in reachable(keymap_path)] + own + beside
+            files += [path for path, _ in reachable(keymap_path)]
+            if searched:
+                own, beside = boards_files(repo, keymap_path)
+                files += own + beside
     return sorted({os.path.abspath(f) for f in files})
 
 
@@ -1182,7 +1307,7 @@ def stat_of(path):
 
 
 def watch(config_path, quiet=False, fetch=True, interval=1.0, sleep=time.sleep, rounds=None):
-    """`sync --watch`: sync, then sync again each time a file watched() lists changes, until
+    """`sync --watch`: sync, then sync again each time a file inputs() lists changes, until
     interrupted. What a sync is about to read is noted before it runs, so a file saved again while
     it runs is synced once more. A sync that fails says why and the watch goes on: a keymap saved
     half-edited is taken once it is whole. Each sync reads the glyphs afresh, so one that could not
@@ -1193,7 +1318,7 @@ def watch(config_path, quiet=False, fetch=True, interval=1.0, sleep=time.sleep, 
                         "(`zmk-layer-hud import path/to/zmk-config`) to watch it, or `sync` after each push")
 
     def snapshot():
-        return {path: stat_of(path) for path in watched(config_path, repo, keyboard)}
+        return {path: stat_of(path) for path in inputs(config_path, repo, keyboard)}
 
     def once():
         keymap_mod._glyph_memo.clear()
@@ -1266,7 +1391,7 @@ def main(argv=None):
                              pristine=opts.get("pristine", False) or keep is not None, keep=keep,
                              ask=ask_tty if sys.stdin.isatty() else None)
         if cmd == "sync":
-            config_path = opts.get("config") or keymap_mod.find_config()
+            config_path = keymap_mod.find_config(opts.get("config"))
             repo, keyboard = recorded(config_path)
             if repo is None and not keymap_mod.load_yaml(config_path).get("keymap"):
                 raise SyncError("nothing to sync: import a ZMK repo (`zmk-layer-hud import <repo>`), "

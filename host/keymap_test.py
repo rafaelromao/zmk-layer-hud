@@ -29,10 +29,11 @@ except ImportError:
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def message(cfg, doc):
+def message(cfg, doc, zmk=None):
     """The message the HUD builds for `cfg` from what import draws of `doc`: the two halves, import
     time and runtime, run back to back."""
-    return km.build_message(cfg, km.draw(doc, stagger=cfg.get("stagger", True) is not False, fetch=False)["drawing"])
+    drawing = km.draw(doc, stagger=cfg.get("stagger", True) is not False, fetch=False)["drawing"]
+    return km.build_message(cfg, {"drawing": drawing, "zmk": zmk} if zmk else {"drawing": drawing})
 
 # A 2x2 + 1 thumb per hand keyboard: "22+1> 1<+22" = 10 keys, drawer layer order = ZMK order.
 DOC = {
@@ -219,12 +220,10 @@ class Settings(unittest.TestCase):
     def test_the_idle_a_combo_needs_reaches_the_page(self):
         self.assertEqual(0, message({}, DOC)["combo_idle"])
         self.assertEqual(150, message({"combo_idle_ms": 150}, DOC)["combo_idle"])
-        cfg = {}
-        km.merge_imported(cfg, {"combo_idle_ms": 120})
-        self.assertEqual(120, cfg["combo_idle_ms"])
+        self.assertEqual(120, message({}, DOC, zmk={"combo_idle_ms": 120})["combo_idle"])
         cfg = {"combo_idle_ms": 80}
-        km.merge_imported(cfg, {"combo_idle_ms": 120})
-        self.assertEqual(80, cfg["combo_idle_ms"])              # the config's own word wins
+        self.assertEqual(80, message(cfg, DOC, zmk={"combo_idle_ms": 120})["combo_idle"])  # the config's own word wins
+        self.assertEqual({"combo_idle_ms": 80}, cfg)            # and the config is left as it was
 
     def test_a_setting_that_is_not_a_number_says_so(self):
         # Not a traceback, and not quietly something else.
@@ -235,14 +234,19 @@ class Settings(unittest.TestCase):
         self.assertEqual(320, message({"hud": {"press_ms": 320.0}}, DOC)["hud"]["press_ms"])
 
     def test_the_page_falls_back_to_the_same_defaults(self):
-        # hud.js keeps its own copy for a keymap message without `hud` (a dump older than the
-        # setting, the committed test fixture). A setting added here and not there reads as
-        # undefined on the page: a timer of NaN ms, a glow that never shows. `width` is the one
-        # the page takes from the message alone (postSize).
-        page = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hud", "hud.js")
-        with open(page, encoding="utf-8") as f:
-            block = re.search(r"const DEFAULTS = \{(.*?)\};", f.read(), re.S).group(1)
-        on_page = {k: int(v) for k, v in re.findall(r"(\w+):\s*(\d+)", block)}
+        # The page keeps its own copy for a keymap message without `hud` (a dump older than the
+        # setting, the committed test fixture): hud.js the painting's, keystrokes.js the reading's.
+        # A setting added here and not there reads as undefined on the page: a timer of NaN ms, a
+        # glow that never shows. `width` is the one the page takes from the message alone (postSize).
+        hud = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "hud")
+        on_page = {}
+        for name, pattern in (("hud.js", r"const DEFAULTS = Object\.assign\(\{(.*?)\}"),
+                              ("keystrokes.js", r"const DEFAULTS = \{(.*?)\};")):
+            with open(os.path.join(hud, name), encoding="utf-8") as f:
+                block = re.search(pattern, f.read(), re.S).group(1)
+            for k, v in re.findall(r"(\w+):\s*(\d+)", block):
+                self.assertNotIn(k, on_page, f"{k} is in both hud.js and keystrokes.js")
+                on_page[k] = int(v)
         self.assertEqual(on_page, {k: v for k, v in km.HUD_DEFAULTS.items() if k != "width"})
 
     def test_the_bar_shows_the_chips_the_config_asks_for(self):
@@ -291,6 +295,12 @@ class Settings(unittest.TestCase):
         self.assertEqual(km.expand("/abs/x.yaml", "/a/b/config"), "/abs/x.yaml")
         self.assertTrue(km.expand("~/x.yaml", "/a").startswith(os.path.expanduser("~")))
 
+    def test_a_path_is_resolved_from_the_file_that_names_it(self):
+        self.assertEqual("/a/b/examples/x.yaml", km.resolve("../examples/x.yaml", "/a/b/config/hud.yaml"))
+        self.assertEqual("/abs/x.yaml", km.resolve("/abs/x.yaml", "/a/b/config/hud.yaml"))
+        self.assertTrue(km.resolve("~/x.yaml", "/a/hud.yaml").startswith(os.path.expanduser("~")))
+        self.assertIsNone(km.resolve(None, "/a/hud.yaml"))
+
     def test_layout_files_are_found_from_the_yaml_up(self):
         # keymap-drawer reads them from where it runs, a drawer repo's root; the HUD runs anywhere.
         with tempfile.TemporaryDirectory() as root:
@@ -302,7 +312,10 @@ class Settings(unittest.TestCase):
             self.assertEqual(km.layout_files({"qmk_info_json": "docs/d/layout.json", "layout_name": "L"}, yaml_path),
                              {"qmk_info_json": json_path, "layout_name": "L"})
             self.assertEqual(km.layout_files({"qmk_info_json": "layout.json"}, yaml_path), {"qmk_info_json": json_path})
-            self.assertEqual(km.layout_files({"dts_layout": "missing.dtsi"}, yaml_path), {"dts_layout": "missing.dtsi"})
+            # Found nowhere: where it would be beside the YAML, not wherever keymap-drawer happens to
+            # run, so its error names the place it was looked for.
+            self.assertEqual(km.layout_files({"dts_layout": "missing.dtsi"}, yaml_path),
+                             {"dts_layout": os.path.join(root, "docs", "d", "missing.dtsi")})
             self.assertEqual(km.layout_files({"cols_thumbs_notation": "33+2 2+33"}, yaml_path),
                              {"cols_thumbs_notation": "33+2 2+33"})
 
@@ -408,7 +421,7 @@ class Glyphs(unittest.TestCase):
     def test_the_message_drops_a_glyph_from_old_definitions_that_could_run(self):
         drawing = km.draw(DOC, fetch=False)["drawing"]
         drawing["glyphs"] = {"mdi:fine": self.BENIGN["mdi"], "mdi:evil": self.HOSTILE["an event handler"]}
-        self.assertEqual(["mdi:fine"], list(km.build_message({}, drawing)["glyphs"]))
+        self.assertEqual(["mdi:fine"], list(km.build_message({}, {"drawing": drawing})["glyphs"]))
 
 
 class Message(unittest.TestCase):
@@ -520,6 +533,62 @@ class Message(unittest.TestCase):
         self.assertIn(("Nav", 8, "sticky"), kinds)
 
 
+class Touch(unittest.TestCase):
+    """The touch keyboard's part of the message: its settings, and what each key does."""
+
+    def test_settings_are_filled_in_and_checked(self):
+        msg = message({}, DOC)
+        self.assertEqual(km.TOUCH_DEFAULTS, msg["touch"])
+        self.assertEqual(1, msg["schema"])
+        got = message({"touch": {"hold_ms": 320, "combos": "chips", "flavor": "firmware"}}, DOC)["touch"]
+        self.assertEqual((320, "chips", "firmware"), (got["hold_ms"], got["combos"], got["flavor"]))
+        self.assertEqual("chords", message({}, DOC)["touch"]["combos"])       # no chips unless asked
+        quiet = message({"touch": {"sound": 0, "haptics": 0}}, DOC)["touch"]
+        self.assertEqual((0, 0), (quiet["sound"], quiet["haptics"]))
+        # A key's spacing: Choc's 18 mm unless said, MX's 19.05 kept to the hundredth.
+        self.assertEqual(18, msg["touch"]["key_mm"])
+        self.assertEqual(19.05, message({"touch": {"key_mm": 19.05}}, DOC)["touch"]["key_mm"])
+        # The smallest the dock makes them to fit: 16 mm unless said, a key spacing too.
+        self.assertEqual(16, msg["touch"]["min_key_mm"])
+        self.assertEqual(17.5, message({"touch": {"min_key_mm": 17.5}}, DOC)["touch"]["min_key_mm"])
+        for bad in ({"nope": 1}, {"hold_ms": "slow"}, {"hold_ms": -5}, {"latch": True}, {"combos": "both"}, "yes",
+                    {"sound": 101}, {"key_mm": 5}, {"key_mm": "19"}, {"key_mm": True}, {"floating": 1},
+                    {"min_key_mm": 5}, {"min_key_mm": "16"}):
+            with self.assertRaises(km.KeymapError, msg=repr(bad)):
+                message({"touch": bad}, DOC)
+
+    def test_the_hosts_sections_are_checked_too(self):
+        got = km.host_settings({"dock": {"screen": "eDP-1", "height_pct": 35, "split": 0}, "remote": {"port": 9000}})
+        self.assertEqual(("eDP-1", 35, 0, 0), (got["dock"]["screen"], got["dock"]["height_pct"], got["dock"]["split"],
+                                               got["dock"]["start"]))
+        self.assertEqual((9000, 30, ""), (got["remote"]["port"], got["remote"]["minutes"], got["remote"]["bind"]))
+        self.assertEqual(60, km.host_settings({})["dock"]["height_pct"])
+        for bad in ({"dock": {"height_pct": 95}}, {"dock": {"start": 2}}, {"dock": {"where": 1}}, {"dock": "bottom"},
+                    {"remote": {"port": 80}}, {"remote": {"minutes": 0}}, {"remote": {"bind": 5}}):
+            with self.assertRaises(km.KeymapError, msg=repr(bad)):
+                message(bad, DOC)
+
+    def test_a_drawing_alone_types_from_its_legends(self):
+        a = message({}, DOC)["actions"]
+        self.assertEqual("legends", a["source"])
+        base = [a["table"][i] for i in a["layers"]["0"]]
+        self.assertEqual("kp", base[0]["op"])
+        self.assertEqual(("ht", "mo", 1), (base[5]["op"], base[5]["hold"]["op"], base[5]["hold"]["layer"]))
+        self.assertEqual(("sl", 2), (base[8]["op"], base[8]["layer"]))
+
+    def test_the_imported_bindings_are_what_it_types(self):
+        a = message({}, DOC, zmk={"keymap": {"v": 1, "positions": 10, "layers": {
+            "0": ["&kp Q"] + ["&none"] * 9, "1": ["&trans"] * 10, "2": ["&trans"] * 10}}})["actions"]
+        self.assertEqual(("keymap", "&kp Q"), (a["source"], a["table"][a["layers"]["0"][0]]["raw"]))
+
+    def test_a_broken_compiler_costs_typing_not_the_hud(self):
+        import actions
+        with unittest.mock.patch.object(actions, "build", side_effect=RuntimeError("boom")):
+            msg = message({}, DOC)
+        self.assertEqual("RuntimeError: boom", msg["actions"]["error"])
+        self.assertEqual("Base", msg["base"])
+
+
 class Drawing(unittest.TestCase):
     """What import writes: made once, from the drawer files, and then all the runtime has."""
 
@@ -536,7 +605,7 @@ class Drawing(unittest.TestCase):
     def test_overrides_leave_the_drawing_as_it_was(self):
         drawing = km.draw(DOC, fetch=False)["drawing"]
         before = json.dumps(drawing, sort_keys=True)
-        km.build_message({"combos": [{"positions": [2, 3], "layers": ["Nav"]}]}, drawing)
+        km.build_message({"combos": [{"positions": [2, 3], "layers": ["Nav"]}]}, {"drawing": drawing})
         self.assertEqual(before, json.dumps(drawing, sort_keys=True))
 
     @unittest.skipUnless(HAVE_DRAWER, "keymap-drawer not installed")
@@ -573,6 +642,17 @@ class Runtime(unittest.TestCase):
         with open(self.defs, "w", encoding="utf-8") as f:
             json.dump(dict({"version": km.DEFINITIONS_VERSION, "source": "board.yaml"}, **made, **extra), f)
 
+    def test_a_config_asked_for_that_is_not_there_is_said_never_another(self):
+        # `--config typo.yaml` must not quietly draw $ZMKHUD_CONFIG's board, or the user's own.
+        missing = os.path.join(self.tmp, "typo.yaml")
+        with mock.patch.dict(os.environ, {"ZMKHUD_CONFIG": self.config}):
+            with self.assertRaises(km.KeymapError) as e:
+                km.find_config(missing)
+            self.assertIn("typo.yaml", str(e.exception))
+            with self.assertRaises(km.KeymapError):
+                km.KeymapSource(missing)
+            self.assertEqual(self.config, km.find_config())       # asked for none: the one it is told of
+
     def test_only_the_config_and_the_definitions_are_opened(self):
         self.write_definitions()
         opened, real = [], open
@@ -590,6 +670,20 @@ class Runtime(unittest.TestCase):
             for name in ("example-3x5", "example-4x12", "diamond"):
                 msg = km.KeymapSource(os.path.join(REPO, "config", f"{name}.yaml"), log=lambda *a: None).load()
                 self.assertTrue(msg["layout"]["keys"], name)
+
+    def test_the_message_is_written_whole_for_a_tablet(self):
+        self.write_definitions()
+        out = os.path.join(self.tmp, "board.json")
+        import contextlib
+        import io
+        with contextlib.redirect_stdout(io.StringIO()) as said:
+            self.assertEqual(0, km.main(["--config", self.config, "-o", out]))
+        with open(out, encoding="utf-8") as f:
+            msg = json.load(f)
+        self.assertEqual(("keymap", 1, "legends"), (msg["kind"], msg["schema"], msg["actions"]["source"]))
+        self.assertIn("tablet", said.getvalue())
+        # No half-written file left beside it.
+        self.assertEqual(["board.json", "config.definitions.json", "config.yaml"], sorted(os.listdir(self.tmp)))
 
     def test_without_definitions_it_says_what_to_run_and_keeps_the_config(self):
         src = km.KeymapSource(self.config, log=lambda *a: None)
@@ -617,9 +711,12 @@ class Runtime(unittest.TestCase):
     def test_what_was_imported_is_a_floor_under_the_config(self):
         self.write_definitions(zmk={"layers": {"0": {"name": "BASE"}, "1": {"name": "NAV"}, "2": {"name": "SYM"}},
                                     "combo_term_ms": 35})
-        msg = km.KeymapSource(self.config, log=lambda *a: None).load()
+        source = km.KeymapSource(self.config, log=lambda *a: None)
+        msg = source.load()
         self.assertEqual(35, msg["combo_term"])
         self.assertEqual("NAV", msg["zmk_layers"]["1"]["name"])
+        # The config as written: the feed reads its settings, never what the message folded in.
+        self.assertFalse([k for k in source.cfg if k.startswith("_imported")] or "combo_term_ms" in source.cfg)
 
 
 @unittest.skipUnless(HAVE_DRAWER, "keymap-drawer not installed")

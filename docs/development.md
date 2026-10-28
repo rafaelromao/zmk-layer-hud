@@ -31,18 +31,45 @@ make fixture     # rebuild the committed test keymap from the configured one
 make samples     # write the sample boards' definitions again, as import does (the Diamond's needs ~/projects/keyboards)
 ```
 
+A keymap message is made one way: `keymap.build_message(cfg, definitions)`, from the config and
+the definitions beside it (`KeymapSource` reads both and nothing else). A path the config or a
+keymap-drawer YAML names is found by `keymap.resolve`, from the file that names it (a layout file
+walking up from there), and `sync.inputs` lists every file the definitions are made from, which
+`sync --watch` watches and `doctor` compares with the definitions' time.
+
 `zmk-layer-hud keymap` checks that the HUD's own files load: the config and the definitions
 `import` wrote. The samples in `config/` carry theirs (`*.definitions.json`), so the demo, the
 fixtures and the landing page draw them with no keymap-drawer and no network.
 
+The feed reads each wired keyboard connection through one loop, `hudfeed.Reader`: a scan every
+rescan, each device opened and read on a thread of its own through a `Stream` that releases what
+it held when it goes. Serial, hidraw and HID keys are its hooks (find, open, read, close), so
+`hudfeed_test` drives the loop with a fake transport, a pipe for a hidraw node and a fake hidapi,
+and BLE's session with a fake bleak client; only a real keyboard checks the drivers themselves.
+
 `firmware/src/signal_frame.h` is the single definition of the wire format; the C and Python tests
 share its vectors, so a change on one side that is not mirrored on the other fails both.
+
+`host/keynames.py` is the single statement of the key vocabulary: every named key (its key name,
+usages, glyph, control character and the spellings drawings use for it), the modifiers, and the
+characters each key of a US layout types. `host/hiddecode.py` decodes the keyboard's reports with it,
+`host/uskeys.py` inverts it, the tools read a legend's named key from it (`name_of`), and the pages
+get it as `hud/keynames.js`, which `make keynames` writes and the host tests fail on when it is
+behind. Naming another key is one record there, then `make keynames` and `make site`.
 
 `make test-hud` sweeps the page: every key on every layer it can be shown on, every combo on every
 layer it is declared on and in four press orders, every press that must draw no combo, and the
 typed-keys strip against what a keyboard would have sent to type each legend. Over 5000 checks in
 about a third of a second. The cases are generated from the keymap message, so pointing it at
 another board sweeps that board.
+
+What the page draws is read by `hud/keystrokes.js`: the feed's messages go in, each with the time it
+came, and the board comes out -- the layers up, the keys down and lit, the combo pills, the keys that
+brought a layer up -- with what was struck, said once nothing can take it back, for the page to
+count. It keeps no time of its own (what is due next is an answer, not a timer), so
+`hud/tests/keystrokes_test.js` drives it with plain numbers and no DOM: a chord a bigger one
+supersedes inside its term, a guess its position takes back, a layer drop held back for a key's
+flash. The other suites go through the page, the DOM included.
 
 Those two drive one channel each, with the page's own rules for what a keymap means, and that is
 how a letter typed by a combo lit nothing once the board had to work from the character: both
@@ -53,7 +80,16 @@ comes when the key comes up), stated there rather than borrowed from `hud.js`. E
 down every channel it can arrive by: positions and reports in either order, reports alone with and
 without layers, positions alone, and typing sent in with combos on and off. Words go key after key
 on one page at a typist's pace, so a way is also tested next to its neighbours: a one-shot layer
-that outlives its key, a chord inside a combo term, a macro across two layers.
+that outlives its key, a chord inside a combo term, a macro across two layers. It also lists the
+chords a layer rules out -- a base combo's keys struck with a layer up that declares none on them --
+and each is struck as ZMK types it: its keys one by one, and no pill.
+
+The Python tools read a keymap message one way, `host/keymap_message.py`, the page's `view.js` in
+Python: which drawer layer a ZMK layer is, where a ZMK position is on the board, the stack live
+layers draw, a key through transparent ones. `ways.py`, `play.py`, `export.py`, `session.py` and
+`actions.py` all read that. What stays the oracle's own is how a legend is typed: `ways.typed` and
+the touch keyboard's `actions.Legends` each say it for themselves, and `engine_legends_test`
+holds one to the other.
 
 `make audit` checks what those cases cannot: the drawing itself. One drawer layer stands for every
 ZMK layer drawn as it, so where two of them fire different things on the same keys, the HUD can be
@@ -151,6 +187,14 @@ lives. Two rules it keeps, and both matter:
   `session export`, the one part of `session` that draws with keymap-drawer, in
   `host/export.py`). The rest must keep working on a half-installed machine.
 
+The panel is one module, `host/panelcore.py`, with two windows: `host/macos/panel.py` (AppKit) and
+`host/linux/panel.py` (GTK, layer-shell). What the page tells its panel (hide, attach, dock, size,
+site, wpm, stats, nodrag, the touch keyboard's keys), what the command line asks of it, and what
+`panel.json` says are `panelcore.Panel`'s; each platform's panel is a `panelcore.Window` to it, and
+owns only how the HUD is drawn, placed, moved and hidden there. Neither platform's panel imports
+without AppKit or GTK, so `host/panelcore_test.py` drives the panel with a window that records
+what it is asked, and `cli_test` signals the real panel with a window that does nothing.
+
 Showing and hiding goes to the running panel directly: `show` and `hide` write what they want to
 `$STATE/panel.want` and send the panel SIGUSR2, and the panel does it and says so in
 `$STATE/panel.json` (`{"pid", "shown", "wpm"}`), which `status` and both menubar icons read too
@@ -160,7 +204,13 @@ suspends its own threads with SIGUSR1, and the GTK panel is a WebKit process. Hi
 nothing rather than closed: the window stays, transparent and taking no clicks, so WebKit never
 takes the page for a hidden one and slows the timers it counts with.
 
-The icons only read `panel.json` and run the command line, so they work the same whether the HUD
+Whether the HUD runs, and what it shows, is read one way: `panelstate.hud`. It takes `panel.json`
+only when a HUD panel stands behind it (a pid alive and a panel's, never one handed out again), says
+which copy of zmk-layer-hud that panel runs from, and adds the feed and remote mode. Every verb
+reads it, the macOS icon reads it, and the Omarchy bar, which cannot import Python, reads it as
+`zmk-layer-hud status --json`, the same object for any other bar or script.
+
+The icons read the HUD's state and run the command line, so they work the same whether the HUD
 is running or not:
 - **macOS:** `host/macos/menubar.py` is a process of its own, and stays when the HUD quits.
   `start.sh` starts it with the HUD. It holds a lock, so a second copy exits at once, because
@@ -216,3 +266,51 @@ Starting and stopping stays in `host/macos/start.sh` and `host/linux/hud.sh`; `c
 and gives them the same verbs. `poke` and `feed` are split off before argparse sees them and
 handed their whole line, because their flags belong to `host/hudpoke.py` and `host/hudfeed.py` and
 restating them here would only give them somewhere to drift apart.
+
+## Commits, CI and releases
+
+Commit messages start with a [Conventional Commits](https://www.conventionalcommits.org/) type --
+`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `ci:`, `chore:`, and `feat!:` or a `BREAKING CHANGE:`
+footer for what breaks a config, a definitions file or a command -- then the subject as usual:
+`feat: the board types: a finger on a key is that key going down`. The commits before this rule are
+prose and stay as they are.
+
+**CI** (`.github/workflows/ci.yml`) runs on every push to main and every pull request, on each
+platform the HUD runs on:
+
+| Job | Runs |
+|---|---|
+| host (ubuntu, macos) | `make test-host` with the pinned packages |
+| host (Arch Linux) | every host module compiled with Arch's system Python, which the Linux panel runs under; then `test-host` and `test-firmware` |
+| pages, site and apps | `make test-hud test-site test-apps` |
+| firmware module | `make test-firmware` |
+| Android keyboard | the sink's tests, `ConstantsTest`, and the app built (the APK is kept as the run's artifact) |
+| iPad keyboard | Core's `swift test`, then the app and its keyboard built for the simulator, unsigned |
+
+**Releases** are release-please's (`.github/workflows/release.yml`, `release-please-config.json`).
+Each push to main keeps a release pull request up to date: the next version from the commits since
+the last release (`feat` a minor, `fix` a patch, a breaking change a major), its `CHANGELOG.md`
+entry, and the version in `version.txt`, the Android app (`appVersion`, the version code follows)
+and the iPad app (`MARKETING_VERSION`). Merging it tags `vX.Y.Z` and makes the GitHub release, which
+`install.sh` and `update` take; the Android keyboard's APK is then built from the tag and attached.
+A `Release-As: x.y.z` footer in a commit's body asks for a version outright.
+
+**The Android release key.** Every release's APK is signed with one key, so each installs over the
+one before: Android takes an update only from the key that signed what is installed, and a CI run's
+own debug key is new every time. The key is the maintainer's, made once and kept safe -- lose it and
+the next release cannot update anyone's installed app:
+
+```bash
+keytool -genkeypair -v -keystore zmkhud-release.jks -alias zmkhud -keyalg RSA -keysize 4096 -validity 10000
+```
+
+It goes to the repository's secrets as `ANDROID_KEYSTORE_BASE64` (`base64 -i zmkhud-release.jks`),
+`ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (`zmkhud`) and `ANDROID_KEY_PASSWORD`. The release
+workflow decodes it onto the runner for the build and removes it after; without the secrets it
+attaches no APK and says so. The same four, as environment variables (`ZMKHUD_KEYSTORE` the
+keystore's path), sign `gradle :app:assembleRelease` on a machine of your own.
+
+Two repository settings it needs: *Settings › Actions › General › Workflow permissions* allowing
+GitHub Actions to create and approve pull requests, or the release pull request cannot be opened.
+And a pull request opened with the workflow's own token starts no workflow, so CI does not run on
+the release pull request by itself; its commits are the ones already tested on main.

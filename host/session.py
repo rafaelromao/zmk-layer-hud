@@ -36,6 +36,8 @@ import tempfile
 import threading
 import time
 
+import panelstate  # noqa: E402  (host/panelstate.py: where $STATE is)
+
 VERSION = 1
 # What the keys glow with: what was just typed; the session's presses on the layer on screen;
 # its presses on every layer, by where the fingers went; the time each key takes; nothing.
@@ -46,6 +48,7 @@ PREFS = {
     "theme": ("light", "dark"),       # the keys: light, keymap-drawer's; or dark, the heat in indigo
     "side": ("shown", "hidden"),      # the stats block beside the panel
     "opacity": range(0, 101),         # the panels' background, 0 (clear) to 100 (solid): the slider
+    "feedback": ("on", "off"),        # the touch keyboard's click and buzz: the switch (unset: by the mode)
 }
 
 
@@ -77,9 +80,7 @@ def _warn(msg):
 
 
 def default_dir():
-    state = os.environ.get("ZMKHUD_STATE") or os.path.join(
-        os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "zmk-layer-hud")
-    return os.path.join(state, "sessions")
+    return os.path.join(panelstate.default_dir(), "sessions")
 
 
 def check_name(name):
@@ -815,6 +816,24 @@ class Store:
                     self.acks.pop(next(iter(self.acks)))
             self.announce()
 
+    # What the page says to the session: its counts, and the heatmap and the preferences it switched
+    # to. Its own panel hands them over as they come (the macOS bridge); the feed's socket only from
+    # the page holding the tally token (hudfeed.Hub).
+    SAID = ("tally", "heatmap", "pref")
+
+    def apply_said(self, msg):
+        """One of the page's SAID kinds, kept; False for any other kind, which is not the session's."""
+        kind = msg.get("kind")
+        if kind == "tally":
+            self.apply(msg)
+        elif kind == "heatmap":
+            self.set_heatmap(msg.get("mode"))
+        elif kind == "pref":
+            self.set_pref(msg.get("name"), msg.get("value"))
+        else:
+            return False
+        return True
+
     def set_heatmap(self, mode):
         if mode not in HEATMAP_MODES:
             return
@@ -862,6 +881,11 @@ def keys_of(msg):
     msg = msg if isinstance(msg, dict) else {}
     positions = msg.get("positions") if isinstance(msg.get("positions"), dict) else {}
     at = {str(pos): i for pos, i in positions.items() if isinstance(i, int) and not isinstance(i, bool) and i >= 0}
+    keys = (msg.get("layout") or {}).get("keys") if isinstance(msg.get("layout"), dict) else None
+    if not positions and isinstance(keys, list):
+        # No map: a keymap in the firmware's own order, position = index, as the page reads it
+        # (keymap_message.KeymapMessage.idx_at, view.js idxAt).
+        at = {str(i): i for i in range(len(keys))}
     fingers = msg.get("fingers") if isinstance(msg.get("fingers"), list) else []
     by_pos = {pos: fingers[i] for pos, i in at.items() if i < len(fingers) and isinstance(fingers[i], str)}
     legends = {}

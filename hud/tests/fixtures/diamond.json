@@ -7269,6 +7269,7 @@
 "7": 4,
 "8": 5
 },
+"schema": 1,
 "source": "examples/diamond.yaml",
 "stats": {
 "accuracy": true,
@@ -7285,6 +7286,22 @@
 "wpm": true
 },
 "title": "",
+"touch": {
+"combos": "chords",
+"enabled": 1,
+"flavor": "balanced",
+"haptics": 1,
+"heat": 1,
+"hold_ms": 280,
+"key_mm": 18,
+"latch": 1,
+"lock_ms": 350,
+"min_key_mm": 16,
+"repeat_delay_ms": 450,
+"repeat_ms": 60,
+"sound": 30,
+"sticky_ms": 0
+},
 "zmk_layers": {
 "0": {
 "cls": "off",

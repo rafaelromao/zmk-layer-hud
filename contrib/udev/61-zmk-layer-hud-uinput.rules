@@ -1,0 +1,17 @@
+# zmk-layer-hud: let the active seat user make a virtual keyboard through /dev/uinput, which the
+# touch keyboard types with (host/linux/uinput.py, docs/touch.md). Opt-in, apart from
+# 60-zmk-layer-hud.rules, which only lets the HUD read: anything this user runs can then make a
+# keyboard of its own and type with it, power key included, and that is what typing for the user
+# takes.
+#
+# Install: `zmk-layer-hud typing setup` does this, printing each line and asking first. By hand:
+#   sudo cp 61-zmk-layer-hud-uinput.rules /etc/udev/rules.d/
+#   sudo cp ../modules-load.d/zmk-layer-hud-uinput.conf /etc/modules-load.d/
+#   sudo modprobe uinput
+#   sudo udevadm control --reload-rules
+#   sudo udevadm trigger --subsystem-match=misc --sysname-match=uinput
+#
+# Before systemd's 73-seat-late.rules, which turns TAG+="uaccess" into an ACL for the user of the
+# active logind session. static_node: /dev/uinput exists before its module is loaded (the kernel
+# loads it when the node is first opened), and takes its ACL from this rule then too.
+KERNEL=="uinput", SUBSYSTEM=="misc", TAG+="uaccess", OPTIONS+="static_node=uinput"

@@ -427,6 +427,114 @@ class LayerNodes(unittest.TestCase):
         self.assertEqual([True, True, False, True], [l["drawn"] for l in got])
 
 
+@unittest.skipUnless(HAVE_DRAWER, "reading the bindings needs keymap-drawer's parser (the venv)")
+class CaptureKeymap(unittest.TestCase):
+    """The bindings kept for the touch keyboard: as the keymap writes them, with the behaviours,
+    overrides, combos and conditional layers they need (host/actions.py compiles them)."""
+    BOARD = """
+#include <behaviors.dtsi>
+#include <dt-bindings/zmk/keys.h>
+#define NUM 1
+&mt { flavor = "balanced"; tapping-term-ms = <280>; };
+/ {
+    behaviors {
+        hml: home_row_mods {
+            compatible = "zmk,behavior-hold-tap";
+            #binding-cells = <2>;
+            flavor = "tap-preferred";
+            tapping-term-ms = <220>;
+            bindings = <&kp>, <&kp>;
+        };
+        dshift: double_shift {
+            compatible = "zmk,behavior-mod-morph";
+            #binding-cells = <0>;
+            bindings = <&kp A>, <&kp B>;
+            mods = <(MOD_LSFT | MOD_RSFT)>;
+        };
+        unused: unused_macro {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            bindings = <&kp Z>;
+        };
+        hello: hello_macro {
+            compatible = "zmk,behavior-macro";
+            #binding-cells = <0>;
+            wait-ms = <5>;
+            bindings = <&macro_tap &kp H &kp I>;
+        };
+    };
+    combos {
+        compatible = "zmk,combos";
+        esc { timeout-ms = <30>; key-positions = <0 1>; bindings = <&kp ESC>; layers = <0 NUM>; };
+    };
+    conditional_layers {
+        compatible = "zmk,conditional-layers";
+        tri { if-layers = <1 2>; then-layer = <3>; };
+    };
+    keymap {
+        compatible = "zmk,keymap";
+        base  { bindings = <&hml LCTRL A &mt LSHIFT B &dshift &hello>; };
+        num   { bindings = <&kp N1 &trans &mo 2 &kp LS(N1)>; };
+        spare { status = "reserved"; bindings = <&none &none &none &none>; };
+        nav   { bindings = <&kp LEFT &kp RIGHT &trans &trans>; };
+        adj   { bindings = <&bt BT_SEL 0 &trans &trans &trans>; };
+    };
+};
+"""
+
+    def capture(self, studio=False):
+        with tempfile.TemporaryDirectory() as d:
+            path = write(d, "board.keymap", self.BOARD)
+            if studio:
+                write(d, "config/board.conf", "CONFIG_ZMK_STUDIO=y\n")
+            return sync.capture_keymap(sync.device_tree(path), sync.studio(d, path))
+
+    def test_bindings_are_kept_as_written_by_layer_id(self):
+        got = self.capture()
+        self.assertEqual(4, got["positions"])
+        self.assertEqual(["0", "1", "2", "3"], sorted(got["layers"]))
+        self.assertEqual(["&hml LCTRL A", "&mt LSHIFT B", "&dshift", "&hello"], got["layers"]["0"])
+        self.assertEqual("&kp LS(N1)", got["layers"]["1"][3])
+        self.assertEqual("&bt BT_SEL 0", got["layers"]["3"][0])
+
+    def test_a_reserved_layer_is_kept_where_the_firmware_keeps_it(self):
+        got = self.capture(studio=True)
+        self.assertEqual(["&none"] * 4, got["layers"]["2"])
+        self.assertEqual("&kp LEFT", got["layers"]["3"][0])
+
+    def test_the_behaviours_a_key_reaches_come_with_their_properties(self):
+        got = self.capture()
+        self.assertEqual({"compatible": "zmk,behavior-hold-tap", "cells": 2,
+                          "props": {"bindings": ["&kp", "&kp"], "tapping-term-ms": ["220"], "flavor": "tap-preferred"}},
+                         got["behaviors"]["hml"])
+        self.assertEqual(["(MOD_LSFT", "|", "MOD_RSFT)"], got["behaviors"]["dshift"]["props"]["mods"])
+        self.assertEqual(["&macro_tap", "&kp H", "&kp I"], got["behaviors"]["hello"]["props"]["bindings"])
+        self.assertNotIn("unused", got["behaviors"])
+
+    def test_an_override_of_a_built_in(self):
+        self.assertEqual({"flavor": "balanced", "tapping-term-ms": ["280"]}, self.capture()["overrides"]["mt"])
+
+    def test_combos_and_conditional_layers(self):
+        got = self.capture()
+        self.assertEqual([{"name": "esc", "positions": [0, 1], "binding": "&kp ESC", "layers": [0, 1],
+                           "timeout-ms": 30, "require-prior-idle-ms": None, "slow-release": False}], got["combos"])
+        self.assertEqual([{"if": [1, 2], "then": 3}], got["conditional"])
+
+    def test_what_it_captures_compiles(self):
+        import actions
+        got = self.capture()
+        a = actions.build({}, {}, {}, None, {}, raw=got)
+        self.assertEqual("keymap", a["source"])
+        base = [a["table"][i] for i in a["layers"]["0"]]
+        self.assertEqual(("ht", "tap-preferred", 220), (base[0]["op"], base[0]["flavor"], base[0]["term"]))
+        self.assertEqual(("balanced", 280), (base[1]["flavor"], base[1]["term"]))
+        self.assertEqual(("morph", 0x22), (base[2]["op"], base[2]["mods"]))
+        self.assertEqual(["tap", "tap"], [next(k for k in s if k in ("tap", "press", "release")) for s in base[3]["steps"]])
+
+    def test_a_keymap_it_cannot_read_gives_nothing(self):
+        self.assertIsNone(sync.capture_keymap(None, False))
+
+
 class Layout(unittest.TestCase):
     """The physical layout a drawing of the keymap itself is drawn on."""
 
@@ -448,6 +556,17 @@ class Layout(unittest.TestCase):
             spec = sync.layout_for_keymap({"layout": {"dts_layout": "shape.dtsi", "layout_name": "a"}},
                                           os.path.join(d, "config.yaml"), d, self.repo(d), {})
         self.assertEqual({"dts_layout": os.path.join(d, "shape.dtsi"), "layout_name": "a"}, spec)
+
+    def test_the_configs_layout_file_is_found_from_the_config_up_as_a_drawings_is(self):
+        # A config kept in the keyboard's repo names its layout from the repo's root, as a drawer
+        # YAML does there; both are found from the file that names them up through its parents.
+        with tempfile.TemporaryDirectory() as d:
+            os.makedirs(os.path.join(d, "config"))
+            os.makedirs(os.path.join(d, "docs"))
+            write(os.path.join(d, "docs"), "shape.dtsi", "/ {};")
+            spec = sync.layout_for_keymap({"layout": {"dts_layout": "docs/shape.dtsi"}},
+                                          os.path.join(d, "config", "hud.yaml"), d, self.repo(d), {})
+            self.assertEqual(os.path.join(d, "docs", "shape.dtsi"), spec["dts_layout"])
 
     def test_a_layout_zmk_shares_is_named_for_keymap_drawer_to_fetch(self):
         with tempfile.TemporaryDirectory() as d:
@@ -537,6 +656,15 @@ class Import(unittest.TestCase):
 
     def run_import(self, source=None, keyboard=None):
         return sync.do_import(source, keyboard, self.config, quiet=True, fetch=False)
+
+    def test_a_config_named_through_a_variable_is_the_one_meant(self):
+        # As the HUD reads it (keymap.find_config): ~ and $VARS, then absolute. A $VAR left as it
+        # was named a directory called "$ZMKHUD_T" and wrote a new config there.
+        with mock.patch.dict(os.environ, {"ZMKHUD_T": self.d}):
+            sync.do_import(None, None, "$ZMKHUD_T/config.yaml", quiet=True, fetch=False)
+        self.assertTrue(os.path.isfile(self.defs))
+        self.assertFalse(os.path.exists(os.path.join(os.getcwd(), "$ZMKHUD_T")))
+        self.assertEqual(self.config, sync.keymap_mod.config_path(os.path.join(self.d, ".", "config.yaml")))
 
     def test_a_drawing_alone_from_the_configs_keymap_drawer_file(self):
         self.run_import()
@@ -891,12 +1019,40 @@ class Watch(unittest.TestCase):
         repo = os.path.join(self.d, "repo")
         keymap = write(repo, "config/b.keymap", '#include "defs.dtsi"\n' + KEYMAP)
         write(repo, "config/defs.dtsi", "#define X 1\n")
-        files = sync.watched(self.config, repo, "b")
+        files = sync.inputs(self.config, repo, "b")
         self.assertIn(os.path.join(self.d, "board.yaml"), files)
         self.assertIn(os.path.expanduser("~/nowhere/drawer.yaml"), files)   # watched for when it appears
         self.assertIn(keymap, files)
         self.assertIn(os.path.join(repo, "config", "defs.dtsi"), files)
         self.assertNotIn(self.defs, files)                                  # what it writes, never
+
+    def test_a_drawings_layout_file_is_watched_and_an_unused_layout_is_not(self):
+        # The Diamond's drawing names its layout from its repo's root; saving that JSON changes the
+        # board as much as saving the drawing does. The config's own layout: is read only when the
+        # drawing is made from the ZMK keymap, so with keymap: set it is not the board's.
+        os.makedirs(os.path.join(self.d, "docs"))
+        write(self.d, "docs/layout.json", "{}")
+        write(self.d, "drawings/board.yaml", "layout: {qmk_info_json: docs/layout.json}\nlayers: {}\n")
+        write(self.d, "config.yaml", "keymap: drawings/board.yaml\nlayout: {dts_layout: unused.dtsi}\n")
+        files = sync.inputs(self.config)
+        self.assertIn(os.path.join(self.d, "docs", "layout.json"), files)
+        self.assertNotIn(os.path.join(self.d, "unused.dtsi"), files)
+
+    def test_without_a_drawing_the_configs_layout_is_watched(self):
+        write(self.d, "config.yaml", "layout: {dts_layout: shape.dtsi}\n")
+        self.assertIn(os.path.join(self.d, "shape.dtsi"), sync.inputs(self.config))
+
+    def test_the_keyboards_files_are_watched_only_when_its_layout_is_searched_for(self):
+        # A sync looks for the physical layout in the keyboard's own files only when the drawing is
+        # made from the ZMK keymap and the config says no layout: of its own.
+        repo = os.path.join(self.d, "repo")
+        write(repo, "config/b.keymap", KEYMAP)
+        overlay = write(repo, "config/b.overlay", "/ { };\n")
+        self.assertNotIn(overlay, sync.inputs(self.config, repo, "b"))
+        write(self.d, "config.yaml", "layout: {dts_layout: shape.dtsi}\n")
+        self.assertNotIn(overlay, sync.inputs(self.config, repo, "b"))
+        write(self.d, "config.yaml", "title: T\n")
+        self.assertIn(overlay, sync.inputs(self.config, repo, "b"))
 
     def test_a_repo_by_url_is_not_watched(self):
         with mock.patch.object(sync, "recorded", return_value=("https://github.com/you/zmk-config", None)):
