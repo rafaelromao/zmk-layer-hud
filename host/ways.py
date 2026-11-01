@@ -218,6 +218,27 @@ def shifted_by_hand(km):
     return out
 
 
+def unfired(km):
+    """The base's combos struck with another layer up that declares none on those keys. ZMK matches
+    a combo against the highest active layer alone, so each such chord is its keys, one by one: no
+    pill, no combo counted, and every key a keystroke of its own. A chord with a combo of the layer
+    up among its keys is left out: that one can fire."""
+    out = []
+    for layer in km.data["layer_order"]:
+        if layer == km.base or layer not in km.ids_of:
+            continue
+        own = [set(c["positions"]) for c in km.combos_on(layer)]
+        seen = set()
+        for combo in km.combos_on(km.base):
+            keys = tuple(sorted(combo["positions"]))
+            if keys in seen or any(o <= set(keys) for o in own):
+                continue
+            seen.add(keys)
+            out.append({"layer": layer, "live": [km.ids_of[layer][0]], "keys": list(keys),
+                        "zmk": [km.zmk(i) for i in keys], "below": combo["key"].get("tap") or ""})
+    return out
+
+
 def pill_of(combo):
     return {"tap": combo["key"].get("tap") or "", "glyph": combo["key"].get("glyph")}
 
@@ -423,6 +444,8 @@ def main(argv):
             print(json.dumps({"kind": "case", **c}, ensure_ascii=False))
         for w in words(km, cs):
             print(json.dumps({"kind": "word", **w}, ensure_ascii=False))
+        for u in unfired(km):
+            print(json.dumps({"kind": "unfired", **u}, ensure_ascii=False))
         return 0
     if "--audit" in argv:
         import keymap as keymap_mod
