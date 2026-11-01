@@ -239,6 +239,8 @@ function makeStyle() {
 const PAGE_IDS = ["frame", "hud", "layer", "layerName", "layerSub", "side", "hide", "close", "board", "stats", "statsHead", "status", "feed", "title", "keys"];
 // ...each with the attributes index.html gives it: the heading's href, which ?embed takes away.
 const PAGE_HTML = fs.readFileSync(path.join(HUD_DIR, "index.html"), "utf8");
+// Every script index.html loads, in its order, as site/build.py reads them (hud_files).
+const SCRIPTS = [...PAGE_HTML.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
 function pageAttributes(id) {
   const tag = new RegExp(`<\\w+\\s[^>]*\\bid="${id}"[^>]*>`).exec(PAGE_HTML);
   return tag ? [...tag[0].matchAll(/([\w-]+)="([^"]*)"/g)].map(m => [m[1], m[2]]) : [["id", id]];
@@ -272,7 +274,7 @@ function makeDocument() {
 
 // ---------- the page ----------
 
-/* Load hud.js and keys.js into one sandbox, exactly as index.html loads them (keys.js first, so
+/* Load the page's scripts into one sandbox, exactly as index.html loads them (keys.js first, so
  * window.keys exists by the time hud.key forwards to it). Returns the handles a test needs.
  *
  * `search` is the page's query string, for what hud.js decides from it at load (a GIF still's
@@ -322,7 +324,7 @@ function loadPage(opts = {}) {
   const dispatch = (type, event) => { for (const fn of (listeners.get(type) || []).slice()) fn(event); };
 
   vm.createContext(sandbox);
-  for (const file of ["keys.js", "hud.js"]) {
+  for (const file of SCRIPTS) {
     const src = fs.readFileSync(path.join(HUD_DIR, file), "utf8");
     vm.runInContext(src, sandbox, { filename: path.join(HUD_DIR, file) });
   }

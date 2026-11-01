@@ -16,6 +16,7 @@ verbs that do need the venv re-exec into it first; see `NEEDS_VENV` and `needs_v
 """
 
 import argparse
+import json
 import datetime
 import os
 import platform
@@ -35,8 +36,7 @@ VENV_PYTHON = os.path.join(ROOT, ".venv", "bin", "python3")
 
 # Logs live outside the tree because `update` replaces the tree wholesale, and the directory the
 # logs are in cannot be the directory being swapped. The host scripts read the same variable.
-STATE = os.environ.get("ZMKHUD_STATE") or os.path.join(
-    os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state"), "zmk-layer-hud")
+STATE = panelstate.default_dir()
 
 CONFIG_DIR = os.path.expanduser("~/.config/zmk-layer-hud")
 CONFIG = os.path.join(CONFIG_DIR, "config.yaml")
@@ -189,6 +189,9 @@ def cmd_start(args):
     missing = definitions_missing()
     if missing:
         raise Fail(missing)
+    h = hud_now()
+    if h["running"] and not h["ours"]:
+        raise Fail(another_copy(h))
     return run_host("start", args.reserve, args.hidden, args.foreground)
 
 
@@ -206,7 +209,10 @@ def cmd_restart(args):
 
 def cmd_power(args):
     """Ctrl+Alt+Gui+L's verb: the HUD started, shown, when it is not running, and stopped when it is."""
-    if panel_pids():
+    h = hud_now()
+    if h["running"] and not h["ours"]:
+        raise Fail(another_copy(h))
+    if h["running"]:
         return cmd_stop(args)
     args.reserve = args.hidden = args.foreground = False
     return cmd_start(args)
@@ -217,30 +223,44 @@ def pgrep(pattern):
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
 
 
-# Either host's panel, run from this tree.
-PANEL = re.escape(os.path.join(ROOT, "host")) + r"/.*/panel\.py"
+def processes(pattern):
+    """{pid: command line} of the processes matching `pattern` (panelstate.processes; the tests
+    stand in for it)."""
+    return panelstate.processes(pattern)
+
+
+def hud_now():
+    """The HUD as every verb reads it (panelstate.hud), for this copy and this $STATE."""
+    return panelstate.hud(STATE, ROOT, procs=processes)
 
 
 def panel_pids():
-    try:
-        out = subprocess.run(["pgrep", "-f", PANEL], capture_output=True, text=True).stdout
-    except OSError:
-        return []
-    return [int(p) for p in out.split() if p.isdigit()]
+    """This copy's HUD panels: what `stop` stops, and `update` waits for."""
+    here = os.path.realpath(ROOT)
+    return [pid for pid, command in processes(panelstate.PANEL_PROCESS).items()
+            if panelstate.tree_of(command) == here]
+
+
+def another_copy(h):
+    """What to say of a HUD that runs from another copy of zmk-layer-hud, on this $STATE: this copy
+    neither stops it nor starts a second beside it, which would find its port taken."""
+    return (f"a HUD from {h['where']} is running (pid {h['pid']}): it is that copy's to show, hide or stop "
+            f"-- {os.path.join(h['where'], 'bin', 'zmk-layer-hud')} stop -- before this one starts")
 
 
 # ---------- show / hide ----------
 
 def running_panel():
-    """The live panel's own word on itself, {"pid", "shown"}, or a Fail that says why there is no
-    panel to ask. Its pid has to be one of this tree's panels as well as alive: a pid outlives its
-    process, and is handed out again."""
-    st = panelstate.read(STATE)
-    pids = panel_pids()
-    if st and st["pid"] in pids:
-        return st
-    panelstate.discard(STATE)       # its panel is gone: left there, it says something untrue
-    if pids:
+    """The live panel's own word on itself (panelstate.hud: "pid", "shown", ...), or a Fail that
+    says why there is no panel to ask. It has to be a HUD panel's, of this copy: a pid outlives its
+    process and is handed out again, and another copy's HUD is that copy's to ask."""
+    h = hud_now()
+    if h["said"] and h["ours"]:
+        return h
+    if h["said"]:
+        raise Fail(another_copy(h))
+    panelstate.discard(STATE)       # no panel stands behind it: left there, it says something untrue
+    if h["running"]:
         # A panel too old to know the signal would take it the default way, which is to end.
         raise Fail("the HUD that is running is older than show and hide, or still starting: "
                    "`zmk-layer-hud restart` once, and this works from then on")
@@ -330,15 +350,17 @@ def hypr_surfaces():
 
 
 def cmd_status(args):
-    host_dir = re.escape(os.path.join(ROOT, "host"))
-    pids = panel_pids()
-    st = panelstate.read(STATE)
-    said = st if st and st["pid"] in pids else None
-    print("panel: " + ("stopped" if not pids else
-                       "running, shown" if said and said["shown"] else
-                       "running, hidden (zmk-layer-hud show)" if said else "running"))
-    print("feed:  " + ("running" if pgrep(host_dir + r"/hudfeed\.py")
-                       else "stopped (the macOS panel runs it in-process)"))
+    h = hud_now()
+    if getattr(args, "json", False):
+        # What the Omarchy bar reads (host/linux/omarchy): the same answer every verb and the macOS
+        # icon get, rather than a reading of panel.json of its own.
+        print(json.dumps(h, ensure_ascii=False))
+        return 0
+    where = "" if h["ours"] or not h["running"] else f" (from {h['where']})"
+    print("panel: " + ("stopped" if not h["running"] else
+                       "running, shown" if h["said"] and h["shown"] else
+                       "running, hidden (zmk-layer-hud show)" if h["said"] else "running") + where)
+    print("feed:  " + h["feed"])
     # What it last managed to open says more than whether it is alive: the layer signal and the
     # typed-keys strip are separate grants and either can be the one that is missing.
     text = feed_log_text()
@@ -1662,25 +1684,19 @@ def check_config(results):
 
 
 def sync_due():
-    """A source a sync reads that is newer than the definitions it wrote, or None. A look at file
-    times, for doctor alone: the HUD never reads these files."""
+    """A file the definitions are made from (sync.inputs: the drawing and its layout files, the
+    keyboard's keymap and what it includes) that is newer than they are, or None. The config's own
+    settings are read as they are, so it is not one. A look at file times, for doctor alone: the
+    HUD never reads these files."""
     sys.path.insert(0, os.path.join(ROOT, "host"))
     try:
-        import json
         import keymap as keymap_mod
+        import sync as sync_mod
         path = keymap_mod.find_config()
-        defs = keymap_mod.definitions_path(path)
-        cfg = keymap_mod.load_yaml(path)
-        base = os.path.dirname(os.path.abspath(path))
-        sources = [keymap_mod.expand(cfg[k], base) for k in ("keymap", "drawer_config") if cfg.get(k)]
-        with open(defs, encoding="utf-8") as f:
-            repo = (json.load(f).get("sources") or {}).get("repo")
+        made = os.stat(keymap_mod.definitions_path(path)).st_mtime
+        repo, keyboard = sync_mod.recorded(path)
         repo = repo and os.path.expanduser(repo)
-        if repo and os.path.isdir(repo):
-            for b, dirs, files in os.walk(repo):
-                dirs[:] = [d for d in dirs if d not in (".git", "build", "modules", "zmk", "zephyr")]
-                sources += [os.path.join(b, n) for n in files if n.endswith(".keymap")]
-        made = os.stat(defs).st_mtime
+        sources = [p for p in sync_mod.inputs(path, repo, keyboard) if p != os.path.abspath(path)]
         newer = [p for p in sources if os.path.isfile(p) and os.stat(p).st_mtime > made]
         return os.path.basename(newer[0]) if newer else None
     except Exception:
@@ -1997,7 +2013,11 @@ def build_parser():
     add("hide", "take the HUD off screen; it goes on running and counting").set_defaults(func=cmd_hide)
     add("toggle", "show the HUD if it is hidden, hide it if it is shown").set_defaults(func=cmd_toggle)
 
-    add("status", "is it running, and what is it reading").set_defaults(func=cmd_status)
+    s = add("status", "is it running, and what is it reading")
+    s.add_argument("--json", action="store_true",
+                   help="the HUD's state as one JSON object, for a bar or a script: running, shown, the WPMs, "
+                        "the feed")
+    s.set_defaults(func=cmd_status)
 
     s = add("session", "the typing sessions: the active one, naming it, starting or loading another")
     s.add_argument("action", nargs="?", default="status",
@@ -2091,8 +2111,8 @@ def build_parser():
     s.add_argument("--quiet", action="store_true", help="say nothing but errors")
     s.add_argument("--no-fetch", action="store_true", help="fetch no glyphs: use keymap-drawer's cache only")
     s.add_argument("--watch", action="store_true",
-                   help="stay, and sync again each time the config, the keymap-drawer files or a working copy's "
-                        "keymap is edited; the running HUD redraws (Ctrl-C stops)")
+                   help="stay, and sync again each time the config, the keymap-drawer files and the layout "
+                        "files they name, or a working copy's keymap is edited; the running HUD redraws (Ctrl-C stops)")
     s.set_defaults(func=lambda a: cmd_sync(a, "sync"))
 
     s = add("keymap", "check the HUD's own files load: the config and the definitions import wrote")

@@ -63,22 +63,19 @@
     return null;
   }
 
-  // The combo the drawer file says this set produces on that stack: the topmost layer declaring
-  // one on exactly these positions.
+  // The combo the drawer file says this set produces on that stack: the one the top layer declares
+  // on exactly these positions. ZMK matches a combo against the highest active layer alone
+  // (combo.c), so a layer up that declares none here gives none, whatever the layers below declare.
   function comboOn(data, positions, stack) {
     const want = new Set(positions);
     const same = c => c.positions.length === want.size && c.positions.every(p => want.has(p));
-    for (const name of stack) {
-      const hit = data.combos.find(c => c.layers.includes(name) && same(c));
-      if (hit) return hit;
-    }
-    return null;
+    return data.combos.find(c => c.layers.includes(stack[0]) && same(c)) || null;
   }
 
   /* What should be on screen once the keys have gone down one after another. A chord is not
    * atomic: the group grows with each press, so a two-key combo can fire and a third key follow
    * it, which is what ZMK does too. The pill that stays up is the one for the longest run from
-   * the start that any layer on the stack declares — and no pill when none of them does. */
+   * the start that the top layer declares — and no pill when it declares none. */
   function expectedCombo(data, positions, stack) {
     let best = null;
     for (let n = 2; n <= positions.length; n++) {
@@ -270,13 +267,14 @@
     //    order: the layer is already up, then the keys. `held` is what a thumb does — press the
     //    layer key, the layer arrives, and the chord follows a few ms later, while the thumb is
     //    still down. A combo that only works when nothing preceded it is still broken.
+    const clean = { name: "clean", act: null, gap: 0 };
     const activatorOf = layer => {
       const a = (data.activators || []).filter(x => x.layer === layer);
       return a.length ? a[0].idx : null;
     };
     const orderings = layer => {
       const act = layer === data.base ? null : activatorOf(layer);
-      const list = [{ name: "clean", act: null, gap: 0 }];
+      const list = [clean];
       if (act !== null) {
         list.push({ name: "held+" + (term + 10) + "ms", act, gap: term + 10 });
         list.push({ name: "held+20ms", act, gap: 20 });
@@ -291,11 +289,18 @@
       const stack = stackFor(data, layer);
       const ids = idsOf.get(layer)[0];
       for (const positions of positionSets(data)) {
-        const want = expectedCombo(data, positions, stack);
+        const declared = expectedCombo(data, positions, stack);
         // The held orderings only say something about a combo that is declared here; a phantom
         // is a phantom whatever preceded it, and `clean` already covers that.
-        for (const order of want ? orderings(layer) : [{ name: "clean", act: null, gap: 0 }]) {
+        for (const order of declared ? orderings(layer) : [clean]) {
           if (order.act !== null && positions.includes(order.act)) continue;  // the thumb is in the combo
+          // ZMK reads the layers as they stood when the chord's first key went down. With no thumb
+          // holding the layer it arrives with the chord, and a first key the drawing says brings it
+          // up went down on the layers below it, as the counts below have it (burst).
+          const claims = order.act === null && layer !== data.base &&
+            (data.activators || []).some(a => a.layer === layer && a.idx === positions[0]);
+          const first = claims ? stack.filter(l => l !== layer) : stack;
+          const want = expectedCombo(data, positions, first);
           checked++;
           await driver.reset(null, false);
           const before = counts ? await driver.tally() : null;
@@ -356,7 +361,7 @@
             // the layer appears as the chord goes down, and a chord key of its own can be.
             burst(positions, layer, stack, held.length > 0).forEach((l, i) => once(tally.presses, l, zmkPos(positions[i])));
             if (want) {
-              once(tally.combos, stack.find(n => want.layers.includes(n)),
+              once(tally.combos, first[0],
                    want.positions.map(zmkPos).sort((a, b) => a - b).join(","));
             }
             const got = counted(before, await driver.tally());

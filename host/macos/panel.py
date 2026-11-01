@@ -7,6 +7,9 @@ poke`) is drawn on this page, marked as not the keyboard's.
 
     .venv/bin/python3 host/macos/panel.py            # or host/macos/start.sh
 
+What the page says and the command line asks are the panel's (host/panelcore.py); this is its
+window here: drawn, placed, moved and hidden with AppKit.
+
 The window opens on the screen that has keyboard focus, can be dragged anywhere, and remembers
 its position in ~/.config/zmk-layer-hud/state.json. Needs pyobjc-framework-Cocoa and
 pyobjc-framework-WebKit in the venv (make venv installs them on macOS). The first run asks for
@@ -41,6 +44,7 @@ except ImportError:
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import hudfeed  # noqa: E402
+import panelcore  # noqa: E402  (host/panelcore.py)
 import session as session_mod  # noqa: E402  (host/session.py)
 import panelstate  # noqa: E402  (host/panelstate.py)
 
@@ -78,7 +82,7 @@ def load_state():
 def save_state(state):
     try:
         STATE.parent.mkdir(parents=True, exist_ok=True)
-        STATE.write_text(json.dumps(state))
+        panelstate.write_json(str(STATE), state)     # whole or not at all, and this user's alone
     except OSError as e:
         log(f"could not save {STATE}: {e}")
 
@@ -184,50 +188,12 @@ class DragWebView(WKWebView):
 
 
 class Bridge(NSObject):
-    """Page → host messages (the ✕ posts "close", its hide button {"kind": "hide"}, the stats column's
-    heading {"kind": "site"}; the page's counts and the heatmap it switched to go to the session) and
-    window events. Only this panel's own page can post here, so it needs no token the way a WebSocket
-    client does."""
+    """Page messages, handed to the panel (host/panelcore.py; the page's counts and the heatmap it
+    switched to go on to the session), and window events. Only this panel's own page can post here,
+    so it needs no token the way a WebSocket client does."""
 
     def userContentController_didReceiveScriptMessage_(self, controller, message):
-        body = str(message.body())
-        if body == "close":
-            log("close requested by the page")
-            AppHelper.stopEventLoop()
-            return
-        try:
-            msg = json.loads(body)
-        except ValueError:
-            return
-        kind = msg.get("kind") if isinstance(msg, dict) else None
-        if kind == "size":
-            Host.instance.resize(msg.get("width"), msg.get("height"))
-        elif kind == "hide":        # the page's hide button
-            Host.instance.set_shown(False)
-        elif kind == "site":        # the stats column's heading: the landing page, in the browser
-            NSWorkspace.sharedWorkspace().openURL_(NSURL.URLWithString_(panelstate.SITE))
-        elif kind == "wpm":
-            Host.instance.set_wpm(msg.get("wpm"))
-        elif kind == "stats":       # what its stats column shows, for the menubar's menu
-            Host.instance.set_stats(msg)
-        elif kind == "nodrag":
-            rects = msg.get("rects")
-            if isinstance(rects, list):
-                DragWebView.no_drag = [tuple(float(v) for v in r) for r in rects
-                                       if isinstance(r, list) and len(r) == 4 and all(isinstance(v, (int, float)) for v in r)]
-        elif kind in ("tally", "heatmap", "pref"):
-            store = Host.instance.feed.sessions if Host.instance and Host.instance.feed else None
-            if store is None:
-                return
-            try:
-                if kind == "tally":
-                    store.apply(msg)
-                elif kind == "heatmap":
-                    store.set_heatmap(msg.get("mode"))
-                else:
-                    store.set_pref(msg.get("name"), msg.get("value"))
-            except Exception as e:  # a count that could not be kept must not take the panel down
-                log(f"session: {type(e).__name__}: {e}")
+        Host.instance.core.page(str(message.body()))
 
     # The menu's session items (DragWebView.willOpenMenu_withEvent_). What was counted and not yet
     # written goes first, and the store is read again at once, so the page shows the change now
@@ -301,14 +267,18 @@ class Host:
     def __init__(self):
         Host.instance = self
         self.stopped = False
-        self.shown = not HIDDEN
-        self.wpm = 0
-        self.stats = None               # the page's stats column, once it has said it (panelstate.stats_of)
+        self.feed = None
         self.ready = False
         self.loaded = False             # the first page has loaded (page_ready): a later one is a reload
         self.queue = []
         self.standing = {}              # kind -> the latest of it, for a reloaded page
         self.bridge = Bridge.alloc().init()
+        # The panel (host/panelcore.py): what the page says and the CLI asks, and panel.json; this
+        # window is how it is drawn and placed here.
+        self.core = panelcore.Panel(
+            panelcore.Window(show=self.show_window, front=lambda: self.panel.orderFrontRegardless(),
+                             resize=self.resize, no_drag=self.set_no_drag, open=self.open_url, close=self.close),
+            RUN, said=self.said, shown=not HIDDEN)
 
         frame = initial_frame()
         panel = NSPanel.alloc().initWithContentRect_styleMask_backing_defer_(
@@ -377,34 +347,43 @@ class Host:
         if width:
             self.resize(int(width), None)
         # main() put the signal's handler in first: the CLI signals whatever pid this file names.
-        panelstate.write(RUN, self.shown)
+        self.core.start()
         panelstate.write_token(RUN, self.token)
 
-    def set_shown(self, shown):
-        """On screen or off it; the page goes on as before either way."""
-        if shown != self.shown:
-            self.shown = shown
-            self.panel.setAlphaValue_(1.0 if shown else 0.0)
-            if self.ready:          # otherwise page_ready puts the style in, with the page
-                self.web.evaluateJavaScript_completionHandler_(SHOW_JS if shown else HIDE_JS, None)
-            if DEBUG and not shown:
-                AppHelper.callLater(3.0, self.say_visibility)
-        if shown:
-            self.panel.orderFrontRegardless()
-        panelstate.write(RUN, shown, wpm=self.wpm, stats=self.stats)
+    @property
+    def shown(self):
+        return self.core.shown
 
-    def set_wpm(self, wpm):
-        """The page's live WPM, for the menubar icon (host/macos/menubar.py) to show beside it."""
-        if isinstance(wpm, int) and wpm != self.wpm:
-            self.wpm = wpm
-            panelstate.write(RUN, self.shown, wpm=wpm, stats=self.stats)
+    def show_window(self, shown):
+        """Drawn, or drawn as nothing (HIDE_JS); the page goes on as before either way."""
+        self.panel.setAlphaValue_(1.0 if shown else 0.0)
+        if self.ready:          # otherwise page_ready puts the style in, with the page
+            self.web.evaluateJavaScript_completionHandler_(SHOW_JS if shown else HIDE_JS, None)
+        if DEBUG and not shown:
+            AppHelper.callLater(3.0, self.say_visibility)
 
-    def set_stats(self, msg):
-        """The page's average and top WPM and the rows of its stats column, for the menubar's menu."""
-        stats = panelstate.stats_of(msg)
-        if stats is not None and stats != self.stats:
-            self.stats = stats
-            panelstate.write(RUN, self.shown, wpm=self.wpm, stats=stats)
+    def said(self, msg):
+        """A page message for the session: its counts, its heatmap and preferences (session.Store.SAID)."""
+        store = self.feed.sessions if self.feed else None
+        if store is None:
+            return
+        try:
+            store.apply_said(msg)
+        except Exception as e:  # a count that could not be kept must not take the panel down
+            log(f"session: {type(e).__name__}: {e}")
+
+    @staticmethod
+    def set_no_drag(rects):
+        DragWebView.no_drag = rects
+
+    @staticmethod
+    def open_url(url):
+        NSWorkspace.sharedWorkspace().openURL_(NSURL.URLWithString_(url))
+
+    @staticmethod
+    def close():
+        log("close requested by the page")
+        AppHelper.stopEventLoop()
 
     def say_visibility(self):
         """ZMKHUD_DEBUG: what WebKit makes of the hidden HUD. `visible` is the point of hiding it
@@ -485,7 +464,7 @@ class Host:
         if self.stopped:
             return
         self.stopped = True
-        panelstate.remove(RUN)
+        self.core.stop()
         panelstate.remove_token(RUN, self.token)
         self.feed.stop()
         self.socket.stop()
@@ -503,9 +482,8 @@ def main():
 
     def asked(_sig):
         # `zmk-layer-hud show` / `hide`: what they want is in panel.want.
-        want = panelstate.wanted(RUN)
-        if want is not None and Host.instance:
-            Host.instance.set_shown(want)
+        if Host.instance:
+            Host.instance.core.wake()
     MachSignals.signal(panelstate.SIGNAL, asked)
     app = NSApplication.sharedApplication()
     app.setActivationPolicy_(NSApplicationActivationPolicyAccessory)  # no Dock icon, no menu bar
