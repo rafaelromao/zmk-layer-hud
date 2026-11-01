@@ -855,6 +855,17 @@ class Reference(unittest.TestCase):
             self.assertIn(f"\n## {verb}\n", text)
             self.assertIn(f"usage: zmk-layer-hud {verb}", text)
 
+    def test_a_passthrough_names_itself_however_the_tests_were_started(self):
+        # Under `python -m unittest`, some Python 3.14 releases default a parser's prog to `python -m
+        # unittest` (argparse._prog_name reads __main__'s spec); poke's and the feed's parsers name
+        # themselves from argv[0], as the CLI sets it, so the reference reads the same on every one.
+        import clidocs
+        for verb in cli.PASSTHROUGH:
+            spec = mock.Mock(origin=f"zmk-layer-hud {verb}")
+            spec.name = "unittest"
+            with mock.patch.object(sys.modules["__main__"], "__spec__", spec, create=True):
+                self.assertTrue(clidocs.passthrough_help(verb).startswith(f"usage: zmk-layer-hud {verb}"), verb)
+
 
 class State(unittest.TestCase):
     def test_state_is_outside_the_tree(self):
