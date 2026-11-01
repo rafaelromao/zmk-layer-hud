@@ -31,6 +31,12 @@ make fixture     # rebuild the committed test keymap from the configured one
 make samples     # write the sample boards' definitions again, as import does (the Diamond's needs ~/projects/keyboards)
 ```
 
+A keymap message is made one way: `keymap.build_message(cfg, definitions)`, from the config and
+the definitions beside it (`KeymapSource` reads both and nothing else). A path the config or a
+keymap-drawer YAML names is found by `keymap.resolve`, from the file that names it (a layout file
+walking up from there), and `sync.inputs` lists every file the definitions are made from, which
+`sync --watch` watches and `doctor` compares with the definitions' time.
+
 `zmk-layer-hud keymap` checks that the HUD's own files load: the config and the definitions
 `import` wrote. The samples in `config/` carry theirs (`*.definitions.json`), so the demo, the
 fixtures and the landing page draw them with no keymap-drawer and no network.

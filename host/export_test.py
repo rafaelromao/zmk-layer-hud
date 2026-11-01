@@ -32,7 +32,7 @@ DOC = {
 }
 # The definitions import would write for it, and the message the HUD builds from them.
 DEFS = km.draw(DOC, fetch=False)
-MSG = km.build_message({}, DEFS["drawing"])
+MSG = km.build_message({}, {"drawing": DEFS["drawing"]})
 SESSION = {
     "presses": {"Base": {"0": 500, "1": 40, "2": 3}, "Nav": {"0": 20, "4": 9}, "Sym": {}},
     "timed": {"Base": {"0": 100, "1": 10, "2": 2}},
@@ -63,7 +63,7 @@ class Levels(unittest.TestCase):
             export.levels(SESSION, MSG, "live")
 
     def test_positions_are_the_firmwares(self):
-        msg = km.build_message({"positions": [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]}, DEFS["drawing"])
+        msg = km.build_message({"positions": [9, 8, 7, 6, 5, 4, 3, 2, 1, 0]}, {"drawing": DEFS["drawing"]})
         self.assertEqual(6, export.levels({"presses": {"Base": {"9": 5}}}, msg, "session")["Base"][0])
 
 
