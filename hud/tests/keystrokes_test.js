@@ -132,6 +132,22 @@ const posOfIdx = idx => Number(Object.entries(DIAMOND.positions).find(([, i]) =>
   check(out.label === combo.key.tap, `a combo's keystroke reads as its legend, not its last key: ${out.label}`);
 })();
 
+(function aNamedKeyLightsWhateverTheDrawingSpellsItWith() {
+  // keymap-drawer's own parse spells named keys as words, in any case: Tab, BSpace, Page Down. A
+  // drawing's Delete is the key that deletes forwards; the feed's `delete` is Backspace.
+  const X35 = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "example-3x5.json"), "utf8"));
+  const at = (layer, legend) => X35.layers[layer].findIndex(k => k.tap === legend);
+  for (const [name, layer, legend] of [["tab", "DEF", "Tab"], ["escape", "DEF", "Esc"], ["delete", "DEF", "BSpace"],
+                                       ["return", "DEF", "Enter"], ["forwarddelete", "DEF", "Delete"],
+                                       ["pagedown", "NAV", "Page Down"], ["capslock", "FUN", "Caps Lock"]]) {
+    const ks = K.create();
+    ks.read(X35, 0);
+    const out = ks.read(keyDown("", { name }), 1000);
+    // A key off the base lights with what brings its layer up.
+    check(out.board.lit.includes(at(layer, legend)), `${name} lights the key drawn ${JSON.stringify(legend)}: ${out.board.lit}`);
+  }
+})();
+
 // ---------- what is said, once nothing can take it back ----------
 
 const TERM = (DIAMOND.combo_term || 50) + ((DIAMOND.hud && DIAMOND.hud.combo_slack_ms) || K.DEFAULTS.combo_slack_ms);

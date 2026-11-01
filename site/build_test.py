@@ -72,7 +72,7 @@ class HudFiles(unittest.TestCase):
         with open(os.path.join(build.REPO, "hud", "index.html"), encoding="utf-8") as f:
             names = build.hud_files(f.read())
         self.assertEqual(names[0], "index.html")
-        self.assertEqual(sorted(names[1:]), ["hud.css", "hud.js", "keys.js", "keystrokes.js", "view.js"])
+        self.assertEqual(sorted(names[1:]), ["hud.css", "hud.js", "keynames.js", "keys.js", "keystrokes.js", "view.js"])
         for name in names:
             self.assertTrue(os.path.isfile(os.path.join(build.REPO, "hud", name)), name)
 
@@ -182,7 +182,7 @@ class WholeBuild(unittest.TestCase):
                     with open(os.path.join(out, b["demo"]), encoding="utf-8") as f:
                         self.assertTrue(json.load(f)["timeline"])
             self.assertEqual(sorted(os.listdir(os.path.join(out, "hud"))),
-                             ["hud.css", "hud.js", "index.html", "keys.js", "keystrokes.js", "view.js"])
+                             ["hud.css", "hud.js", "index.html", "keynames.js", "keys.js", "keystrokes.js", "view.js"])
             self.assertEqual(build.stale(out), [])
 
             # The output is committed: built again from the same sources, it is the same bytes.

@@ -37,6 +37,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import keynames  # noqa: E402
 import uskeys  # noqa: E402
 
 # The kit's recording pace (showcase/rehearse.py: 70 wpm), well outside the 30 ms combo term, so a
@@ -103,7 +104,7 @@ def typed(key, typing_layer):
         return uskeys.events_for(legend)
     if key.get("glyph"):
         return None  # the glyph's name standing in for its SVG, not something typed
-    if uskeys.NAME_FOR_LEGEND.get(legend) or not typing_layer or not legend.isalpha():
+    if keynames.name_of(legend) or not typing_layer or not legend.isalpha():
         return None
     events = []
     for ch in legend:
@@ -115,13 +116,12 @@ def typed(key, typing_layer):
 
 
 def accepts(legend):
-    name = uskeys.NAME_FOR_LEGEND.get(legend)
-    return sorted({l for l, n in uskeys.NAME_FOR_LEGEND.items() if name and n == name} | {legend})
+    return sorted(set(keynames.spellings(keynames.name_of(legend))) | {legend})
 
 
 def ident(legend):
     """What a legend types, whatever it is spelled: ⇥ and ↹ are both Tab."""
-    return uskeys.NAME_FOR_LEGEND.get(legend) or legend
+    return keynames.name_of(legend) or legend
 
 
 def adaptive(key):
