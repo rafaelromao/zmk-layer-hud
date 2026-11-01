@@ -29,6 +29,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import keynames  # noqa: E402
+from keymap_message import KeymapMessage  # noqa: E402
 import uskeys  # noqa: E402
 import ways  # noqa: E402
 
@@ -170,7 +171,7 @@ def activator(data, km, way):
     the key (a sticky layer). None when the drawing names none (the layer is only said)."""
     if not way["live"]:
         return None
-    layer = ((data.get("zmk_layers") or {}).get(str(min(way["live"]))) or {}).get("drawer")
+    layer = km.drawer_of(min(way["live"]))
     acts = [a for a in data.get("activators") or [] if a.get("layer") == layer and a.get("idx") not in way["keys"]]
     for kind in ("hold", "sticky", "auto-sticky"):
         a = next((a for a in acts if a.get("kind") == kind), None)
@@ -221,14 +222,8 @@ def altgr_spelled(evs):
 
 def repeats(km, idx, live, evs):
     """Whether the repeat key types these reports again with these layers up: it is the repeat key
-    on the layer that is up (or seen through it), and what it repeats is a single plain keycode."""
-    top = None
-    for lid in sorted(live, reverse=True):
-        z = (km.data.get("zmk_layers") or {}).get(str(lid))
-        if z and z.get("drawer"):
-            top = z["drawer"]
-            break
-    _, key = km.binding(idx, km.stack(top or km.base))
+    on the layers that are up (or seen through them), and what it repeats is a single plain keycode."""
+    _, key = km.resolve(idx, km.stack(sorted(live, reverse=True)))
     return bool(key and key.get("shifted") == "repeat" and len(evs) == 1 and not evs[0].get("composed"))
 
 
@@ -256,14 +251,12 @@ def combo_on(data, strike, ids):
     on exactly those keys, as ZMK's combo.c matches it and the page draws it (hud.js pressAt). A
     combo the layers below declare does not fire. A modifier held with a key is a chord of another
     kind, and draws no pill."""
-    positions = data.get("positions") or {}
-    idxs = sorted(positions.get(str(p), p) if positions else p for p in strike)
-    stack = []
-    for zid in sorted(ids, reverse=True):
-        z = (data.get("zmk_layers") or {}).get(str(zid))
-        if z and z.get("drawer") and z["drawer"] not in stack:
-            stack.append(z["drawer"])
-    stack.append(data.get("base"))
+    msg = KeymapMessage(data)
+    at = [msg.idx_at(p) for p in strike]
+    if None in at:                  # a position the keymap does not place: no key, so no combo
+        return False
+    idxs = sorted(at)
+    stack = msg.stack(sorted(ids, reverse=True))
     return len(idxs) > 1 and any(sorted(c["positions"]) == idxs and stack[0] in c["layers"]
                                  for c in data.get("combos") or [])
 
@@ -343,7 +336,7 @@ def compile(script, keymap, speed=1.0, combos=None):
     one_shot_shift = marked_key(data, km, "⇧", "sticky")
     repeat_idx = marked_key(data, km, "↻", "repeat") if script.get("repeat") else None
     chained = chained_layers(data)
-    chained_ids = {i for layer in chained.values() for i in km.ids_of.get(layer, [])}
+    chained_ids = {i for layer in chained.values() for i in km.ids_of(layer)}
     speller = Speller(km, ways.cases(km), one_shot_shift is not None, chained)
     altgr = bool(data.get("altgr"))
     shift_idx = shift_key(data, km)
@@ -476,9 +469,9 @@ def compile(script, keymap, speed=1.0, combos=None):
                 if one_shot:
                     board.shift(end + SETTLE_MS, False)
                 chain = chained.get((way["layer"], way["keys"][0])) if not way["combo"] and len(way["keys"]) == 1 else None
-                if chain and km.ids_of.get(chain):
+                if chain and km.ids_of(chain):
                     # The key typed and left its layer on for the next one (ç, then the ç extension).
-                    board.set_layers(end + SETTLE_MS, sorted(set(background) | {km.ids_of[chain][0]}))
+                    board.set_layers(end + SETTLE_MS, sorted(set(background) | {km.ids_of(chain)[0]}))
                 elif sticky or chained_before:
                     board.set_layers(end + SETTLE_MS, background)   # a one-shot layer serves one key
                 prev = (utext, way, one_shot)
@@ -556,16 +549,12 @@ def _kept(data, km, press, target, nxt):
         return set()
     after = set(int(i) for i in nxt.get("layers") or [])
     nxt_press = set(int(p) for p in nxt.get("press") or [])
-    ids_of = {}
-    for zid, z in (data.get("zmk_layers") or {}).items():
-        if z and z.get("drawer"):
-            ids_of.setdefault(z["drawer"], set()).add(int(zid))
     keep = set()
     for a in data.get("activators") or []:
         if a.get("kind") != "hold":
             continue
         pos = km.zmk(a["idx"])
-        ids = ids_of.get(a.get("layer"), set())
+        ids = set(km.ids_of(a.get("layer")))
         if pos in press and pos in nxt_press and ids & set(target) and ids & after:
             keep.add(pos)
     return keep

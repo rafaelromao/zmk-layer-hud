@@ -20,6 +20,8 @@ import html
 import math
 from itertools import chain
 
+from keymap_message import KeymapMessage
+
 LEVELS = 6
 SPEED_MIN = 3
 MODES = ("session", "physical", "speed")
@@ -48,9 +50,12 @@ def levels(session, message, mode="session"):
     """{drawer layer: {drawer key index: step 1..LEVELS}}, for the keys that have one."""
     if mode not in MODES:
         raise ValueError(f"{mode!r} is not a heatmap to export: {', '.join(MODES)}")
-    positions = message.get("positions") or {}
+    msg = KeymapMessage(message)
     n = len(message["layout"]["keys"])
-    idx_of = (lambda pos: positions.get(str(pos))) if positions else (lambda pos: int(pos) if int(pos) < n else None)
+
+    def idx_of(pos):
+        idx = msg.idx_at(pos)
+        return idx if idx is not None and idx < n else None
     layers = message["layers"]
     own = lambda layer, idx: idx is not None and idx < len(layers[layer]) and layers[layer][idx].get("type") != "trans"  # noqa: E731
     out = {}
@@ -62,7 +67,7 @@ def levels(session, message, mode="session"):
                 if idx is not None:
                     total[idx] = total.get(idx, 0) + c
         steps = _log_steps(total)
-        return {message["base"]: steps} if steps else {}
+        return {msg.base: steps} if steps else {}
     for layer in layers:
         if mode == "session":
             counts = {}

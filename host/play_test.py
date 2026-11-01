@@ -96,6 +96,28 @@ class Spelling(unittest.TestCase):
         self.assertTrue(play.combo_on(DIAMOND, strike, []))
         self.assertFalse(play.combo_on(DIAMOND, strike, [ext]))
 
+    def test_a_position_the_keymap_does_not_place_is_no_key_of_a_combo(self):
+        # A frame's press names ZMK positions. One off the board's map is no key, as on the page
+        # (view.js idxAt), never the key that happens to share its number.
+        # The base's combo on keys 0 and 1; ZMK position 0 is not on the Diamond's map.
+        self.assertTrue(any(sorted(c["positions"]) == [0, 1] and DIAMOND["base"] in c["layers"] for c in DIAMOND["combos"]))
+        self.assertNotIn("0", DIAMOND["positions"])
+        zmk = {int(i): int(p) for p, i in DIAMOND["positions"].items()}
+        self.assertFalse(play.combo_on(DIAMOND, [0, zmk[1]], []))
+
+    def test_a_layer_the_table_leaves_out_is_the_drawers_layer_of_that_number(self):
+        # A hand-written message may name only ZMK layer 0; the page draws layer 1 as the drawer's
+        # second layer (view.js zl), and play reads it so too: nav up, the base's combo does not fire,
+        # and nav's held key is what brings it up.
+        data = {"base": "base", "layer_order": ["base", "nav"], "zmk_layers": {"0": {"drawer": "base"}},
+                "layers": {"base": [{"tap": "a"}, {"tap": "b"}, {"tap": "c"}], "nav": [{"tap": "←"}] * 3},
+                "combos": [{"positions": [0, 1], "layers": ["base"], "key": {"tap": "x"}}],
+                "activators": [{"layer": "nav", "idx": 2, "kind": "hold"}]}
+        self.assertTrue(play.combo_on(data, [0, 1], []))
+        self.assertFalse(play.combo_on(data, [0, 1], [1]))
+        km = ways.Keymap(data)
+        self.assertEqual({"pos": 2, "held": True}, play.activator(data, km, {"live": [1], "keys": [0]}))
+
     def test_a_character_only_a_combo_types_is_that_combo(self):
         by = {}
         for case in ways.cases(ways.Keymap(DIAMOND)):
@@ -177,6 +199,15 @@ class OneShots(unittest.TestCase):
         c = self.romak("100", repeat=True)
         self.assertEqual([[26], [33], [30]], [s["strike"] for s in c.strokes])
         self.assertEqual([["numbers"], []], self.layer_names(c))
+
+    def test_the_repeat_key_is_found_through_every_layer_up(self):
+        # sym on top of nav, transparent there: the key is nav's repeat key, as the keyboard and the
+        # page resolve it through every live layer, not the top one and the base alone.
+        data = {"base": "base", "layer_order": ["base", "nav", "sym"],
+                "zmk_layers": {"0": {"drawer": "base"}, "1": {"drawer": "nav"}, "2": {"drawer": "sym"}},
+                "layers": {"base": [{"tap": "a"}], "nav": [{"tap": "↻", "shifted": "repeat"}], "sym": [{"type": "trans"}]}}
+        ev = [{"chars": "a", "name": "a"}]
+        self.assertTrue(play.repeats(ways.Keymap(data), 0, [1, 2], ev))
 
     def test_an_accent_is_never_repeated(self):
         self.assertEqual([[18], [18]], [s["strike"] for s in self.romak("éé", repeat=True).strokes])
