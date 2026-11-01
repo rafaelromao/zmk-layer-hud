@@ -220,12 +220,17 @@ class HostScript(unittest.TestCase):
 
 # A stand-in for a panel: says it is shown, and does what panel.want says each time SIGUSR2 comes.
 FAKE_PANEL = textwrap.dedent('''
+    # A panel with no window: the real one (host/panelcore.py), answering the CLI's signal as both
+    # platforms' panels do, its window doing nothing.
     import signal, sys, time
     sys.path.insert(0, sys.argv[1])
-    import panelstate
+    import panelcore, panelstate
     d = sys.argv[2]
-    signal.signal(panelstate.SIGNAL, lambda *_: panelstate.write(d, panelstate.wanted(d)))
-    panelstate.write(d, True)
+    nothing = lambda *a: None
+    window = panelcore.Window(show=nothing, front=nothing, resize=nothing, no_drag=nothing, open=nothing, close=nothing)
+    panel = panelcore.Panel(window, d)
+    signal.signal(panelstate.SIGNAL, lambda *_: panel.wake())
+    panel.start()
     time.sleep(30)
 ''')
 

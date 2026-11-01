@@ -1,6 +1,7 @@
 """Tests for what a running panel says of itself (panel.json) and what the command line asks of it
 (panel.want)."""
 
+import json
 import os
 import signal
 import stat
@@ -37,6 +38,14 @@ class PrivateFile(unittest.TestCase):
         self.assertEqual((0o600, 0o700), (self.mode(self.path), self.mode(self.d)))
         with open(self.path) as f:
             self.assertEqual("new\n", f.read())                 # truncated, as a fresh log is
+
+    def test_a_panels_own_file_is_written_whole_and_this_users_alone(self):
+        # Where the panel was put on screen (state.json), written by both panels.
+        path = os.path.join(self.d, "state.json")
+        panelstate.write_json(path, {"frame": [1, 2, 3, 4], "linux": {"top": 8}})
+        self.assertEqual(0o600, self.mode(path))
+        with open(path) as f:
+            self.assertEqual({"frame": [1, 2, 3, 4], "linux": {"top": 8}}, json.load(f))
 
     def test_or_kept_and_appended_to(self):
         with panelstate.open_private(self.path, truncate=False) as f:   # the directory made too

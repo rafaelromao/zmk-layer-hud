@@ -19,6 +19,7 @@ from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import session  # noqa: E402
 import signal_frame  # noqa: E402
 from hiddecode import SignalDecoder  # noqa: E402
 from hudfeed import (COMBOS_DEFAULT, INJECTABLE, Feed, Hub, HubThread, SecureInput, SerialReader, any_of, probe_report,  # noqa: E402
@@ -556,6 +557,8 @@ class FakeSocket:
 
 
 class FakeStore:
+    apply_said = session.Store.apply_said     # the real routing, onto the recording methods below
+
     def __init__(self):
         self.applied, self.modes, self.prefs, self.flushed = [], [], [], 0
 
