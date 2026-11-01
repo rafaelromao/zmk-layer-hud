@@ -1,0 +1,71 @@
+# Every platform the HUD runs on, on each push to main and each pull request: the host on macOS, on
+# Linux and on Arch (Omarchy's base), the pages and the firmware module.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  host:
+    name: host (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: the virtualenv's packages, pinned
+        run: python -m pip install -r host/requirements.txt
+      - run: make test-host PYTHON=python
+
+  arch:
+    name: host (Arch Linux)
+    runs-on: ubuntu-latest
+    container: archlinux:latest
+    steps:
+      - run: pacman -Syu --noconfirm --needed python python-pip git make gcc
+      - uses: actions/checkout@v7
+      - run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      # The Linux panel runs under the system interpreter, not the virtualenv: every host module at
+      # least compiles with Arch's.
+      - name: the host modules, with the system Python
+        run: python -m py_compile host/*.py host/linux/*.py
+      - run: python -m venv /tmp/venv && /tmp/venv/bin/pip install -r host/requirements.txt
+      - run: make test-host test-firmware PYTHON=/tmp/venv/bin/python
+
+  pages:
+    name: pages and site
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: python -m pip install -r host/requirements.txt
+      - run: make test-hud test-site PYTHON=python NODE=node
+
+  firmware:
+    name: firmware module
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: make test-firmware
