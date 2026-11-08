@@ -89,8 +89,9 @@ def levels(session, message, mode="session"):
         stepped = {layer: _log_steps(counts, most) for layer, counts in values.items()}
     else:
         lo, hi = min(every, default=0), max(every, default=0)
-        stepped = {layer: {idx: 1 + round((m - lo) / (hi - lo) * (LEVELS - 1)) if hi > lo else 1 for idx, m in means.items()}
-                   for layer, means in values.items()}
+        # Half rounds up, as the page's Math.round does (Python's round() takes a half to the even one).
+        stepped = {layer: {idx: 1 + math.floor((m - lo) / (hi - lo) * (LEVELS - 1) + 0.5) if hi > lo else 1
+                           for idx, m in means.items()} for layer, means in values.items()}
     return {layer: steps for layer, steps in stepped.items() if steps}
 
 

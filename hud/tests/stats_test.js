@@ -489,19 +489,19 @@ function main() {
     // Two keys bound on their own on the base layer and on another, so each layer has counts for both.
     const ownOn = (layer, idx) => { const k = data.layers[layer] && data.layers[layer][idx]; return !!k && k.type !== "trans"; };
     const shared = i => ownOn(base, i) && posOf.has(i);
+    // A page shown a session's counts, with `mode` as the heat, on `layer`.
+    const shownOn = (layer, mode, counts) => {
+      const page = fresh();
+      page.hud.receive(Object.assign({ kind: "session", v: 1, id: "s1", gen: 0, name: "w", heatmap: mode, presses: {},
+                                       combos: {}, totals: {}, acks: {} }, counts));
+      page.hud.setLayers(layer === base ? [] : [idOf(layer)]);
+      page.clock.advance(1000);
+      return page;
+    };
     const other = data.layer_order.find(l => l !== base && idOf(l) !== null &&
                                              [...posOf.keys()].filter(i => shared(i) && ownOn(l, i)).length >= 2);
     if (other) {
       const [X, Y] = [...posOf.keys()].filter(i => shared(i) && ownOn(other, i)).map(idx => ({ idx, pos: posOf.get(idx) }));
-      // A page shown a session's counts, with `mode` as the heat, on `layer`.
-      const shownOn = (layer, mode, counts) => {
-        const page = fresh();
-        page.hud.receive(Object.assign({ kind: "session", v: 1, id: "s1", gen: 0, name: "w", heatmap: mode, presses: {},
-                                         combos: {}, totals: {}, acks: {} }, counts));
-        page.hud.setLayers(layer === base ? [] : [idOf(layer)]);
-        page.clock.advance(1000);
-        return page;
-      };
       const levels = (layer, mode, counts) => {
         const page = shownOn(layer, mode, counts);
         return { x: sessionLevel(page, X.idx), y: sessionLevel(page, Y.idx) };
@@ -540,6 +540,30 @@ function main() {
       check("an equal time is an equal step on every layer", slowOther.x === slowBase.y, JSON.stringify({ slowBase, slowOther }));
       check("and a layer is not stretched over its own keys' range", slowOther.y > 1 && slowOther.y < 6, JSON.stringify(slowOther));
     } else notes.push("no layer binding two keys of its own over the base: one scale across layers not checked");
+
+    // A key the base binds and another layer leaves transparent (Z), beside a key that layer binds itself (W).
+    const transOn = (layer, idx) => { const k = data.layers[layer] && data.layers[layer][idx]; return !!k && k.type === "trans"; };
+    const through = data.layer_order.find(l => l !== base && idOf(l) !== null &&
+                                               [...posOf.keys()].some(i => shared(i) && transOn(l, i)) &&
+                                               [...posOf.keys()].some(i => ownOn(l, i)));
+    if (through) {
+      const Z = [...posOf.keys()].filter(i => shared(i) && transOn(through, i)).map(idx => ({ idx, pos: posOf.get(idx) }))[0];
+      const W = [...posOf.keys()].filter(i => ownOn(through, i)).map(idx => ({ idx, pos: posOf.get(idx) }))[0];
+      // A count on a key that is transparent on its layer cannot be drawn there, and must not stretch the scale:
+      // what a keymap edited since the session was recorded leaves behind.
+      const stale = { presses: { [base]: { [Z.pos]: 10 }, [through]: { [Z.pos]: 100000, [W.pos]: 10 } } };
+      const seen = shownOn(through, "session", stale);
+      check(`a count on a transparent key does not stretch the scale (${through})`, sessionLevel(seen, W.idx) === 6 && sessionLevel(seen, Z.idx) === 0,
+            `${sessionLevel(seen, W.idx)} ${sessionLevel(seen, Z.idx)}`);
+      // Physical is one scale for every layer, and shows every key, transparent or not: the key the base
+      // binds is as hot on a layer where it is transparent as on the base, and the layer's own key is not
+      // made the hottest there.
+      const fingers = { presses: { [base]: { [Z.pos]: 1000 }, [through]: { [W.pos]: 10 } } };
+      const phys = shownOn(through, "physical", fingers);
+      check(`physical is the same colour on a layer where the key is transparent (${through})`,
+            sessionLevel(phys, Z.idx) === 6 && sessionLevel(phys, W.idx) >= 1 && sessionLevel(phys, W.idx) < 6,
+            `${sessionLevel(phys, Z.idx)} ${sessionLevel(phys, W.idx)}`);
+    } else notes.push("no layer leaving a base key transparent beside one of its own: transparent keys and the scale not checked");
   }
 
   // ---------- strokes: the time a key takes, and same-finger bigrams ----------

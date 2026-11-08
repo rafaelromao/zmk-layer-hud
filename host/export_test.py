@@ -93,6 +93,11 @@ class Levels(unittest.TestCase):
         # Judged against its own two keys the 250 ms would be the quickest, the first step.
         self.assertTrue(1 < steps["Nav"][1] < 6, steps["Nav"])
 
+    def test_speed_rounds_a_half_up_as_the_page_does(self):
+        # 100, 200 and 300 ms: the middle key is exactly 2.5 steps up, which the page rounds to 3 (Math.round).
+        session = {"timed": {"Base": {"0": 4, "1": 4, "2": 4}}, "ms": {"Base": {"0": 400, "1": 800, "2": 1200}}}
+        self.assertEqual({0: 1, 1: 4, 2: 6}, export.levels(session, MSG, "speed")["Base"])
+
     def test_a_mode_it_cannot_draw(self):
         with self.assertRaises(ValueError):
             export.levels(SESSION, MSG, "live")

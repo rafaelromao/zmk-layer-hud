@@ -463,11 +463,12 @@ it, the slowest the hottest; and `off`. Every keystroke the board draws is count
 nothing can take it back: a combo counts as one keystroke, and a report that beats its own
 position is not counted twice.
 
-`session` and `speed` colour every layer on one scale: the busiest key of *all* the layers, or the
-slowest, is the hottest colour, and every other key, on whichever layer, is coloured by how it
-compares with that. A key with the same count has the same colour on every layer, so turning
-through the layers compares them: a layer of seldom pressed keys, such as Numbers or Accents, stays
-pale beside the base, where scaled against its own busiest key it would have looked as busy.
+`session` and `speed` colour every layer on one scale. In `session` the busiest key of *all* the
+layers is the hottest colour and every other key, on whichever layer, is coloured by its count
+against that; in `speed` the slowest key of any layer is the hottest and the quickest the coldest.
+A key with the same count (or time) has the same colour on every layer, so turning through the
+layers compares them: a layer of seldom pressed keys, such as Numbers or Accents, stays pale beside
+the base, where scaled against its own busiest key it would have looked as busy.
 `physical` is one scale already, every layer's presses of a key together, and the live glow does
 not compare keys at all. `zmk-layer-hud session export` draws the same steps.
 
