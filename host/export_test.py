@@ -45,8 +45,34 @@ class Levels(unittest.TestCase):
         steps = export.levels(SESSION, MSG, "session")
         self.assertEqual(6, steps["Base"][0])                        # the most pressed is the top step
         self.assertTrue(steps["Base"][0] > steps["Base"][1] > steps["Base"][2] >= 1)
-        self.assertEqual({0: 6}, steps["Nav"])                       # key 4 is transparent on Nav
+        self.assertEqual({0}, set(steps["Nav"]))                     # key 4 is transparent on Nav
         self.assertNotIn("Sym", steps)                               # nothing counted there
+
+    def test_the_session_is_one_scale_for_every_layer(self):
+        steps = export.levels(SESSION, MSG, "session")
+        # Nav's 20 presses against Base's 500: a key of a layer in use less is cooler than the top step
+        # it would be on a scale of its own.
+        self.assertLess(steps["Nav"][0], 6)
+        self.assertGreater(steps["Base"][1], steps["Nav"][0])        # 40 presses against 20
+
+    def test_an_equal_count_is_an_equal_step_on_every_layer(self):
+        session = {"presses": {"Base": {"0": 1000, "1": 100}, "Nav": {"0": 100, "1": 8}}}
+        steps = export.levels(session, MSG, "session")
+        self.assertEqual(6, steps["Base"][0])
+        self.assertEqual(steps["Base"][1], steps["Nav"][0])          # 100 on each
+        self.assertLess(steps["Base"][1], 6)
+        self.assertLess(steps["Nav"][1], steps["Nav"][0])
+
+    def test_a_layer_of_cold_keys_stays_cold_beside_a_hot_one(self):
+        session = {"presses": {"Base": {"0": 1000, "1": 500}, "Nav": {"0": 8, "1": 4}}}
+        steps = export.levels(session, MSG, "session")["Nav"]
+        # On its own busiest key the 8 presses would be the top step, the same as the thousand.
+        self.assertTrue(all(1 <= step <= 3 for step in steps.values()), steps)
+
+    def test_what_a_layer_cannot_draw_does_not_stretch_the_scale(self):
+        # Key 4 is transparent on Nav, and Hold is a layer the keymap has not got.
+        session = {"presses": {"Base": {"0": 10}, "Nav": {"4": 100000}, "Hold": {"0": 100000}}}
+        self.assertEqual({"Base": {0: 6}}, export.levels(session, MSG, "session"))
 
     def test_physical_adds_every_layer_up_on_the_base(self):
         steps = export.levels(SESSION, MSG, "physical")
@@ -57,6 +83,15 @@ class Levels(unittest.TestCase):
     def test_speed_is_the_slowest_hottest(self):
         steps = export.levels(SESSION, MSG, "speed")["Base"]
         self.assertEqual({0: 1, 1: 6}, steps)                        # 150 ms and 300 ms; key 2 timed twice only
+
+    def test_speed_is_one_scale_for_every_layer(self):
+        session = {"timed": {"Base": {"0": 4, "1": 4}, "Nav": {"0": 4, "1": 4}},
+                   "ms": {"Base": {"0": 400, "1": 1200}, "Nav": {"0": 1200, "1": 1000}}}   # 100, 300; 300, 250 ms
+        steps = export.levels(session, MSG, "speed")
+        self.assertEqual({0: 1, 1: 6}, steps["Base"])
+        self.assertEqual(steps["Base"][1], steps["Nav"][0])          # 300 ms on each layer
+        # Judged against its own two keys the 250 ms would be the quickest, the first step.
+        self.assertTrue(1 < steps["Nav"][1] < 6, steps["Nav"])
 
     def test_a_mode_it_cannot_draw(self):
         with self.assertRaises(ValueError):
