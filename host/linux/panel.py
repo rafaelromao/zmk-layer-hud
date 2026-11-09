@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """zmk-layer-hud Linux host: transparent Wayland (layer-shell) surfaces, layer HUD with the
-typed-keys strip below it, plus hudfeed.py for layers, keys and daemon decisions.
+typed-keys strip below it, plus hudfeed.py for layers, keys and daemon decisions. What the page
+says and the command line asks are the panel's (host/panelcore.py); these surfaces are its window
+here.
 
 By default the HUD is an overlay: it floats over whatever is on screen and takes no room from
 it, which is what a HUD should do to a session you are working in.
@@ -38,14 +40,14 @@ gi.require_foreign("cairo")
 import cairo  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import panelcore  # noqa: E402  (host/panelcore.py)
 import panelstate  # noqa: E402  (host/panelstate.py)
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 PAGES = ROOT / "hud"
 # Outside the tree, because `zmk-layer-hud update` replaces the tree wholesale. hud.sh exports
-# ZMKHUD_STATE; the default is repeated so running this directly still works.
-RUN = Path(os.environ.get("ZMKHUD_STATE") or
-           Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "zmk-layer-hud")
+# ZMKHUD_STATE; panelstate works out the default, so running this directly still works.
+RUN = Path(panelstate.default_dir())
 # Until the page says how big it is (follow_page): the board, the banner and one row of the stats
 # bar above them (hud/hud.css #stats: 26px + 6px).
 STATS_H = 32
@@ -92,7 +94,7 @@ def save_position(top, right):
             state = {}
         state = state if isinstance(state, dict) else {}
         state["linux"] = {"top": top, "right": right}
-        panelstate._write(str(POSITION), state)     # whole or not at all, and this user's alone
+        panelstate.write_json(str(POSITION), state)     # whole or not at all, and this user's alone
     except OSError as e:
         print(f"panel: could not save {POSITION}: {e}", file=sys.stderr, flush=True)
 
@@ -242,7 +244,7 @@ def main():
     pos = [top, right]
 
     hud, hud_css = surface(monitor, "index.html", "zmkhud-layer", HUD_W, HUD_H, query=f"&tally={TALLY_TOKEN}",
-                  on_size=lambda body: page_said(body))
+                  on_size=lambda body: panel.page(body))
     GtkLayerShell.set_anchor(hud, GtkLayerShell.Edge.TOP, True)
     GtkLayerShell.set_anchor(hud, GtkLayerShell.Edge.RIGHT, True)
     # Explicit coordinates include the top bar; ignore other panels' exclusive zones.
@@ -280,63 +282,35 @@ def main():
     GtkLayerShell.set_margin(keys, GtkLayerShell.Edge.RIGHT, right)
 
     size = [HUD_W, HUD_H]
-    shown = [not HIDDEN]
-    wpm = [0]           # the page's live WPM, for the bar icon (host/linux/omarchy)
-    stats = [None]      # ...and its stats column, for the icon's menu and its hover panel
 
     def take_input(window):
         # None is the whole surface again, a layer surface's own.
-        window.input_shape_combine_region(None if shown[0] else cairo.Region())
+        window.input_shape_combine_region(None if panel.shown else cairo.Region())
 
-    def set_shown(want):
-        """On screen or off it; the pages go on as before either way. The rail goes with the HUD,
-        so a hidden one takes no room from the windows either."""
-        if want and not surface_there():
+    def show_window(want):
+        """Drawn, or drawn as nothing and taking no input (panelcore.Panel.set_shown). The rail goes
+        with the HUD, so a hidden one takes no room from the windows either."""
+        for window, css in ((hud, hud_css), (keys, keys_css)):
+            if want:
+                css.remove_style_sheet(HIDE_SHEET)
+            else:
+                css.add_style_sheet(HIDE_SHEET)
+            take_input(window)
+            window.queue_draw()
+        if rail is not None:
+            rail.show_all() if want else rail.hide()
+
+    def to_front():
+        if not surface_there():
             remap("asked to show the HUD, and Hyprland had no surface of it")
-        if want != shown[0]:
-            shown[0] = want
-            for window, css in ((hud, hud_css), (keys, keys_css)):
-                if want:
-                    css.remove_style_sheet(HIDE_SHEET)
-                else:
-                    css.add_style_sheet(HIDE_SHEET)
-                take_input(window)
-                window.queue_draw()
-            if rail is not None:
-                rail.show_all() if want else rail.hide()
-        panelstate.write(RUN, want, wpm=wpm[0], stats=stats[0])
 
     no_drag = []
 
-    def page_said(body):
+    def open_url(url):
         try:
-            msg = json.loads(body)
-            kind = msg.get("kind")
-        except (ValueError, AttributeError):
-            return
-        if kind == "hide":
-            set_shown(False)
-        elif kind == "site":    # the stats column's heading: the landing page, in the browser
-            try:
-                Gtk.show_uri_on_window(None, panelstate.SITE, Gdk.CURRENT_TIME)
-            except GLib.Error as e:
-                print(f"panel: cannot open {panelstate.SITE}: {e.message}", file=sys.stderr, flush=True)
-        elif kind == "wpm":
-            if isinstance(msg.get("wpm"), int) and msg["wpm"] != wpm[0]:
-                wpm[0] = msg["wpm"]
-                panelstate.write(RUN, shown[0], wpm=wpm[0], stats=stats[0])
-        elif kind == "stats":
-            said = panelstate.stats_of(msg)
-            if said is not None and said != stats[0]:
-                stats[0] = said
-                panelstate.write(RUN, shown[0], wpm=wpm[0], stats=said)
-        elif kind == "nodrag":
-            rects = msg.get("rects")
-            if isinstance(rects, list):
-                no_drag[:] = [r for r in rects if isinstance(r, list) and len(r) == 4
-                              and all(isinstance(v, (int, float)) for v in r)]
-        else:
-            follow_page(body)
+            Gtk.show_uri_on_window(None, url, Gdk.CURRENT_TIME)
+        except GLib.Error as e:
+            print(f"panel: cannot open {url}: {e.message}", file=sys.stderr, flush=True)
 
     # Dragging. A layer surface is not the compositor's to move, so the panel moves it: a press
     # anywhere but on the page's controls (it says where they are, kind "nodrag") starts a drag,
@@ -402,15 +376,15 @@ def main():
     view.connect("motion-notify-event", moved)
     view.connect("button-release-event", released)
 
-    def follow_page(body):
+    def follow_page(width, height):
         """The HUD's surface as big as the page's layout -- its width is the config's hud.width,
-        its height the board's and the stats bar's -- and the strip just below it, as on macOS."""
+        its height the board's and the stats bar's -- and the strip just below it, as on macOS. The
+        size is checked first (panelcore.Panel.resize)."""
         try:
-            msg = json.loads(body)
-            w, h = int(msg.get("width") or size[0]), int(msg.get("height") or 0)
-        except (ValueError, TypeError, AttributeError):
+            w, h = int(width or size[0]), int(height or 0)
+        except (ValueError, TypeError):
             return
-        if msg.get("kind") != "size" or not (100 <= w <= 4000 and 50 <= h <= 4000) or [w, h] == size:
+        if [w, h] == size:
             return
         size[:] = [w, h]
         hud.get_child().set_size_request(w, h)
@@ -421,13 +395,21 @@ def main():
         if rail is not None:
             rail.set_size_request(w + pos[1] + INSET, 1)
             GtkLayerShell.set_exclusive_zone(rail, w + pos[1] + INSET)
-        if not shown[0]:
+        if not panel.shown:
             take_input(hud)
             take_input(keys)
 
+    # The panel (host/panelcore.py): what the page says and the CLI asks, and panel.json; these
+    # surfaces are how it is drawn and placed here.
+    panel = panelcore.Panel(
+        panelcore.Window(show=show_window, front=to_front, resize=follow_page,
+                         no_drag=lambda rects: no_drag.__setitem__(slice(None), rects), open=open_url,
+                         close=lambda: quit_host()),
+        RUN, shown=not HIDDEN)
+
     take_input(hud)       # kept until each is realized
     take_input(keys)
-    if rail is not None and shown[0]:
+    if rail is not None and panel.shown:
         rail.show_all()
     keys.show_all()
     hud.show_all()
@@ -458,7 +440,7 @@ def main():
         move_to(*pos)               # kept on it, should it be a smaller one
         keys.show_all()
         hud.show_all()
-        if rail is not None and shown[0]:
+        if rail is not None and panel.shown:
             rail.show_all()
         take_input(hud)
         take_input(keys)
@@ -494,13 +476,11 @@ def main():
 
     def asked(*_):
         # `zmk-layer-hud show` / `hide`: what they want is in panel.want.
-        want = panelstate.wanted(RUN)
-        if want is not None:
-            set_shown(want)
+        panel.wake()
         return GLib.SOURCE_CONTINUE
     GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, panelstate.SIGNAL, asked)
     # Only now, with the handler in: the CLI signals whatever pid this file names.
-    panelstate.write(RUN, shown[0])
+    panel.start()
     RUN.mkdir(mode=0o700, exist_ok=True)
     RUN.chmod(0o700)
     # The feed's log is this user's alone, like the rest of $STATE: O_CREAT leaves the mode of a
@@ -523,7 +503,7 @@ def main():
     try:
         Gtk.main()
     finally:
-        panelstate.remove(RUN)
+        panel.stop()
         for window in WINDOWS:
             window.destroy()
         # Include journalctl, including after the page's close request exits hudfeed.

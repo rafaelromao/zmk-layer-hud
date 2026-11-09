@@ -23,7 +23,7 @@ NODE ?= $(shell command -v node)
 # The audit reads the keyboard's keymap with keymap-drawer, which lives in the venv.
 VENV_PYTHON := $(wildcard .venv/bin/python3)
 
-.PHONY: all install venv test test-firmware test-host test-hud test-site site cli-docs samples audit fixture clean help
+.PHONY: all install venv test test-firmware test-host test-hud test-site site cli-docs keynames samples audit fixture clean help
 
 all: test
 
@@ -49,6 +49,7 @@ test-hud: ## the HUD page: every key and combo, the heatmap, the strip, and ever
 	@if [ -z "$(NODE)" ]; then \
 	  echo "test-hud: node not found, skipping (brew install node)"; \
 	else \
+	  $(NODE) hud/tests/keystrokes_test.js && \
 	  $(NODE) hud/tests/hud_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
 	  $(NODE) hud/tests/stats_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
 	  PYTHON="$(PYTHON)" $(NODE) hud/tests/strip_test.js $(if $(KEYMAP),--keymap $(KEYMAP)) && \
@@ -70,6 +71,9 @@ site: ## build the landing page into docs/, which GitHub Pages serves; commit wh
 
 cli-docs: ## write docs/cli.md, the command line reference, from the parsers (the host tests fail when it is behind)
 	$(or $(VENV_PYTHON),$(PYTHON)) host/clidocs.py --write
+
+keynames: ## write hud/keynames.js, the key vocabulary (host/keynames.py) for the pages (the host tests fail when it is behind)
+	$(PYTHON) host/keynames_gen.py --write
 
 audit: ## the drawing against the keyboard's own keymap (SOURCE=<working copy>, else the one import recorded)
 	$(or $(VENV_PYTHON),$(PYTHON)) host/ways.py --audit $(if $(CONFIG),--config $(CONFIG)) $(if $(SOURCE),--source $(SOURCE))

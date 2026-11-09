@@ -223,12 +223,17 @@ class HostScript(unittest.TestCase):
 
 # A stand-in for a panel: says it is shown, and does what panel.want says each time SIGUSR2 comes.
 FAKE_PANEL = textwrap.dedent('''
+    # A panel with no window: the real one (host/panelcore.py), answering the CLI's signal as both
+    # platforms' panels do, its window doing nothing.
     import signal, sys, time
     sys.path.insert(0, sys.argv[1])
-    import panelstate
+    import panelcore, panelstate
     d = sys.argv[2]
-    signal.signal(panelstate.SIGNAL, lambda *_: panelstate.write(d, panelstate.wanted(d)))
-    panelstate.write(d, True)
+    nothing = lambda *a: None
+    window = panelcore.Window(show=nothing, front=nothing, resize=nothing, no_drag=nothing, open=nothing, close=nothing)
+    panel = panelcore.Panel(window, d)
+    signal.signal(panelstate.SIGNAL, lambda *_: panel.wake())
+    panel.start()
     time.sleep(30)
 ''')
 
@@ -251,11 +256,34 @@ class ShowHide(unittest.TestCase):
             time.sleep(0.02)
         return proc
 
-    def run_cli(self, *argv, pids=()):
-        with mock.patch.object(cli, "panel_pids", lambda: list(pids)), \
+    def run_cli(self, *argv, pids=(), tree=ROOT):
+        # The processes running: `pids` as HUD panels run from `tree` (this copy, unless the test
+        # says another), and no feed.
+        procs = lambda pattern: ({p: f"/usr/bin/python3 {tree}/host/linux/panel.py" for p in pids}   # noqa: E731
+                                 if "panel" in pattern else {})
+        with mock.patch.object(cli, "processes", procs), \
                 contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
             code = cli.main(list(argv))
         return code, out.getvalue() + err.getvalue()
+
+    def test_a_hud_from_another_copy_is_named_and_left_as_it_is(self):
+        # A HUD run from another clone writes to the same $STATE: `hide` here cannot stop or start
+        # it, but must not call it gone and throw away the word it keeps on itself either.
+        proc = self.start_panel()
+        code, said = self.run_cli("hide", pids=[proc.pid], tree="/opt/other-copy")
+        self.assertEqual(1, code, said)
+        self.assertIn("a HUD from /opt/other-copy is running", said)
+        self.assertTrue(cli.panelstate.read(self.tmp.name)["shown"])          # still there, still its own
+
+    def test_power_starts_no_second_hud_beside_another_copys(self):
+        proc = self.start_panel()
+        with mock.patch.object(cli, "reexec_into_venv"), mock.patch.object(cli, "cmd_start") as start, \
+                mock.patch.object(cli, "cmd_stop") as stop:
+            code, said = self.run_cli("power", pids=[proc.pid], tree="/opt/other-copy")
+        self.assertEqual(1, code, said)
+        start.assert_not_called()
+        stop.assert_not_called()
+        self.assertIn("a HUD from /opt/other-copy is running", said)
 
     def test_hide_show_and_toggle_are_done_and_said(self):
         proc = self.start_panel()
@@ -295,6 +323,50 @@ class ShowHide(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertIn("restart", said)
         kill.assert_not_called()
+
+
+class Status(unittest.TestCase):
+    """`status`, read through panelstate.hud, with the processes the test says are running."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        for target, value in (("STATE", self.tmp.name), ("login_line", lambda: "off"), ("hypr_surfaces", lambda: None)):
+            p = mock.patch.object(cli, target, value)
+            p.start()
+            self.addCleanup(p.stop)
+        env = mock.patch.dict(os.environ, {"ZMKHUD_STATE": self.tmp.name})   # the sessions too, never the user's
+        env.start()
+        self.addCleanup(env.stop)
+
+    def status(self, procs, system="Linux"):
+        with mock.patch.object(cli, "processes", lambda pattern: procs.get("panel" if "panel" in pattern else "feed", {})), \
+                mock.patch.object(cli.platform, "system", lambda: system), \
+                mock.patch.object(sys, "platform", "darwin" if system == "Darwin" else "linux"), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            cli.cmd_status(None)
+        return out.getvalue()
+
+    def test_the_macos_feed_is_said_to_run_in_the_panel(self):
+        cli.panelstate.write(self.tmp.name, True)
+        said = self.status({"panel": {os.getpid(): f"python3 {ROOT}/host/macos/panel.py"}}, system="Darwin")
+        self.assertIn("panel: running, shown", said)
+        self.assertIn("feed:  in the panel", said)
+
+    def test_json_is_the_huds_state_in_one_object(self):
+        cli.panelstate.write(self.tmp.name, False, wpm=55)
+        procs = {"panel": {os.getpid(): f"python3 {ROOT}/host/linux/panel.py"}}
+        with mock.patch.object(cli, "processes", lambda pattern: procs.get("panel" if "panel" in pattern else "feed", {})), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(0, cli.main(["status", "--json"]))
+        h = json.loads(out.getvalue())
+        self.assertEqual((True, True, True, False, 55, "stopped"),
+                         (h["running"], h["said"], h["ours"], h["shown"], h["wpm"], h["feed"]))
+
+    def test_a_feed_run_on_its_own_is_running(self):
+        said = self.status({"feed": {77: "/usr/bin/python3 /home/me/.local/bin/zmk-layer-hud feed"}})
+        self.assertIn("panel: stopped", said)
+        self.assertIn("feed:  running", said)
 
 
 class SyncArgv(unittest.TestCase):
@@ -456,6 +528,12 @@ class OmarchyPlugin(unittest.TestCase):
         self.assertIn(f'moduleName: "{cli.OMARCHY_ID}"', qml)
         self.assertNotIn("id: state", qml)                # every Item has a `state` of its own
 
+    def test_the_bar_reads_another_copys_hud_as_the_macos_icon_does(self):
+        # panelstate.hud's "icon", through `status --json`: the word both icons take it by.
+        with open(os.path.join(self.SRC, "BarWidget.qml"), encoding="utf-8") as f:
+            qml = f.read()
+        self.assertIn('h.icon === "another copy"', qml)
+
     def test_without_omarchy_nothing_is_copied(self):
         code, said, _ = self.run_cli("menubar", "enable", which=lambda n: None)
         self.assertEqual(1, code)
@@ -528,6 +606,61 @@ def desktop_exec(text):
     entry.read_string(text)
     value = entry["Desktop Entry"]["Exec"].replace("\\\\", "\\")
     return [a.replace("%%", "%") for a in shlex.split(value)]
+
+
+class SyncDue(unittest.TestCase):
+    """The doctor's word that a sync is due: a file the definitions are made from (sync.inputs),
+    newer than they are."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(__import__("shutil").rmtree, self.d)
+        self.config = os.path.join(self.d, "hud.yaml")
+        repo = os.path.join(self.d, "repo")
+        self.files = {
+            "hud.yaml": "keymap: drawing/board.yaml\n",
+            "drawing/board.yaml": "layout: {qmk_info_json: docs/layout.json}\nlayers: {}\n",
+            "docs/layout.json": "{}",
+            "repo/config/b.keymap": '#include "defs.dtsi"\n' + __import__("sync_test").KEYMAP,
+            "repo/config/defs.dtsi": "#define X 1\n",
+            "repo/config/b.overlay": "/ { };\n",
+            "hud.definitions.json": json.dumps({"version": 1, "drawing": {}, "sources": {"repo": repo, "keyboard": "b"}}),
+        }
+        for name, text in self.files.items():
+            path = os.path.join(self.d, name)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(text)
+            os.utime(path, (1000, 1000))
+        os.utime(os.path.join(self.d, "hud.definitions.json"), (2000, 2000))
+        p = mock.patch.dict(os.environ, {"ZMKHUD_CONFIG": self.config})
+        p.start()
+        self.addCleanup(p.stop)
+
+    def touch(self, name):
+        os.utime(os.path.join(self.d, name), (3000, 3000))
+
+    def test_nothing_newer_is_no_sync_due(self):
+        self.assertIsNone(cli.sync_due())
+
+    def test_a_drawings_layout_file_newer_is_a_sync_due(self):
+        self.touch("docs/layout.json")
+        self.assertEqual("layout.json", cli.sync_due())
+
+    def test_a_file_the_keymap_includes_newer_is_a_sync_due(self):
+        self.touch("repo/config/defs.dtsi")
+        self.assertEqual("defs.dtsi", cli.sync_due())
+
+    def test_a_board_file_the_drawing_is_not_made_from_is_not_a_sync_due(self):
+        # With keymap: naming a drawing, the physical layout is the drawing's: the keyboard's
+        # .overlay is never read, and a sync would leave the definitions as they are.
+        self.touch("repo/config/b.overlay")
+        self.assertIsNone(cli.sync_due())
+
+    def test_the_config_alone_is_not(self):
+        # Its settings are read by the HUD as they are; only what it names is synced.
+        self.touch("hud.yaml")
+        self.assertIsNone(cli.sync_due())
 
 
 class Doctor(unittest.TestCase):
@@ -823,7 +956,7 @@ class Update(unittest.TestCase):
         args = cli.build_parser().parse_args(["update"])
         with mock.patch.object(cli, "ROOT", root), mock.patch.object(cli, "in_clone", lambda: False), \
                 mock.patch.object(cli, "fetch_tree", fetch), mock.patch.object(cli, "latest_release", lambda: "v1.1.0"), \
-                mock.patch.object(cli, "panel_pids", lambda: []), mock.patch.object(cli, "venv_ok", lambda: False), \
+                mock.patch.object(cli, "processes", lambda pattern: {}), mock.patch.object(cli, "venv_ok", lambda: False), \
                 mock.patch.object(cli, "plugin_dir", lambda: os.path.join(tmp.name, "no-plugin")), \
                 mock.patch.dict(os.environ, {"ZMKHUD_REF": ""}), contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertEqual(0, cli.cmd_update(args))

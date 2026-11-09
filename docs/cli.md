@@ -115,12 +115,14 @@ options:
 ## status
 
 ```text
-usage: zmk-layer-hud status [-h]
+usage: zmk-layer-hud status [-h] [--json]
 
 is it running, and what is it reading
 
 options:
   -h, --help  show this help message and exit
+  --json      the HUD's state as one JSON object, for a bar or a script: running, shown, the WPMs,
+              the feed
 ```
 
 ## session
@@ -310,8 +312,9 @@ options:
   --config CONFIG  config file
   --quiet          say nothing but errors
   --no-fetch       fetch no glyphs: use keymap-drawer's cache only
-  --watch          stay, and sync again each time the config, the keymap-drawer files or a working
-                   copy's keymap is edited; the running HUD redraws (Ctrl-C stops)
+  --watch          stay, and sync again each time the config, the keymap-drawer files and the
+                   layout files they name, or a working copy's keymap is edited; the running HUD
+                   redraws (Ctrl-C stops)
 ```
 
 ## keymap
