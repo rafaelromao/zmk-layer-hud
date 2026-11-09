@@ -6,12 +6,15 @@ the steps coloured by a stylesheet keymap-drawer puts after its own (svg_extra_s
 HUD's light keys or its dark ones (`dark`). The steps are the page's (hud/hud.js heatLevels,
 hud/hud.css):
 
-  session   how often each key was pressed on each layer, ln(1+count)/ln(1+most) of the layer's
-            own keys: a transparent key draws another layer's legend, and is left out.
+  session   how often each key was pressed on each layer, ln(1+count)/ln(1+most) of the busiest key
+            of any layer's own keys: a transparent key draws another layer's legend, and is left
+            out. One scale for every layer, so a count is the same step on each and a layer of
+            seldom pressed keys is drawn pale beside the base.
   physical  every layer's presses of a key added up, which is where the fingers went; drawn on the
             base layer alone, whose legends are the ones printed on the keys.
   speed     how long each of a layer's own keys takes after the key before it, from the keys timed
-            at least SPEED_MIN times; the slowest are the hottest.
+            at least SPEED_MIN times; the slowest are the hottest, the quickest and the slowest of
+            any layer being the first and the last step.
 
 `levels` needs only the session and the HUD's keymap message; `svg` needs keymap-drawer (the venv).
 """
@@ -39,8 +42,7 @@ DARK_COLD_LEGEND = "#1a1b26"
 DARK_COLD_SMALL = "#2e3240"   # ...and the hold and shifted ones on them
 
 
-def _log_steps(counts):
-    most = max(counts.values(), default=0)
+def _log_steps(counts, most):
     return {idx: max(1, math.ceil(math.log1p(n) / math.log1p(most) * LEVELS)) for idx, n in counts.items() if n}
 
 
@@ -53,7 +55,6 @@ def levels(session, message, mode="session"):
     idx_of = (lambda pos: positions.get(str(pos))) if positions else (lambda pos: int(pos) if int(pos) < n else None)
     layers = message["layers"]
     own = lambda layer, idx: idx is not None and idx < len(layers[layer]) and layers[layer][idx].get("type") != "trans"  # noqa: E731
-    out = {}
     if mode == "physical":
         total = {}
         for counts in session.get("presses", {}).values():
@@ -61,8 +62,11 @@ def levels(session, message, mode="session"):
                 idx = idx_of(pos)
                 if idx is not None:
                     total[idx] = total.get(idx, 0) + c
-        steps = _log_steps(total)
+        steps = _log_steps(total, max(total.values(), default=0))
         return {message["base"]: steps} if steps else {}
+    # What the mode counts on each key a layer binds of its own, for every layer: the scale is read
+    # from all of them, so a count (or a time) is the same step on whichever layer it is drawn.
+    values = {}
     for layer in layers:
         if mode == "session":
             counts = {}
@@ -70,7 +74,7 @@ def levels(session, message, mode="session"):
                 idx = idx_of(pos)
                 if own(layer, idx):
                     counts[idx] = c
-            steps = _log_steps(counts)
+            values[layer] = counts
         else:
             timed, ms = session.get("timed", {}).get(layer) or {}, session.get("ms", {}).get(layer) or {}
             means = {}
@@ -78,11 +82,17 @@ def levels(session, message, mode="session"):
                 idx = idx_of(pos)
                 if t >= SPEED_MIN and own(layer, idx):
                     means[idx] = ms.get(pos, 0) / t
-            lo, hi = min(means.values(), default=0), max(means.values(), default=0)
-            steps = {idx: 1 + round((m - lo) / (hi - lo) * (LEVELS - 1)) if hi > lo else 1 for idx, m in means.items()}
-        if steps:
-            out[layer] = steps
-    return out
+            values[layer] = means
+    every = [v for per_layer in values.values() for v in per_layer.values()]
+    if mode == "session":
+        most = max(every, default=0)
+        stepped = {layer: _log_steps(counts, most) for layer, counts in values.items()}
+    else:
+        lo, hi = min(every, default=0), max(every, default=0)
+        # Half rounds up, as the page's Math.round does (Python's round() takes a half to the even one).
+        stepped = {layer: {idx: 1 + math.floor((m - lo) / (hi - lo) * (LEVELS - 1) + 0.5) if hi > lo else 1
+                           for idx, m in means.items()} for layer, means in values.items()}
+    return {layer: steps for layer, steps in stepped.items() if steps}
 
 
 def stylesheet(dark=False):
