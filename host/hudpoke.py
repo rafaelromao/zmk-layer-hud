@@ -191,7 +191,9 @@ async def main(args):
 
 
 def parse_args(argv=None):
-    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    # prog as argv[0] says (`zmk-layer-hud poke` through the CLI and its reference): from Python 3.14
+    # on, argparse's own default follows how __main__ was run instead, `python -m ...` under -m.
+    p = argparse.ArgumentParser(prog=os.path.basename(sys.argv[0]), description=__doc__.split("\n\n")[0])
     p.add_argument("--url", help="hudfeed's WebSocket, token included (default: ws://127.0.0.1:$ZMKHUD_PORT or "
                                  "8766, with $ZMKHUD_TOKEN as `zmk-layer-hud demo` prints it, else the running "
                                  "HUD's token from $ZMKHUD_STATE/token)")

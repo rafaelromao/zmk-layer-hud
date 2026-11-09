@@ -43,8 +43,13 @@ def passthrough_help(verb):
 
 
 def render():
+    import keymap as keymap_mod
     old = os.environ.get("COLUMNS")
     os.environ["COLUMNS"] = WIDTH
+    # The feed's help names the config's default path: given to argparse as ~ already, so where a
+    # line wraps does not depend on how long this machine's home is.
+    default = keymap_mod.DEFAULT_CONFIG
+    keymap_mod.DEFAULT_CONFIG = default.replace(os.path.expanduser("~"), "~", 1)
     try:
         parser = cli.build_parser()
         subs = verbs(parser)
@@ -57,6 +62,7 @@ def render():
             text = passthrough_help(name) if name in cli.PASSTHROUGH else sub.format_help()
             parts += ["", f"## {name}", "", "```text", text.rstrip(), "```"]
     finally:
+        keymap_mod.DEFAULT_CONFIG = default
         if old is None:
             os.environ.pop("COLUMNS", None)
         else:

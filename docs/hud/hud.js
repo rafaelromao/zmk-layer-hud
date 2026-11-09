@@ -551,43 +551,64 @@
   }
 
   /* The session's heatmap: how often each key has been pressed, on the layer on screen. Six
-   * steps of ln(1+count)/ln(1+most), the most-pressed key of that layer being the top step: a
+   * steps of ln(1+count)/ln(1+most), the most-pressed key of any layer being the top step: a
    * linear scale would leave Space and E alone lit and every other key the same pale. Only a key
    * whose binding is the top layer's own shows its count -- a transparent key draws the layer
    * underneath, whose counts are nearly always the largest, and would light a layer up with heat
    * that was never its own. The counts are the ledger's, so this is the live heatmap summed.
    *
+   * `most` is read over every layer's own keys, not the one on screen: one count is one step on
+   * whichever layer is up, so turning through the layers compares them, and a layer of keys that
+   * are seldom pressed stays pale beside the base instead of lighting up as the busiest board.
+   *
    * Two more read the same steps. `physical`: every layer's presses of a key together, which is
-   * where the fingers went whatever the legends said, so every key shows, transparent or not.
-   * `speed`: how long each of the layer's own keys takes after the key before it (strokes), the
-   * slowest the hottest, from the keys timed at least SPEED_MIN times. */
+   * where the fingers went whatever the legends said, so every key shows, transparent or not; it
+   * is the same colour on every layer by what it counts. `speed`: how long each of the layer's own
+   * keys takes after the key before it (strokes), the slowest the hottest, from the keys timed at
+   * least SPEED_MIN times: the quickest of any layer's is the first step and the slowest the last. */
   const SESSION_LEVELS = 6;
   const SPEED_MIN = 3;
   function heatLevels() {                // drawer idx -> 1..SESSION_LEVELS, for the keys that have one
     const out = new Map(), mode = state.heatMode;
     if (mode !== "session" && mode !== "physical" && mode !== "speed") return out;
-    const layers = stack(), top = layers[0], v = view();
-    const own = idx => { const r = resolveBinding(idx, layers); return r && r.layer === top && zmkPos(idx) !== null; };
-    const logScale = counts => {
-      let most = 0;
-      for (const [, n] of counts) most = Math.max(most, n);
+    const top = stack()[0], v = view();
+    // What `valueAt(layer, pos)` says of each key a layer binds of its own (not a transparent one,
+    // which draws another layer's legend), for every layer: layer -> Map(drawer idx -> value).
+    // Where there is no value, `valueAt` has none and the key is left out.
+    const ofLayers = valueAt => {
+      const byLayer = {};
+      for (const layer in state.data.layers) {
+        const keys = state.data.layers[layer] || [], values = new Map();
+        state.keyEls.forEach((el, idx) => {
+          const pos = zmkPos(idx), k = keys[idx];
+          if (!k || k.type === "trans" || pos === null) return;
+          const n = valueAt(layer, pos);
+          if (n !== undefined) values.set(idx, n);
+        });
+        byLayer[layer] = values;
+      }
+      return byLayer;
+    };
+    const peak = counts => { let most = 0; for (const [, n] of counts) most = Math.max(most, n); return most; };
+    const logScale = (counts, most) => {
       for (const [idx, n] of counts) if (n) out.set(idx, Math.max(1, Math.ceil(Math.log1p(n) / Math.log1p(most) * SESSION_LEVELS)));
     };
     if (mode === "session") {
-      const counts = v.presses[top] || {};
-      logScale(state.keyEls.map((el, idx) => [idx, own(idx) ? counts[zmkPos(idx)] || 0 : 0]));
+      const counted = ofLayers((layer, pos) => (v.presses[layer] || {})[pos] || undefined);
+      logScale(counted[top] || [], Math.max(0, ...Object.values(counted).map(peak)));
     } else if (mode === "physical") {
       const total = {};
       for (const layer in v.presses) for (const pos in v.presses[layer]) total[pos] = (total[pos] || 0) + v.presses[layer][pos];
-      logScale(state.keyEls.map((el, idx) => [idx, zmkPos(idx) !== null ? total[zmkPos(idx)] || 0 : 0]));
+      const counts = state.keyEls.map((el, idx) => [idx, zmkPos(idx) !== null ? total[zmkPos(idx)] || 0 : 0]);
+      logScale(counts, peak(counts));
     } else {
-      const timed = v.timed[top] || {}, ms = v.ms[top] || {}, means = [];
-      state.keyEls.forEach((el, idx) => {
-        const pos = zmkPos(idx);
-        if (own(idx) && (timed[pos] || 0) >= SPEED_MIN) means.push([idx, ms[pos] / timed[pos]]);
+      const timed = ofLayers((layer, pos) => {
+        const t = (v.timed[layer] || {})[pos] || 0;
+        return t >= SPEED_MIN ? ((v.ms[layer] || {})[pos] || 0) / t : undefined;
       });
-      const lo = Math.min(...means.map(m => m[1])), hi = Math.max(...means.map(m => m[1]));
-      for (const [idx, mean] of means) out.set(idx, hi > lo ? 1 + Math.round((mean - lo) / (hi - lo) * (SESSION_LEVELS - 1)) : 1);
+      const means = Object.values(timed).flatMap(m => [...m.values()]);
+      const lo = Math.min(...means), hi = Math.max(...means);
+      for (const [idx, mean] of timed[top] || []) out.set(idx, hi > lo ? 1 + Math.round((mean - lo) / (hi - lo) * (SESSION_LEVELS - 1)) : 1);
     }
     return out;
   }

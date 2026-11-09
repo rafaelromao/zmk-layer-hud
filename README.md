@@ -336,8 +336,9 @@ zmk-layer-hud session export colemak-1 --mode physical -o hands.svg   # all laye
 zmk-layer-hud session export --mode speed --layers SYM,NUM            # each key's time, on those layers
 ```
 
-The steps and colours are the HUD's own, on light keys or dark ones as the HUD's are. `-o -`
-writes the SVG to stdout.
+The steps and colours are the HUD's own, on light keys or dark ones as the HUD's are, and so is
+their scale: one for every layer of the keymap, so `--layers` picks what is drawn and never changes
+a key's step. `-o -` writes the SVG to stdout.
 
 A session is kept in `$ZMKHUD_STATE/sessions/<name>.json` (the directory 0700, each file 0600),
 and it holds counts: how often each key was pressed on each layer, each combo, how many characters
@@ -464,6 +465,15 @@ added up, which is where the fingers went; `speed`, how long each key takes afte
 it, the slowest the hottest; and `off`. Every keystroke the board draws is counted once, when
 nothing can take it back: a combo counts as one keystroke, and a report that beats its own
 position is not counted twice.
+
+`session` and `speed` colour every layer on one scale. In `session` the busiest key of *all* the
+layers is the hottest colour and every other key, on whichever layer, is coloured by its count
+against that; in `speed` the slowest key of any layer is the hottest and the quickest the coldest.
+A key with the same count (or time) has the same colour on every layer, so turning through the
+layers compares them: a layer of seldom pressed keys, such as Numbers or Accents, stays pale beside
+the base, where scaled against its own busiest key it would have looked as busy.
+`physical` is one scale already, every layer's presses of a key together, and the live glow does
+not compare keys at all. `zmk-layer-hud session export` draws the same steps.
 
 Its last box is the keys: `light`, as keymap-drawer draws them, or `dark`, with the heat in one
 indigo, light blue cold and dark blue hot. A click changes it, and the feed remembers the choice on this machine; until one is made,
@@ -608,7 +618,9 @@ From a clone, `make install` sets the machine up and puts `zmk-layer-hud` on you
 that clone; `make test` runs every suite — the firmware's wire policy in C, the host decoder and
 keymap conversion in Python, and the page under node.
 [docs/development.md](docs/development.md) covers what each suite sweeps and how the command line
-is put together.
+is put together. Commit messages start with a Conventional Commits type (`feat:`, `fix:`, `docs:`...):
+releases are made from them by release-please, and CI runs every platform's suites on each pull
+request ([Commits, CI and releases](docs/development.md#commits-ci-and-releases)).
 
 ## License
 
