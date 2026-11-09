@@ -1,0 +1,23 @@
+# Releases, by release-please: each push to main keeps a release pull request up to date -- the next
+# version from the Conventional Commits since the last release, its CHANGELOG.md entry and
+# version.txt (release-please-config.json). Merging that pull request tags vX.Y.Z and makes the
+# GitHub release, which install.sh and `update` take.
+name: release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v5
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+

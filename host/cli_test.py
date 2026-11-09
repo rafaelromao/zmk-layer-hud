@@ -184,8 +184,11 @@ class HostScript(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
+        # start and restart go into the venv first (NEEDS_VENV), which a checkout without one --
+        # CI's -- does not have: what is tested here is what comes after.
         patches = [mock.patch.object(cli, "STATE", self.tmp.name),
-                   mock.patch.object(cli, "definitions_missing", lambda: None)]
+                   mock.patch.object(cli, "definitions_missing", lambda: None),
+                   mock.patch.object(cli, "reexec_into_venv", lambda: None)]
         for p in patches:
             p.start()
             self.addCleanup(p.stop)
@@ -787,6 +790,19 @@ class Update(unittest.TestCase):
             self.assertEqual("main 06846f5 (installed)", cli.describe_version())
             self.assertEqual("main", cli.ref_to_follow(cli.installed_version()))    # a branch: that branch again
 
+    def test_a_tree_with_no_record_says_the_version_release_please_keeps(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        with mock.patch.object(cli, "ROOT", tmp.name), mock.patch.object(cli, "in_clone", lambda: False):
+            with open(os.path.join(tmp.name, "version.txt"), "w") as f:
+                f.write("1.2.0\n")
+            self.assertEqual("v1.2.0 (installed tree)", cli.describe_version())
+            with open(os.path.join(tmp.name, "version.txt"), "w") as f:
+                f.write("not a version\n")
+            self.assertEqual("(installed tree)", cli.describe_version())
+        with open(os.path.join(ROOT, "version.txt")) as f:
+            self.assertRegex(f.read().strip(), r"^\d+\.\d+\.\d+$")           # the tree's own, as release-please writes it
+
     def test_update_leaves_a_tree_already_at_the_commit_alone_and_swaps_one_that_is_not(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
@@ -838,6 +854,17 @@ class Reference(unittest.TestCase):
         for verb in verbs(cli.build_parser()):
             self.assertIn(f"\n## {verb}\n", text)
             self.assertIn(f"usage: zmk-layer-hud {verb}", text)
+
+    def test_a_passthrough_names_itself_however_the_tests_were_started(self):
+        # Under `python -m unittest`, some Python 3.14 releases default a parser's prog to `python -m
+        # unittest` (argparse._prog_name reads __main__'s spec); poke's and the feed's parsers name
+        # themselves from argv[0], as the CLI sets it, so the reference reads the same on every one.
+        import clidocs
+        for verb in cli.PASSTHROUGH:
+            spec = mock.Mock(origin=f"zmk-layer-hud {verb}")
+            spec.name = "unittest"
+            with mock.patch.object(sys.modules["__main__"], "__spec__", spec, create=True):
+                self.assertTrue(clidocs.passthrough_help(verb).startswith(f"usage: zmk-layer-hud {verb}"), verb)
 
 
 class State(unittest.TestCase):
