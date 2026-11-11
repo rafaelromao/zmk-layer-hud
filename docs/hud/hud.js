@@ -487,15 +487,17 @@
     // The macOS panel reads it on its bridge. The Linux panel has a handler for nothing else
     // (host/linux/panel.py), named apart so that the page never takes it for the bridge a
     // session's counts go through (bridge(), below).
+    // A size the grip is asking for says so: the panel then keeps its left edge where it is, so
+    // that its bottom right corner follows the pointer (host/linux/panel.py follow_page).
+    const size = { kind: "size", width, height };
+    if (state.sizing != null) size.grip = true;
     for (const name of ["zmkhud", "zmkhudsize"]) {
-      try { window.webkit.messageHandlers[name].postMessage(JSON.stringify({ kind: "size", width, height })); } catch (e) { /* not this host */ }
+      try { window.webkit.messageHandlers[name].postMessage(JSON.stringify(size)); } catch (e) { /* not this host */ }
     }
     // A panel that can hide the HUD is one that has one of these: offer the button there only.
     document.documentElement.classList.toggle("hideable", !!panelHandler());
-    // And one that sizes itself from the page is one the page can size: the grip, there only, in
-    // the corner the panel grows from (gripLeft).
+    // And one that sizes itself from the page is one the page can size: the grip, there only.
     document.documentElement.classList.toggle("sizable", !!panelHandler());
-    document.documentElement.classList.toggle("grip-left", gripLeft());
     postNoDrag();
   }
 
@@ -1532,21 +1534,21 @@
   // The grip, in the frame's corner: dragged, the panel is as wide as the pointer says and the
   // board fills it, the height following as it always does. The page only says the width it wants
   // (postSize), once a frame; the panel resizes, and that redraws the board (the resize listener).
-  // The macOS panel keeps its top left corner still, so the grip is bottom right and the pointer is
-  // read off the screen: the panel steps left when it would run off its screen, which would move
-  // the page under a pointer read off the page. The Linux panel keeps its top right, anchored
-  // there, and a layer surface is told only where the pointer is on itself: so the grip is bottom
-  // left, and the width is what brings that corner back under the pointer -- the same answer
-  // before the surface has caught up as after.
-  function gripLeft() { return !bridge() && !!panelHandler(); }
+  // The grip is bottom right, and the panel keeps its left edge while it is dragged: the width is
+  // the one it had plus how far the pointer went. On macOS the pointer is read off the screen: the
+  // panel steps left when it would run off its screen, which would move the page under a pointer
+  // read off the page. A Linux layer surface is told only where the pointer is on itself, so there
+  // it is read off the page, whose left edge the panel holds still for a size the grip asks for
+  // (postSize says which those are) -- the same answer before the surface has caught up as after.
   const grip = $("grip");
   if (grip) grip.addEventListener("mousedown", e => {
     if (e.button || !state.data || !panelHandler()) return;
     e.preventDefault();
-    const left = gripLeft(), from = left ? e.clientX : e.screenX, was = window.innerWidth;
+    const at = bridge() ? ev => ev.screenX : ev => ev.clientX;
+    const from = at(e), was = window.innerWidth;
     let due = false;
     const move = ev => {
-      const all = left ? window.innerWidth - (ev.clientX - from) : was + (ev.screenX - from);
+      const all = was + (at(ev) - from);
       if (!Number.isFinite(all)) return;
       state.sizing = Math.max(WIDTH_MIN, Math.min(WIDTH_MAX, Math.round(all - sideWidth())));
       if (due) return;

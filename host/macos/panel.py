@@ -398,15 +398,16 @@ class Host:
         """The part of the HUD's screen that is its to use: the menu bar and the Dock apart."""
         return (self.panel.screen() or focused_screen()).visibleFrame()
 
-    def room(self):
-        """How wide the HUD may be: its screen (panelcore.Panel.resize)."""
+    def room(self, grip=False):
+        """How wide the HUD may be: its screen (panelcore.Panel.resize), for the page's grip as for
+        any other size, since the panel steps left for what does not fit."""
         return float(self.visible().size.width)
 
-    def resize(self, width, height):
+    def resize(self, width, height, grip=False):
         """The page knows how tall the layout is, and how wide the keyboard is drawn; keep the
-        top-left corner where the user put it. A HUD grown wider than the room to its right steps
-        left by what would not fit: it starts in its screen's top right corner, where any growth
-        at all would otherwise go off the screen."""
+        top-left corner where the user put it, which is what the page's grip wants too. A HUD grown
+        wider than the room to its right steps left by what would not fit: it starts in its
+        screen's top right corner, where any growth at all would otherwise go off the screen."""
         f = self.panel.frame()
         w = float(width or f.size.width)
         h = float(height or f.size.height)

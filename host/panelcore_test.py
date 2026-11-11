@@ -17,11 +17,16 @@ class FakeWindow:
     def __init__(self):
         self.calls = []
         self.room = None            # how wide the HUD may be; None: the window cannot say
+        self.grip_room = None       # the same, for a size the page's grip asks for
 
     def port(self):
         def rec(name):
             return lambda *args: self.calls.append((name,) + args)
-        return panelcore.Window(show=rec("show"), front=rec("front"), resize=rec("resize"), room=lambda: self.room,
+
+        def resize(w, h, grip):     # a size the grip asked for is marked; any other is as it was
+            self.calls.append(("resize", w, h) + (("grip",) if grip else ()))
+        return panelcore.Window(show=rec("show"), front=rec("front"), resize=resize,
+                                room=lambda grip: self.grip_room if grip else self.room,
                                 no_drag=rec("no_drag"), open=rec("open"), close=rec("close"))
 
     def named(self, name):
@@ -83,6 +88,18 @@ class PageMessages(Base):
             self.window.room = room
             self.panel.page({"kind": "size", "width": 946, "height": 520})
         self.assertEqual([(946, 520)] * 6, self.window.named("resize")[3:])
+
+    def test_a_size_the_grip_asks_for_keeps_the_left_edge(self):
+        # The page's grip is the bottom right corner (hud.js): the window is told, to keep its left
+        # edge, and the room is the one to the right of that edge, not the screen's.
+        self.window.room, self.window.grip_room = 1200, 900
+        self.panel.page({"kind": "size", "width": 850, "height": 500, "grip": True})
+        self.panel.page({"kind": "size", "width": 1000, "height": 500, "grip": True})    # no room to its right
+        self.panel.page({"kind": "size", "width": 1000, "height": 500})                  # let go: the screen's room
+        for grip in (False, "yes", 1, None):                                             # only the page's own word
+            self.panel.page({"kind": "size", "width": 950, "height": 500, "grip": grip})
+        self.assertEqual([(850, 500, "grip"), (900, 500, "grip"), (1000, 500)] + [(950, 500)] * 4,
+                         self.window.named("resize"))
 
     def test_a_size_no_layout_has_is_not_taken(self):
         # The page's layout, 100..4000 wide and 50..4000 tall: a page mid-load or gone wrong says 0, or

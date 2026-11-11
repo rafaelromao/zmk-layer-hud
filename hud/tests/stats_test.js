@@ -788,8 +788,9 @@ function main() {
     check("with no width of the config's, the panel is the keyboard's own: a pixel to its unit, and the stats block beside it",
           a.width() === own + COLUMN, `${a.width()} for a layout ${data.layout.width} wide`);
     check("and nothing is offered to go back to, until the grip has left a size", !a.root.classList.contains("resized"));
-    check("the grip is offered under a panel, bottom right on macOS",
-          a.root.classList.contains("sizable") && !a.root.classList.contains("grip-left"));
+    check("the grip is offered under a panel", a.root.classList.contains("sizable"));
+    const asked = page => page.posted.filter(m => m.kind === "size").pop();
+    check("a size that is not the grip's does not say it is", !("grip" in asked(a)), JSON.stringify(asked(a)));
     a.p.hud.setPref("side", "hidden");
     check("the stats block away, the panel is that much narrower and the keys the same size", a.width() === own, a.width());
     a.p.hud.setPref("side", "shown");
@@ -808,6 +809,7 @@ function main() {
     a.press({ screenX: 1000, clientX: 940 });
     a.p.dispatch("mousemove", { screenX: 1100, clientX: 1040 });
     check("dragged, the panel is as much wider as the pointer went", a.width() === own + COLUMN + 100, a.width());
+    check("and the panel is told the size is the grip's, to keep its left edge", asked(a).grip === true, JSON.stringify(asked(a)));
     a.p.dispatch("mousemove", { screenX: -2000, clientX: -3000 });
     check("and never narrower than its banner needs", a.width() === MIN + COLUMN, a.width());
     a.p.dispatch("mousemove", { screenX: 1150, clientX: 1090 });
@@ -816,6 +818,7 @@ function main() {
     const letGo = a.posted.filter(m => m.kind === "size").slice(before).map(m => m.width);
     check("let go, the panel is never the keyboard's own size for a moment on the way",
           letGo.length > 0 && letGo.every(w => w === own + COLUMN + 150), JSON.stringify(letGo));
+    check("and the last size said is no longer the grip's: the panel knows it was let go", !("grip" in asked(a)), JSON.stringify(asked(a)));
     check("let go, that is the size it keeps", a.width() === own + COLUMN + 150 && a.p.hud.state.prefs.width === own + 150 &&
           a.p.hud.state.prefs.fit === "manual", `${a.width()} ${JSON.stringify(a.p.hud.state.prefs)}`);
     check("and the host is told, to remember it", a.prefs().includes("width=" + (own + 150)) && a.prefs().includes("fit=manual"),
@@ -836,18 +839,25 @@ function main() {
     check("a width no panel has, or a fit that is not one, is ignored", a.width() === own + 150 && a.p.hud.state.prefs.fit === "manual",
           JSON.stringify(a.p.hud.state.prefs));
 
-    // The Linux panel keeps its top right corner: the grip is bottom left, and the pointer is read
-    // off the page -- the width is what puts the corner back under it.
+    // The Linux panel: the grip is bottom right there too. A layer surface is told only where the
+    // pointer is on itself, so the pointer is read off the page, whose left edge the panel keeps
+    // for a size the grip asks for -- the width is the one it had plus how far the pointer went.
     const l = under({ width: 0 }, "zmkhudsize");
-    check("the grip is bottom left on Linux", l.root.classList.contains("sizable") && l.root.classList.contains("grip-left"));
+    check("the grip is offered on Linux, in the same corner", l.root.classList.contains("sizable") && !l.root.classList.contains("grip-left"));
     l.p.window.innerWidth = l.width();
-    l.press({ clientX: 6, screenX: 0 });
-    l.p.dispatch("mousemove", { clientX: -94, screenX: 0 });
-    check("dragged left, the panel is as much wider", l.width() === own + COLUMN + 100, l.width());
-    l.p.window.innerWidth = l.width();              // the surface has caught up: its corner is under the pointer
-    l.p.dispatch("mousemove", { clientX: 6, screenX: 0 });
+    const corner = l.width() - 6;
+    l.press({ clientX: corner, screenX: 0 });
+    l.p.dispatch("mousemove", { clientX: corner + 100, screenX: 0 });
+    check("dragged right, the panel is as much wider", l.width() === own + COLUMN + 100, l.width());
+    check("and the panel is told the size is the grip's", asked(l).grip === true, JSON.stringify(asked(l)));
+    l.p.window.innerWidth = l.width();              // the surface has caught up: its left edge has not moved
+    l.p.dispatch("mousemove", { clientX: corner + 100, screenX: 0 });
     check("and the same once the surface has caught up with it", l.width() === own + COLUMN + 100, l.width());
+    l.p.dispatch("mousemove", { clientX: corner - 40, screenX: 0 });
+    check("dragged back left, it is narrower", l.width() === Math.max(MIN, own - 40) + COLUMN, l.width());
+    l.p.dispatch("mousemove", { clientX: corner + 100, screenX: 0 });
     l.p.dispatch("mouseup", {});
+    check("let go, the last size said is not the grip's", !("grip" in asked(l)), JSON.stringify(asked(l)));
     check("let go, it keeps that", l.p.hud.state.prefs.width === own + 100 && l.p.hud.state.prefs.fit === "manual",
           JSON.stringify(l.p.hud.state.prefs));
 

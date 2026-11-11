@@ -376,18 +376,32 @@ def main():
     view.connect("motion-notify-event", moved)
     view.connect("button-release-event", released)
 
-    def follow_page(width, height):
+    gripped = []        # not empty: the page's grip has moved the HUD's right edge, not yet saved
+
+    def follow_page(width, height, grip=False):
         """The HUD's surface as big as the page's layout -- its width is the keyboard's own, the
         config's hud.width or the one the page's grip left it at (hud.js panelWidth), its height
         the board's and the stats bar's -- and the strip just below it, as on macOS. The size is
-        checked first, and narrowed to the room there is (panelcore.Panel.resize)."""
+        checked first, and narrowed to the room there is (panelcore.Panel.resize).
+
+        The HUD is anchored by its right edge, so a new width moves its left one. Not for the page's
+        grip (grip): that is the bottom right corner, and it has to stay under the pointer, so the
+        right margin gives up what the width gains and the left edge stays where it is. Where that
+        leaves the HUD is saved once the grip is let go: the page then says its size without it."""
         try:
             w, h = int(width or size[0]), int(height or 0)
         except (ValueError, TypeError):
             return
+        if not grip and gripped:
+            gripped.clear()
+            save_position(*pos)
         if [w, h] == size:
             return
+        wider = w - size[0]
         size[:] = [w, h]
+        if grip and wider:
+            gripped.append(True)
+            move_to(pos[0], pos[1] - wider)
         hud.get_child().set_size_request(w, h)
         hud.resize(w, h)     # a layer surface is the window's size, smaller as well as larger
         keys.get_child().set_size_request(w, KEYS_H)
@@ -404,9 +418,10 @@ def main():
     # surfaces are how it is drawn and placed here.
     panel = panelcore.Panel(
         # room: from the HUD's right edge, the one it is anchored by and keeps, to its monitor's
-        # left. Never more by moving the HUD right: the grip (hud.js) reads the pointer off a
-        # surface that would then have moved under it.
-        panelcore.Window(show=show_window, front=to_front, resize=follow_page, room=lambda: geo.width - pos[1],
+        # left. For the page's grip it is the left edge that is kept (follow_page): from there to
+        # the monitor's right, which is the HUD's width and its right margin.
+        panelcore.Window(show=show_window, front=to_front, resize=follow_page,
+                         room=lambda grip=False: size[0] + pos[1] if grip else geo.width - pos[1],
                          no_drag=lambda rects: no_drag.__setitem__(slice(None), rects), open=open_url,
                          close=lambda: quit_host()),
         RUN, shown=not HIDDEN)

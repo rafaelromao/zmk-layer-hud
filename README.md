@@ -85,7 +85,7 @@ the keymap, `zmk-layer-hud sync` draws it again ([more](#taking-it-from-your-key
 
 The panel opens on the screen with keyboard focus (drag it anywhere; it remembers), with the
 keyboard drawn at its own size: a key as big as keymap-drawer draws it, or as big as fits when
-the screen is narrower than that. The grip in its bottom corner makes it any other size, and
+the screen is narrower than that. The grip in its bottom right corner makes it any other size, and
 once it has, a button in the banner goes back to the keyboard's own size and returns to yours;
 `hud.width` in the config sets the panel's own width in points instead. Within two
 seconds the status line disappears and the banner follows your keyboard. `zmk-layer-hud stop`
