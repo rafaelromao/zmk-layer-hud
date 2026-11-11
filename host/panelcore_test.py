@@ -16,12 +16,18 @@ import panelstate  # noqa: E402
 class FakeWindow:
     def __init__(self):
         self.calls = []
+        self.room = None            # how wide the HUD may be; None: the window cannot say
+        self.grip_room = None       # the same, for a size the page's grip asks for
 
     def port(self):
         def rec(name):
             return lambda *args: self.calls.append((name,) + args)
-        return panelcore.Window(show=rec("show"), front=rec("front"), resize=rec("resize"), no_drag=rec("no_drag"),
-                                open=rec("open"), close=rec("close"))
+
+        def resize(w, h, grip):     # a size the grip asked for is marked; any other is as it was
+            self.calls.append(("resize", w, h) + (("grip",) if grip else ()))
+        return panelcore.Window(show=rec("show"), front=rec("front"), resize=resize,
+                                room=lambda grip: self.grip_room if grip else self.room,
+                                no_drag=rec("no_drag"), open=rec("open"), close=rec("close"))
 
     def named(self, name):
         return [c[1:] for c in self.calls if c[0] == name]
@@ -68,6 +74,32 @@ class PageMessages(Base):
     def test_size_goes_to_the_window(self):
         self.panel.page({"kind": "size", "width": 600, "height": 420})
         self.assertEqual([(600, 420)], self.window.named("resize"))
+
+    def test_a_width_the_screen_has_no_room_for_is_narrowed(self):
+        # The page asks for its keyboard at full size (hud.js panelWidth); a screen narrower than
+        # that gets a HUD as wide as itself, and the page draws the board to fit.
+        self.window.room = 800
+        self.panel.page({"kind": "size", "width": 946, "height": 520})
+        self.panel.page({"kind": "size", "width": 700, "height": 420})      # fits: as asked
+        self.panel.page({"kind": "size", "height": 420})                    # the width it has: no room to ask
+        self.assertEqual([(800, 520), (700, 420), (None, 420)], self.window.named("resize"))
+        # Room that is no width for a HUD (a window with no screen) narrows nothing.
+        for room in (0, 40, -5, None, "wide", True):
+            self.window.room = room
+            self.panel.page({"kind": "size", "width": 946, "height": 520})
+        self.assertEqual([(946, 520)] * 6, self.window.named("resize")[3:])
+
+    def test_a_size_the_grip_asks_for_keeps_the_left_edge(self):
+        # The page's grip is the bottom right corner (hud.js): the window is told, to keep its left
+        # edge, and the room is the one to the right of that edge, not the screen's.
+        self.window.room, self.window.grip_room = 1200, 900
+        self.panel.page({"kind": "size", "width": 850, "height": 500, "grip": True})
+        self.panel.page({"kind": "size", "width": 1000, "height": 500, "grip": True})    # no room to its right
+        self.panel.page({"kind": "size", "width": 1000, "height": 500})                  # let go: the screen's room
+        for grip in (False, "yes", 1, None):                                             # only the page's own word
+            self.panel.page({"kind": "size", "width": 950, "height": 500, "grip": grip})
+        self.assertEqual([(850, 500, "grip"), (900, 500, "grip"), (1000, 500)] + [(950, 500)] * 4,
+                         self.window.named("resize"))
 
     def test_a_size_no_layout_has_is_not_taken(self):
         # The page's layout, 100..4000 wide and 50..4000 tall: a page mid-load or gone wrong says 0, or

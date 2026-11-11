@@ -208,6 +208,8 @@ class Settings(unittest.TestCase):
         msg = message({}, DOC)
         self.assertEqual(msg["hud"], km.HUD_DEFAULTS)
         self.assertEqual(msg["combo_term"], 50)
+        # No width of the config's: the page draws the keyboard at its own size (hud.js panelWidth).
+        self.assertEqual(0, msg["hud"]["width"])
 
     def test_hud_overrides_and_validation(self):
         msg = message({"hud": {"width": 700, "opacity": 40}, "combo_term_ms": 30}, DOC)

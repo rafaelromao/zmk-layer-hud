@@ -27,13 +27,15 @@ class Window:
 
         show(on)        on a change: the HUD drawn, or drawn as nothing and taking no clicks
         front()         asked to show: on top again, its surface back if the compositor dropped it
-        resize(w, h)    the page's size, checked; w None: the width it has
+        resize(w, h, grip)  the page's size, checked; w None: the width it has. grip: the page's grip
+                        is asking, and the window keeps its left edge where it is
+        room(grip)      how wide the HUD may be where it is, in the page's pixels; None: not known
         no_drag(rects)  where the page's controls are, checked: a press elsewhere moves the window
         open(url)       in the browser
         close()         the page's ✕
     """
 
-    NAMES = ("show", "front", "resize", "no_drag", "open", "close")
+    NAMES = ("show", "front", "resize", "room", "no_drag", "open", "close")
 
     def __init__(self, **calls):
         missing = [n for n in self.NAMES if n not in calls]
@@ -79,7 +81,7 @@ class Panel:
             return
         msg, kind = body, body.get("kind")
         if kind == "size":
-            self.resize(msg.get("width"), msg.get("height"))
+            self.resize(msg.get("width"), msg.get("height"), grip=msg.get("grip") is True)
         elif kind == "hide":            # the page's hide button
             self.set_shown(False)
         elif kind == "site":            # the stats column's heading: the landing page, in the browser
@@ -96,14 +98,24 @@ class Panel:
         elif self.said is not None:
             self.said(msg)
 
-    def resize(self, width, height):
+    def resize(self, width, height, grip=False):
         """The page's layout, 100..4000 wide (or the width it has: None or 0) and 50..4000 tall.
         Anything else is a page mid-load or gone wrong, and would shrink the panel to nothing or grow
-        it off every screen."""
+        it off every screen.
+
+        The page asks for the width its keyboard is drawn at full size (hud.js panelWidth), which a
+        small screen may not have: the panel is then as wide as there is room for, and the page
+        draws the board to fit what it got.
+
+        grip: the size is the one the page's grip is being dragged to. The grip is the HUD's bottom
+        right corner, so the window keeps its left edge, and the room is what is to the right of it."""
         def within(v, low):
             return isinstance(v, (int, float)) and not isinstance(v, bool) and low <= v <= SIZE_MAX
         if within(height, HEIGHT_MIN) and (width in (None, 0) or within(width, WIDTH_MIN)):
-            self.window.resize(width, height)
+            room = self.window.room(grip) if width else None
+            if within(room, WIDTH_MIN) and room < width:
+                width = room
+            self.window.resize(width, height, grip)
 
     def set_wpm(self, wpm):
         if isinstance(wpm, int) and wpm != self.wpm:

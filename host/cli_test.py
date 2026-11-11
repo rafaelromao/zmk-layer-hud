@@ -230,7 +230,8 @@ FAKE_PANEL = textwrap.dedent('''
     import panelcore, panelstate
     d = sys.argv[2]
     nothing = lambda *a: None
-    window = panelcore.Window(show=nothing, front=nothing, resize=nothing, no_drag=nothing, open=nothing, close=nothing)
+    window = panelcore.Window(show=nothing, front=nothing, resize=nothing, room=nothing, no_drag=nothing, open=nothing,
+                              close=nothing)
     panel = panelcore.Panel(window, d)
     signal.signal(panelstate.SIGNAL, lambda *_: panel.wake())
     panel.start()

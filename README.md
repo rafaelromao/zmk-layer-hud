@@ -83,7 +83,11 @@ network. Already keep a keymap-drawer YAML, glyphs and key sizes included? Name 
 the config first (`zmk-layer-hud config edit`), and import draws that instead. After a change to
 the keymap, `zmk-layer-hud sync` draws it again ([more](#taking-it-from-your-keyboards-repo)).
 
-The panel opens on the screen with keyboard focus (drag it anywhere; it remembers). Within two
+The panel opens on the screen with keyboard focus (drag it anywhere; it remembers), with the
+keyboard drawn at its own size: a key as big as keymap-drawer draws it, or as big as fits when
+the screen is narrower than that. The grip in its bottom right corner makes it any other size, and
+once it has, a button in the banner goes back to the keyboard's own size and returns to yours;
+`hud.width` in the config sets the panel's own width in points instead. Within two
 seconds the status line disappears and the banner follows your keyboard. `zmk-layer-hud stop`
 closes it and `zmk-layer-hud log` tails the logs — and when it does not come up,
 **`zmk-layer-hud doctor`** checks the interpreter, the packages, the config, the permissions and
@@ -255,7 +259,7 @@ the HUD itself never reads them:
 | `combos` | layer coverage for a combo the import gets wrong |
 | `keyboard`, `serial`, `ble` | pick one of several ZMK boards; name its serial port; its BLE address |
 | `title` | corner text (default: the name of the keyboard that is typing) |
-| `hud`, `feed` | every size and timing: panel width and opacity, flash and pill durations, combo slack, how long a key's glow takes to fade, dead-key window … |
+| `hud`, `feed` | every size and timing: panel width (`0`, the default: the keyboard's own size) and opacity, flash and pill durations, combo slack, how long a key's glow takes to fade, dead-key window … |
 | `stats` | which boxes the [stats block](#how-it-works) shows: `true` or `false` for each |
 | `fingers` | the finger that strikes each drawer key (`lp` … `li`, `lt`, `rt`, `ri` … `rp`), when the HUD cannot tell from the layout |
 | `extras` | inference hints, used only with firmware that reports no positions |

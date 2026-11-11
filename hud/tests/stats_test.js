@@ -765,6 +765,112 @@ function main() {
           JSON.stringify(posted.map(m => m.kind)));
   }
 
+  // ---------- the panel's width: the keyboard's own, the config's, the grip's ----------
+  {
+    // A page under a panel (the macOS bridge unless said), which is told the size and the choices.
+    const under = (hudCfg, handler = "zmkhud") => {
+      const p = loadPage(), posted = [];
+      p.window.webkit = { messageHandlers: { [handler]: { postMessage: s => {
+        const m = JSON.parse(s); if (m.kind === "size" || m.kind === "pref") posted.push(m);
+      } } } };
+      p.hud.load(Object.assign({}, data, { hud: Object.assign({}, data.hud, hudCfg) }));
+      p.hud.setLayers([]);
+      const root = p.document.documentElement, grip = p.document.getElementById("grip"), fit = p.document.getElementById("fit");
+      const press = ev => grip.listeners.get("mousedown")[0](Object.assign({ button: 0, preventDefault() {} }, ev));
+      return { p, posted, root, fit, press, width: () => posted.filter(m => m.kind === "size").pop().width,
+               prefs: () => posted.filter(m => m.kind === "pref").map(m => m.name + "=" + m.value) };
+    };
+    // The tests' DOM lays nothing out, so what #hud puts around the board is the page's fallback.
+    const AROUND = 30, COLUMN = 196, MIN = 400;
+    const own = Math.max(MIN, Math.round(data.layout.width) + AROUND);
+
+    const a = under({ width: 0 });
+    check("with no width of the config's, the panel is the keyboard's own: a pixel to its unit, and the stats block beside it",
+          a.width() === own + COLUMN, `${a.width()} for a layout ${data.layout.width} wide`);
+    check("and nothing is offered to go back to, until the grip has left a size", !a.root.classList.contains("resized"));
+    check("the grip is offered under a panel", a.root.classList.contains("sizable"));
+    const asked = page => page.posted.filter(m => m.kind === "size").pop();
+    check("a size that is not the grip's does not say it is", !("grip" in asked(a)), JSON.stringify(asked(a)));
+    a.p.hud.setPref("side", "hidden");
+    check("the stats block away, the panel is that much narrower and the keys the same size", a.width() === own, a.width());
+    a.p.hud.setPref("side", "shown");
+
+    const c = under({ width: 700 });
+    check("the config's hud.width is the panel's own width instead", c.width() === 700 + COLUMN, c.width());
+
+    // The grip, on macOS: the pointer read off the screen, the window as wide as it was plus how far it went.
+    a.p.window.innerWidth = a.width();
+    const sizes = () => a.posted.filter(m => m.kind === "size").length;
+    let before = sizes();
+    a.press({ screenX: 1000, clientX: 940 });
+    a.p.dispatch("mouseup", {});
+    check("a press on the grip that goes nowhere changes nothing", sizes() === before && a.prefs().length === 2 &&
+          !a.root.classList.contains("resized"), JSON.stringify(a.prefs()));
+    a.press({ screenX: 1000, clientX: 940 });
+    a.p.dispatch("mousemove", { screenX: 1100, clientX: 1040 });
+    check("dragged, the panel is as much wider as the pointer went", a.width() === own + COLUMN + 100, a.width());
+    check("and the panel is told the size is the grip's, to keep its left edge", asked(a).grip === true, JSON.stringify(asked(a)));
+    a.p.dispatch("mousemove", { screenX: -2000, clientX: -3000 });
+    check("and never narrower than its banner needs", a.width() === MIN + COLUMN, a.width());
+    a.p.dispatch("mousemove", { screenX: 1150, clientX: 1090 });
+    before = sizes();
+    a.p.dispatch("mouseup", {});
+    const letGo = a.posted.filter(m => m.kind === "size").slice(before).map(m => m.width);
+    check("let go, the panel is never the keyboard's own size for a moment on the way",
+          letGo.length > 0 && letGo.every(w => w === own + COLUMN + 150), JSON.stringify(letGo));
+    check("and the last size said is no longer the grip's: the panel knows it was let go", !("grip" in asked(a)), JSON.stringify(asked(a)));
+    check("let go, that is the size it keeps", a.width() === own + COLUMN + 150 && a.p.hud.state.prefs.width === own + 150 &&
+          a.p.hud.state.prefs.fit === "manual", `${a.width()} ${JSON.stringify(a.p.hud.state.prefs)}`);
+    check("and the host is told, to remember it", a.prefs().includes("width=" + (own + 150)) && a.prefs().includes("fit=manual"),
+          JSON.stringify(a.prefs()));
+    before = sizes();
+    a.p.dispatch("mousemove", { screenX: 1500, clientX: 1440 });
+    check("a pointer moving after it was let go sizes nothing", sizes() === before);
+    check("the size button is there, and lit", a.root.classList.contains("resized") && a.fit.getAttribute("aria-pressed") === "true" &&
+          a.fit.title === "back to the keyboard's own size", a.fit.title);
+    a.fit.click();
+    check("a click on it is the keyboard's own size again", a.width() === own + COLUMN && a.fit.getAttribute("aria-pressed") === "false" &&
+          a.fit.title === "back to the size you gave it", `${a.width()} ${a.fit.title}`);
+    a.fit.click();
+    check("and another, the size the grip left", a.width() === own + COLUMN + 150, a.width());
+    a.p.hud.setPref("side", "hidden");
+    check("which is the panel's, not the stats block's", a.width() === own + 150, a.width());
+    a.p.hud.setPref("width", 120); a.p.hud.setPref("width", 812.5); a.p.hud.setPref("fit", "wide");
+    check("a width no panel has, or a fit that is not one, is ignored", a.width() === own + 150 && a.p.hud.state.prefs.fit === "manual",
+          JSON.stringify(a.p.hud.state.prefs));
+
+    // The Linux panel: the grip is bottom right there too. A layer surface is told only where the
+    // pointer is on itself, so the pointer is read off the page, whose left edge the panel keeps
+    // for a size the grip asks for -- the width is the one it had plus how far the pointer went.
+    const l = under({ width: 0 }, "zmkhudsize");
+    check("the grip is offered on Linux, in the same corner", l.root.classList.contains("sizable") && !l.root.classList.contains("grip-left"));
+    l.p.window.innerWidth = l.width();
+    const corner = l.width() - 6;
+    l.press({ clientX: corner, screenX: 0 });
+    l.p.dispatch("mousemove", { clientX: corner + 100, screenX: 0 });
+    check("dragged right, the panel is as much wider", l.width() === own + COLUMN + 100, l.width());
+    check("and the panel is told the size is the grip's", asked(l).grip === true, JSON.stringify(asked(l)));
+    l.p.window.innerWidth = l.width();              // the surface has caught up: its left edge has not moved
+    l.p.dispatch("mousemove", { clientX: corner + 100, screenX: 0 });
+    check("and the same once the surface has caught up with it", l.width() === own + COLUMN + 100, l.width());
+    l.p.dispatch("mousemove", { clientX: corner - 40, screenX: 0 });
+    check("dragged back left, it is narrower", l.width() === Math.max(MIN, own - 40) + COLUMN, l.width());
+    l.p.dispatch("mousemove", { clientX: corner + 100, screenX: 0 });
+    l.p.dispatch("mouseup", {});
+    check("let go, the last size said is not the grip's", !("grip" in asked(l)), JSON.stringify(asked(l)));
+    check("let go, it keeps that", l.p.hud.state.prefs.width === own + 100 && l.p.hud.state.prefs.fit === "manual",
+          JSON.stringify(l.p.hud.state.prefs));
+
+    // No panel: a browser draws the board as wide as its window, and there is nothing to size.
+    const b = fresh({ width: 0 });
+    const bgrip = b.document.getElementById("grip");
+    bgrip.listeners.get("mousedown")[0]({ button: 0, screenX: 10, clientX: 10, preventDefault() {} });
+    b.dispatch("mousemove", { screenX: 200, clientX: 200 });
+    b.dispatch("mouseup", {});
+    check("a page with no panel offers no grip, and a press where it would be does nothing",
+          !b.document.documentElement.classList.contains("sizable") && b.hud.state.prefs.width === undefined);
+  }
+
   // ---------- the hide button ----------
   {
     // Offered where a panel can hide the HUD -- either panel's handler -- and it asks that panel.

@@ -76,7 +76,7 @@ DEFAULT_CONFIG = os.path.expanduser("~/.config/zmk-layer-hud/config.yaml")
 
 # `hud:` section: every timing and size the page uses, in ms unless said otherwise.
 HUD_DEFAULTS = {
-    "width": 598,              # panel width in points; the height follows the layout
+    "width": 0,                # panel width in points; 0: the keyboard's own, its keys at full size, or its screen's if that is narrower. The height follows the layout
     "opacity": 86,             # panel background opacity, 0 (clear) to 100 (solid)
     "press_ms": 320,           # how long a key stays lit after a press when no release is reported (no positions)
     "release_ms": 60,          # how long a key stays lit after its reported release

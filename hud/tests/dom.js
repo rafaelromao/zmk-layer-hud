@@ -236,7 +236,7 @@ function makeStyle() {
 
 // The ids index.html defines. Everything hud.js looks up with $() has to be here, or it silently
 // renders into nothing and every assertion passes for the wrong reason.
-const PAGE_IDS = ["frame", "hud", "layer", "layerName", "layerSub", "side", "hide", "close", "board", "stats", "statsHead", "status", "feed", "title", "keys"];
+const PAGE_IDS = ["frame", "hud", "layer", "layerName", "layerSub", "fit", "side", "hide", "close", "board", "stats", "statsHead", "grip", "status", "feed", "title", "keys"];
 // ...each with the attributes index.html gives it: the heading's href, which ?embed takes away.
 const PAGE_HTML = fs.readFileSync(path.join(HUD_DIR, "index.html"), "utf8");
 // Every script index.html loads, in its order, as site/build.py reads them (hud_files).

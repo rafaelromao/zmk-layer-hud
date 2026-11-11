@@ -277,7 +277,8 @@ class Host:
         # window is how it is drawn and placed here.
         self.core = panelcore.Panel(
             panelcore.Window(show=self.show_window, front=lambda: self.panel.orderFrontRegardless(),
-                             resize=self.resize, no_drag=self.set_no_drag, open=self.open_url, close=self.close),
+                             resize=self.resize, room=self.room, no_drag=self.set_no_drag, open=self.open_url,
+                             close=self.close),
             RUN, said=self.said, shown=not HIDDEN)
 
         frame = initial_frame()
@@ -342,7 +343,8 @@ class Host:
         hub.on_inject, hub.sessions = self.feed.resync, self.feed.sessions
         self.socket.start()
         # Width from the config (hud.width), whether or not its keymap converts; the height follows
-        # the page (see resize).
+        # the page (see resize). Left out or 0, the width is the page's to say too: its keyboard's
+        # own (hud.js panelWidth).
         width = (self.feed.cfg.get("hud") or {}).get("width")
         if width:
             self.resize(int(width), None)
@@ -392,15 +394,32 @@ class Host:
             log(f"hidden: the page is {value}; the window's occlusion state {int(self.panel.occlusionState())}")
         self.web.evaluateJavaScript_completionHandler_("document.visibilityState", said)
 
-    def resize(self, width, height):
-        """The page knows how tall the layout is; keep the top-left corner where the user put it."""
+    def visible(self):
+        """The part of the HUD's screen that is its to use: the menu bar and the Dock apart."""
+        return (self.panel.screen() or focused_screen()).visibleFrame()
+
+    def room(self, grip=False):
+        """How wide the HUD may be: its screen (panelcore.Panel.resize), for the page's grip as for
+        any other size, since the panel steps left for what does not fit."""
+        return float(self.visible().size.width)
+
+    def resize(self, width, height, grip=False):
+        """The page knows how tall the layout is, and how wide the keyboard is drawn; keep the
+        top-left corner where the user put it, which is what the page's grip wants too. A HUD grown
+        wider than the room to its right steps left by what would not fit: it starts in its
+        screen's top right corner, where any growth at all would otherwise go off the screen."""
         f = self.panel.frame()
         w = float(width or f.size.width)
         h = float(height or f.size.height)
         if abs(w - f.size.width) < 1 and abs(h - f.size.height) < 1:
             return
-        top = f.origin.y + f.size.height
-        self.panel.setFrame_display_(NSMakeRect(f.origin.x, top - h, w, h), True)
+        top, x = f.origin.y + f.size.height, f.origin.x
+        if w > f.size.width:
+            vf = self.visible()
+            over = x + w - (vf.origin.x + vf.size.width)
+            if over > 0:
+                x = max(vf.origin.x, x - over)
+        self.panel.setFrame_display_(NSMakeRect(x, top - h, w, h), True)
         self.web.setFrame_(((0, 0), (w, h)))
 
     # What a page loaded afresh (a reload from the page's menu) has to be told again: the latest of

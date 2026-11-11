@@ -15,7 +15,7 @@ drawer_config: ~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawe
 
 # Every size and timing the HUD uses (ms unless noted). Shown with the defaults; drop any line.
 hud:
-  width: 598                  # panel width in points; the height follows the layout
+  width: 0                    # panel width in points; 0: the keyboard's own size (or the screen's, if narrower). The height follows the layout
   opacity: 86                 # panel background, 0 (clear) to 100 (solid)
   press_ms: 100               # (no positions) a key stays lit this long after a press
   release_ms: 60              # a key stays lit this long after its reported release
