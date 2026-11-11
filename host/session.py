@@ -48,6 +48,8 @@ PREFS = {
     "theme": ("light", "dark"),       # the keys: light, keymap-drawer's; or dark, the heat in indigo
     "side": ("shown", "hidden"),      # the stats block beside the panel
     "opacity": range(0, 101),         # the panels' background, 0 (clear) to 100 (solid): the slider
+    "width": range(400, 4001),        # the panel's width as the page's grip left it (hud.js WIDTH_MIN, WIDTH_MAX)
+    "fit": ("auto", "manual"),        # the keyboard's own size, or that one: the banner's size button
 }
 
 

@@ -284,7 +284,7 @@
 "sequence_max": 6,
 "sequence_ms": 200,
 "stats_bar": 1,
-"width": 598,
+"width": 0,
 "wpm_idle_ms": 3000,
 "wpm_window_ms": 10000
 },

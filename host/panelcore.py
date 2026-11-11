@@ -28,12 +28,13 @@ class Window:
         show(on)        on a change: the HUD drawn, or drawn as nothing and taking no clicks
         front()         asked to show: on top again, its surface back if the compositor dropped it
         resize(w, h)    the page's size, checked; w None: the width it has
+        room()          how wide the HUD may be where it is, in the page's pixels; None: not known
         no_drag(rects)  where the page's controls are, checked: a press elsewhere moves the window
         open(url)       in the browser
         close()         the page's ✕
     """
 
-    NAMES = ("show", "front", "resize", "no_drag", "open", "close")
+    NAMES = ("show", "front", "resize", "room", "no_drag", "open", "close")
 
     def __init__(self, **calls):
         missing = [n for n in self.NAMES if n not in calls]
@@ -99,10 +100,17 @@ class Panel:
     def resize(self, width, height):
         """The page's layout, 100..4000 wide (or the width it has: None or 0) and 50..4000 tall.
         Anything else is a page mid-load or gone wrong, and would shrink the panel to nothing or grow
-        it off every screen."""
+        it off every screen.
+
+        The page asks for the width its keyboard is drawn at full size (hud.js panelWidth), which a
+        small screen may not have: the panel is then as wide as there is room for, and the page
+        draws the board to fit what it got."""
         def within(v, low):
             return isinstance(v, (int, float)) and not isinstance(v, bool) and low <= v <= SIZE_MAX
         if within(height, HEIGHT_MIN) and (width in (None, 0) or within(width, WIDTH_MIN)):
+            room = self.window.room() if width else None
+            if within(room, WIDTH_MIN) and room < width:
+                width = room
             self.window.resize(width, height)
 
     def set_wpm(self, wpm):

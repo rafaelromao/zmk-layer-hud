@@ -82,6 +82,7 @@
     heatTimer: null,
     heatMode: "live",         // what the keys glow with: live | session | physical | speed | off
     prefs: {},                // what the viewer chose (setPref): theme light | dark, side shown | hidden
+    sizing: null,             // the panel's width while the grip is dragged (panelWidth)
     secure: false,            // secure input: a secret is being typed, and nothing of it shows
     watched: null,            // what the feed says sees a secret being typed ([] = nothing); null until told
     demo: false,              // a GIF still (&demo=N): drawn as it always was, no heat, no counts
@@ -447,7 +448,7 @@
     // slider's whole box, not just its track, so a press a little off the thumb works.
     let rects = [];
     try {
-      const controls = [$("side"), $("hide"), $("close"), $("statsHead"), bar.layer && bar.layer.pick]
+      const controls = [$("fit"), $("side"), $("hide"), $("close"), $("grip"), $("statsHead"), bar.layer && bar.layer.pick]
         .concat(["heatmap", "theme", "opacity"].map(n => bar[n] && bar[n].chip));
       rects = controls.filter(Boolean).map(e => e.getBoundingClientRect())
         .filter(r => r.width > 0 && r.height > 0)
@@ -459,9 +460,29 @@
     handler.postMessage(JSON.stringify({ kind: "nodrag", v: 1, rects }));
   }
 
+  // The panel's width, the stats block apart. The one the grip left it at, while the viewer keeps
+  // to it (the banner's size button, prefs.fit); else the config's hud.width; else the keyboard's
+  // own: 1 px to keymap-drawer's unit, the size its keys and legends are drawn for, where a small
+  // legend is still text and not a smudge. A panel wider than its screen is narrowed by the panel
+  // (host/panelcore.py Panel.resize), and the board fills whatever it is given (buildBoard).
+  function ownWidth() {
+    const said = Number(state.data.hud && state.data.hud.width);
+    if (said > 0) return said;
+    // What #hud puts around the board: its padding and its border (hud.css).
+    let around = NaN;
+    try { around = $("hud").offsetWidth - $("board").clientWidth; } catch (e) { /* no layout (the tests' DOM) */ }
+    if (!(around >= 0 && around < 200)) around = 30;
+    return Math.max(WIDTH_MIN, Math.round(state.data.layout.width) + around);
+  }
+  function panelWidth() {
+    if (state.sizing != null) return state.sizing;      // the grip, while it is dragged
+    return manual() ? state.prefs.width : ownWidth();
+  }
+  // The stats block's share of the page's width, when it is out beside the panel.
+  const sideWidth = () => (bar.host && !bar.host.classList.contains("off") && sideShown() ? STATS_COLUMN : 0);
+
   function postSize() {
-    let width = (state.data && state.data.hud && state.data.hud.width) || null;
-    if (width && bar.host && !bar.host.classList.contains("off") && sideShown()) width += STATS_COLUMN;
+    const width = state.data ? panelWidth() + sideWidth() : null;
     const height = Math.ceil(document.body.scrollHeight);
     // The macOS panel reads it on its bridge. The Linux panel has a handler for nothing else
     // (host/linux/panel.py), named apart so that the page never takes it for the bridge a
@@ -471,6 +492,10 @@
     }
     // A panel that can hide the HUD is one that has one of these: offer the button there only.
     document.documentElement.classList.toggle("hideable", !!panelHandler());
+    // And one that sizes itself from the page is one the page can size: the grip, there only, in
+    // the corner the panel grows from (gripLeft).
+    document.documentElement.classList.toggle("sizable", !!panelHandler());
+    document.documentElement.classList.toggle("grip-left", gripLeft());
     postNoDrag();
   }
 
@@ -644,7 +669,14 @@
     theme: v => v === "light" || v === "dark",
     side: v => v === "shown" || v === "hidden",
     opacity: v => Number.isInteger(v) && v >= 0 && v <= 100,   // the slider (host/session.py PREFS)
+    width: v => Number.isInteger(v) && v >= WIDTH_MIN && v <= WIDTH_MAX,   // the panel's, as the grip left it
+    fit: v => v === "auto" || v === "manual",                  // the keyboard's own size, or that one
   };
+  // How narrow and how wide a panel may be made: under 400 the banner's buttons run into the layer's
+  // name, and with the stats block out the page would be narrow enough to stack it (hud.css @media).
+  const WIDTH_MIN = 400, WIDTH_MAX = 4000;
+  // Whether the panel is the size the grip left it at, rather than its own (panelWidth).
+  const manual = () => state.prefs.fit === "manual" && PREFS.width(state.prefs.width);
   const PREFS_KEY = "zmkhud.prefs";
   try { Object.assign(state.prefs, JSON.parse(localStorage.getItem(PREFS_KEY) || "{}")); } catch (e) { /* no storage */ }
   const theme = () => state.prefs.theme || (T("dark") > 0 ? "dark" : "light");
@@ -668,6 +700,15 @@
       const say = sideShown() ? "hide the stats" : "show the stats";
       if (side.title !== say) { side.title = say; side.setAttribute("aria-label", say); }
       side.setAttribute("aria-pressed", String(sideShown()));
+    }
+    // The size button is there once the grip has left a size to go back to (hud.css html.resized).
+    const sized = PREFS.width(state.prefs.width), root = document.documentElement;
+    if (root.classList.contains("resized") !== sized) root.classList.toggle("resized", sized);
+    const fit = $("fit");
+    if (fit) {
+      const say = manual() ? "back to the keyboard's own size" : "back to the size you gave it";
+      if (fit.title !== say) { fit.title = say; fit.setAttribute("aria-label", say); }
+      fit.setAttribute("aria-pressed", String(manual()));
     }
   }
   function setPref(name, value, fromHost) {
@@ -1483,6 +1524,50 @@
     }
     return null;
   }
+
+  // The size button, before the chevron: the keyboard's own size, or the one the grip left.
+  const fitBtn = $("fit");
+  if (fitBtn) fitBtn.addEventListener("click", () => setPref("fit", manual() ? "auto" : "manual"));
+
+  // The grip, in the frame's corner: dragged, the panel is as wide as the pointer says and the
+  // board fills it, the height following as it always does. The page only says the width it wants
+  // (postSize), once a frame; the panel resizes, and that redraws the board (the resize listener).
+  // The macOS panel keeps its top left corner still, so the grip is bottom right and the pointer is
+  // read off the screen: the panel steps left when it would run off its screen, which would move
+  // the page under a pointer read off the page. The Linux panel keeps its top right, anchored
+  // there, and a layer surface is told only where the pointer is on itself: so the grip is bottom
+  // left, and the width is what brings that corner back under the pointer -- the same answer
+  // before the surface has caught up as after.
+  function gripLeft() { return !bridge() && !!panelHandler(); }
+  const grip = $("grip");
+  if (grip) grip.addEventListener("mousedown", e => {
+    if (e.button || !state.data || !panelHandler()) return;
+    e.preventDefault();
+    const left = gripLeft(), from = left ? e.clientX : e.screenX, was = window.innerWidth;
+    let due = false;
+    const move = ev => {
+      const all = left ? window.innerWidth - (ev.clientX - from) : was + (ev.screenX - from);
+      if (!Number.isFinite(all)) return;
+      state.sizing = Math.max(WIDTH_MIN, Math.min(WIDTH_MAX, Math.round(all - sideWidth())));
+      if (due) return;
+      due = true;
+      requestAnimationFrame(() => { due = false; if (state.sizing != null) postSize(); });
+    };
+    const up = () => {
+      window.removeEventListener("mousemove", move);
+      window.removeEventListener("mouseup", up);
+      const width = state.sizing;
+      if (width == null) return;        // a press that went nowhere changes nothing
+      // Kept as the dragged size until both are set: each says the panel's size again, and
+      // between the two it would be the keyboard's own for a moment.
+      setPref("width", width);
+      setPref("fit", "manual");
+      state.sizing = null;
+      postSize();
+    };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+  });
 
   // Hide: the panel takes itself off screen, and this page goes on counting as before.
   const hideBtn = $("hide");

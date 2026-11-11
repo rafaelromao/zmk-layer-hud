@@ -377,9 +377,10 @@ def main():
     view.connect("button-release-event", released)
 
     def follow_page(width, height):
-        """The HUD's surface as big as the page's layout -- its width is the config's hud.width,
-        its height the board's and the stats bar's -- and the strip just below it, as on macOS. The
-        size is checked first (panelcore.Panel.resize)."""
+        """The HUD's surface as big as the page's layout -- its width is the keyboard's own, the
+        config's hud.width or the one the page's grip left it at (hud.js panelWidth), its height
+        the board's and the stats bar's -- and the strip just below it, as on macOS. The size is
+        checked first, and narrowed to the room there is (panelcore.Panel.resize)."""
         try:
             w, h = int(width or size[0]), int(height or 0)
         except (ValueError, TypeError):
@@ -402,7 +403,10 @@ def main():
     # The panel (host/panelcore.py): what the page says and the CLI asks, and panel.json; these
     # surfaces are how it is drawn and placed here.
     panel = panelcore.Panel(
-        panelcore.Window(show=show_window, front=to_front, resize=follow_page,
+        # room: from the HUD's right edge, the one it is anchored by and keeps, to its monitor's
+        # left. Never more by moving the HUD right: the grip (hud.js) reads the pointer off a
+        # surface that would then have moved under it.
+        panelcore.Window(show=show_window, front=to_front, resize=follow_page, room=lambda: geo.width - pos[1],
                          no_drag=lambda rects: no_drag.__setitem__(slice(None), rects), open=open_url,
                          close=lambda: quit_host()),
         RUN, shown=not HIDDEN)

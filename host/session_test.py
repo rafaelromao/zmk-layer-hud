@@ -227,6 +227,14 @@ class Commands(Base):
         for bad in (101, -1, True, "40"):
             with self.assertRaises(session.SessionError):
                 session.set_pref(self.dir, "opacity", bad)
+        # The size the page's grip left the panel at, and whether the panel is at it (hud.js).
+        session.set_pref(self.dir, "width", 820)
+        session.set_pref(self.dir, "fit", "manual")
+        st = session.status(self.dir)[0]
+        self.assertEqual((820, "manual"), (st["width"], st["fit"]))
+        for name, bad in (("width", 399), ("width", 4001), ("width", 820.5), ("width", True), ("fit", "wide"), ("fit", 1)):
+            with self.assertRaises(session.SessionError):
+                session.set_pref(self.dir, name, bad)
 
 
 class Stats(Base):
