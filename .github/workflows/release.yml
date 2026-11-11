@@ -8,16 +8,26 @@ on:
   push:
     branches: [main]
 
+# The job token never writes: the App does (repository variable ZMK_LAYER_HUD_APP_ID, secret
+# ZMK_LAYER_HUD_APP_PRIVATE_KEY). A pull request opened with the job token starts no workflow, so
+# `ci` would never check the release pull request, and opening one with it also needs the
+# repository's Actions settings changed. The App asks for contents and pull requests, read and
+# write. The same shape as layerbench's release-please.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/create-github-app-token@v2
+        id: app
+        with:
+          app-id: ${{ vars.ZMK_LAYER_HUD_APP_ID }}
+          private-key: ${{ secrets.ZMK_LAYER_HUD_APP_PRIVATE_KEY }}
       - uses: googleapis/release-please-action@v5
         with:
+          token: ${{ steps.app.outputs.token }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
