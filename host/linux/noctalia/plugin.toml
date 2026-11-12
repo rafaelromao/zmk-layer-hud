@@ -1,0 +1,13 @@
+id          = "zmk/layer-hud"
+name        = "ZMK Layer HUD"
+version     = "1.0.0"
+plugin_api  = 3
+author      = "Rafael Romão"
+license     = "MIT"
+icon        = "keyboard"
+description = "Shows or hides the ZMK layer HUD from the bar, with its live, average or top WPM"
+tags        = ["bar", "keyboard", "zmk"]
+
+[[widget]]
+id    = "hud"
+entry = "widget.luau"

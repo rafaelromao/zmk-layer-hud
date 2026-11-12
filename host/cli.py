@@ -55,6 +55,9 @@ COMMIT = re.compile(r"^[0-9a-f]{40}$")
 # The macOS login item's bundle id and label.
 APP_ID = "io.github.rafaelromao.zmk-layer-hud"
 OMARCHY_PLUGINS = os.path.expanduser("~/.config/omarchy/plugins")
+# Noctalia's own XDG dirs: where local plugins are dropped and where the shell keeps settings.toml.
+NOCTALIA_PLUGINS = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
+                                "noctalia", "plugins")
 # Starting at login: a LaunchAgent and the small app it runs on macOS, an XDG autostart entry on Linux.
 LAUNCH_AGENT = os.path.expanduser(f"~/Library/LaunchAgents/{APP_ID}.plist")
 LOGIN_APP = os.path.expanduser("~/Library/Application Support/zmk-layer-hud/ZMK Layer HUD.app")
@@ -1145,23 +1148,28 @@ def rescan_plugins():
     return bool(shutil.which("qs")) and omarchy("qs", "ipc", "-n", "-p", shell, "call", "--", "shell", "rescanPlugins")
 
 
+def bake_marks(text):
+    """The command, the state directory and what a start runs through, written into a bar widget:
+    neither shell starts commands through a login shell, so neither PATH nor XDG_STATE_HOME can be
+    counted on. Escaped for a string literal, which both widgets' languages take the same way."""
+    for mark, value in (("__ZMK_LAYER_HUD_COMMAND__", os.path.join(ROOT, "bin", "zmk-layer-hud")),
+                        ("__ZMK_LAYER_HUD_STATE__", STATE),
+                        # A HUD the bar starts would live in the shell's cgroup, and go when it restarts.
+                        ("__ZMK_LAYER_HUD_START_WITH__", "uwsm-app --" if shutil.which("uwsm-app") else "")):
+        text = text.replace(mark, value.replace("\\", "\\\\").replace('"', '\\"'))
+    return text
+
+
 def install_plugin():
     """host/linux/omarchy copied where Omarchy looks for plugins, as regular files (its validator
-    refuses links), with the command and the state directory written into the widget: the shell
-    does not start commands through a login shell, so neither PATH nor XDG_STATE_HOME can be
-    counted on."""
+    refuses links), with the marks above written into the widget."""
     dest = plugin_dir()
     staged = dest + ".new"
     shutil.rmtree(staged, ignore_errors=True)
     shutil.copytree(os.path.join(ROOT, "host", "linux", "omarchy"), staged)
     widget = os.path.join(staged, "BarWidget.qml")
     with open(widget, encoding="utf-8") as f:
-        qml = f.read()
-    for mark, value in (("__ZMK_LAYER_HUD_COMMAND__", os.path.join(ROOT, "bin", "zmk-layer-hud")),
-                        ("__ZMK_LAYER_HUD_STATE__", STATE),
-                        # A HUD the bar starts would live in the shell's cgroup, and go when it restarts.
-                        ("__ZMK_LAYER_HUD_START_WITH__", "uwsm-app --" if shutil.which("uwsm-app") else "")):
-        qml = qml.replace(mark, value.replace("\\", "\\\\").replace('"', '\\"'))
+        qml = bake_marks(f.read())
     with open(widget, "w", encoding="utf-8") as f:
         f.write(qml)
     shutil.rmtree(dest, ignore_errors=True)
@@ -1350,47 +1358,223 @@ def cmd_menubar(args):
         raise Fail(f"`menubar {args.action}` takes nothing after it; `menubar wpm {args.which}` picks the WPM")
     if platform.system() == "Darwin":
         return macos_menubar(args.action)
-    installed = os.path.isfile(os.path.join(plugin_dir(), "manifest.json"))
+    omarchy_here = os.path.isfile(SHELL_JSON) or bool(shutil.which("omarchy-shell"))
+    omarchy_installed = os.path.isfile(os.path.join(plugin_dir(), "manifest.json"))
+    noctalia_here = bool(shutil.which("noctalia"))
+    noctalia_plugin_there = noctalia_installed()      # not `noctalia_installed`: that is the function
     if args.action == "status":
-        try:
-            with open(SHELL_JSON, encoding="utf-8") as f:
-                placed = bar_has(json.load(f), OMARCHY_ID)
-        except (OSError, ValueError):
-            placed = False
-        print("the Omarchy bar plugin is " + ("not installed (zmk-layer-hud menubar enable)" if not installed else
-                                               f"in {plugin_dir()}" + ("" if placed else f", but not in the bar of {SHELL_JSON}")))
+        if omarchy_here or omarchy_installed:
+            try:
+                with open(SHELL_JSON, encoding="utf-8") as f:
+                    placed = bar_has(json.load(f), OMARCHY_ID)
+            except (OSError, ValueError):
+                placed = False
+            print("the Omarchy bar plugin is " + ("not installed (zmk-layer-hud menubar enable)" if not omarchy_installed else
+                                                   f"in {plugin_dir()}" + ("" if placed else f", but not in the bar of {SHELL_JSON}")))
+        if noctalia_here or noctalia_plugin_there:
+            print(noctalia_status())
+        if not (omarchy_here or omarchy_installed or noctalia_here or noctalia_plugin_there):
+            print("no bar here for the icon (zmk-layer-hud menubar enable needs Omarchy or Noctalia)")
         return 0
     if args.action == "disable":
-        removed = remove_plugin()
-        rescan_plugins()
-        print("the HUD's icon is out of Omarchy's bar" if removed else "the Omarchy bar plugin was not installed")
+        omarchy_out = remove_plugin() if omarchy_installed else False
+        if omarchy_out:
+            rescan_plugins()
+        noctalia_out = noctalia_disable() if noctalia_plugin_there else False
+        if omarchy_out or noctalia_out:
+            bars = [name for name, out in (("Omarchy", omarchy_out), ("Noctalia", noctalia_out)) if out]
+            print("the HUD's icon is out of " + " and ".join(f"{name}'s bar" for name in bars))
+        else:
+            print("the bar plugin was not installed")
         return 0
-    if not (os.path.isfile(SHELL_JSON) or shutil.which("omarchy-shell")):
-        raise Fail("the icon is a plugin for Omarchy's own bar (Omarchy 4), and there is none here; "
-                   "any other bar can run `zmk-layer-hud toggle` on a click")
-    for old in OLD_OMARCHY_IDS:
-        if remove_plugin(old):
-            print(f"    took out the plugin's old id, {old}")
-    dest = install_plugin()
+    if omarchy_here:
+        for old in OLD_OMARCHY_IDS:
+            if remove_plugin(old):
+                print(f"    took out the plugin's old id, {old}")
+        dest = install_plugin()
+        print(f"    {dest}")
+        if shutil.which("omarchy"):
+            print("    omarchy plugin validate: " + ("accepts it" if omarchy("omarchy", "plugin", "validate", dest)
+                                                     else "refuses it (it says why above)"))
+        rescanned = rescan_plugins()
+        if not os.path.isfile(SHELL_JSON):
+            # Without a shell.json of its own the shell runs Omarchy's default, which it does not merge a
+            # partial file into: writing one with only this widget would take every other one away.
+            print(f"no {SHELL_JSON} yet; put the icon in the bar with:")
+            print(f"    omarchy plugin enable {OMARCHY_ID}")
+            return 0
+        added = add_to_bar(SHELL_JSON, OMARCHY_ID)
+        print(("the HUD's icon is first in bar.layout.right of " if added else "the bar already has it, in ") + SHELL_JSON +
+              (f" (the old one is {SHELL_JSON}.bak-zmk-layer-hud)" if added else ""))
+        if not rescanned:
+            print("the shell could not be asked to look for it; `omarchy-restart-shell` makes it")
+        else:
+            print("if the bar does not show it, `omarchy-restart-shell`: the shell caches the QML it has loaded")
+        return 0
+    if noctalia_here:
+        return noctalia_enable()
+    raise Fail("the icon is a plugin for Omarchy's own bar (Omarchy 4) or Noctalia's bar, and there is "
+               "neither here; any other bar can run `zmk-layer-hud toggle` on a click")
+
+
+# ---------- Noctalia's bar ----------
+
+# Noctalia v5's bar widgets are plugins: a plugin.toml and Luau entries, dropped where Noctalia
+# looks for local plugins (which outranks every source, so one copy of the id ever loads) and
+# enabled through the running shell. The widget instance in the bar config is named for us, as the
+# settings editor names every widget.
+NOCTALIA_ID = "zmk/layer-hud"          # author/plugin, as plugin.toml says
+NOCTALIA_ENTRY = "hud"                 # its [[widget]] id: the type is <id>:<entry>
+NOCTALIA_WIDGET = "zmk-hud"            # the instance in bar.<name>.end, and [widget.zmk-hud]
+NOCTALIA_SIDES = ("start", "center", "end")
+
+
+def noctalia_plugin_dir():
+    # Named for the id's tail, not for the app: enabling a plugin from a path source makes
+    # Noctalia re-read <source>/<id tail>/plugin.toml, so any other directory name would load on a
+    # scan yet fail to enable ("parse error: File could not be opened for reading").
+    return os.path.join(NOCTALIA_PLUGINS, "layer-hud")
+
+
+def noctalia_installed():
+    return os.path.isfile(os.path.join(noctalia_plugin_dir(), "plugin.toml"))
+
+
+def noctalia(*argv):
+    """One `noctalia` command: (code, stdout, stderr) -- or None when noctalia is not here or does
+    not answer. Everything below goes through the running shell, which is what loads a plugin."""
+    exe = shutil.which("noctalia")
+    if not exe:
+        return None
+    try:
+        p = subprocess.run([exe, *argv], capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return p.returncode, p.stdout or "", p.stderr or ""
+
+
+def noctalia_config(path):
+    """What the shell says of a config path, as the TOML value text after `= `, or None."""
+    r = noctalia("msg", "config-get", path)
+    if not r or r[0] != 0:
+        return None
+    text = r[1].strip()
+    return text.split("=", 1)[1].strip() if "=" in text else text
+
+
+def noctalia_list(path):
+    """The array at a config path, as the strings in it (config-get prints TOML, quoted with ')."""
+    text = noctalia_config(path)
+    if text is None or "[" not in text:
+        return None
+    return re.findall(r"'((?:[^'\\]|\\.)*)'", text[text.index("["):text.rindex("]") + 1])
+
+
+def noctalia_bool(path):
+    """The boolean at a config path, or None when the path is not there to have one."""
+    text = noctalia_config(path)
+    if text is None:
+        return None
+    return True if re.search(r"\btrue\b", text) else False if re.search(r"\bfalse\b", text) else None
+
+
+def noctalia_bars():
+    """The bars the config names, minus the ones switched off (an unset `enabled` counts as on)."""
+    return [b for b in (noctalia_list("bar.order") or [])
+            if noctalia_bool(f"bar.{b}.enabled") is not False]
+
+
+def noctalia_toml_array(items):
+    return "[" + ", ".join("'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'" for s in items) + "]"
+
+
+def noctalia_place(put_in):
+    """The widget at the end of `end` of every enabled bar (or out of every side of it, when put_in
+    is False); whether any bar had to be changed. Read back from the shell rather than the file, so
+    what it writes and what it said stay the same answer."""
+    changed = False
+    for bar in noctalia_bars():
+        for side in NOCTALIA_SIDES:
+            items = noctalia_list(f"bar.{bar}.{side}") or []
+            if put_in:
+                if side != "end" or NOCTALIA_WIDGET in items:
+                    continue
+                items.append(NOCTALIA_WIDGET)
+            elif NOCTALIA_WIDGET in items:
+                items.remove(NOCTALIA_WIDGET)
+            else:
+                continue
+            r = noctalia("msg", "config-set", f"bar.{bar}.{side}", noctalia_toml_array(items))
+            if r and r[0] == 0:
+                changed = True
+    return changed
+
+
+def install_noctalia_plugin():
+    """host/linux/noctalia copied where Noctalia looks for local plugins, as regular files, with
+    the marks above written into the widget."""
+    dest = noctalia_plugin_dir()
+    staged = dest + ".new"
+    shutil.rmtree(staged, ignore_errors=True)
+    shutil.copytree(os.path.join(ROOT, "host", "linux", "noctalia"), staged)
+    script = os.path.join(staged, "widget.luau")
+    with open(script, encoding="utf-8") as f:
+        text = bake_marks(f.read())
+    with open(script, "w", encoding="utf-8") as f:
+        f.write(text)
+    shutil.rmtree(dest, ignore_errors=True)
+    os.rename(staged, dest)
+    return dest
+
+
+def noctalia_enable():
+    dest = install_noctalia_plugin()
     print(f"    {dest}")
-    if shutil.which("omarchy"):
-        print("    omarchy plugin validate: " + ("accepts it" if omarchy("omarchy", "plugin", "validate", dest)
-                                                 else "refuses it (it says why above)"))
-    rescanned = rescan_plugins()
-    if not os.path.isfile(SHELL_JSON):
-        # Without a shell.json of its own the shell runs Omarchy's default, which it does not merge a
-        # partial file into: writing one with only this widget would take every other one away.
-        print(f"no {SHELL_JSON} yet; put the icon in the bar with:")
-        print(f"    omarchy plugin enable {OMARCHY_ID}")
-        return 0
-    added = add_to_bar(SHELL_JSON, OMARCHY_ID)
-    print(("the HUD's icon is first in bar.layout.right of " if added else "the bar already has it, in ") + SHELL_JSON +
-          (f" (the old one is {SHELL_JSON}.bak-zmk-layer-hud)" if added else ""))
-    if not rescanned:
-        print("the shell could not be asked to look for it; `omarchy-restart-shell` makes it")
-    else:
-        print("if the bar does not show it, `omarchy-restart-shell`: the shell caches the QML it has loaded")
+    # The new directory is found on a reload, and the bar config is only writable through the
+    # running shell: both are what `noctalia msg` asks it for.
+    r = noctalia("msg", "config-reload")
+    if not r or r[0] != 0:
+        raise Fail("Noctalia is not running: `zmk-layer-hud menubar enable` needs the shell to load "
+                   "the plugin; start it, then run this again")
+    r = noctalia("msg", "plugins", "enable", NOCTALIA_ID)
+    if not r or r[0] != 0:
+        raise Fail(f"Noctalia would not enable {NOCTALIA_ID}: " + (r[2] or r[1]).strip())
+    r = noctalia("msg", "config-set", f"widget.{NOCTALIA_WIDGET}.type",
+                 "'" + f"{NOCTALIA_ID}:{NOCTALIA_ENTRY}" + "'")
+    if not r or r[0] != 0:
+        raise Fail("Noctalia would not take the widget's name: " + ((r[2] or r[1]).strip() if r else "no answer"))
+    added = noctalia_place(put_in=True)
+    print(("the HUD's icon is in Noctalia's bar" if added else "the bar already has the HUD's icon")
+          + "; if the bar does not show it, `noctalia msg config-reload`")
     return 0
+
+
+def noctalia_disable():
+    """Out of the bar and off the disk; whether there was anything to take. The widget's `[widget.
+    zmk-hud]` definition is left where it is: it is inert without the plugin, and the next enable
+    writes the same one over it."""
+    had = noctalia_place(put_in=False)
+    noctalia("msg", "plugins", "disable", NOCTALIA_ID)
+    if os.path.isdir(noctalia_plugin_dir()):
+        shutil.rmtree(noctalia_plugin_dir(), ignore_errors=True)
+        had = True
+    return had
+
+
+def noctalia_status():
+    """What `menubar status` says of Noctalia's bar."""
+    if not noctalia_installed():
+        return "the Noctalia bar plugin is not installed (zmk-layer-hud menubar enable)"
+    here = f"the Noctalia bar plugin is in {noctalia_plugin_dir()}"
+    r = noctalia("msg", "plugins", "list")
+    if not r or r[0] != 0:
+        return here + ", and Noctalia is not running to ask about the bar"
+    enabled = any(line.startswith(NOCTALIA_ID + " ") and line.rstrip().endswith("enabled")
+                  for line in r[1].splitlines())
+    placed = any(NOCTALIA_WIDGET in (noctalia_list(f"bar.{bar}.{side}") or [])
+                 for bar in noctalia_bars() for side in NOCTALIA_SIDES)
+    return here + ("" if enabled else ", disabled (zmk-layer-hud menubar enable)") + \
+        ("" if placed else ", but not in the bar")
 
 
 # ---------- starting at login ----------
@@ -1908,7 +2092,7 @@ def cmd_update(args):
         # and quick when nothing changed.
         subprocess.call([VENV_PYTHON, "-m", "pip", "install", "--quiet", "-r", REQUIREMENTS])
         print("    venv refreshed")
-    if os.path.isdir(plugin_dir()):
+    if os.path.isdir(plugin_dir()) or os.path.isdir(noctalia_plugin_dir()):
         # The new tree's own command: this process is still the old code.
         subprocess.call([os.path.join(ROOT, "bin", "zmk-layer-hud"), "menubar", "enable"])
     print("ready: zmk-layer-hud doctor")
@@ -1950,6 +2134,8 @@ def cmd_uninstall(args):
         for pid in (OMARCHY_ID,) + OLD_OMARCHY_IDS:
             if remove_plugin(pid):
                 print(f"    took the {pid} bar plugin out of Omarchy")
+        if noctalia_installed() and noctalia_disable():
+            print("    took the bar plugin out of Noctalia")
     if os.path.islink(BIN_LINK) and os.path.realpath(BIN_LINK).startswith(os.path.realpath(ROOT)):
         os.unlink(BIN_LINK)
         print(f"    removed {BIN_LINK}")
@@ -2087,7 +2273,8 @@ def build_parser():
                    help="status (default), enable, disable; disable leaves a running HUD running")
     s.set_defaults(func=cmd_autostart)
 
-    s = add("menubar", "the icon that shows, hides or starts the HUD, with its WPM: macOS's menubar, Omarchy's bar")
+    s = add("menubar", "the icon that shows, hides or starts the HUD, with its WPM: the macOS menubar, "
+                       "Omarchy's bar, Noctalia's bar")
     s.add_argument("action", nargs="?", default="status", choices=("status", "enable", "disable", "wpm"),
                    help="status (default), enable, disable; wpm: which WPM the icon shows")
     s.add_argument("which", nargs="?", choices=panelstate.WPM_CHOICES,

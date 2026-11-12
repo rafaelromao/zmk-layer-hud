@@ -195,7 +195,7 @@ so `host/panelcore_test.py` drives the panel with a window that records what it 
 
 Showing and hiding goes to the running panel directly: `show` and `hide` write what they want to
 `$STATE/panel.want` and send the panel SIGUSR2, and the panel does it and says so in
-`$STATE/panel.json` (`{"pid", "shown", "wpm"}`), which `status` and both menubar icons read too
+`$STATE/panel.json` (`{"pid", "shown", "wpm"}`), which `status` and the menubar icons read too
 (`host/panelstate.py`). The live WPM gets there from the page, which posts `{"kind":"wpm"}` to its
 panel whenever the number changes. One signal and a file rather than one signal each, because on Linux WebKit
 suspends its own threads with SIGUSR1, and the GTK panel is a WebKit process. Hidden is drawn as
@@ -205,8 +205,8 @@ takes the page for a hidden one and slows the timers it counts with.
 Whether the HUD runs, and what it shows, is read one way: `panelstate.hud`. It takes `panel.json`
 only when a HUD panel stands behind it (a pid alive and a panel's, never one handed out again), says
 which copy of zmk-layer-hud that panel runs from, and adds the feed. Every verb reads it, the
-macOS icon reads it, and the Omarchy bar, which cannot import Python, reads it as `zmk-layer-hud
-status --json`, the same object for any other bar or script.
+macOS icon reads it, and the bars -- Omarchy's and Noctalia's, which cannot import Python -- read it
+as `zmk-layer-hud status --json`, the same object for any other bar or script.
 
 The icons read the HUD's state and run the command line, so they work the same whether the HUD
 is running or not:
@@ -220,11 +220,22 @@ is running or not:
   (`qs.Ui`): the menu in click mode, drawn as the tray draws its menus, and the stats in hover mode,
   with an owner of their own, because the bar closes a popout through its owner's `close()` and
   PopupCard's own would undo the binding to `open`.
+- **Noctalia:** `host/linux/noctalia` is a bar-widget plugin for Noctalia v5's bar, written in Luau
+  (Noctalia's plugins are a `plugin.toml` plus Luau entries, not QML). `menubar enable` copies it
+  into `~/.local/share/noctalia/plugins/layer-hud`, with the paths written into the Luau, then asks
+  the running shell to load it, to enable it (`noctalia msg plugins enable zmk/layer-hud`) and to
+  name the widget in the config (`widget.zmk-hud.type`), and lists `zmk-hud` at the end of `end` of
+  every enabled bar. The directory is named for the id's tail, `layer-hud`, not for the app:
+  enabling a plugin from a path source makes Noctalia re-read `<source>/<id tail>/plugin.toml`, so
+  any other directory name loads on a scan yet fails to enable ("parse error: File could not be
+  opened for reading"). The bar's own tooltip shows the HUD's stats the way the Omarchy widget does
+  with a hover popout, and a right-click walks the three WPMs through `zmk-layer-hud menubar wpm`,
+  read back from `status --json`.
 
 What the icons show comes from the page: `{"kind":"stats"}` (docs/protocol.md) carries the
 session's average and top WPM and the rows of its stats column, at most once a second, and the
 panel writes them into `panel.json`. Which WPM an icon shows, the live one or the session's
-average or top, is `$STATE/menubar.json`, which both icons read and set through
+average or top, is `$STATE/menubar.json`, which the icons read and set through
 `zmk-layer-hud menubar wpm`.
 
 The global shortcuts (`host/shortcuts.py`, `shortcuts:` in the config) run the same verbs:

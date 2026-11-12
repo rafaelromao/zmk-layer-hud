@@ -7,6 +7,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import stat
 import subprocess
 import sys
@@ -595,6 +596,174 @@ class OmarchyPlugin(unittest.TestCase):
             self.assertIn("off", self.run_cli("menubar")[1])
             self.assertEqual(0, self.run_cli("menubar", "enable")[0])
             self.assertFalse(os.path.exists(off))
+
+
+class FakeNoctalia:
+    """The noctalia CLI as the tests see it: a small config tree, a plugin list, and every call
+    kept. Enough of `msg config-get/config-set` and `msg plugins` for the bar code to be exercised
+    against the same answers the running shell gives."""
+
+    def __init__(self):
+        self.cfg = {"bar": {"order": ["main"],
+                            "main": {"enabled": True, "start": [], "center": [], "end": ["tray"]}},
+                    "widget": {}}
+        self.enabled = set()
+        self.calls = []
+
+    def __call__(self, *argv):
+        self.calls.append(argv)
+        what = argv[1] if argv and argv[0] == "msg" else None
+        if what == "config-reload":
+            return 0, "", ""
+        if what == "config-get":
+            value = self.get(argv[2])
+            if value is None:
+                return 1, "", f"error: path not found: {argv[2]}"
+            return 0, f"{argv[2].rsplit('.', 1)[-1]} = {self.toml(value)}", ""
+        if what == "config-set":
+            self.set(argv[2], self.parse(argv[3]))
+            return 0, "", ""
+        if what == "plugins" and argv[2] in ("enable", "disable"):
+            (self.enabled.add if argv[2] == "enable" else self.enabled.discard)(argv[3])
+            return 0, "", ""
+        if what == "plugins" and argv[2] == "list":
+            rows = [f"{name} [local] 1.0.0 {'enabled' if name in self.enabled else 'disabled'}"
+                    for name in sorted(self.enabled)]
+            return 0, ("\n".join(rows) + "\n") if rows else "(no plugins)\n", ""
+        return 1, "", f"unexpected: {argv!r}"
+
+    def get(self, path):
+        node = self.cfg
+        for part in path.split("."):
+            if not isinstance(node, dict) or part not in node:
+                return None
+            node = node[part]
+        return node
+
+    def set(self, path, value):
+        parts = path.split(".")
+        node = self.cfg
+        for part in parts[:-1]:
+            node = node.setdefault(part, {})
+        node[parts[-1]] = value
+
+    def toml(self, value):
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, list):
+            return "[ " + ", ".join("'" + v + "'" for v in value) + " ]"
+        return "'" + str(value) + "'"
+
+    def parse(self, value):
+        if value.startswith("["):
+            return re.findall(r"'([^']*)'", value)
+        return value[1:-1] if value.startswith("'") and value.endswith("'") else value
+
+
+class NoctaliaPlugin(unittest.TestCase):
+    """The bar widget Noctalia loads (a Luau plugin, not QML), and `menubar` putting it where
+    Noctalia looks for plugins and in the bar."""
+
+    SRC = os.path.join(ROOT, "host", "linux", "noctalia")
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.plugins = os.path.join(self.tmp.name, "plugins")
+        self.shell = os.path.join(self.tmp.name, "shell.json")   # never written: this is not Omarchy's bar
+        self.fake = FakeNoctalia()
+        # Both bars' plugins live under the temp dir, so a bar of the real machine never shows up here.
+        for p in (mock.patch.object(cli, "NOCTALIA_PLUGINS", self.plugins),
+                  mock.patch.object(cli, "OMARCHY_PLUGINS", os.path.join(self.tmp.name, "omarchy")),
+                  mock.patch.object(cli, "SHELL_JSON", self.shell),
+                  mock.patch.object(cli.platform, "system", return_value="Linux"),
+                  mock.patch.object(cli, "noctalia", self.fake)):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def dir(self):
+        # The id's tail: the name Noctalia rebuilds the manifest path from when enabling.
+        return os.path.join(self.plugins, "layer-hud")
+
+    def run_cli(self, *argv, which=lambda n: None if n.startswith("omarchy") else "/usr/bin/" + n):
+        with mock.patch.object(cli.shutil, "which", side_effect=which), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            code = cli.main(list(argv))
+        return code, out.getvalue() + err.getvalue()
+
+    def test_the_manifest_is_one_noctalia_can_load(self):
+        with open(os.path.join(self.SRC, "plugin.toml"), encoding="utf-8") as f:
+            manifest = f.read()
+        self.assertIn(f'id          = "{cli.NOCTALIA_ID}"', manifest)
+        # Everything the widget uses is in the oldest API level, so it runs on any Noctalia v5.
+        self.assertIn("plugin_api  = 3", manifest)
+        self.assertIn(f'id    = "{cli.NOCTALIA_ENTRY}"', manifest)
+        self.assertIn('entry = "widget.luau"', manifest)
+        with open(os.path.join(self.SRC, "widget.luau"), encoding="utf-8") as f:
+            script = f.read()
+        for mark in ("__ZMK_LAYER_HUD_COMMAND__", "__ZMK_LAYER_HUD_STATE__", "__ZMK_LAYER_HUD_START_WITH__"):
+            self.assertIn(mark, script)              # the marks `menubar enable` writes in
+        for fn in ("function update()", "function onClick()", "function onRightClick()"):
+            self.assertIn(fn, script)
+        # The word on a HUD from another copy, as the macOS icon and the Omarchy widget take it by.
+        self.assertIn('h.icon == "another copy"', script)
+
+    def test_enable_copies_it_where_noctalia_looks_and_writes_the_marks_in(self):
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        with open(os.path.join(self.dir(), "widget.luau"), encoding="utf-8") as f:
+            script = f.read()
+        self.assertNotIn("__ZMK_LAYER_HUD_", script)
+        self.assertIn(os.path.join(ROOT, "bin", "zmk-layer-hud"), script)
+        self.assertIn(cli.STATE, script)
+        self.assertIn(("msg", "config-reload"), self.fake.calls)
+        self.assertIn(("msg", "plugins", "enable", cli.NOCTALIA_ID), self.fake.calls)
+        self.assertIn(("msg", "config-set", f"widget.{cli.NOCTALIA_WIDGET}.type",
+                       f"'{cli.NOCTALIA_ID}:{cli.NOCTALIA_ENTRY}'"), self.fake.calls)
+        self.assertEqual(["tray", cli.NOCTALIA_WIDGET], self.fake.cfg["bar"]["main"]["end"])
+        # Only `end`: start and center are other widgets' places.
+        self.assertEqual([], self.fake.cfg["bar"]["main"]["start"])
+        self.assertEqual([], self.fake.cfg["bar"]["main"]["center"])
+        self.assertIn("Noctalia's bar", said)
+
+    def test_enable_again_puts_it_in_only_once(self):
+        self.run_cli("menubar", "enable")
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(1, self.fake.cfg["bar"]["main"]["end"].count(cli.NOCTALIA_WIDGET))
+
+    def test_disable_takes_it_out_again(self):
+        self.run_cli("menubar", "enable")
+        # Even from a side it should never have been in: disable leaves no copy of it anywhere.
+        self.fake.cfg["bar"]["main"]["start"] = [cli.NOCTALIA_WIDGET]
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(["tray"], self.fake.cfg["bar"]["main"]["end"])
+        self.assertEqual([], self.fake.cfg["bar"]["main"]["start"])
+        self.assertIn(("msg", "plugins", "disable", cli.NOCTALIA_ID), self.fake.calls)
+        self.assertFalse(os.path.exists(self.dir()))
+        self.assertIn("Noctalia's bar", said)
+
+    def test_status_says_what_state_it_is_in(self):
+        code, said = self.run_cli("menubar")
+        self.assertEqual(0, code)
+        self.assertIn("not installed", said)
+        self.run_cli("menubar", "enable")
+        code, said = self.run_cli("menubar")
+        self.assertEqual(0, code)
+        self.assertIn(f"in {self.dir()}", said)
+        self.assertNotIn("but not in the bar", said)
+        # Installed but out of the bar: said so.
+        self.fake.cfg["bar"]["main"]["end"] = ["tray"]
+        code, said = self.run_cli("menubar")
+        self.assertEqual(0, code)
+        self.assertIn("but not in the bar", said)
+
+    def test_without_a_bar_here_it_says_so(self):
+        code, said = self.run_cli("menubar", "enable", which=lambda n: None)
+        self.assertEqual(1, code)
+        self.assertIn("toggle", said)
+        self.assertFalse(os.path.exists(self.plugins))
 
 
 def desktop_exec(text):

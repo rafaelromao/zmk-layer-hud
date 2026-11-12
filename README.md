@@ -174,6 +174,13 @@ work:
   Resting the pointer on it also opens the HUD's stats column, laid out across in the shell's
   popout: the same tiles the HUD shows (`stats:` in the config picks them). If it does not appear,
   run `omarchy-restart-shell`: the shell caches the plugins it has loaded.
+- On Noctalia v5, `zmk-layer-hud menubar enable` puts the same icon in the bar. It installs the
+  plugin `zmk/layer-hud`, enables it, and adds a `zmk-hud` widget to the end of every enabled bar.
+  It looks and works like the macOS one -- the live WPM beside the keyboard glyph, dimmed while the
+  HUD is hidden, struck through while it is not running -- its three WPMs a right-click away
+  (`zmk-layer-hud menubar wpm current|average|top` does the same), and the HUD's stats in its
+  tooltip. It needs Noctalia running to load the plugin; if the icon does not appear,
+  `noctalia msg config-reload`.
 
 Two global shortcuts do the same from the keyboard, on both systems: **Ctrl+Alt+L** shows or
 hides the HUD, and **Ctrl+Alt+Gui+L** (Cmd on macOS, Super on Omarchy) starts or stops it. The
@@ -225,7 +232,7 @@ flags of any one of them, and [docs/cli.md](docs/cli.md) has every verb's in one
 | `heatmap [live\|session\|physical\|speed\|off]` | what the keys glow with: what was just typed, every press this session on the layer on screen or on all of them, each key's time, or nothing |
 | `doctor` | check this machine and say what is missing |
 | `autostart [enable\|disable]` | start the HUD hidden at login, counting from the first keystroke, or stop doing so |
-| `menubar [enable\|disable\|wpm]` | the icon that shows, hides or starts the HUD, with its WPM (`wpm current\|average\|top` picks it): in the macOS menubar, and on Omarchy a plugin for its bar |
+| `menubar [enable\|disable\|wpm]` | the icon that shows, hides or starts the HUD, with its WPM (`wpm current\|average\|top` picks it): in the macOS menubar, and as a bar plugin on Omarchy 4 and Noctalia v5 |
 | `setup` | prepare this machine: packages, virtualenv, config, permissions |
 | `update`, `uninstall` | fetch a newer tree; remove the tree and the command |
 | `keymap` | check the HUD's own files load: the config and the definitions import wrote |
