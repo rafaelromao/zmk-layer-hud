@@ -53,7 +53,8 @@ Dependencies: pyserial (`make venv`); bleak for BLE; python-websockets for the W
 macOS only -- Linux reads /dev/hidrawN itself (HidrawReader), because the wheel's Linux backend is
 libusb, which wants /dev/bus/usb and detaches the kernel HID driver; PyYAML (or yq) for the config;
 jeepney on Linux only, for the accessibility bus, where a password field with focus is seen
-(host/a11y.py); under Hyprland the session lock is seen on its control socket (host/sessionlock.py).
+(host/a11y.py); on Linux the session lock is seen on Hyprland's control socket or, under niri where
+the compositor does not say, by a locker's name (host/sessionlock.py).
 Not keymap-drawer: the drawing comes ready in the definitions `zmk-layer-hud import` wrote.
 """
 
@@ -934,7 +935,7 @@ def any_of(probes):
 
 # What each probe is, for the log and the doctor.
 PROBE_WORDS = {"carbon": "macOS's secure input", "terminals": "the terminals' prompts",
-               "a11y": "the accessibility bus", "lock": "Hyprland's session lock"}
+               "a11y": "the accessibility bus", "lock": "the session lock"}
 
 
 def probe_report(environ=os.environ):
@@ -983,8 +984,12 @@ def probe_report(environ=os.environ):
                     "IsEnabled is off: the feed turns it on when it starts (feed.accessibility), and a browser "
                     "running since before needs starting again")
     path = sessionlock.socket_path(environ)
-    if not path:
-        say("lock", "off", "no Hyprland (HYPRLAND_INSTANCE_SIGNATURE unset, or no control socket): a lock screen is not seen")
+    if not path and not sessionlock.niri_socket_path(environ):
+        say("lock", "off", "no Hyprland or niri (HYPRLAND_INSTANCE_SIGNATURE and NIRI_SOCKET unset, or no "
+                            "control socket): a lock screen is not seen")
+    elif not path:
+        say("lock", "on", "niri does not say whether the session is locked (its IPC has no lock state): a locker is "
+            f"looked for by name ({', '.join(sessionlock.LOCKERS)}), and one not named here is not seen")
     else:
         got = sessionlock.locked(path)
         say("lock", "on", "Hyprland does not say (no solitaryBlockedBy in `hyprctl -j monitors`): a locker is looked for "
@@ -1209,7 +1214,7 @@ class Feed:
             self.log("hudfeed: secure input is off (feed.secure_input: 0): what is typed into a password field reaches "
                      "the pages" if not self.secure_wanted else
                      "hudfeed: nothing here sees a secret being typed (no macOS switch, no terminals, no accessibility "
-                     "bus, no Hyprland): what is typed into a password field reaches the pages")
+                     "bus, no session lock): what is typed into a password field reaches the pages")
             self.emit({"kind": "secure", "on": False, "watched": []})
         if self.watcher:
             self.watcher.start()

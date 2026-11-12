@@ -16,6 +16,13 @@ hyprland.conf (`install_hyprland`). Either way they come after Omarchy's own bin
 whatever else was on those keys. host/linux/hud.sh runs this file on every start, which does that
 and has Hyprland read its config again when anything changed.
 
+Under niri they are binds there too, in its config's KDL: ~/.config/niri/zmk-layer-hud.kdl holds
+one `binds` block, read by an `include optional=true` line once appended to the end of config.kdl
+(`install_niri`). niri merges binds from included files, the last for a key winning, so the include
+being last takes these keys from whatever had them. niri watches its config files and reads them
+again by itself when one changes; main() also asks (`niri msg action load-config-file`) so a change
+lands without the wait.
+
 Stdlib only: the menubar runs it in the venv, but the CLI's `uninstall` may not.
 """
 
@@ -52,6 +59,12 @@ HYPR_LUA = "zmk-layer-hud.lua"
 # costs the shortcuts and nothing else of the config.
 LUA_LOAD = 'pcall(dofile, (os.getenv("HOME") or "") .. "/.config/hypr/' + HYPR_LUA + '")'
 LUA_MARK = "-- zmk-layer-hud's shortcuts (`shortcuts:` in its config)"
+# niri's side of it: our KDL file, and the line that reads it from the end of config.kdl.
+NIRI_DIR = os.path.expanduser("~/.config/niri")
+NIRI_MAIN = "config.kdl"
+NIRI_FILE = "zmk-layer-hud.kdl"
+NIRI_INCLUDE = f'include optional=true "{NIRI_FILE}"'
+NIRI_MARK = "// zmk-layer-hud's shortcuts (`shortcuts:` in its config)"
 
 
 class ShortcutError(ValueError):
@@ -170,6 +183,34 @@ def lua_conf(sets, command, state, start_with=""):
         keys = lua_string(" + ".join([HYPR_NAMES[m] for m in mods] + [key.upper()]))
         lines += [f"pcall(hl.unbind, {keys})",
                   f"hl.bind({keys}, hl.dsp.exec_cmd({lua_string(run)}), {{ description = {lua_string(what)} }})"]
+    return "\n".join(lines) + "\n"
+
+
+def kdl_string(text):
+    """Any text as a KDL string literal: quoted, with its backslashes, quotes and line ends escaped
+    (the escapes KDL has: \", \\, \\n, \\r, \\t)."""
+    return '"' + text.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r") + '"'
+
+
+def niri_conf(sets, command, state, start_with=""):
+    """The niri file, in KDL: each shortcut bound to its verb in one `binds` block. niri runs
+    spawn's arguments directly, with no shell, so the verb's environment rides along as `env`'s
+    own arguments; `start_with` (uwsm-app --) goes before it, for the power shortcut alone, as the
+    Hyprland binds do."""
+    lines = ["// Written by zmk-layer-hud on every start, from `shortcuts:` in its config; edits here are lost.",
+             f"// `{NIRI_INCLUDE}` at the end of {NIRI_MAIN} reads it. `zmk-layer-hud uninstall` takes both out.",
+             "",
+             "binds {"]
+    for name, sc in sets.items():
+        if not sc:
+            continue
+        mods, key = sc
+        argv = (start_with.split() if start_with and name == "power" else []) + \
+            ["env", f"ZMKHUD_STATE={state}", command, name]
+        combo = "+".join([LINUX_NAMES[m] for m in mods] + [key.upper()])
+        what = f"ZMK HUD {'show/hide' if name == 'toggle' else 'start/stop'}"
+        lines.append(f"    {combo} {{ spawn {' '.join(kdl_string(a) for a in argv)}; }} // {what}")
+    lines.append("}")
     return "\n".join(lines) + "\n"
 
 
@@ -294,9 +335,67 @@ def remove_lua(hypr_dir=HYPR_DIR):
     return had
 
 
-def remove(hypr_dir=HYPR_DIR):
-    """Both kinds undone, as `zmk-layer-hud uninstall` does; whether there was anything to take."""
-    return remove_lua(hypr_dir) | remove_hyprland(hypr_dir)
+def install_niri(sets, command, state, niri_dir=NIRI_DIR, start_with=""):
+    """Our KDL file written, and included once at the end of config.kdl; whether either changed,
+    or None without a config.kdl (niri has nowhere to put the include, so nothing is bound).
+    niri reads its config again by itself when a file of it changes; main() asks it to as well."""
+    main = os.path.join(niri_dir, NIRI_MAIN)
+    if not os.path.isfile(main):
+        return None
+    changed = _write_if_changed(os.path.join(niri_dir, NIRI_FILE),
+                                niri_conf(sets, command, state, start_with))
+    with open(main, encoding="utf-8") as f:
+        text = f.read()
+    if NIRI_INCLUDE not in text.splitlines():
+        _backup_once(main)
+        with open(main, "a", encoding="utf-8") as f:       # in place: a config.kdl that is a link stays one
+            f.write(("" if text.endswith("\n") or not text else "\n") +
+                    "\n" + NIRI_MARK + "\n" + NIRI_INCLUDE + "\n")
+        changed = True
+    write_labels(state, sets, "Linux")
+    return changed
+
+
+def remove_niri(niri_dir=NIRI_DIR):
+    """Undo install_niri; whether there was anything to take."""
+    had = False
+    main = os.path.join(niri_dir, NIRI_MAIN)
+    try:
+        with open(main, encoding="utf-8") as f:
+            text = f.read()
+    except OSError:
+        text = None
+    if text is not None and NIRI_INCLUDE in text.splitlines():
+        out = text.replace("\n" + NIRI_MARK + "\n" + NIRI_INCLUDE + "\n", "")
+        out = "\n".join(line for line in out.split("\n") if line != NIRI_INCLUDE)
+        _backup_once(main)
+        with open(main, "w", encoding="utf-8") as f:
+            f.write(out)
+        had = True
+    try:
+        os.remove(os.path.join(niri_dir, NIRI_FILE))
+        had = True
+    except OSError:
+        pass
+    return had
+
+
+def remove(hypr_dir=HYPR_DIR, niri_dir=NIRI_DIR):
+    """Everything of ours undone, as `zmk-layer-hud uninstall` does; whether there was anything
+    to take. Every compositor's files, not only the running one's: uninstall takes all of ours
+    out, and what is left behind would bind keys again on the next start there."""
+    return remove_lua(hypr_dir) | remove_hyprland(hypr_dir) | remove_niri(niri_dir)
+
+
+def on_niri(environ=os.environ):
+    """Whether this session is niri's: its socket says so at once (NIRI_SOCKET, in the environment
+    of everything niri starts). Without one, a niri config beside no Hyprland says it, for the
+    scripts run where neither is set; a Hyprland session is never niri's however its config looks."""
+    if environ.get("NIRI_SOCKET"):
+        return True
+    if environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        return False
+    return os.path.isfile(os.path.join(NIRI_DIR, NIRI_MAIN))
 
 
 def main():
@@ -309,20 +408,30 @@ def main():
         sys.exit(f"shortcuts: {e}")
     command = os.path.join(root, "bin", "zmk-layer-hud")
     start_with = "uwsm-app --" if shutil.which("uwsm-app") else ""
-    # A Lua config wins: Hyprland reads hyprland.lua where there is one (Omarchy 4), and nothing
-    # reads a hyprland.conf left beside it, so what an earlier version wrote there goes.
-    if os.path.isfile(os.path.join(HYPR_DIR, "hyprland.lua")):
-        remove_hyprland(hypr_dir=HYPR_DIR)
-        done = install_lua(sets, command, state, hypr_dir=HYPR_DIR, start_with=start_with)
-        path = os.path.join(HYPR_DIR, HYPR_LUA)
+    if on_niri():
+        done = install_niri(sets, command, state, niri_dir=NIRI_DIR, start_with=start_with)
+        path = os.path.join(NIRI_DIR, NIRI_FILE)
+        reload_what = ["niri", "msg", "action", "load-config-file"]
+        absent = f"shortcuts: no {NIRI_DIR}/{NIRI_MAIN}, so none are bound"
     else:
-        done = install_hyprland(sets, command, state, hypr_dir=HYPR_DIR, start_with=start_with)
-        path = os.path.join(HYPR_DIR, HYPR_FILE)
+        # A Lua config wins: Hyprland reads hyprland.lua where there is one (Omarchy 4), and nothing
+        # reads a hyprland.conf left beside it, so what an earlier version wrote there goes.
+        if os.path.isfile(os.path.join(HYPR_DIR, "hyprland.lua")):
+            remove_hyprland(hypr_dir=HYPR_DIR)
+            done = install_lua(sets, command, state, hypr_dir=HYPR_DIR, start_with=start_with)
+            path = os.path.join(HYPR_DIR, HYPR_LUA)
+        else:
+            done = install_hyprland(sets, command, state, hypr_dir=HYPR_DIR, start_with=start_with)
+            path = os.path.join(HYPR_DIR, HYPR_FILE)
+        reload_what = ["hyprctl", "reload"]
+        absent = f"shortcuts: no {HYPR_DIR}/hyprland.lua or hyprland.conf, so none are bound"
     if done is None:
-        print(f"shortcuts: no {HYPR_DIR}/hyprland.lua or hyprland.conf, so none are bound", file=sys.stderr)
+        print(absent, file=sys.stderr)
     elif done:
-        # Hyprland told to read its config again, as Omarchy's own scripts do after editing it.
-        subprocess.call(["hyprctl", "reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # The compositor told to read its config again, so the binds are there without waiting for
+        # its watcher to notice: niri's load-config-file, Hyprland's reload (as Omarchy's own
+        # scripts do after editing its config).
+        subprocess.call(reload_what, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         print("shortcuts: " + ", ".join(f"{label(sc)} {WHAT[n]} the HUD" for n, sc in sets.items() if sc) +
               f" ({path})")
 

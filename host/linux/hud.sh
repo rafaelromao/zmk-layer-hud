@@ -1,5 +1,5 @@
 #!/bin/bash
-# zmk-layer-hud Linux host (Hyprland): native transparent layer-shell HUD + typed-keys panel,
+# zmk-layer-hud Linux host (Hyprland or niri): native transparent layer-shell HUD + typed-keys panel,
 # fed by host/hudfeed.py -- the keyboard's own layer signal on its CDC-ACM channel, and what is
 # typed from the keyboard's HID reports. No evdev, and no daemon: the keyboard is the only source.
 #   bash host/linux/hud.sh        start (validates the config and the keymap YAML first)
@@ -46,7 +46,7 @@ stop() {
   pkill -f -- "--class=zmkhud" 2>/dev/null || true
   pkill -f "$HERE/panel.py" 2>/dev/null || true
   pkill -f "$ROOT/host/hudfeed.py" 2>/dev/null || true
-  hyprctl eval 'if zmkhud_rules then for _, r in ipairs(zmkhud_rules) do r:set_enabled(false) end end' >/dev/null 2>&1 || true
+  command -v hyprctl >/dev/null 2>&1 && hyprctl eval 'if zmkhud_rules then for _, r in ipairs(zmkhud_rules) do r:set_enabled(false) end end' >/dev/null 2>&1 || true
   # The panel stops its feed on the way out, which writes what the session counted: wait for that
   # (up to 5 s), or the next feed starts beside the old one and finds the socket's port taken.
   for _ in $(seq 50); do pgrep -f "$HERE/panel.py|$ROOT/host/hudfeed.py" >/dev/null || return 0; sleep 0.1; done
@@ -67,8 +67,9 @@ FEED_PYTHON="${ZMKHUD_PYTHON:-$ROOT/.venv/bin/python3}"; [ -x "$FEED_PYTHON" ] |
 "$FEED_PYTHON" -c "import serial, websockets"
 export ZMKHUD_PYTHON="$FEED_PYTHON"
 "$FEED_PYTHON" "$ROOT/host/keymap.py"   # validates the config + its definitions before the panel opens
-# The global shortcuts are Hyprland binds (host/shortcuts.py), written again from the config on
-# every start; they stay when the HUD stops, so the power shortcut can start it again.
+# The global shortcuts are the compositor's binds (host/shortcuts.py): Hyprland's own files, or
+# niri's KDL, written again from the config on every start; they stay when the HUD stops, so the
+# power shortcut can start it again.
 "$FEED_PYTHON" "$ROOT/host/shortcuts.py"
 stop
 sleep 0.5

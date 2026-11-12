@@ -90,7 +90,7 @@ def host_script():
         return os.path.join(ROOT, "host", "macos", "start.sh")
     if system == "Linux":
         return os.path.join(ROOT, "host", "linux", "hud.sh")
-    raise Fail(f"no HUD host for {system}; macOS and Linux (Hyprland) only")
+    raise Fail(f"no HUD host for {system}; macOS and Linux (Hyprland or niri) only")
 
 
 def in_clone():
@@ -322,26 +322,41 @@ def last_matching(text, needle):
 def hypr_surfaces():
     """The Linux panel draws three layer-shell surfaces, and an empty typed-keys strip is
     entirely transparent: "mapped with nothing on it" and "never mapped" look the same on screen.
-    Only the compositor can tell them apart, so ask it."""
+    Only the compositor can tell them apart, so ask it: niri's `msg layers`, else Hyprland's
+    `hyprctl layers`. niri's says which surfaces are open but not where, which is enough here."""
     import json
     want = ("zmkhud-layer", "zmkhud-reserved", "zmkhud-keys")
-    try:
-        out = subprocess.check_output(["hyprctl", "layers", "-j"], text=True,
-                                      stderr=subprocess.DEVNULL)
-        monitors = json.loads(out)
-    except (OSError, subprocess.SubprocessError, ValueError):
-        return
-    found = {}
-    for monitor in monitors.values():
-        for entries in (monitor.get("levels") or {}).values():
-            for e in entries:
-                if e.get("namespace") in want:
-                    found[e["namespace"]] = e
+    found, geometry = {}, True
+    if os.environ.get("NIRI_SOCKET"):
+        try:
+            out = subprocess.check_output(["niri", "msg", "--json", "layers"], text=True,
+                                          stderr=subprocess.DEVNULL)
+            layers = json.loads(out)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return
+        for e in layers if isinstance(layers, list) else []:
+            if isinstance(e, dict) and e.get("namespace") in want:
+                found[e["namespace"]] = e
+        geometry = False
+    else:
+        try:
+            out = subprocess.check_output(["hyprctl", "layers", "-j"], text=True,
+                                          stderr=subprocess.DEVNULL)
+            monitors = json.loads(out)
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return
+        for monitor in monitors.values():
+            for entries in (monitor.get("levels") or {}).values():
+                for e in entries:
+                    if e.get("namespace") in want:
+                        found[e["namespace"]] = e
     print("--- layer-shell surfaces ---")
     for ns in want:
         e = found.get(ns)
-        if e:
+        if e and geometry:
             print("  %-16s %d,%d %dx%d" % (ns, e["x"], e["y"], e["w"], e["h"]))
+        elif e:
+            print(f"  %-16s mapped" % ns)
         elif ns == "zmkhud-reserved":
             # Absent is the normal state: the HUD only takes room from other windows when asked.
             print("  %-16s overlay, nothing reserved (start with --reserve to tile beside it)" % ns)
@@ -1090,7 +1105,7 @@ def cmd_setup(args):
     elif system == "Linux":
         setup_linux(args)
     else:
-        raise Fail(f"no HUD host for {system}; macOS and Linux (Hyprland) only")
+        raise Fail(f"no HUD host for {system}; macOS and Linux (Hyprland or niri) only")
     setup_config()
     print()
     print("ready: zmk-layer-hud start   (and `zmk-layer-hud doctor` if it does not come up)")
@@ -1494,7 +1509,7 @@ def login_line():
 def cmd_autostart(args):
     system = platform.system()
     if system not in ("Darwin", "Linux"):
-        raise Fail(f"no HUD host for {system}; macOS and Linux (Hyprland) only")
+        raise Fail(f"no HUD host for {system}; macOS and Linux (Hyprland or niri) only")
     if args.action == "status":
         print("login: " + login_line())
         return 0
@@ -1583,7 +1598,7 @@ def check_python(results):
 def check_secure(results):
     """What sees a secret being typed, so the feed passes nothing of it on (host/hudfeed.py
     SecureInput): macOS's secure input, a terminal's prompt, on Linux the accessibility bus and
-    Hyprland's session lock. Asked of the feed itself (`hudfeed.py --probes`), which has the venv
+    the compositor's session lock. Asked of the feed itself (`hudfeed.py --probes`), which has the venv
     and the probes; without a venv, the accessibility bus alone, through systemd's busctl."""
     if not venv_ok():
         check_accessibility(results)
@@ -1613,7 +1628,7 @@ def check_secure(results):
 
 
 PROBE_WORDS = {"carbon": "macOS's secure input", "terminals": "the terminals' prompts",
-               "a11y": "the accessibility bus", "lock": "Hyprland's session lock"}
+               "a11y": "the accessibility bus", "lock": "the session lock"}
 
 
 def check_accessibility(results):
@@ -1644,13 +1659,15 @@ def check_platform(results):
         return
     if system != "Linux":
         results.append(report(BAD, "platform", f"{system} has no HUD host",
-                              "macOS and Linux (Hyprland) only"))
+                              "macOS and Linux (Hyprland or niri) only"))
         return
-    if shutil.which("hyprctl"):
+    if os.environ.get("NIRI_SOCKET") and shutil.which("niri"):
+        results.append(report(OK, "platform", "Linux with niri"))
+    elif shutil.which("hyprctl"):
         results.append(report(OK, "platform", "Linux with Hyprland"))
     else:
-        results.append(report(WARN, "platform", "Linux, but no hyprctl on PATH",
-                              "the panel is a Hyprland layer-shell surface"))
+        results.append(report(WARN, "platform", "Linux, but neither niri nor Hyprland is here",
+                              "the panel is a wlr-layer-shell surface"))
     gi = subprocess.call(
         ["python3", "-c", "import gi; gi.require_version('Gtk', '3.0'); "
                           "gi.require_version('WebKit2', '4.1'); "
@@ -1925,8 +1942,11 @@ def cmd_uninstall(args):
         print(f"    removed {AUTOSTART_DESKTOP}")
     if platform.system() == "Linux":
         import shortcuts
-        if shortcuts.remove():
-            print(f"    took the shortcuts out of {shortcuts.HYPR_DIR}")
+        took = [d for d, gone in ((shortcuts.NIRI_DIR, shortcuts.remove_niri()),
+                                  (shortcuts.HYPR_DIR, shortcuts.remove_lua() | shortcuts.remove_hyprland()))
+                if gone]
+        if took:
+            print(f"    took the shortcuts out of {', '.join(took)}")
         for pid in (OMARCHY_ID,) + OLD_OMARCHY_IDS:
             if remove_plugin(pid):
                 print(f"    took the {pid} bar plugin out of Omarchy")

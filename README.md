@@ -22,11 +22,11 @@ between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`
 - **Any ZMK keyboard**: a small ZMK module on the keyboard; on the host, `import` draws its keymap.
 - **Live**: under `sync --watch`, edit the keymap or its drawing and the HUD redraws; every size
   and timing lives in one config file.
-- **Native panels**: a macOS overlay panel, a Hyprland layer-shell panel on Linux.
+- **Native panels**: a macOS overlay panel, a layer-shell panel on Linux (Hyprland or niri).
 
 ## Requirements
 
-- macOS, or Linux running Hyprland (the panel is a layer-shell surface).
+- macOS, or Linux running Hyprland or niri (the panel is a layer-shell surface).
 - Python 3.10 or newer. `setup` builds a virtualenv; on macOS, Apple's `/usr/bin/python3` is 3.9
   and is not enough on its own.
 - A ZMK keyboard whose firmware you can build and flash, and its zmk-config: a GitHub URL, or a
@@ -191,6 +191,13 @@ off.
   The binds stay after the HUD stops, so the power shortcut starts it again. They unbind those keys
   first, so anything else bound to them stops working. A config change takes effect on the next
   start, and `uninstall` removes both the file and the line.
+- **On niri** they are binds in its config's KDL: every `start` writes `~/.config/niri/zmk-layer-hud.kdl`
+  (one `binds` block) and the first one appends `include optional=true "zmk-layer-hud.kdl"` to the
+  end of `config.kdl`, keeping a copy as `config.kdl.bak-zmk-layer-hud` first. niri merges binds
+  from included files, the last for a key winning, so the include being last takes these keys from
+  whatever had them. niri watches its config files and reads them again by itself when one changes;
+  `start` also asks (`niri msg action load-config-file`) so a change lands without the wait. The
+  binds stay after the HUD stops, and `uninstall` removes both the file and the line.
 
 `zmk-layer-hud autostart enable` starts the HUD hidden at every login, and `autostart disable`
 stops doing so; it leaves a running HUD alone.
@@ -361,8 +368,9 @@ is on), the system turns on secure input. On Linux, a password field with focus 
 accessibility bus, where the apps -- browsers, password managers, polkit's dialog -- say which
 widget has focus and what it is. For that the feed tells them assistive technology is wanted, as a
 screen reader would; a browser running since before shows nothing until it is started again, and
-`feed.accessibility: 0` leaves that setting alone. Under Hyprland the session lock is seen too, on
-Hyprland's own socket, so the unlock password goes nowhere. On both systems, while a terminal is
+`feed.accessibility: 0` leaves that setting alone. The session lock is seen too — under Hyprland
+on its own socket, under niri where the compositor says nothing by a locker's process name — so
+the unlock password goes nowhere. On both systems, while a terminal is
 asking for a password -- `sudo`, `ssh`, `su`, anything that reads a line with echo off -- the feed
 sees that too. Either way it then passes on nothing typed: no characters, no keys lit, no layer
 changes, nothing counted. The strip clears, the board dims and the banner says `secure input ·
@@ -600,8 +608,9 @@ beside anything that is wrong. What it cannot see:
   feed turns on, so a browser from before the first start needs starting again. An app that
   exposes nothing (no accessibility bus, `GTK_A11Y=none`, a toolkit of its own) gives no sign, and
   there the strip shows what is typed and the board lights its keys. The session lock is seen
-  under Hyprland alone (by name -- hyprlock, swaylock, gtklock, waylock -- where Hyprland does not
-  say); another compositor's lock screen is not. `zmk-layer-hud doctor` says what sees a secret
+  under Hyprland (from its own socket, by name -- hyprlock, swaylock, gtklock, waylock -- where
+  Hyprland does not say) and under niri (by name only, its IPC having no lock state); another
+  compositor's lock screen is not. `zmk-layer-hud doctor` says what sees a secret
   being typed here. Stop the HUD, or record with it hidden, when that matters.
 - A terminal's prompt is seen when it reads a line with echo off, as `sudo`, `ssh`, `su`, `passwd`
   and `getpass` do. One that takes the keys raw, one at a time -- `sudo` with `pwfeedback`,

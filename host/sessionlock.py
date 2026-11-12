@@ -1,22 +1,26 @@
-"""The session lock, on Linux under Hyprland: whether the screen is locked, which is when the
-unlock password is typed.
+"""The session lock, on Linux: whether the screen is locked, which is when the unlock password
+is typed.
 
 A locker -- hyprlock, Omarchy's shell, swaylock -- is no toolkit's widget tree, so it is not on
 the accessibility bus (host/a11y.py), and it is not a terminal (hudfeed.terminal_probe): neither
 of the feed's other probes sees it, and the unlock password went to the strip, the counts and
 the socket's clients, the strip showing it for a moment after the screen came back. logind's
-LockedHint, which a desktop's locker would set, is set by none of these lockers. What there is
-is Hyprland's own word: a session lock (ext-session-lock) is a solitary blocker on every monitor,
-which `hyprctl -j monitors` reports in `solitaryBlockedBy` as "LOCK" -- what Omarchy's own
-omarchy-hyprland-session-locked reads. This asks Hyprland's control socket for that, at every
-keystroke and poll (hudfeed.SecureInput), and keeps the answer for KEEP_S: the lock changes
-rarely, and a round trip to the compositor per key is not wanted.
+LockedHint, which a desktop's locker would set, is set by none of these lockers.
 
-A Hyprland that does not say (an older one, with no such key) is asked no further, and the
-lockers are looked for by process name instead, which is less: a locker whose name is not known
-here, or Omarchy's shell (`qs`, which is also the bar, so never a sign), is not seen. No Hyprland
-at all -- the feed runs under a browser page on any Linux -- is no probe (`probe` is None), as
-no terminals is for terminal_probe.
+Under Hyprland there is the compositor's own word: a session lock (ext-session-lock) is a
+solitary blocker on every monitor, which `hyprctl -j monitors` reports in `solitaryBlockedBy`
+as "LOCK" -- what Omarchy's own omarchy-hyprland-session-locked reads. This asks Hyprland's
+control socket for that, at every keystroke and poll (hudfeed.SecureInput), and keeps the
+answer for KEEP_S: the lock changes rarely, and a round trip to the compositor per key is not
+wanted. A Hyprland that does not say (an older one, with no such key) is asked no further.
+
+Under niri the IPC has no word for it at all (`niri msg` lists no lock state), so the lockers
+are always looked for by process name, which is less: a locker whose name is not known here is
+not seen. Either way the lookup is by name when the compositor does not say, and one not named
+here is not seen; Omarchy's shell (`qs`, which is also the bar, so never a sign) is not a sign.
+
+No compositor here at all -- the feed runs under a browser page on any Linux -- is no probe
+(`probe` is None), as no terminals is for terminal_probe.
 """
 
 import json
@@ -26,9 +30,9 @@ import sys
 import threading
 import time
 
-LOCKERS = ("hyprlock", "swaylock", "gtklock", "waylock")    # by name, where Hyprland does not say
-TIMEOUT_S = 1.0             # for Hyprland's control socket
-KEEP_S = 0.1                # how long an answer stands before Hyprland is asked again
+LOCKERS = ("hyprlock", "swaylock", "gtklock", "waylock")    # by name, where the compositor does not say
+TIMEOUT_S = 1.0             # for the compositor's control socket
+KEEP_S = 0.1                # how long an answer stands before the compositor is asked again
 
 
 def socket_path(environ=os.environ):
@@ -45,8 +49,17 @@ def socket_path(environ=os.environ):
     return None
 
 
+def niri_socket_path(environ=os.environ):
+    """niri's control socket for this session, or None where there is no niri. niri says nothing
+    of the session lock over it, which is why it is only a sign that the by-name lookup is the
+    one to run (probe)."""
+    path = environ.get("NIRI_SOCKET")
+    return path if path and os.path.exists(path) else None
+
+
 def available(environ=os.environ):
-    return sys.platform == "linux" and socket_path(environ) is not None
+    return sys.platform == "linux" and (socket_path(environ) is not None or
+                                        niri_socket_path(environ) is not None)
 
 
 def monitors(path, timeout_s=TIMEOUT_S):
@@ -98,8 +111,10 @@ def locker_running(names=LOCKERS, proc="/proc", uid=None):
 
 
 class SessionLock:
-    """Whether the session is locked, asked of Hyprland and kept for `keep_s`. `probe()` is what
-    SecureInput asks, from the reader threads and the poll at once, hence the lock."""
+    """Whether the session is locked, asked of the compositor and kept for `keep_s`. `probe()` is
+    what SecureInput asks, from the reader threads and the poll at once, hence the lock. `path` is
+    None under niri, where the compositor does not say and the lockers are looked for by name on
+    every ask (locker_running), with nothing to keep."""
 
     def __init__(self, path, log=print, keep_s=KEEP_S, clock=time.monotonic, proc="/proc"):
         self.path, self.log, self.keep_s, self.clock, self.proc = path, log, keep_s, clock, proc
@@ -112,19 +127,27 @@ class SessionLock:
         with self.lock:
             if self._at is not None and now - self._at < self.keep_s:
                 return self._was
-            got = locked(self.path)
+            got = locked(self.path) if self.path is not None else None
             if got is None:
                 if self.said != "by-name":
                     self.said = "by-name"
-                    self.log("sessionlock: this Hyprland does not say whether the session is locked (no "
-                             "solitaryBlockedBy in `hyprctl -j monitors`): a locker is looked for by name "
-                             f"instead ({', '.join(LOCKERS)}), and one not named here is not seen")
+                    reason = ("niri does not say whether the session is locked (its IPC has no lock state)"
+                              if self.path is None else
+                              "this Hyprland does not say whether the session is locked "
+                              "(no solitaryBlockedBy in `hyprctl -j monitors`)")
+                    self.log(f"sessionlock: {reason}: a locker is looked for by name instead "
+                             f"({', '.join(LOCKERS)}), and one not named here is not seen")
                 got = locker_running(proc=self.proc)
             self._at, self._was = now, got
             return got
 
 
 def probe(log=print, environ=os.environ):
-    """-> whether the session is locked (SessionLock.probe), or None where there is no Hyprland."""
-    path = socket_path(environ) if sys.platform == "linux" else None
-    return SessionLock(path, log=log).probe if path else None
+    """-> whether the session is locked (SessionLock.probe), or None where no compositor here is
+    a way to tell: no Hyprland socket to ask, and no niri to say a locker is worth looking for."""
+    if sys.platform != "linux":
+        return None
+    path = socket_path(environ)
+    if path or niri_socket_path(environ):
+        return SessionLock(path, log=log).probe
+    return None

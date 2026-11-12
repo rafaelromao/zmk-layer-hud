@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """zmk-layer-hud -- the session lock probe (host/sessionlock.py), against a Hyprland of the
-test's own: a socket that answers `j/monitors` with whatever the test says, and a /proc."""
+test's own: a socket that answers `j/monitors` with whatever the test says, and a /proc. niri's
+side too, where the compositor never says and only the by-name lookup runs."""
 
 import json
 import os
@@ -148,6 +149,29 @@ class Probe(unittest.TestCase):
             self.assertTrue(lock.probe())
         self.assertEqual(1, len(logged), logged)
         self.assertIn("by name", logged[0])
+
+    def test_niris_socket_is_a_probe_that_only_ever_looks_by_name(self):
+        with tempfile.TemporaryDirectory() as sock:
+            path = os.path.join(sock, "niri.sock")
+            with open(path, "w"):
+                pass
+            env = {"NIRI_SOCKET": path}
+            self.assertEqual(path, sessionlock.niri_socket_path(env))
+            self.assertEqual(sys.platform == "linux", sessionlock.available(env))
+            # No lock state over niri's IPC: `locked` is never asked, and the lockers are the
+            # whole answer.
+            with mock.patch.object(sessionlock, "locked") as said, \
+                    mock.patch.object(sessionlock, "locker_running", return_value=True) as by_name:
+                probe = sessionlock.probe(log=lambda *_: None, environ=env)
+                self.assertIsNotNone(probe)
+                self.assertTrue(probe())
+            said.assert_not_called()
+            by_name.assert_called_once()
+
+    def test_a_niri_socket_that_is_not_there_is_no_probe(self):
+        self.assertIsNone(sessionlock.niri_socket_path({}))
+        self.assertIsNone(sessionlock.niri_socket_path({"NIRI_SOCKET": "/nowhere/niri.sock"}))
+        self.assertIsNone(sessionlock.probe(environ={"NIRI_SOCKET": "/nowhere/niri.sock"}))
 
     def test_no_hyprland_is_no_probe(self):
         self.assertIsNone(sessionlock.socket_path({}))

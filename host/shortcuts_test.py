@@ -1,5 +1,6 @@
 """Tests for the global shortcuts: what the config may say, how each system shows them, and the
-Hyprland file and the line that sources it."""
+files each compositor reads them from -- Hyprland's and the line that sources them, niri's KDL
+and the include that reads it."""
 
 import contextlib
 import io
@@ -57,6 +58,109 @@ class Label(unittest.TestCase):
         self.assertEqual("", shortcuts.label(None))
 
 
+class Niri(unittest.TestCase):
+    """niri's side: our KDL file, and the include once appended to config.kdl."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.niri = os.path.join(self.tmp.name, "niri")
+        self.state = os.path.join(self.tmp.name, "state")
+        os.makedirs(self.niri)
+        self.main = os.path.join(self.niri, shortcuts.NIRI_MAIN)
+        self.original = 'spawns-at-startup {}\n\ninclude "binds.kdl"\n'
+        with open(self.main, "w") as f:
+            f.write(self.original)
+
+    def conf(self, sets=None, start_with=""):
+        return shortcuts.niri_conf(sets or {"toggle": (("ctrl", "alt"), "l"),
+                                            "power": (("ctrl", "alt", "gui"), "l"),
+                                            "off": None},
+                                   "/x/zmk-layer-hud", self.state, start_with)
+
+    def test_each_key_is_a_spawn_of_the_command_in_one_binds_block(self):
+        text = self.conf()
+        self.assertIn("binds {", text)
+        self.assertIn('Ctrl+Alt+L { spawn "env" "ZMKHUD_STATE=' + self.state +
+                      '" "/x/zmk-layer-hud" "toggle"; } // ZMK HUD show/hide', text)
+        self.assertIn('Ctrl+Alt+Super+L { spawn "env"', text)
+        self.assertNotIn('"off"', text)                 # a null shortcut binds nothing
+
+    def test_the_power_shortcut_takes_uwsm_app_and_the_toggle_does_not(self):
+        text = self.conf(start_with="uwsm-app --")
+        self.assertIn('Ctrl+Alt+Super+L { spawn "uwsm-app" "--" "env"', text)
+        self.assertIn('Ctrl+Alt+L { spawn "env"', text)     # no uwsm prefix on the toggle
+
+    def test_the_file_is_written_and_the_include_appended_once(self):
+        changed = shortcuts.install_niri({"toggle": (("ctrl", "alt"), "l")}, "/x", self.state,
+                                         niri_dir=self.niri)
+        self.assertTrue(changed)
+        with open(os.path.join(self.niri, shortcuts.NIRI_FILE)) as f:
+            self.assertIn("binds {", f.read())
+        with open(self.main) as f:
+            text = f.read()
+        self.assertIn(shortcuts.NIRI_INCLUDE, text)
+        self.assertTrue(text.startswith(self.original))      # what was there is still there
+        again = shortcuts.install_niri({"toggle": (("ctrl", "alt"), "l")}, "/x", self.state,
+                                       niri_dir=self.niri)
+        self.assertFalse(again)                         # nothing changed the second time
+        with open(self.main) as f:
+            self.assertEqual(1, f.read().count(shortcuts.NIRI_INCLUDE))
+
+    def test_no_config_kdl_is_nothing_at_all(self):
+        os.remove(self.main)
+        self.assertIsNone(shortcuts.install_niri({"toggle": (("ctrl", "alt"), "l")}, "/x",
+                                                 self.state, niri_dir=self.niri))
+        self.assertFalse(os.path.exists(os.path.join(self.niri, shortcuts.NIRI_FILE)))
+
+    def test_remove_takes_the_include_and_the_file_out_and_the_rest_is_left(self):
+        shortcuts.install_niri({"toggle": (("ctrl", "alt"), "l")}, "/x", self.state,
+                               niri_dir=self.niri)
+        self.assertTrue(shortcuts.remove_niri(self.niri))
+        with open(self.main) as f:
+            self.assertEqual(self.original, f.read())
+        self.assertFalse(os.path.exists(os.path.join(self.niri, shortcuts.NIRI_FILE)))
+        self.assertFalse(shortcuts.remove_niri(self.niri))
+
+    def test_main_writes_niris_files_and_asks_niri_to_read_them_again(self):
+        with mock.patch.object(shortcuts, "NIRI_DIR", self.niri), \
+                mock.patch.object(shortcuts, "on_niri", lambda *a, **k: True), \
+                mock.patch.object(shortcuts, "read", lambda: shortcuts.settings({})), \
+                mock.patch.object(shortcuts.subprocess, "call") as call, \
+                mock.patch.dict(os.environ, {"ZMKHUD_STATE": self.state}), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            shortcuts.main()
+        self.assertTrue(os.path.exists(os.path.join(self.niri, shortcuts.NIRI_FILE)))
+        with open(self.main) as f:
+            self.assertIn(shortcuts.NIRI_INCLUDE, f.read())
+        call.assert_called_once_with(["niri", "msg", "action", "load-config-file"],
+                                     stdout=mock.ANY, stderr=mock.ANY)
+        self.assertIn("shows or hides", out.getvalue())
+        self.assertIn("starts or stops", out.getvalue())
+
+
+class OnNiri(unittest.TestCase):
+    """Which compositor this session is: niri's socket says so, a Hyprland one says not, and
+    without either a niri config is what is left to go on."""
+
+    def test_niris_socket_in_the_environment_is_niri(self):
+        self.assertTrue(shortcuts.on_niri({"NIRI_SOCKET": "/run/user/1000/niri.sock"}))
+
+    def test_hyprlands_signature_says_not_niri_however_the_configs_look(self):
+        self.assertFalse(shortcuts.on_niri({"HYPRLAND_INSTANCE_SIGNATURE": "abc123"}))
+
+    def test_without_either_a_niri_config_is_the_sign(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        niri = os.path.join(tmp.name, "niri")
+        os.makedirs(niri)
+        with mock.patch.object(shortcuts, "NIRI_DIR", niri):
+            self.assertFalse(shortcuts.on_niri({}))
+            with open(os.path.join(niri, shortcuts.NIRI_MAIN), "w") as f:
+                f.write("")
+            self.assertTrue(shortcuts.on_niri({}))
+
+
 class HyprlandLua(unittest.TestCase):
     """A Hyprland configured in Lua, as Omarchy 4's is: the binds in a file of our own, read by a
     line at the end of hyprland.lua."""
@@ -65,8 +169,10 @@ class HyprlandLua(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.hypr = os.path.join(self.tmp.name, "hypr")
+        self.niri = os.path.join(self.tmp.name, "niri")     # remove() undoes niri's files too
         self.state = os.path.join(self.tmp.name, "state")
         os.makedirs(self.hypr)
+        os.makedirs(self.niri)
         self.main = os.path.join(self.hypr, "hyprland.lua")
         self.original = 'require("default.hypr.omarchy")\nrequire("hypr.bindings")\n'
         with open(self.main, "w") as f:
@@ -99,11 +205,11 @@ class HyprlandLua(unittest.TestCase):
             self.assertIn(r'\"hud\"', f.read())              # the command's own quotes, a Lua string's
         with open(os.path.join(self.state, shortcuts.JSON_FILE)) as f:
             self.assertEqual("Ctrl+Alt+L", json.load(f)["toggle"])
-        self.assertTrue(shortcuts.remove(self.hypr))
+        self.assertTrue(shortcuts.remove(self.hypr, self.niri))
         with open(self.main) as f:
             self.assertEqual(self.original, f.read())
         self.assertFalse(os.path.exists(os.path.join(self.hypr, shortcuts.HYPR_LUA)))
-        self.assertFalse(shortcuts.remove(self.hypr))
+        self.assertFalse(shortcuts.remove(self.hypr, self.niri))
 
     def test_no_hyprland_lua_binds_nothing(self):
         os.remove(self.main)
@@ -116,6 +222,7 @@ class HyprlandLua(unittest.TestCase):
             f.write("monitor = , preferred, auto, 1\n")
         shortcuts.install_hyprland(shortcuts.settings({}), "/x", self.state, hypr_dir=self.hypr)
         with mock.patch.object(shortcuts, "HYPR_DIR", self.hypr), \
+                mock.patch.object(shortcuts, "on_niri", lambda *a, **k: False), \
                 mock.patch.object(shortcuts, "read", lambda: shortcuts.settings({})), \
                 mock.patch.object(shortcuts.subprocess, "call") as call, \
                 mock.patch.dict(os.environ, {"ZMKHUD_STATE": self.state}), contextlib.redirect_stdout(io.StringIO()):

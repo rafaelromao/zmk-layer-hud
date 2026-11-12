@@ -242,14 +242,22 @@ The global shortcuts (`host/shortcuts.py`, `shortcuts:` in the config) run the s
   Hyprland fires every bind on a key. When either file changed, `hyprctl reload`, as Omarchy's own
   scripts do after an edit; the first edit of a file keeps a copy as `<file>.bak-zmk-layer-hud`. The
   labels go to `$STATE/shortcuts.json` for the bar's menu.
+- **niri:** the same `shortcuts.py`, writing its config's KDL instead: `~/.config/niri/zmk-layer-hud.kdl`
+  holds one `binds` block (each key a `spawn` of the verb, niri running spawn's arguments with no
+  shell, so the environment rides along as `env`'s own), read by an `include optional=true` line
+  once appended to the end of `config.kdl` -- last, so niri's merge gives these keys from whatever
+  had them. The first edit keeps `config.kdl.bak-zmk-layer-hud`. niri watches its config files and
+  reads them again by itself when one changes; when either file changed, `shortcuts.py` also asks
+  (`niri msg action load-config-file`) so the binds land without the wait. Which it is follows
+  `NIRI_SOCKET` (in everything niri starts), then a niri config beside no Hyprland.
 
 An output going away -- a monitor asleep or unplugged, a suspend -- takes the Linux panel's layer
 surfaces with it. gtk-layer-shell drops that close from 0.10 on, leaving the window with no surface
 under it, and before 0.10 it destroyed the window: either way the panel answered `show` with
 nothing until it was restarted. So it asks for the close (`set_respect_close`), keeps the window
 (its `delete-event` returns true), and maps its surfaces again on the monitor it would pick now
-whenever monitors come or go, a surface is closed, or a `show` finds Hyprland without the HUD's
-(`surface_there`). A WebKit web process that goes away leaves an empty view, which is a
+whenever monitors come or go, a surface is closed, or a `show` finds the compositor without the
+HUD's (`surface_there`). A WebKit web process that goes away leaves an empty view, which is a
 transparent one, so the page is loaded again, less and less often if it keeps going.
 
 The macOS login item (`autostart enable`) runs `host/macos/launcher.c`, compiled into

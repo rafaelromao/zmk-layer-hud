@@ -682,7 +682,7 @@ class Doctor(unittest.TestCase):
         results, said = self.rows("carbon\tnone\tnot macOS\nterminals\ton\ta prompt is seen\n"
                                   "a11y\toff\tjeepney is not in the venv (zmk-layer-hud setup)\nlock\ton\tHyprland says unlocked\n")
         self.assertEqual([cli.OK, cli.WARN], results)
-        self.assertIn("seen by the terminals' prompts, Hyprland's session lock", said)
+        self.assertIn("seen by the terminals' prompts, the session lock", said)
         self.assertIn("secure input: the accessibility bus: jeepney is not in the venv", said)
 
     def test_nothing_watching_is_a_warning_with_what_to_do(self):
