@@ -276,6 +276,17 @@ With source symbols available, unknown keys are reported and ignored. Only legac
 without source symbols fall back to positional order. A normal sync preserves your config
 and carries earlier drawing decisions with their symbols.
 
+A key in the drawing may also say what it produces with Ctrl and with Ctrl and Shift, which is
+what a mod-morph makes: `left` is the Ctrl legend and `right` the Ctrl+Shift one, next to `tap`
+(plain) and `shifted` (Shift). A chord shows the legend for the modifiers held when it fires:
+
+```yaml
+- k: {tap: "(", shifted: ")", left: "==", right: "!="}
+```
+
+Plain shows `(` with `)` small, Shift shows `)` with `(` small, Ctrl shows `==` with `!=` small,
+and Ctrl+Shift shows `!=` with `==` small. A chord without `left` or `right` is drawn as always.
+
 Symbol discovery reads decimal `#define NAME number` lines in quoted includes, not arbitrary
 preprocessor expressions. Numeric defines can also describe key positions or timings: use
 the firmware's actual layer symbols in your map; colliding numeric defines are kept as aliases.
