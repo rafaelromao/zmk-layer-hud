@@ -15,6 +15,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import keymap as km  # noqa: E402
+import export  # noqa: E402
 
 try:
     import keymap_drawer  # noqa: F401
@@ -76,6 +77,50 @@ class Keys(unittest.TestCase):
         k = km.norm_key({"t": "$$mdi:keyboard-return$$", "h": "Nav", "s": "sticky", "type": "held"})
         self.assertEqual((k["tap"], k["hold"], k["shifted"], k["type"], k["glyph"]), ("↵", "Nav", "sticky", "held", "mdi:keyboard-return"))
         self.assertEqual(km.norm_key({"tap": "x", "hold": "y", "shifted": "z"}), {"tap": "x", "hold": "y", "shifted": "z", "type": "key"})
+
+    def test_a_key_carries_its_left_and_right_legends(self):
+        # left and right are keymap-drawer's own slots, and the drawing styles them as the ctrl and
+        # ctrl+shift states of a four-state mod-morph (draw/twonr9_config.yaml's text.left, right).
+        k = km.norm_key({"t": "(", "s": ")", "left": "==", "right": "!="})
+        self.assertEqual((k["tap"], k["shifted"], k["left"], k["right"]), ("(", ")", "==", "!="))
+        # A key without them says nothing about them.
+        self.assertNotIn("left", km.norm_key("a"))
+        # A side legend may be a glyph, like any other; only its text is kept, as the others'.
+        g = km.norm_key({"t": "s", "left": "$$mdi:content-save$$"})
+        self.assertEqual(g["left"], "💾")
+
+    def test_a_combo_carries_its_left_and_right_legends(self):
+        # Through keymap-drawer's own resolution: the drawer parses the combo's key and hands it
+        # back as its LayoutKey, whose left and right are read like its tap and shifted.
+        doc = dict(DOC, combos=[{"p": [0, 1], "k": {"t": "(", "s": ")", "left": "==", "right": "!="},
+                                 "layers": ["Base"]}])
+        _, combos = km.parse_layers_and_combos(doc, 10)
+        key = combos[0]["key"]
+        self.assertEqual((key["tap"], key["shifted"], key["left"], key["right"]),
+                         ("(", ")", "==", "!="))
+
+    def test_a_layer_key_carries_its_left_and_right_too(self):
+        base = [list(row) if isinstance(row, list) else dict(row) if isinstance(row, dict) else row
+                for row in DOC["layers"]["Base"]]
+        base[0][1] = {"t": "b", "left": "B", "right": "B!"}
+        layers, _ = km.parse_layers_and_combos(dict(DOC, layers=dict(DOC["layers"], Base=base)), 10)
+        self.assertEqual((layers["Base"][1]["left"], layers["Base"][1]["right"]), ("B", "B!"))
+
+    def test_a_combo_without_side_legends_says_nothing_about_them(self):
+        _, combos = km.parse_layers_and_combos(DOC, 10)
+        self.assertNotIn("left", combos[0]["key"])
+        self.assertNotIn("right", combos[0]["key"])
+
+    def test_the_side_legends_survive_without_keymap_drawer(self):
+        # The fallback path takes a combo as it is written, so the legends ride along without
+        # being resolved for anything.
+        blocked = {name: None for name in ("keymap_drawer", "keymap_drawer.keymap")}
+        doc = dict(DOC, combos=[{"p": [0, 1], "k": {"t": "(", "s": ")", "left": "==", "right": "!="},
+                                 "l": ["Base"]}])
+        with mock.patch.dict(sys.modules, blocked):
+            _, combos = km.parse_layers_and_combos(doc, 10)
+        key = combos[0]["key"]
+        self.assertEqual((key["shifted"], key["left"], key["right"]), (")", "==", "!="))
 
     def test_unknown_glyph_uses_its_name(self):
         self.assertEqual(km.legend("$$mdi:something-new$$")[0], "something-new")
@@ -553,6 +598,23 @@ class Drawing(unittest.TestCase):
         before = json.dumps(drawing, sort_keys=True)
         km.build_message({"combos": [{"positions": [2, 3], "layers": ["Nav"]}]}, {"drawing": drawing})
         self.assertEqual(before, json.dumps(drawing, sort_keys=True))
+
+    @unittest.skipUnless(HAVE_DRAWER, "keymap-drawer not installed")
+    def test_a_combo_drawing_keeps_its_ctrl_legends(self):
+        # `session export` hands the drawer's own form of the drawing back to the drawer. An unknown
+        # field on a combo's key made it refuse the whole board, so the four-state legends have to
+        # be its own: they leave the drawing as `left` and `right` and come out of it the same way.
+        doc = dict(DOC, combos=[{"p": [0, 1], "k": {"t": "(", "s": ")", "left": "==", "right": "!="},
+                                 "layers": ["Base"]}])
+        made = km.draw(doc, fetch=False)
+        made["drawing"]["glyphs"] = {}
+        svg = export.svg({}, message({}, doc), made, layers=["Base"])
+        # _to_class_str keeps only truthy classes, so a combo's box and legends read "combo <slot>",
+        # and the legend word sits inside that text element.
+        for word, slot in (("(", "tap"), (")", "shifted"), ("==", "left"), ("!=", "right")):
+            hit = re.search(rf'<text[^>]*class="combo {slot}">([^<]*)</text>', svg)
+            self.assertTrue(hit, f"{word} ({slot}) is not in the drawing")
+            self.assertEqual(word, hit.group(1))
 
     @unittest.skipUnless(HAVE_DRAWER, "keymap-drawer not installed")
     def test_the_qmk_layout_puts_each_key_back_where_it_was_drawn(self):
