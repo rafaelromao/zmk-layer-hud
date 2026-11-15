@@ -500,8 +500,12 @@ class OmarchyPlugin(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.shell = os.path.join(self.tmp.name, "shell.json")
         self.plugins = os.path.join(self.tmp.name, "plugins")
+        # Noctalia is here in these tests (which= says so), so its plugin dir and its shell must be
+        # fakes too: a `menubar disable` here once took the real HUD out of the real bar.
         for p in (mock.patch.object(cli, "OMARCHY_PLUGINS", self.plugins),
                   mock.patch.object(cli, "SHELL_JSON", self.shell),
+                  mock.patch.object(cli, "NOCTALIA_PLUGINS", os.path.join(self.tmp.name, "noctalia")),
+                  mock.patch.object(cli, "noctalia", side_effect=AssertionError("the real noctalia was asked")),
                   mock.patch.object(cli.platform, "system", return_value="Linux")):
             p.start()
             self.addCleanup(p.stop)
@@ -677,7 +681,8 @@ class NoctaliaPlugin(unittest.TestCase):
                   mock.patch.object(cli, "OMARCHY_PLUGINS", os.path.join(self.tmp.name, "omarchy")),
                   mock.patch.object(cli, "SHELL_JSON", self.shell),
                   mock.patch.object(cli.platform, "system", return_value="Linux"),
-                  mock.patch.object(cli, "noctalia", self.fake)):
+                  mock.patch.object(cli, "noctalia", self.fake),
+                  mock.patch.dict(os.environ, {"XDG_STATE_HOME": os.path.join(self.tmp.name, "state")})):
             p.start()
             self.addCleanup(p.stop)
 
@@ -758,6 +763,22 @@ class NoctaliaPlugin(unittest.TestCase):
         code, said = self.run_cli("menubar")
         self.assertEqual(0, code)
         self.assertIn("but not in the bar", said)
+
+    def test_status_says_when_the_bar_has_it_but_the_saved_settings_do_not(self):
+        self.run_cli("menubar", "enable")
+        state = os.path.join(self.tmp.name, "state", "noctalia")
+        os.makedirs(state)
+        settings = os.path.join(state, "settings.toml")
+        with open(settings, "w", encoding="utf-8") as f:
+            f.write('[bar.main]\nend = [ "tray", "zmk-hud" ]\n')
+        code, said = self.run_cli("menubar")
+        self.assertNotIn("saved settings", said)
+        with open(settings, "w", encoding="utf-8") as f:
+            f.write('[bar.main]\nend = [ "tray" ]\n')
+        code, said = self.run_cli("menubar")
+        self.assertEqual(0, code)
+        self.assertIn("not in Noctalia's saved settings", said)
+        self.assertNotIn("but not in the bar", said)
 
     def test_without_a_bar_here_it_says_so(self):
         code, said = self.run_cli("menubar", "enable", which=lambda n: None)
@@ -1128,6 +1149,7 @@ class Update(unittest.TestCase):
                 mock.patch.object(cli, "fetch_tree", fetch), mock.patch.object(cli, "latest_release", lambda: "v1.1.0"), \
                 mock.patch.object(cli, "processes", lambda pattern: {}), mock.patch.object(cli, "venv_ok", lambda: False), \
                 mock.patch.object(cli, "plugin_dir", lambda: os.path.join(tmp.name, "no-plugin")), \
+                mock.patch.object(cli, "NOCTALIA_PLUGINS", os.path.join(tmp.name, "no-noctalia")), \
                 mock.patch.dict(os.environ, {"ZMKHUD_REF": ""}), contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertEqual(0, cli.cmd_update(args))
             with open(os.path.join(root, "bin", "zmk-layer-hud")) as f:
