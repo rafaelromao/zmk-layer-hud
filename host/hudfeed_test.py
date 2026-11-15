@@ -1046,6 +1046,86 @@ class BleReading(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 1.0)       # not the 3 s backoff
 
 
+class BluezConnected(unittest.TestCase):
+    """The keyboard BlueZ has connected, from its managed objects: no scan, no adapter."""
+
+    SVC = "d1f0a7c2-6b3e-4f8a-9c21-5e7b4a0d9f31"
+
+    @staticmethod
+    def device(address, name, connected=True, uuids=(), path=None):
+        v = lambda x: types.SimpleNamespace(value=x)
+        props = {"Connected": v(connected), "Address": v(address), "Name": v(name), "UUIDs": v(list(uuids))}
+        return (path or "/org/bluez/hci0/dev_" + address.replace(":", "_")), {"org.bluez.Device1": props}
+
+    def objects(self, *devices):
+        return dict(devices)
+
+    def test_the_connected_keyboard_with_the_service_is_found(self):
+        import hudfeed
+        objs = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]),
+                            self.device("DC:2C:26:2A:31:DE", "Keychron K4", uuids=["1812"]))
+        self.assertEqual(("/org/bluez/hci0/dev_F9_BD_CA_10_F7_A8", "F9:BD:CA:10:F7:A8", "TwoNr9"),
+                         hudfeed.bluez_connected(objs))
+
+    def test_a_keyboard_not_connected_is_not_found(self):
+        import hudfeed
+        objs = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", connected=False, uuids=[self.SVC]))
+        self.assertIsNone(hudfeed.bluez_connected(objs))
+
+    def test_a_connected_keyboard_without_the_service_is_not_taken(self):
+        import hudfeed
+        objs = self.objects(self.device("DC:2C:26:2A:31:DE", "Keychron K4", uuids=["1812"]))
+        self.assertIsNone(hudfeed.bluez_connected(objs))
+
+    def test_the_configured_address_and_name_pick_between_two(self):
+        import hudfeed
+        objs = self.objects(self.device("AA:AA:AA:AA:AA:01", "Other", uuids=[self.SVC]),
+                            self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]))
+        self.assertEqual("F9:BD:CA:10:F7:A8", hudfeed.bluez_connected(objs, address="f9:bd:ca:10:f7:a8")[1])
+        self.assertEqual("TwoNr9", hudfeed.bluez_connected(objs, name="twonr")[2])
+        self.assertIsNone(hudfeed.bluez_connected(objs, address="11:22:33:44:55:66"))
+
+    @staticmethod
+    def fake_bleak(scan):
+        # bleak is not needed to test the order: the device and the scanner are stand-ins.
+        device = types.ModuleType("bleak.backends.device")
+        device.BLEDevice = lambda address, name, details: types.SimpleNamespace(
+            address=address, name=name, details=details)
+        scanner = types.SimpleNamespace(BleakScanner=types.SimpleNamespace(find_device_by_address=scan))
+        return {"bleak": scanner, "bleak.backends.device": device, "bleak.backends": types.ModuleType("bleak.backends")}
+
+    def test_on_linux_the_connected_keyboard_is_tried_before_any_scan(self):
+        import hudfeed
+        r = hudfeed.BleReader(lambda m: None, address="F9:BD:CA:10:F7:A8", log=lambda *a: None)
+        objs = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]))
+
+        async def objects_now():
+            return objs
+
+        async def scan(address, timeout):
+            raise AssertionError("the scan should not run")
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.object(hudfeed, "bluez_objects", objects_now), \
+                mock.patch.dict(sys.modules, self.fake_bleak(scan)):
+            device = asyncio.run(r._find())
+        self.assertEqual("/org/bluez/hci0/dev_F9_BD_CA_10_F7_A8", device.details["path"])
+        self.assertEqual("F9:BD:CA:10:F7:A8", device.address)
+
+    def test_without_the_system_bus_the_scan_is_still_the_way_in(self):
+        import hudfeed
+        r = hudfeed.BleReader(lambda m: None, address="F9:BD:CA:10:F7:A8", log=lambda *a: None)
+
+        async def no_bus():
+            raise OSError("no system bus")
+
+        async def scan(address, timeout):
+            return "scanned"
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.object(hudfeed, "bluez_objects", no_bus), \
+                mock.patch.dict(sys.modules, self.fake_bleak(scan)):
+            self.assertEqual("scanned", asyncio.run(r._find()))
+
+
 class HidKeys(unittest.TestCase):
     """The HID keys reader (hidapi, macOS) with a hid module that answers as the test says."""
 

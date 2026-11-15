@@ -423,6 +423,39 @@ class SerialReader(Reader):
 
 
 
+def bluez_connected(objects, address=None, name=None):
+    """The BlueZ device the keyboard is connected as, from BlueZ's managed objects (path -> interfaces
+    -> properties), or None. Connected and exposing the module's service: a keyboard in use is
+    connected and no longer advertises, so a scan never finds it, but BlueZ already has it."""
+    for path, interfaces in objects.items():
+        props = interfaces.get("org.bluez.Device1")
+        if not props or not props["Connected"].value:
+            continue
+        found = props["Address"].value
+        if address and found.lower() != address.lower():
+            continue
+        if BLE_SERVICE_UUID not in [u.lower() for u in (props["UUIDs"].value if "UUIDs" in props else [])]:
+            continue
+        label = props["Name"].value if "Name" in props else found
+        if name and name.lower() not in label.lower():
+            continue
+        return path, found, label
+    return None
+
+
+async def bluez_objects():
+    from dbus_fast import BusType, Message
+    from dbus_fast.aio import MessageBus
+    bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+    try:
+        reply = await bus.call(Message(destination="org.bluez", path="/",
+                                       interface="org.freedesktop.DBus.ObjectManager",
+                                       member="GetManagedObjects"))
+    finally:
+        bus.disconnect()
+    return reply.body[0]
+
+
 class BleReader:
     """Reads the module's GATT service on its own thread, where bleak's event loop lives. Each
     notification is exactly one frame.
@@ -469,12 +502,30 @@ class BleReader:
             device = await self._connected_macos()
             if device is not None:
                 return device
+        elif sys.platform.startswith("linux"):
+            device = await self._connected_bluez()
+            if device is not None:
+                return device
         if self.address:
             return await BleakScanner.find_device_by_address(self.address, timeout=self.rescan)
         return await BleakScanner.find_device_by_filter(
             lambda d, ad: (BLE_SERVICE_UUID in (ad.service_uuids or [])
                            and (not self.name or self.name.lower() in (d.name or "").lower())),
             timeout=self.rescan)
+
+    async def _connected_bluez(self):
+        """The keyboard BlueZ already has connected, or None; see bluez_connected. Wrapped the way
+        bleak's own scanner wraps what it finds, so BleakClient takes it by its path."""
+        from bleak.backends.device import BLEDevice
+        try:
+            objects = await bluez_objects()
+        except Exception:
+            return None      # no system bus or no BlueZ: the scan is the way in, as before
+        found = bluez_connected(objects, self.address, self.name)
+        if found is None:
+            return None
+        path, address, label = found
+        return BLEDevice(address, label, {"path": path, "props": {}})
 
     async def _connected_macos(self):
         """The keyboard macOS already has connected, or None. A bonded keyboard in use is connected
