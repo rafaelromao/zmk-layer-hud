@@ -248,6 +248,107 @@ const eIdx = DIAMOND.layers[DIAMOND.base].findIndex(key => key.tap === "e");
   check(eq(out.board.lit, []), "and then out");
 })();
 
+(function aChordStruckWithCtrlReadsItsCtrlLegend() {
+  // A mod-morph's chord (keymap's DIAG_SYMBOL): what it makes is the modifiers held when it fires,
+  // so its pill reads the state it was struck in -- the drawing's own tap and shifted without Ctrl,
+  // its ctrl and ctrl+shift legends with it.
+  const morph = mutate => {
+    const doc = JSON.parse(JSON.stringify(DIAMOND));
+    mutate(doc.combos[0].key);                       // positions [0,1] on the base, no hold
+    const ks = K.create();
+    ks.read(doc, 0);
+    return { key: doc.combos[0].key, read: (m, t) => ks.read(m, t), to: t => ks.tick(t) };
+  };
+  const SHIFT_KEY = 23;                              // the drawing's sticky shift: held as a key
+  const strike = (m, flags, held = []) => {
+    m.read({ kind: "layers", ids: [] }, 900);
+    for (const i of held) m.read({ kind: "press", pos: posOfIdx(i) }, 600);
+    if (flags) m.read({ kind: "key", type: "flagsChanged", flags }, 990);
+    for (const p of DIAMOND.combos[0].positions) m.read({ kind: "press", pos: posOfIdx(p) }, 1000);
+    return m.to(1400).board.pills;
+  };
+  const ctrl = k => { k.left = "=="; k.right = "!="; };
+
+  {
+    // The ctrl report trails the chord's keys, as it can when positions and modifiers come on
+    // different channels: the pill still reads the ctrl legend.
+    const m = morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); });
+    m.read({ kind: "layers", ids: [] }, 900);
+    for (const p of DIAMOND.combos[0].positions) m.read({ kind: "press", pos: posOfIdx(p) }, 1000);
+    m.read({ kind: "key", type: "flagsChanged", flags: { ctrl: true } }, 1005);
+    const pills = m.to(1400).board.pills;
+    check(pills.length === 1 && pills[0].key.tap === "==",
+          `a ctrl report that trails the chord still makes its ctrl legend: ${JSON.stringify(pills.map(p => p.key))}`);
+  }
+
+  {
+    // Ctrl held on its own key, and the report says it was let go as the chord fires: ZMK masks the
+    // modifiers of a mod-morph from the report while it runs, so the held key is what says Ctrl is down.
+    const m = morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); });
+    m.read({ kind: "layers", ids: [] }, 900);
+    m.read({ kind: "press", pos: posOfIdx(7) }, 600);
+    m.read({ kind: "key", type: "flagsChanged", flags: { ctrl: true } }, 610);
+    const [first, second] = DIAMOND.combos[0].positions;
+    m.read({ kind: "press", pos: posOfIdx(first) }, 1000);
+    m.read({ kind: "key", type: "flagsChanged", flags: { ctrl: false } }, 1000);
+    m.read({ kind: "press", pos: posOfIdx(second) }, 1000);
+    const pills = m.to(1400).board.pills;
+    check(pills.length === 1 && pills[0].key.tap === "==",
+          `a masked report does not let go of a held Ctrl key: ${JSON.stringify(pills.map(p => p.key))}`);
+  }
+
+  {
+    // Command held on its own key: ZMK sends a shortcut for the chord, not what it makes, so the
+    // chord draws no pill.
+    const m = morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); });
+    m.read({ kind: "layers", ids: [] }, 900);
+    m.read({ kind: "press", pos: posOfIdx(16) }, 600);
+    for (const p of DIAMOND.combos[0].positions) m.read({ kind: "press", pos: posOfIdx(p) }, 1000);
+    const pills = m.to(1400).board.pills;
+    check(pills.length === 0, `a chord with Command held draws no pill: ${JSON.stringify(pills.map(p => p.key))}`);
+  }
+
+  let pills = strike(morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); }), { ctrl: true });
+  check(pills.length === 1 && pills[0].key.tap === "==" && pills[0].key.shifted === "!=",
+        `struck with Ctrl, its ctrl legend: ${JSON.stringify(pills.map(p => p.key))}`);
+
+  pills = strike(morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); }), { ctrl: true }, [SHIFT_KEY]);
+  check(pills.length === 1 && pills[0].key.tap === "!=" && pills[0].key.shifted === "==",
+        `struck with Ctrl and Shift, its ctrl+shift legend: ${JSON.stringify(pills.map(p => p.key))}`);
+
+  pills = strike(morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); }), null);
+  check(pills.length === 1 && pills[0].key.tap === "(" && pills[0].key.shifted === ")",
+        `struck with nothing held, the legend it always had: ${JSON.stringify(pills.map(p => p.key))}`);
+
+  pills = strike(morph(k => { k.tap = "("; k.shifted = ")"; }), { ctrl: true });
+  check(pills.length === 1 && pills[0].key.tap === "(" && pills[0].key.shifted === ")",
+        `a chord that says nothing about Ctrl is drawn as it always was: ${JSON.stringify(pills.map(p => p.key))}`);
+
+  pills = strike(morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); }), null, [SHIFT_KEY]);
+  check(pills.length === 1 && pills[0].key.tap === ")", `shift held: its shifted legend leads`);
+
+  {
+    // A chord whose own key carries Ctrl (a home-row Ctrl): it is not a Ctrl held, so the plain
+    // chord keeps its legend.
+    const doc = JSON.parse(JSON.stringify(DIAMOND));
+    doc.combos[0].positions = [7, 0];
+    doc.combos[0].key.tap = "("; doc.combos[0].key.shifted = ")"; ctrl(doc.combos[0].key);
+    const ks = K.create(); ks.read(doc, 0);
+    ks.read({ kind: "layers", ids: [] }, 900);
+    ks.read({ kind: "press", pos: posOfIdx(7) }, 1000);
+    ks.read({ kind: "press", pos: posOfIdx(0) }, 1000);
+    const got = ks.tick(1400).board.pills;
+    check(got.length === 1 && got[0].key.tap === "(",
+          `a chord whose own key is a Ctrl keeps its plain legend: ${JSON.stringify(got.map(p => p.key))}`);
+  }
+  check(pills.length === 1 && pills[0].key.tap === ")" && pills[0].key.shifted === "(",
+        `struck with Shift, its shifted legend leads: ${JSON.stringify(pills.map(p => p.key))}`);
+
+  pills = strike(morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); }), { ctrl: true, shift: true });
+  check(pills.length === 1 && pills[0].key.tap === "==" && pills[0].key.shifted === "!=",
+        `a shift in the output report alone is not a shift held: ${JSON.stringify(pills.map(p => p.key))}`);
+})();
+
 (function aBiggerChordsPillTakesTheSmallerOnesPlace() {
   const big = DIAMOND.combos.find(c => onBase(c) && c.key.tap === "meh ␣");
   const small = DIAMOND.combos.find(c => onBase(c) && c.positions.length === 2 && c.positions.every(p => big.positions.includes(p)) &&

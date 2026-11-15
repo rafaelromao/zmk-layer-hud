@@ -546,21 +546,28 @@
         // stack leaves out a layer that key itself brought up, which came after it.
         const samePositions = c => c.positions.length === pressedSet.length && c.positions.every(p => pressedSet.includes(p));
         const comboLayer = recentPos[start].entry.stack[0];
-        const combo = s.data.combos.find(c => c.layers.includes(comboLayer) && samePositions(c)) || null;
+        const found = s.data.combos.find(c => c.layers.includes(comboLayer) && samePositions(c)) || null;
+        // Command or Option held outside the chord makes ZMK send a shortcut, not what the chord
+        // makes: then there is no chord to draw.
+        const combo = found && !heldCarries(MOD_GLYPH.cmd, found.positions) && !heldCarries(MOD_GLYPH.alt, found.positions) ? found : null;
         if (combo) {
+          // The modifiers down as it fired: a mod-morph resolves on those, so they are read here,
+          // not when the pill goes up -- the chord may be let go of by then.
+          const struck = struckMods(combo.positions);
           // A third key within the term makes a bigger combo: take the smaller one's pill down,
           // and its count with it -- one chord, one combo.
           if (s.comboEntry) s.comboEntry.cancelled = true;
           s.comboEntry = ledgerAdd({ kind: "combo", layer: comboLayer, key: comboKey(combo.positions), t: now,
                                      due: now + term, eligible: !sent });
           for (const p of recentPos.slice(start)) if (p.entry) p.entry.chord = true;   // one keystroke (strokes)
-          entry.combo = combo.key;      // what this keystroke is, for the strip (stripEvent)
+          entry.combo = strikeKey({ key: combo.key, struck });  // what this keystroke is, for the strip (stripEvent)
           // These keys are down, and it is their release that puts them out.
           for (const p of combo.positions) { const l = s.lights.get(p) || { until: null, combo: false }; l.combo = true; s.lights.set(p, l); }
           if (s.comboPill !== null) { takeDown(s.comboPill); s.comboPill = null; }
           // Its pill waits to be told whether the chord was tapped or held (drawCombo).
           cancel("decide");
-          const c = s.comboHeld = { positions: combo.positions, key: combo.key, entry, t: now, pill: null, typed: false };
+          const c = s.comboHeld = { positions: combo.positions, key: combo.key, entry, t: now, pill: null, typed: false, struck,
+                                    struckBy: now + T("combo_decide_ms") };
           // A modifier reported before the chord's positions, or taken just now by one of its keys
           // for a home-row mod of its own (above): the chord fired, so its keys' own bindings did
           // not, and the modifier is its hold.
@@ -576,7 +583,10 @@
           const tok = s.typed, ownLegend = tok && (legendMatches(combo.key.tap, tok) || legendMatches(combo.key.tap, tok.toLowerCase()));
           const sinceChord = s.typedAt >= recentPos[start].t;
           if (s.keysSeen && (sinceChord || (ownLegend && now - s.typedAt <= T("activator_ms")))) comboTyped(c, now);
-          else if (!s.keysSeen) drawCombo(c, now);
+          // A chord whose drawing says what it makes with Ctrl waits for the modifier reports, which
+          // can trail its keys (positions and modifiers come on different channels): see setMods.
+          const awaitsMods = !!combo.key.left && !(s.mods.ctrl && s.mods.shift);
+          if (!s.keysSeen && !awaitsMods) drawCombo(c, now);
           else after("decide", now + T("combo_decide_ms"), at => drawCombo(c, at));
           if (held) comboModifier(c, now);
         }
@@ -629,11 +639,30 @@
       const named = c.key.hold && (glyphs.some(g => c.key.hold.includes(g)) || /\b(meh|hyper)\b/i.test(c.key.hold));
       return named ? c.key.hold : glyphs.join("");
     }
+    /* What a chord's pill reads: the state it was struck in. A mod-morph makes a different thing
+     * for the modifiers held when it fires, so a chord whose drawing says what it makes with Ctrl
+     * (left) and with Ctrl and Shift (right) reads as those while Ctrl was down as it fired -- the
+     * right one with Shift down too -- and as its own tap and shifted otherwise. Ctrl the chord
+     * itself turned on is its hold (holdLegend), not a state it was struck in; both are read as the
+     * chord fires. A chord that says nothing about them is drawn as it always was. */
+    function strikeKey(c) {
+      const key = c.key, struck = c.struck || {};
+      if (key.left && struck.ctrl) {
+        const both = !!key.right && !!struck.shift;
+        return Object.assign({}, key, {
+          tap: both ? key.right : key.left,
+          hold: "",
+          shifted: both ? key.left : (key.right || ""),
+        });
+      }
+      if (struck.shift && key.shifted) return Object.assign({}, key, { tap: key.shifted, shifted: key.tap });
+      return key;
+    }
     // The chord has said what it was (or had its time): its pill, the hold's when it was held.
     function drawCombo(c, now) {
       if (s.comboHeld !== c || s.secure) return;
       cancel("decide");
-      if (c.pill === null) c.pill = s.comboPill = showPill(c.positions, c.key, now);
+      if (c.pill === null) c.pill = s.comboPill = showPill(c.positions, strikeKey(c), now);
       const hold = heldCombo() === c && holdLegend(c, now);
       if (hold) {
         holdPill(c.pill, hold);
@@ -684,18 +713,58 @@
       return src ? src.idx : null;
     }
 
+    // Whether a key still held carries the glyph: a modifier held on its own key, whatever the
+    // output reports say of it (ZMK's macros send their own shift, which is not one held).
+    function heldCarries(glyph, except = []) {
+      const layers = stack();
+      return [...s.held].some(idx => {
+        if (except.includes(idx)) return false;
+        const b = resolve(idx, layers);
+        return !!b && carries(b.key, glyph);
+      });
+    }
+
+    // The modifiers a chord was struck with: a modifier key held outside the chord, or -- with no
+    // such key down -- the modifier the output reports said was down and that the chord did not turn
+    // on. The chord's own keys can carry a modifier (a home-row Ctrl among them), so they are left out.
+    function struckMods(positions, trailing = false) {
+      const ctrlKeyHeld = heldCarries(MOD_GLYPH.ctrl);
+      return {
+        ctrl: heldCarries(MOD_GLYPH.ctrl, positions) || (!!s.mods.ctrl && !ctrlKeyHeld && (trailing || s.modSource.ctrl !== positions)),
+        shift: heldCarries(MOD_GLYPH.shift, positions),
+      };
+    }
+
     function setMods(flags, now) {
       const positions = s.posAt && now - s.posAt < T("positions_fresh_ms");
+      // A modifier key still held is still down: ZMK masks the modifiers of a mod-morph from the
+      // report while it runs, so the report alone says a held Ctrl was let go when the chord fires.
+      const down = {};
+      for (const f of Object.keys(MOD_GLYPH)) down[f] = !!flags[f] || heldCarries(MOD_GLYPH[f]);
       for (const f of Object.keys(MOD_GLYPH)) {
-        if (!flags[f]) delete s.modSource[f];
+        if (!down[f]) delete s.modSource[f];
         else if (!s.mods[f] || s.modSource[f] === undefined) {
           if (positions) s.modSource[f] = modSourceOf(MOD_GLYPH[f], now);
           else delete s.modSource[f];
         }
       }
-      s.mods = flags;
+      s.mods = { ...flags, ...down };
       const c = heldCombo();
       if (c) comboModifier(c, now);
+      // A chord fired without Ctrl or Shift down, whose pill is not drawn yet: a report that arrives
+      // in time still says what it was struck in.
+      const late = s.comboHeld;
+      if (late && late.pill === null && late.struck && now <= late.struckBy) {
+        const was = { ...late.struck };
+        // Its own hold is no state it was struck in, and a report that trails the keys is not told
+        // from one, so the legend the chord holds is what decides it.
+        const now2 = struckMods(late.positions, true);
+        if (now2.ctrl && !(late.key.hold || "").includes(MOD_GLYPH.ctrl)) late.struck.ctrl = true;
+        if (now2.shift) late.struck.shift = true;
+        if (late.struck.ctrl !== was.ctrl || late.struck.shift !== was.shift) {
+          late.entry.combo = strikeKey({ key: late.key, struck: late.struck });
+        }
+      }
     }
 
     // ---------- the reports ----------
