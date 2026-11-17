@@ -1599,7 +1599,9 @@ def check_secure(results):
     """What sees a secret being typed, so the feed passes nothing of it on (host/hudfeed.py
     SecureInput): macOS's secure input, a terminal's prompt, on Linux the accessibility bus and
     the compositor's session lock. Asked of the feed itself (`hudfeed.py --probes`), which has the venv
-    and the probes; without a venv, the accessibility bus alone, through systemd's busctl."""
+    and the probes; without a venv, the accessibility bus alone, through systemd's busctl.
+    The row that says ok names only the probes that are fully on. One that sees part (`partial`:
+    the session lock under niri, seen by its locker's process name) is a warning with what to do."""
     if not venv_ok():
         check_accessibility(results)
         return
@@ -1609,28 +1611,40 @@ def check_secure(results):
     except (OSError, subprocess.SubprocessError) as e:
         results.append(report(WARN, "secure input", f"could not ask the feed what sees a secret being typed: {e}"))
         return
-    on, off = [], []
+    on, partial, off = [], [], []
     for line in got.stdout.splitlines():
         name, _, rest = line.partition("\t")
         state, _, why = rest.partition("\t")
         if state == "on":
             on.append(PROBE_WORDS.get(name, name))
-        elif state == "partial":        # seen only by what is named (niri's lock): said, not left to a green row
-            on.append(PROBE_WORDS.get(name, name) + " (by process name only: feed.lockers adds more)")
+        elif state == "partial":        # seen only by what is named (niri's lock): a warning of its own, never the green row
+            partial.append((name, why))
         elif state == "off":
             off.append((name, why))
     if on:
         results.append(report(OK, "secure input", "a secret being typed is seen by " +
                               ", ".join(on) + " (feed.secure_input)"))
+    elif partial:
+        results.append(report(WARN, "secure input", "a secret being typed is seen only in part, by " +
+                              ", ".join(PROBE_WORDS.get(name, name) for name, _ in partial),
+                              "what is typed into a password field reaches the pages; stop the HUD before typing one"))
     else:
         results.append(report(WARN, "secure input", "nothing here sees a secret being typed",
                               "what is typed into a password field reaches the pages; stop the HUD before typing one"))
+    for name, why in partial:
+        results.append(report(WARN, f"secure input: {PROBE_WORDS.get(name, name)}", why, PARTIAL_FIX.get(name)))
     for name, why in off:
         results.append(report(WARN, f"secure input: {PROBE_WORDS.get(name, name)}", why))
 
 
 PROBE_WORDS = {"carbon": "macOS's secure input", "terminals": "the terminals' prompts",
                "a11y": "the accessibility bus", "lock": "the session lock"}
+
+# What to do about a probe that sees only part (`partial` in the feed's report). The lock under niri:
+# a lock screen whose process is not named is not seen, and the doctor cannot tell whether the one
+# in use is named, so the row is a warning whatever the config says.
+PARTIAL_FIX = {"lock": "the unlock password typed into a lock screen that is not named reaches the strip and the session's counts\n"
+                       "name its process in feed.lockers in the config (as `comm` in /proc spells it), or stop the HUD before locking"}
 
 
 def check_accessibility(results):

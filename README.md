@@ -379,8 +379,9 @@ screen reader would; a browser running since before shows nothing until it is st
 on its own socket, under niri (where the compositor says nothing) by the process name of hyprlock,
 swaylock, gtklock or waylock, and of any lock screen `feed.lockers` names — so the unlock password
 goes nowhere. A lock screen built into a shell is seen under niri only once its process is named
-there (`feed.lockers: [name]`, as `comm` in `/proc` spells it; `zmk-layer-hud doctor` says it is
-by name only). On both systems, while a terminal is
+there (`feed.lockers: [name]`, as `comm` in `/proc` spells it). `zmk-layer-hud doctor` cannot
+tell whether the lock screen in use is one of the named, so under niri its session lock row is
+always a warning, never ok. On both systems, while a terminal is
 asking for a password -- `sudo`, `ssh`, `su`, anything that reads a line with echo off -- the feed
 sees that too. Either way it then passes on nothing typed: no characters, no keys lit, no layer
 changes, nothing counted. The strip clears, the board dims and the banner says `secure input ·
@@ -638,7 +639,8 @@ beside anything that is wrong. What it cannot see:
   Hyprland does not say) and under niri (by name only, its IPC having no lock state; a lock
   screen built into a shell is seen once `feed.lockers` names its process); another
   compositor's lock screen is not. `zmk-layer-hud doctor` says what sees a secret
-  being typed here. Stop the HUD, or record with it hidden, when that matters.
+  being typed here, and warns of what is seen only in part (niri's lock). Stop the HUD, or record
+  with it hidden, when that matters.
 - A terminal's prompt is seen when it reads a line with echo off, as `sudo`, `ssh`, `su`, `passwd`
   and `getpass` do. One that takes the keys raw, one at a time -- `sudo` with `pwfeedback`,
   `systemd-ask-password`, a pinentry, a prompt that masks with stars -- is not, and nor is a prompt

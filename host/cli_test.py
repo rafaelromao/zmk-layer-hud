@@ -666,7 +666,7 @@ class SyncDue(unittest.TestCase):
 
 class Doctor(unittest.TestCase):
     """What the doctor says of secure input: the feed's own report of its probes, one row for what
-    sees a secret being typed and one per probe that should and does not."""
+    sees a secret being typed and one per probe that should and does not, or does only in part."""
 
     def rows(self, stdout):
         results = []
@@ -685,13 +685,52 @@ class Doctor(unittest.TestCase):
         self.assertIn("seen by the terminals' prompts, the session lock", said)
         self.assertIn("secure input: the accessibility bus: jeepney is not in the venv", said)
 
-    def test_a_probe_that_sees_only_what_is_named_says_so_in_the_row(self):
-        # niri's session lock: a locker is seen by its process name alone, which is not the same as seen.
+    def test_a_probe_that_sees_only_what_is_named_is_a_warning_of_its_own(self):
+        # niri's session lock: a locker is seen by its process name alone, which is not the same as
+        # seen, so it is never in the green row. What is fully on is said as before.
         results, said = self.rows("carbon\tnone\tnot macOS\nterminals\ton\ta prompt is seen\n"
-                                  "a11y\ton\tthe apps expose their widgets\nlock\tpartial\tby process name\n")
-        self.assertEqual([cli.OK], results)
-        self.assertIn("seen by the terminals' prompts, the accessibility bus, "
-                      "the session lock (by process name only: feed.lockers adds more)", said)
+                                  "a11y\ton\tthe apps expose their widgets\n"
+                                  "lock\tpartial\ta locker is looked for by process name, and one not named is not seen\n")
+        self.assertEqual([cli.OK, cli.WARN], results)
+        ok, warn, *fix = said.splitlines()
+        self.assertEqual("[ok  ] secure input: a secret being typed is seen by the terminals' prompts, "
+                         "the accessibility bus (feed.secure_input)", ok)
+        self.assertEqual("[warn] secure input: the session lock: a locker is looked for by process name, "
+                         "and one not named is not seen", warn)
+        self.assertEqual(2, len(fix))
+        self.assertIn("a lock screen that is not named reaches the strip", fix[0])
+        self.assertIn("feed.lockers", fix[1])
+        self.assertIn("stop the HUD before locking", fix[1])
+
+    def test_the_feeds_own_niri_row_is_never_ok(self):
+        # The row as the feed writes it under niri (hudfeed.probe_report), not a made-up one.
+        import hudfeed
+        with tempfile.TemporaryDirectory() as d:
+            sock = os.path.join(d, "niri.sock")
+            with open(sock, "w"):
+                pass
+            with mock.patch("hudfeed.sys.platform", "linux"), \
+                    mock.patch("hudfeed.a11y.HAVE_JEEPNEY", False), \
+                    mock.patch("hudfeed.terminal_probe", return_value=lambda: False):
+                lines = hudfeed.probe_report(environ={"NIRI_SOCKET": sock})
+        results, said = self.rows("\n".join(lines) + "\n")
+        said = said.splitlines()
+        self.assertEqual(cli.OK, results[0])        # the terminals' prompts, which are fully on
+        self.assertNotIn("the session lock", said[0])
+        lock = next(i for i, line in enumerate(said) if line.startswith("[warn] secure input: the session lock: "))
+        self.assertIn("a lock screen built into a shell", said[lock])
+        self.assertIn("feed.lockers in the config", said[lock + 2])
+        self.assertIn("stop the HUD before locking", said[lock + 2])
+        self.assertFalse([line for line in said if line.startswith("[ok  ]") and "lock" in line], said)
+
+    def test_a_probe_in_part_and_none_on_is_not_nothing_and_not_ok(self):
+        results, said = self.rows("carbon\tnone\tnot macOS\nterminals\toff\tno terminals' directory\n"
+                                  "a11y\toff\tno bus\nlock\tpartial\tby process name\n")
+        self.assertEqual([cli.WARN] * 4, results)
+        self.assertNotIn("[ok  ]", said)
+        self.assertNotIn("nothing here sees", said)
+        self.assertIn("seen only in part, by the session lock", said)
+        self.assertIn("stop the HUD before typing one", said)
 
     def test_nothing_watching_is_a_warning_with_what_to_do(self):
         results, said = self.rows("carbon\tnone\tnot macOS\nterminals\toff\tno terminals' directory\n"

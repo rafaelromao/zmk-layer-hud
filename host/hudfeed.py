@@ -1501,7 +1501,7 @@ def parse_args(argv=None):
                    help="keep no session files (config `feed.sessions: 0`): the counts last as long as the page")
     p.add_argument("--debug", action="store_true", help="log layer messages to stderr")
     p.add_argument("--probes", action="store_true",
-                   help="say which probes see a secret being typed on this system, one per line (name, on|off|none, "
+                   help="say which probes see a secret being typed on this system, one per line (name, on|off|partial|none, "
                         "why), and exit; what `zmk-layer-hud doctor` reads")
     p.add_argument("--raw", action="store_true",
                    help="DEBUG ONLY: log every decoded frame and HID report, your typing included; "
