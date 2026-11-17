@@ -343,6 +343,28 @@ the validation passed, which is what a group did on the release pull request, wh
 `release-validation` does not skip the jobs: a skipped run would put a passing "skipped" check under the
 same name beside the real one.
 
+**A fork's pull request: read it, label it, take the label off.** The label is a maintainer's decision
+to run that pull request's own code: its `e2e/` scripts and the HUD of its tree, with `sudo` on the
+runner and, in the Linux jobs, as root in a `--privileged` container. The trigger is `pull_request`,
+so a fork's run has a read-only token and no secrets, and what the code can reach is the throwaway
+runner. It is still someone else's code run as root there, and the label is the decision to let it:
+
+1. Read the pull request's whole diff, as it stands, before putting the label on. What runs is not
+   only `e2e/`: the jobs set up and start the HUD of that tree.
+2. Take the label off when the run is done:
+
+   ```bash
+   gh pr edit <number> --remove-label release-validation
+   ```
+
+The label stays on the pull request. While it is on, every later push from the fork runs the jobs
+again, on code nobody has read and with no new decision by a maintainer. A push that needs validating
+gets the label again, after its diff has been read. The workflow does not take the label off and
+should not be made to try: a fork's run has a read-only token and cannot change the pull request,
+which is GitHub's design. Taking the label off starts no run (`unlabeled` is not among the trigger's
+types). GitHub's own hold on a fork's run, where the repository's settings ask for an approval, is a
+second gate and no replacement for this one: do not count on it for a later push.
+
 | Job | Where | What it starts |
 |---|---|---|
 | macOS | `macos-latest`; the venv from `setup --venv-only`, hidapi from Homebrew, the menubar icon opted out | the real AppKit and WKWebView panel; its surface is the panel process's window in the window list |
@@ -392,7 +414,8 @@ others found to work on a hosted runner (vkms, `LIBSEAT_BACKEND=noop`, software 
 user-namespace setting for WebKit's sandbox), not what Hyprland documents. A runner image or an Arch
 package change can break it without a change here: read the artifacts before the code. The jobs run a
 pull request's own `e2e/` scripts with `sudo` and a privileged container on a throwaway runner, which
-is why only a maintainer's label starts them on a fork's pull request.
+is why only a maintainer's label starts them on a fork's pull request, and why that label comes off
+again after the run ("When it runs", above).
 
 niri: its DRM backend skips software EGL renderers on purpose (`src/backend/tty.rs`, "software EGL renderers
 are skipped", v26.04 and main), so on vkms it comes up with no output; the first run of this job found

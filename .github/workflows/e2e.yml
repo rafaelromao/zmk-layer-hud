@@ -5,6 +5,19 @@
 #
 # What it proves and what it cannot is in docs/development.md ("End-to-end validation").
 #
+# MAINTAINERS, BEFORE LABELLING A FORK'S PULL REQUEST: the label runs that pull request's own code -- its
+# `e2e/` scripts and the HUD of its tree -- with `sudo` on the runner and, in the Linux jobs, as root in a
+# `--privileged` container. The trigger is `pull_request`, so a fork's run has a read-only token and no
+# secrets, and what the code can reach is the throwaway runner; it is still someone else's code run as root
+# there. So:
+#   1. Read the pull request's whole diff, as it stands, before putting the label on.
+#   2. Take the label off when the run is done (`gh pr edit <number> --remove-label release-validation`).
+# The label stays on the pull request, and while it is on every later push runs these jobs again, on code
+# nobody has read and with no new decision by anyone. A push that needs validating gets the label again, after
+# its diff has been read. Nothing here takes the label off for you, and nothing should be made to try: a
+# fork's run has a read-only token and cannot change the pull request, by GitHub's design. Taking it off
+# starts no run (`unlabeled` is not among the trigger's types below).
+#
 # The gate is the jobs' own `if`, and not a path or branch filter on the trigger: a job skipped by its `if`
 # reports as passed, so a required check never waits for a run that is not coming, which a filtered-out
 # workflow would leave it doing. The repository comparison keeps a fork from borrowing the release branch's
