@@ -74,10 +74,12 @@ def portable_path(path, home=None):
     """A working copy as it is recorded: `~/…` when it is under the home directory, so the record
     is the same on every machine that keeps its repos there; the absolute path otherwise."""
     path = os.path.abspath(expand(path))
-    home = os.path.abspath(home or os.path.expanduser("~"))
-    if path == home or not path.startswith(home + os.sep):
+    # Both as the filesystem has them: git reports a working copy by its real path, and on macOS a
+    # temporary or linked directory is not spelled the way the home directory is.
+    real, real_home = os.path.realpath(path), os.path.realpath(home or os.path.expanduser("~"))
+    if real == real_home or not real.startswith(real_home + os.sep):
         return path
-    return "~/" + os.path.relpath(path, home).replace(os.sep, "/")
+    return "~/" + os.path.relpath(real, real_home).replace(os.sep, "/")
 
 
 def normalise_remote(url):

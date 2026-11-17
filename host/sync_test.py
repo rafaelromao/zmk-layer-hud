@@ -788,6 +788,15 @@ class WorkingCopy(unittest.TestCase):
             with self.assertRaisesRegex(sync.SyncError, "cannot be watched"):
                 sync.watch(self.config, quiet=True, rounds=0)
 
+    def test_a_home_reached_through_a_link_still_makes_the_record_home_relative(self):
+        # macOS: git says /private/var/…, the temporary home is spelled /var/…
+        real = os.path.join(self.d, "real-home")
+        os.makedirs(os.path.join(real, "repo"))
+        link = os.path.join(self.d, "linked-home")
+        os.symlink(real, link)
+        self.assertEqual("~/repo", sync.portable_path(os.path.join(real, "repo"), link))
+        self.assertEqual("~/repo", sync.portable_path(os.path.join(link, "repo"), link))
+
     def test_what_was_read_is_said_with_its_branch(self):
         said = self.run_sync(self.repo, say=True)
         self.assertIn(f"from {self.repo} (branch main)", said)
