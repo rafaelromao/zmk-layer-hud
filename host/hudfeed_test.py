@@ -1085,6 +1085,52 @@ class BluezConnected(unittest.TestCase):
         self.assertEqual("TwoNr9", hudfeed.bluez_connected(objs, name="twonr")[2])
         self.assertIsNone(hudfeed.bluez_connected(objs, address="11:22:33:44:55:66"))
 
+    def test_of_several_the_first_by_object_path_is_taken_however_bluez_lists_them(self):
+        import hudfeed
+        two = [self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]),
+               self.device("AA:AA:AA:AA:AA:01", "Other", uuids=[self.SVC]),
+               self.device("00:00:00:00:00:01", "Keychron K4", uuids=["1812"])]
+        for listed in (two, two[::-1]):
+            objs = self.objects(*listed)
+            self.assertEqual(("/org/bluez/hci0/dev_AA_AA_AA_AA_AA_01", "AA:AA:AA:AA:AA:01", "Other"),
+                             hudfeed.bluez_connected(objs))
+            self.assertEqual(["AA:AA:AA:AA:AA:01", "F9:BD:CA:10:F7:A8"],
+                             [address for _, address, _ in hudfeed.bluez_matches(objs)])
+
+    def finds(self, objs, times=1, **picked):
+        """-> (the devices _find gave, what the log said), BlueZ answering `objs` each time."""
+        import hudfeed
+        said = []
+        r = hudfeed.BleReader(lambda m: None, log=said.append, **picked)
+
+        async def objects_now():
+            return objs
+
+        async def scan(*a, **kw):
+            raise AssertionError("the scan should not run")
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.object(hudfeed, "bluez_objects", objects_now), \
+                mock.patch.dict(sys.modules, self.fake_bleak(scan)):
+            return [asyncio.run(r._find()) for _ in range(times)], said
+
+    def test_several_connected_are_said_once_with_the_one_taken_and_how_to_pick(self):
+        objs = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]),
+                            self.device("AA:AA:AA:AA:AA:01", "Other", uuids=[self.SVC]))
+        devices, said = self.finds(objs, times=3)
+        self.assertEqual(["AA:AA:AA:AA:AA:01"] * 3, [d.address for d in devices])
+        self.assertEqual(["hudfeed: 2 connected BLE keyboards have the layer signal: reading Other "
+                          "(AA:AA:AA:AA:AA:01), not TwoNr9 (F9:BD:CA:10:F7:A8); `ble.address` or `keyboard.name` "
+                          "in the config picks one"], said)
+
+    def test_one_connected_or_one_picked_of_several_is_taken_without_a_word(self):
+        one = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]),
+                           self.device("DC:2C:26:2A:31:DE", "Keychron K4", uuids=["1812"]))
+        two = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]),
+                           self.device("AA:AA:AA:AA:AA:01", "Other", uuids=[self.SVC]))
+        for objs, picked in ((one, {}), (two, {"address": "f9:bd:ca:10:f7:a8"}), (two, {"name": "twonr"})):
+            devices, said = self.finds(objs, **picked)
+            self.assertEqual((["F9:BD:CA:10:F7:A8"], []), ([d.address for d in devices], said), picked)
+
     @staticmethod
     def fake_bleak(scan):
         # bleak is not needed to test the order: the device and the scanner are stand-ins.

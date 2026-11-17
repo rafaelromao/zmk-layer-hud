@@ -425,12 +425,14 @@ class SerialReader(Reader):
 
 
 
-def bluez_connected(objects, address=None, name=None):
-    """The BlueZ device the keyboard is connected as, from BlueZ's managed objects (path -> interfaces
-    -> properties), or None. Connected and exposing the module's service: a keyboard in use is
-    connected and no longer advertises, so a scan never finds it, but BlueZ already has it."""
-    for path, interfaces in objects.items():
-        props = interfaces.get("org.bluez.Device1")
+def bluez_matches(objects, address=None, name=None):
+    """Every BlueZ device the keyboard may be connected as, from BlueZ's managed objects (path ->
+    interfaces -> properties): (path, address, name), in the order of their object paths. Connected
+    and exposing the module's service: a keyboard in use is connected and no longer advertises, so
+    a scan never finds it, but BlueZ already has it."""
+    matches = []
+    for path in sorted(objects):
+        props = objects[path].get("org.bluez.Device1")
         if not props or not props["Connected"].value:
             continue
         found = props["Address"].value
@@ -441,8 +443,16 @@ def bluez_connected(objects, address=None, name=None):
         label = props["Name"].value if "Name" in props else found
         if name and name.lower() not in label.lower():
             continue
-        return path, found, label
-    return None
+        matches.append((path, found, label))
+    return matches
+
+
+def bluez_connected(objects, address=None, name=None):
+    """The BlueZ device the keyboard is connected as, or None; see bluez_matches. Of several it is
+    the first by object path: BlueZ lists its objects in no order to rely on, and which keyboard is
+    read must not change from one look to the next."""
+    matches = bluez_matches(objects, address, name)
+    return matches[0] if matches else None
 
 
 async def bluez_objects():
@@ -487,6 +497,7 @@ class BleReader:
         self._stop = threading.Event()
         self._found_connected = None    # the device BlueZ had connected before the feed came (_connected_bluez)
         self._said_disconnects = False  # that this bleak cannot leave it connected, said once (_let_go)
+        self._said_several = None       # which of several connected keyboards is read, as last said
 
     def start(self):
         threading.Thread(target=self._run, name="ble-read", daemon=True).start()
@@ -534,16 +545,26 @@ class BleReader:
         It is remembered as found connected, which is what keeps the feed from disconnecting it:
         BlueZ's link is shared by every application, the keyboard types through it, and it was
         there before the feed came (_let_go). One that drops between this and the client, so that
-        bleak connects it again, is left connected all the same."""
+        bleak connects it again, is left connected all the same.
+
+        With several such keyboards connected the first by object path is read, as bluez_connected
+        has it, and the log says which and how to pick: once, until what it says changes."""
         from bleak.backends.device import BLEDevice
         self._found_connected = None
         try:
-            found = bluez_connected(await bluez_objects(), self.address, self.name)
+            matches = bluez_matches(await bluez_objects(), self.address, self.name)
         except Exception:
             return None      # no system bus, no BlueZ, an answer we cannot read: the scan, as before
-        if found is None:
+        if not matches:
             return None
-        path, address, label = found
+        path, address, label = matches[0]
+        if len(matches) > 1:
+            others = ", ".join(f"{n} ({a})" for _, a, n in matches[1:])
+            note = (f"{len(matches)} connected BLE keyboards have the layer signal: reading {label} ({address}), "
+                    f"not {others}; `ble.address` or `keyboard.name` in the config picks one")
+            if note != self._said_several:
+                self._said_several = note
+                self.log(f"hudfeed: {note}")
         self._found_connected = BLEDevice(address, label, {"path": path, "props": {}})
         return self._found_connected
 

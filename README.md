@@ -592,16 +592,18 @@ beside anything that is wrong. What it cannot see:
   service: the firmware was built without `CONFIG_ZMK_LAYER_SIGNAL_GATT`, or macOS has cached the
   keyboard's services from an older firmware — remove and re-pair it.
   On Linux the feed asks BlueZ (on the system bus) for a connected keyboard that lists the signal
-  service, so no address is needed there either: `ble.address` only picks one of several. BlueZ
-  may still list the services it cached from an older firmware; if the feed never finds the
-  keyboard, `bluetoothctl remove <address>` and pair it again. A keyboard the feed found connected
-  is left connected when the feed stops (quit, restart, update): BlueZ's link is shared by every
-  application, and the library (bleak) disconnects what it closes, so the feed lets go of the
-  keyboard first. bleak has no setting for that; the feed reaches into its internals, for the
-  version pinned in `host/requirements.txt`, and with a bleak that lacks them it says in its log
-  that the keyboard is disconnected instead. This is tested against bleak's own code and has not
-  been checked on hardware: if the keyboard does drop off when the HUD stops,
-  `bluetoothctl connect <address>` asks BlueZ to connect it again.
+  service, so no address is needed there either: `ble.address` only picks one of several. With
+  several connected and none picked, the feed reads the first by BlueZ's object path, the same
+  one every time, and its log names it and the others; `ble.address`, or `keyboard.name`, picks
+  one. BlueZ may still list the services it cached from an older firmware; if the feed never
+  finds the keyboard, `bluetoothctl remove <address>` and pair it again. A keyboard the feed
+  found connected is left connected when the feed stops (quit, restart, update): BlueZ's link is
+  shared by every application, and the library (bleak) disconnects what it closes, so the feed
+  lets go of the keyboard first. bleak has no setting for that; the feed reaches into its
+  internals, for the version pinned in `host/requirements.txt`, and with a bleak that lacks them
+  it says in its log that the keyboard is disconnected instead. This is tested against bleak's
+  own code and has not been checked on hardware: if the keyboard does drop off when the HUD
+  stops, `bluetoothctl connect <address>` asks BlueZ to connect it again.
 - **`no definitions yet`**: `start` waits for `import` to have drawn the keymap:
   `zmk-layer-hud import <your zmk-config>`, or with `keymap:` set, `zmk-layer-hud import`.
 - **No `layers` lines**: `zmk-layer-hud feed --raw` logs every frame it decodes, so silence there
