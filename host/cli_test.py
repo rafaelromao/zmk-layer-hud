@@ -1230,6 +1230,34 @@ class NoctaliaPlugin(unittest.TestCase):
         with open(os.path.join(self.dir(), "widget.luau"), encoding="utf-8") as f:
             self.assertEqual(before, f.read())
 
+    def test_enable_looks_again_at_whose_the_directory_is_right_before_it_moves_it(self):
+        self.run_cli("menubar", "enable")
+
+        def swap(text):                     # while the new copy is being made ready
+            shutil.rmtree(self.dir())
+            self.someone_elses()
+            return text
+        with mock.patch.object(cli, "bake_marks", side_effect=swap):
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn(f"{self.dir()} is not this plugin's", said)
+        self.assert_theirs_is_untouched()
+
+    def test_disable_looks_again_at_whose_the_directory_is_right_before_it_removes_it(self):
+        self.run_cli("menubar", "enable")
+
+        def swap(argv):                     # while the shell is being asked, which can take its time
+            if argv[1:3] == ("plugins", "disable") and cli.noctalia_installed():
+                shutil.rmtree(self.dir())
+                self.someone_elses()
+            return False
+        self.fake.refuse.append(swap)
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(["tray"], self.fake.cfg["bar"]["main"]["end"])
+        self.assertIn(f"{self.dir()} is not this plugin's", said)
+        self.assert_theirs_is_untouched()
+
     def test_disable_leaves_another_plugins_directory_alone_and_says_so_without_failing(self):
         # What `disable` is for holds with it there -- our icon out of the bars, our plugin off the
         # disk -- and the user could only make a failure go away by moving someone else's plugin.

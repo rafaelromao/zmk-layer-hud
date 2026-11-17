@@ -264,7 +264,9 @@ is running or not:
   says on stderr what it left, and exits 0, for what it promises still holds and only moving
   someone else's plugin could clear a failure (it exits 1 only for what it could not do itself);
   `uninstall` says so, `update` does not run `menubar enable` for it, and `menubar status` calls
-  the plugin not installed and says why. A link to a copy of the
+  the plugin not installed and says why. Whose the directory is, is asked again in the function
+  that removes or moves it, right before it does, since `disable` first asks the shell several
+  things (each up to 20 seconds) and `enable` first copies the new plugin. A link to a copy of the
   plugin is removed as a link. The new copy is made ready one level down in a directory of its
   own (`mkdtemp`) and renamed into place, so nothing that was already there is removed for it, and
   the shell, which takes every directory of the plugins directory with a `plugin.toml` in it for a

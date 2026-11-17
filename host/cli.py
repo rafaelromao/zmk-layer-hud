@@ -1518,14 +1518,26 @@ def noctalia_theirs():
     return f"{noctalia_plugin_dir()} is not this plugin's (no plugin.toml in it that opens with the id {NOCTALIA_ID})"
 
 
+def noctalia_refusal():
+    """Why `enable` stops at something in the plugin's place that is not the plugin."""
+    return Fail(f"{noctalia_theirs()}, so it was left alone and the HUD's plugin is not installed: "
+                "Noctalia finds a local plugin by the tail of its id, so both cannot be there. Move "
+                "that one away, then `zmk-layer-hud menubar enable` again")
+
+
 def noctalia_remove_plugin():
-    """The plugin off the disk; the caller has seen that it is ours. A link to a copy of it goes
-    as a link, and what it points at stays."""
+    """The plugin off the disk -> whether there was one to take. Whose the directory is, is looked
+    at here, the moment before it goes, whatever the caller saw earlier: `disable` asks the shell
+    several things first, each of which may take its time, and what was this plugin's then may be
+    something else by now. A link to a copy of it goes as a link, and what it points at stays."""
     path = noctalia_plugin_dir()
+    if noctalia_plugin_state() != "ours":
+        return False
     if os.path.islink(path):
         os.unlink(path)
     else:
         shutil.rmtree(path, ignore_errors=True)
+    return True
 
 
 def noctalia(*argv):
@@ -1699,14 +1711,12 @@ def install_noctalia_plugin():
     The copy is made ready inside a directory made here and now (mkdtemp), so nothing that was
     already there is written over or removed for it, and one level down in it, where the shell --
     which takes every directory of the plugins directory with a plugin.toml in it for a plugin --
-    does not see a half-made copy, nor one a killed install left behind."""
+    does not see a half-made copy, nor one a killed install left behind. Whose the place is, is
+    asked again right before the old copy goes: the copying in between takes its time."""
     import tempfile
     dest = noctalia_plugin_dir()
-    state = noctalia_plugin_state()
-    if state == "theirs":
-        raise Fail(f"{noctalia_theirs()}, so it was left alone and the HUD's plugin is not installed: "
-                   "Noctalia finds a local plugin by the tail of its id, so both cannot be there. Move "
-                   "that one away, then `zmk-layer-hud menubar enable` again")
+    if noctalia_plugin_state() == "theirs":
+        raise noctalia_refusal()
     os.makedirs(NOCTALIA_PLUGINS, exist_ok=True)
     staging = tempfile.mkdtemp(prefix=".zmk-layer-hud.", dir=NOCTALIA_PLUGINS)
     try:
@@ -1717,8 +1727,9 @@ def install_noctalia_plugin():
             text = bake_marks(f.read())
         with open(script, "w", encoding="utf-8") as f:
             f.write(text)
-        if state == "ours":
-            noctalia_remove_plugin()
+        if noctalia_plugin_state() == "theirs":
+            raise noctalia_refusal()
+        noctalia_remove_plugin()            # which looks again at whose it is
         os.rename(staged, dest)
     finally:
         shutil.rmtree(staging, ignore_errors=True)
@@ -1771,10 +1782,10 @@ def noctalia_disable():
         # Asked when it is said, after anything was removed: what is there now.
         return [noctalia_theirs() + ", so it was left alone"] if noctalia_plugin_state() == "theirs" else []
 
-    state = noctalia_plugin_state()
+    ours = noctalia_installed()
     asked = bool(shutil.which("noctalia"))
     changed, failed = noctalia_place(put_in=False)[:2] if asked else ([], [])
-    if state != "ours" and not changed:
+    if not ours and not changed:
         return False, [], notes()         # nothing of ours is known here, and no bar has any
     if failed:
         return bool(changed), failed, notes()
@@ -1784,9 +1795,7 @@ def noctalia_disable():
         if not r or r[0] != 0:
             problems.append(f"Noctalia would not disable {NOCTALIA_ID} ({noctalia_said(r)}); "
                             f"`noctalia msg plugins disable {NOCTALIA_ID}` does it by hand")
-    removed = state == "ours"
-    if removed:
-        noctalia_remove_plugin()
+    removed = noctalia_remove_plugin()    # which looks again at whose it is
     return bool(changed) or removed, problems, notes()
 
 
