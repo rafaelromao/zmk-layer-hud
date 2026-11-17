@@ -839,6 +839,89 @@ class Autostart(unittest.TestCase):
         self.assertFalse(os.path.exists(cli.AUTOSTART_DESKTOP))
 
 
+class Uninstall(unittest.TestCase):
+    """uninstall and a compositor's config it cannot write again: said, passed over, and the rest
+    still removed. Nothing here is the user's: the tree, the link and the autostart entry are in a
+    temporary directory, and what would edit a compositor's config is a stand-in."""
+
+    def setUp(self):
+        import shortcuts
+        self.shortcuts = shortcuts
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        t = self.tmp.name
+        self.root, self.link = os.path.join(t, "tree"), os.path.join(t, "bin", "zmk-layer-hud")
+        self.autostart = os.path.join(t, "autostart", "zmk-layer-hud.desktop")
+        for d in (os.path.join(self.root, "bin"), os.path.dirname(self.link), os.path.dirname(self.autostart)):
+            os.makedirs(d)
+        for path in (os.path.join(self.root, "bin", "zmk-layer-hud"), self.autostart):
+            with open(path, "w"):
+                pass
+        os.symlink(os.path.join(self.root, "bin", "zmk-layer-hud"), self.link)
+        self.removers = {}
+        for p in (mock.patch.object(cli, "ROOT", self.root), mock.patch.object(cli, "BIN_LINK", self.link),
+                  mock.patch.object(cli, "AUTOSTART_DESKTOP", self.autostart),
+                  mock.patch.object(cli, "STATE", os.path.join(t, "state")),
+                  mock.patch.object(cli, "CONFIG_DIR", os.path.join(t, "config")),
+                  mock.patch.object(cli, "in_clone", return_value=False),
+                  mock.patch.object(cli, "run_host"), mock.patch.object(cli, "remove_plugin", return_value=False),
+                  mock.patch.object(cli.platform, "system", return_value="Linux")):
+            p.start()
+            self.addCleanup(p.stop)
+        for name in ("remove_niri", "remove_lua", "remove_hyprland"):       # never the real ones: they edit ~/.config
+            p = mock.patch.object(shortcuts, name, return_value=False)
+            self.removers[name] = p.start()
+            self.addCleanup(p.stop)
+
+    def uninstall(self):
+        with contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            code = cli.cmd_uninstall(argparse.Namespace(purge=False, yes=True))
+        return code, out.getvalue(), err.getvalue()
+
+    def test_a_config_that_cannot_be_written_again_is_said_and_the_rest_is_still_removed(self):
+        s = self.shortcuts
+        main = os.path.join(s.NIRI_DIR, s.NIRI_MAIN)
+        self.removers["remove_niri"].side_effect = PermissionError(13, "Permission denied", "/dotfiles/niri.kdl.x.tmp")
+        self.removers["remove_hyprland"].return_value = True
+        code, out, err = self.uninstall()
+        self.assertEqual(1, code)
+        self.assertIn(f"could not take the shortcuts out of niri's config, {main}: PermissionError", err)
+        self.assertIn("Permission denied", err)
+        self.assertIn("Left to take out by hand:", err)
+        self.assertIn(f"the line `{s.NIRI_INCLUDE}` in {main}, and the file {os.path.join(s.NIRI_DIR, s.NIRI_FILE)}", err)
+        self.assertNotIn("hyprland", err)                           # only what could not be done is left
+        for remover in self.removers.values():                      # the other compositor's files were still dealt with
+            remover.assert_called_once_with()
+        self.assertIn(f"took the shortcuts out of {s.HYPR_DIR}", out)
+        for gone in (self.autostart, self.link, self.root):         # and so was everything after them
+            self.assertFalse(os.path.lexists(gone), gone)
+        self.assertIn(f"removed {self.root}", out)
+
+    def test_each_config_that_could_not_be_is_named_with_its_own_line(self):
+        s = self.shortcuts
+        for remover in self.removers.values():
+            remover.side_effect = OSError(30, "Read-only file system")
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()) as err:
+            left = cli.remove_shortcuts()
+        self.assertEqual(3, len(left))
+        for whose, name, line in (("niri", s.NIRI_MAIN, s.NIRI_INCLUDE), ("Hyprland", "hyprland.lua", s.LUA_LOAD),
+                                  ("Hyprland", "hyprland.conf", s.HYPR_SOURCE)):
+            self.assertIn(f"{whose}'s config", err.getvalue())
+            self.assertTrue([what for what in left if name in what and line in what], (name, left))
+
+    def test_what_is_not_an_oserror_is_not_passed_over(self):
+        self.removers["remove_niri"].side_effect = ValueError("something else")
+        with self.assertRaises(ValueError):
+            self.uninstall()
+
+    def test_with_nothing_in_the_way_it_ends_well(self):
+        self.removers["remove_niri"].return_value = True
+        code, out, err = self.uninstall()
+        self.assertEqual((0, ""), (code, err))
+        self.assertIn(f"took the shortcuts out of {self.shortcuts.NIRI_DIR}", out)
+        self.assertFalse(os.path.lexists(self.root))
+
+
 def compiler():
     import shutil
     if not shutil.which("cc"):

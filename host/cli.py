@@ -1958,13 +1958,9 @@ def cmd_uninstall(args):
     elif os.path.isfile(AUTOSTART_DESKTOP):
         os.remove(AUTOSTART_DESKTOP)
         print(f"    removed {AUTOSTART_DESKTOP}")
+    left = []
     if platform.system() == "Linux":
-        import shortcuts
-        took = [d for d, gone in ((shortcuts.NIRI_DIR, shortcuts.remove_niri()),
-                                  (shortcuts.HYPR_DIR, shortcuts.remove_lua() | shortcuts.remove_hyprland()))
-                if gone]
-        if took:
-            print(f"    took the shortcuts out of {', '.join(took)}")
+        left = remove_shortcuts()
         for pid in (OMARCHY_ID,) + OLD_OMARCHY_IDS:
             if remove_plugin(pid):
                 print(f"    took the {pid} bar plugin out of Omarchy")
@@ -1982,7 +1978,41 @@ def cmd_uninstall(args):
     if platform.system() == "Linux":
         print("    the udev rule is still installed; remove it with:")
         print("        sudo rm /etc/udev/rules.d/60-zmk-layer-hud.rules")
+    if left:
+        warn("zmk-layer-hud uninstall: the rest is done, but the shortcuts are still in a config that could not "
+             "be written again. Left to take out by hand:")
+        for what in left:
+            warn(f"    {what}")
+        return 1
     return 0
+
+
+def remove_shortcuts():
+    """uninstall's step on Linux: the shortcuts taken out of every compositor's config
+    (host/shortcuts.py). A config that cannot be written again -- an OSError: the directory its
+    file lives in is not this user's to write, say -- is said, with whose it is and why, and
+    passed over, so that uninstall does the rest instead of stopping half done. -> what is left
+    there for the user to take out by hand, one line for each such config: the line in it that
+    reads our file, and our file, which is only removed once the line is out."""
+    import shortcuts
+    took, left = [], []
+    for whose, d, main, line, ours, remove in (
+            ("niri", shortcuts.NIRI_DIR, shortcuts.NIRI_MAIN, shortcuts.NIRI_INCLUDE, shortcuts.NIRI_FILE,
+             shortcuts.remove_niri),
+            ("Hyprland", shortcuts.HYPR_DIR, "hyprland.lua", shortcuts.LUA_LOAD, shortcuts.HYPR_LUA,
+             shortcuts.remove_lua),
+            ("Hyprland", shortcuts.HYPR_DIR, "hyprland.conf", shortcuts.HYPR_SOURCE, shortcuts.HYPR_FILE,
+             shortcuts.remove_hyprland)):
+        try:
+            if remove() and d not in took:
+                took.append(d)
+        except OSError as e:
+            path = os.path.join(d, main)
+            warn(f"    could not take the shortcuts out of {whose}'s config, {path}: {type(e).__name__}: {e}")
+            left.append(f"the line `{line}` in {path}, and the file {os.path.join(d, ours)}")
+    if took:
+        print(f"    took the shortcuts out of {', '.join(took)}")
+    return left
 
 
 def cmd_version(args):

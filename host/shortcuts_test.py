@@ -212,6 +212,25 @@ class Niri(unittest.TestCase):
         self.assertEqual(0o444, stat.S_IMODE(os.stat(self.main).st_mode))
         self.assertEqual([], [n for n in os.listdir(self.niri) if n.endswith(".tmp")])
 
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root may write in a read-only directory")
+    def test_a_writable_file_in_a_directory_that_is_not_is_refused_and_left_as_it_is(self):
+        # What replacing costs: a write in place went through here. config.kdl is a link into a
+        # directory this user may not write, the file itself being theirs to write; the error is
+        # the caller's to deal with (`zmk-layer-hud uninstall` says it and goes on).
+        dotfiles = os.path.join(self.tmp.name, "dotfiles")
+        os.makedirs(dotfiles)
+        os.replace(self.main, os.path.join(dotfiles, "niri.kdl"))
+        os.symlink(os.path.join(dotfiles, "niri.kdl"), self.main)
+        text = self.installed()
+        os.chmod(dotfiles, 0o555)
+        self.addCleanup(os.chmod, dotfiles, 0o755)
+        with self.assertRaises(PermissionError):
+            shortcuts.remove_niri(self.niri)
+        with open(self.main) as f:
+            self.assertEqual(text, f.read())
+        self.assertEqual(["niri.kdl"], os.listdir(dotfiles))
+        self.assertTrue(os.path.exists(os.path.join(self.niri, shortcuts.NIRI_FILE)))    # ours stays while the line does
+
     def run_main(self, version=(26, 4), call_effect=None, call_code=0):
         """shortcuts.main() as niri's session, with niri's version, the reload call and the
         output said; -> (the call mock, stdout, stderr)."""
