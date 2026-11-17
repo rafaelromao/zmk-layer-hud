@@ -222,7 +222,10 @@ is running or not:
   PopupCard's own would undo the binding to `open`.
 - **Noctalia:** `host/linux/noctalia` is a bar-widget plugin for Noctalia v5's bar, written in Luau
   (Noctalia's plugins are a `plugin.toml` plus Luau entries, not QML). `menubar enable` copies it
-  into `~/.local/share/noctalia/plugins/layer-hud`, with the paths written into the Luau, then asks
+  into `~/.local/share/noctalia/plugins/layer-hud` (under `$NOCTALIA_DATA_HOME`, else
+  `$XDG_DATA_HOME`, when one is set: the order the shell itself looks in, and the same goes for its
+  `settings.toml` under `$NOCTALIA_STATE_HOME`, else `$XDG_STATE_HOME`; a `NOCTALIA_` variable set
+  only for the shell is not one this command sees), with the paths written into the Luau, then asks
   the running shell to load it, to enable it (`noctalia msg plugins enable zmk/layer-hud`) and to
   name the widget in the config (`widget.zmk-hud.type`), and lists `zmk-hud` at the end of `end` of
   every enabled bar. The directory is named for the id's tail, `layer-hud`, not for the app:
@@ -242,7 +245,9 @@ is running or not:
   folder only once the shell has taken the icon out of the bars (the folder is what lets a later
   `disable` try again); with no `noctalia` on the PATH there is no bar of its to clean and the
   folder goes alone. `menubar status` reads Noctalia's saved `settings.toml` with `tomllib` where
-  there is one (Python 3.11) and says nothing about it where there is not.
+  there is one (Python 3.11) and says nothing about it where there is not. The bars are the ones
+  `bar.order` names: Noctalia also runs a bar its config defines without naming it there (it puts
+  those after the named ones), and such a bar is not one `enable`, `disable` or `status` sees.
 
   Because the directory's name is only the id's tail, another author's plugin can have it too
   (`someone/layer-hud`), so the name is never taken as proof. The directory is this plugin's when

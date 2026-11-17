@@ -177,8 +177,8 @@ work:
   popout: the same tiles the HUD shows (`stats:` in the config picks them). If it does not appear,
   run `omarchy-restart-shell`: the shell caches the plugins it has loaded.
 - On Noctalia v5, `zmk-layer-hud menubar enable` puts the same icon in the bar. It installs the
-  plugin `zmk/layer-hud`, enables it, and adds a `zmk-hud` widget to the end of every enabled bar.
-  It looks and works like the macOS one -- the live WPM beside the keyboard glyph, dimmed while the
+  plugin `zmk/layer-hud`, enables it, and adds a `zmk-hud` widget to the end of every enabled bar
+  that `bar.order` names. It looks and works like the macOS one -- the live WPM beside the keyboard glyph, dimmed while the
   HUD is hidden, struck through while it is not running -- its three WPMs a right-click away
   (`zmk-layer-hud menubar wpm current|average|top` does the same), and the HUD's stats in its
   tooltip. It needs Noctalia running to load the plugin; if the icon does not appear,

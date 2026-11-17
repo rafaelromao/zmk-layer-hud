@@ -55,9 +55,19 @@ COMMIT = re.compile(r"^[0-9a-f]{40}$")
 # The macOS login item's bundle id and label.
 APP_ID = "io.github.rafaelromao.zmk-layer-hud"
 OMARCHY_PLUGINS = os.path.expanduser("~/.config/omarchy/plugins")
-# Noctalia's own XDG dirs: where local plugins are dropped and where the shell keeps settings.toml.
-NOCTALIA_PLUGINS = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share"),
-                                "noctalia", "plugins")
+
+
+def noctalia_home(which, fallback):
+    """Noctalia's own directory of a kind (DATA, STATE), found the way the shell finds it:
+    $NOCTALIA_<kind>_HOME/noctalia, else $XDG_<kind>_HOME/noctalia, else the usual place under the
+    home directory; a variable set to nothing counts as not set. Read from this command's
+    environment, which has to be the shell's for a NOCTALIA_ one to be seen."""
+    return os.path.join(os.environ.get(f"NOCTALIA_{which}_HOME") or os.environ.get(f"XDG_{which}_HOME")
+                        or os.path.expanduser(fallback), "noctalia")
+
+
+# Where local plugins are dropped; the shell's settings.toml is in its state directory.
+NOCTALIA_PLUGINS = os.path.join(noctalia_home("DATA", "~/.local/share"), "plugins")
 # Starting at login: a LaunchAgent and the small app it runs on macOS, an XDG autostart entry on Linux.
 LAUNCH_AGENT = os.path.expanduser(f"~/Library/LaunchAgents/{APP_ID}.plist")
 LOGIN_APP = os.path.expanduser("~/Library/Application Support/zmk-layer-hud/ZMK Layer HUD.app")
@@ -1810,9 +1820,8 @@ def noctalia_saved_placed():
         import tomllib
     except ImportError:
         return None
-    state = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
     try:
-        with open(os.path.join(state, "noctalia", "settings.toml"), "rb") as f:
+        with open(os.path.join(noctalia_home("STATE", "~/.local/state"), "settings.toml"), "rb") as f:
             saved = tomllib.load(f)
     except (OSError, ValueError):
         return None

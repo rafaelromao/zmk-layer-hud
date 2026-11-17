@@ -713,7 +713,10 @@ class NoctaliaPlugin(unittest.TestCase):
                   mock.patch.object(cli, "SHELL_JSON", self.shell),
                   mock.patch.object(cli.platform, "system", return_value="Linux"),
                   mock.patch.object(cli, "noctalia", self.fake),
-                  mock.patch.dict(os.environ, {"XDG_STATE_HOME": os.path.join(self.tmp.name, "state")})):
+                  # Noctalia's own variable comes before XDG's, so it is emptied (which is unset): a
+                  # machine that sets it must not have its real settings.toml read here.
+                  mock.patch.dict(os.environ, {"XDG_STATE_HOME": os.path.join(self.tmp.name, "state"),
+                                               "NOCTALIA_STATE_HOME": ""})):
             p.start()
             self.addCleanup(p.stop)
 
@@ -831,6 +834,28 @@ class NoctaliaPlugin(unittest.TestCase):
         self.assertEqual(0, code, said)
         self.assertNotIn("saved settings", said)
         self.assertIn(f"in {self.dir()}", said)
+
+    def test_noctalias_directories_are_found_the_way_the_shell_finds_them(self):
+        # lib/util/file_utils.h, applicationXdgDir: NOCTALIA_<kind>_HOME, else XDG_<kind>_HOME, else
+        # under the home directory, a variable set to nothing counting as not set.
+        with mock.patch.dict(os.environ, {"NOCTALIA_DATA_HOME": "/n/data", "XDG_DATA_HOME": "/x/data"}):
+            self.assertEqual("/n/data/noctalia", cli.noctalia_home("DATA", "~/.local/share"))
+            os.environ["NOCTALIA_DATA_HOME"] = ""
+            self.assertEqual("/x/data/noctalia", cli.noctalia_home("DATA", "~/.local/share"))
+            os.environ["XDG_DATA_HOME"] = ""
+            self.assertEqual(os.path.expanduser("~/.local/share/noctalia"), cli.noctalia_home("DATA", "~/.local/share"))
+            del os.environ["NOCTALIA_DATA_HOME"], os.environ["XDG_DATA_HOME"]
+            self.assertEqual(os.path.expanduser("~/.local/share/noctalia"), cli.noctalia_home("DATA", "~/.local/share"))
+
+    def test_the_saved_settings_are_read_from_noctalias_own_state_home_when_it_is_set(self):
+        self.run_cli("menubar", "enable")
+        for home, end in (("state", '"tray", "zmk-hud"'), ("profile", '"tray"')):
+            os.makedirs(os.path.join(self.tmp.name, home, "noctalia"))
+            with open(os.path.join(self.tmp.name, home, "noctalia", "settings.toml"), "w", encoding="utf-8") as f:
+                f.write(f"[bar.main]\nend = [ {end} ]\n")
+        self.assertNotIn("saved settings", self.run_cli("menubar")[1])    # XDG_STATE_HOME's has it
+        with mock.patch.dict(os.environ, {"NOCTALIA_STATE_HOME": os.path.join(self.tmp.name, "profile")}):
+            self.assertIn("not in Noctalia's saved settings", self.run_cli("menubar")[1])
 
     def bar_writes(self):
         return [c for c in self.fake.calls if c[:2] == ("msg", "config-set") and c[2].startswith("bar.")]
