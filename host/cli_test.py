@@ -1648,6 +1648,49 @@ class NoctaliaPlugin(unittest.TestCase):
         self.assertEqual([], self.fake.calls)                       # nothing to ask the shell about
         self.assert_theirs_is_untouched()
 
+    def linked_copy(self):
+        """This plugin's place as a link to a copy kept elsewhere -> where the copy is."""
+        elsewhere = os.path.join(self.tmp.name, "checkout")
+        shutil.copytree(self.SRC, elsewhere)
+        os.makedirs(self.plugins)
+        os.symlink(elsewhere, self.dir())
+        return elsewhere
+
+    def refusing_the_new_copy(self):
+        """os.rename refusing the new copy's move into the plugin's place."""
+        rename = os.rename
+
+        def refuse(src, dst):
+            if dst == self.dir() and os.path.basename(src) == "new":
+                raise OSError(13, "Permission denied", dst)
+            return rename(src, dst)
+        return mock.patch.object(cli.os, "rename", side_effect=refuse)
+
+    def test_a_link_is_put_back_when_the_new_copy_cannot_move_in(self):
+        elsewhere = self.linked_copy()
+        with self.refusing_the_new_copy():
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn(f"could not install the Noctalia plugin in {self.dir()}", said)
+        self.assertNotIn("Traceback", said)
+        self.assertTrue(os.path.islink(self.dir()))
+        self.assertEqual(elsewhere, os.readlink(self.dir()))
+        self.assertTrue(cli.noctalia_installed())
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+
+    def test_a_link_that_cannot_be_put_back_either_is_said_with_where_it_pointed(self):
+        elsewhere = self.linked_copy()
+        with self.refusing_the_new_copy(), \
+                mock.patch.object(cli.os, "symlink", side_effect=OSError(28, "No space left on device")):
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn("Permission denied", said)                   # what failed first
+        self.assertIn(f"the link that was there, to {elsewhere}, could not be put back", said)
+        self.assertIn("No space left on device", said)
+        self.assertIn(f"ln -s {elsewhere} {self.dir()}", said)
+        self.assertNotIn("Traceback", said)
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(elsewhere)))   # the copy itself stays
+
     def test_a_link_to_this_plugin_is_taken_as_a_link_and_what_it_points_at_stays(self):
         elsewhere = os.path.join(self.tmp.name, "checkout")
         shutil.copytree(self.SRC, elsewhere)

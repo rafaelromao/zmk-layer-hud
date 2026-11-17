@@ -1841,15 +1841,24 @@ def install_noctalia_plugin():
         state = noctalia_plugin_state()
         if state == "theirs":
             raise noctalia_refusal()
+        link = None
         if state == "ours":
             if os.path.islink(dest):
+                link = os.readlink(dest)
                 os.unlink(dest)             # a link to a copy of it: the link goes, the copy stays
             else:
                 os.rename(dest, old)
         try:
             os.rename(staged, dest)
         except OSError as e:
-            if os.path.isdir(old) and not os.path.lexists(dest):
+            if link is not None and not os.path.lexists(dest):
+                try:
+                    os.symlink(link, dest)  # the link that was there, back as it was
+                except OSError as back:
+                    raise Fail(f"could not install the Noctalia plugin in {dest}: {e}; and the link that "
+                               f"was there, to {link}, could not be put back ({back}): "
+                               f"`ln -s {shlex.quote(link)} {shlex.quote(dest)}` does it")
+            elif os.path.isdir(old) and not os.path.lexists(dest):
                 try:
                     os.rename(old, dest)    # the copy that was there, back where it was
                 except OSError as back:
