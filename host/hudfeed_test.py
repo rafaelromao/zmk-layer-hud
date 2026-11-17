@@ -1197,6 +1197,45 @@ class BluezConnected(unittest.TestCase):
         self.assertEqual([1], list(scans))                       # Corne, once resolved, by the lookup
         self.assertEqual(1, len(said))
 
+    def test_what_the_scan_passes_over_is_what_bluez_is_resolving_at_that_look_and_no_longer(self):
+        # Past the wait TwoNr9 drops, and advertises: the scan after that must be able to find it.
+        def bluez(look):
+            connected = look < 2
+            return self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC], resolved=False,
+                                            connected=connected))
+        found, scans, _ = self.stuck([0, 31, 32], objects_at=bluez)
+        advert = types.SimpleNamespace(service_uuids=[self.SVC])
+        twonr9 = types.SimpleNamespace(address="F9:BD:CA:10:F7:A8", name="TwoNr9")
+        self.assertEqual([1, 2], list(scans))
+        self.assertFalse(scans[1](twonr9, advert))
+        self.assertTrue(scans[2](twonr9, advert))
+
+    def test_the_wait_is_counted_again_when_the_first_keyboard_resolving_is_another(self):
+        # TwoNr9 and Corne resolving from 0; at 25 TwoNr9 is gone, so Corne is the first: its wait
+        # is counted from 25, and the scan runs from 55, not from 30.
+        def bluez(look):
+            keyboards = [self.device("C0:C0:C0:C0:C0:02", "Corne", uuids=[self.SVC], resolved=False)]
+            if look == 0:
+                keyboards.append(self.device("0A:0A:0A:0A:0A:03", "TwoNr9", uuids=[self.SVC], resolved=False))
+            return self.objects(*keyboards)
+        found, scans, said = self.stuck([0, 25, 40, 54.9, 55], objects_at=bluez)
+        self.assertEqual([None, None, None, None, ("AA:AA:AA:AA:AA:01", False)], found)
+        self.assertEqual([4], list(scans))
+        self.assertIn("Corne (C0:C0:C0:C0:C0:02) in 30 s", said[0])
+
+    def test_one_resolved_inside_the_wait_or_after_it_is_taken_by_the_lookup_and_never_by_the_scan(self):
+        found, scans, _ = self.stuck([0, 10, 20], resolved_from=2)
+        self.assertEqual([None, None, ("F9:BD:CA:10:F7:A8", True)], found)
+        self.assertEqual({}, scans)
+        found, scans, _ = self.stuck([0, 31, 32], resolved_from=2)
+        self.assertEqual([None, ("AA:AA:AA:AA:AA:01", False), ("F9:BD:CA:10:F7:A8", True)], found)
+        self.assertEqual([1], list(scans))
+
+    def test_with_ble_address_set_the_one_it_names_is_waited_for_and_no_scan_runs(self):
+        found, scans, said = self.stuck([0, 31, 300], address="f9:bd:ca:10:f7:a8")
+        self.assertEqual([None, None, None], found)
+        self.assertEqual(({}, []), (scans, said))
+
     def test_the_wait_starts_again_for_a_keyboard_that_resolved_and_is_resolving_once_more(self):
         import hudfeed
         r = hudfeed.BleReader(lambda m: None, log=lambda *a: None)
