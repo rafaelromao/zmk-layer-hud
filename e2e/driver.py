@@ -43,6 +43,7 @@ import hashlib
 import itertools
 import json
 import os
+import platform
 import re
 import shutil
 import socket
@@ -706,6 +707,7 @@ class Driver:
         if stray:
             raise DriverError(f"a HUD of this tree is already running ({stray}); this would end it")
         r.passed("setup", f"{self.probe.name}; state {self.state}; config {config} with ble off; port {self.port}")
+        r.note("machine", f"{platform.platform()}; Python {platform.python_version()}")
 
     # ----- the run -----
 

@@ -317,8 +317,8 @@ That is deliberate: a path or branch filter on the trigger would leave a require
 run that never comes. A pull request from a fork is held until a maintainer approves the run, after the
 label is on. A push replaces a validation that is running. A label added to a pull request that is
 being validated does not cancel it: that run waits its turn and then runs the same jobs under the same
-gate, and never skips them. (GitHub keeps one check per job name for a commit and shows the latest, so a
-later run that skipped could hide the failure of an earlier one.)
+gate, and never skips them: a skipped run would put a passing "skipped" check under the same name beside
+the real one.
 
 | Job | Where | What it starts |
 |---|---|---|
