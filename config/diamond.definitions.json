@@ -1,7 +1,8 @@
 {
  "version": 1,
  "sources": {
-  "repo": "github.com/rafaelromao/keyboards",
+  "repo": "~/projects/keyboards",
+  "remote": "github.com/rafaelromao/keyboards",
   "keyboard": "diamond",
   "drawing": "~/projects/keyboards/docs/img/diagrams/keymap-drawer/keymap-drawer.yaml"
  },

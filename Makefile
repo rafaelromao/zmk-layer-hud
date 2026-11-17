@@ -42,8 +42,9 @@ test-firmware: ## host-side tests for the module's pure encode/decode policy, an
 	$(CC) -std=c11 -Wall -Wextra -Werror -O1 -I firmware/tests/fakes -o build/test_signal_route firmware/tests/test_signal_route.c
 	./build/test_signal_route
 
-test-host: ## Python tests: the wire format, the signal decoder, the keymap-drawer conversion
+test-host: ## Python tests: the wire format, the signal decoder, the keymap-drawer conversion, and the end-to-end driver's own helpers
 	$(PYTHON) -m unittest discover -s host -p '*_test.py' -v
+	$(PYTHON) -m unittest discover -s e2e -p '*_test.py' -v
 
 test-hud: ## the HUD page: every key and combo, the heatmap, the strip, and every way to type every legend on every channel
 	@if [ -z "$(NODE)" ]; then \
