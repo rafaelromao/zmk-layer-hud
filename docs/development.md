@@ -275,7 +275,9 @@ is running or not:
   plugins directory with a `plugin.toml` in it for a plugin, never sees a half-made copy. An older
   copy of ours is moved aside into that directory whole, the new one is moved into its place, and
   only then does the old one go: killed at any point, `enable` leaves a whole copy in place or
-  none, never one that has lost its `plugin.toml` and so would read as someone else's. The next
+  none, never one that has lost its `plugin.toml` and so would read as someone else's. If the new
+  copy cannot move in, the old one is moved back; if that fails too, the staging directory is kept
+  with the old copy whole inside it, and both failures are said, with where the copy is. The next
   `enable` or `disable` removes such a staging directory when all in it is copies of this plugin
   (or empty), and otherwise names it and leaves it, saying which it found: copies of ours the disk
   would not let go of, or something else -- and then whether it has a `plugin.toml` of its own,

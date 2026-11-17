@@ -1270,6 +1270,35 @@ class NoctaliaPlugin(unittest.TestCase):
         self.assertEqual(["layer-hud"], os.listdir(self.plugins))
         self.assertEqual(sorted(os.listdir(self.SRC) + ["old.luau"]), sorted(os.listdir(self.dir())))
 
+    def test_when_the_old_copy_cannot_be_moved_back_either_it_is_kept_and_both_failures_said(self):
+        self.run_cli("menubar", "enable")
+        with open(os.path.join(self.dir(), "old.luau"), "w", encoding="utf-8") as f:
+            f.write("-- from a release before\n")
+        rename = os.rename
+
+        def refuse_both(src, dst):
+            if dst == self.dir():               # the new copy moving in, and the old one moving back
+                raise OSError(13, f"Permission denied ({os.path.basename(src)})", dst)
+            return rename(src, dst)
+        with mock.patch.object(cli.os, "rename", side_effect=refuse_both):
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn(f"could not install the Noctalia plugin in {self.dir()}", said)
+        self.assertIn("Permission denied (new)", said)             # what failed first
+        self.assertIn("could not be moved back", said)
+        self.assertIn("Permission denied (old)", said)             # and then
+        self.assertNotIn("Traceback", said)
+        (held,) = self.staging()
+        old = os.path.join(self.plugins, held, "old")
+        self.assertIn(f"It is whole in {old}", said)
+        self.assertEqual(sorted(os.listdir(self.SRC) + ["old.luau"]), sorted(os.listdir(old)))
+        self.assertFalse(os.path.lexists(self.dir()))
+        # What the message offers: a later enable installs a new copy and clears what was kept.
+        self.aged(os.path.join(self.plugins, held))
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+
     @unittest.skipIf(os.geteuid() == 0, "root writes where it likes")
     def test_a_plugins_directory_that_cannot_be_written_to_is_said_not_thrown(self):
         os.makedirs(self.plugins)

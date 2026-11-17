@@ -1813,13 +1813,16 @@ def install_noctalia_plugin():
     set aside (noctalia_leftovers). Whose the place is, is asked again right before the old copy is
     moved: the copying in between takes its time.
     What the disk refuses -- a plugins directory that cannot be written to, a move that fails -- is
-    said with the path and the reason, as any other failure of this command is."""
+    said with the path and the reason, as any other failure of this command is. When the old copy
+    cannot be moved back either, the staging directory is kept with it inside, whole, and both
+    failures are said, with where it is."""
+    import shlex
     import tempfile
     dest = noctalia_plugin_dir()
     if noctalia_plugin_state() == "theirs":
         raise noctalia_refusal()
     source = os.path.join(ROOT, "host", "linux", "noctalia")
-    staging = None
+    staging, keep = None, False
     try:
         os.makedirs(NOCTALIA_PLUGINS, exist_ok=True)
         for why in noctalia_leftovers():
@@ -1845,14 +1848,21 @@ def install_noctalia_plugin():
                 os.rename(dest, old)
         try:
             os.rename(staged, dest)
-        except OSError:
+        except OSError as e:
             if os.path.isdir(old) and not os.path.lexists(dest):
-                os.rename(old, dest)        # the copy that was there, back where it was
+                try:
+                    os.rename(old, dest)    # the copy that was there, back where it was
+                except OSError as back:
+                    keep = True             # with that copy in it: removing it would lose the copy
+                    raise Fail(f"could not install the Noctalia plugin in {dest}: {e}; and the copy that "
+                               f"was there could not be moved back ({back}). It is whole in {old}: "
+                               f"`mv {shlex.quote(old)} {shlex.quote(dest)}` puts it back, or a later "
+                               "`zmk-layer-hud menubar enable` installs a new one and clears it")
             raise
     except OSError as e:
         raise Fail(f"could not install the Noctalia plugin in {dest}: {e}")
     finally:
-        if staging:
+        if staging and not keep:
             shutil.rmtree(staging, ignore_errors=True)
     return dest
 
