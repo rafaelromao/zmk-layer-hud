@@ -27,7 +27,7 @@ try:
 except ImportError:             # before Python 3.11; 3.10 is supported, and has none
     tomllib = None
 
-ROOT =os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHIM = os.path.join(ROOT, "bin", "zmk-layer-hud")
 
 
@@ -1164,8 +1164,11 @@ class NoctaliaPlugin(unittest.TestCase):
 
     @unittest.skipUnless(tomllib, "compared with tomllib (Python 3.11)")
     def test_whatever_id_the_reader_gives_is_the_one_a_toml_parser_gives(self):
-        # One way only: the reader may give no id where a parser finds one (it reads less), never
-        # one a parser does not find. Every shape above, and the manifest this ships.
+        # On a manifest that is valid TOML, and one way only: the reader may give no id where a
+        # parser finds one (it reads less), never one a parser does not find. Every shape above
+        # that it gives an id for is valid TOML, as is the manifest this ships. What follows the id
+        # is not read, so a file that stops being TOML after it is not compared here: the reader
+        # gives its id, and Noctalia refuses the file.
         with open(os.path.join(self.SRC, "plugin.toml"), "rb") as f:
             shipped = f.read()
         self.assertEqual(cli.NOCTALIA_ID, tomllib.loads(shipped.decode("utf-8"))["id"])
