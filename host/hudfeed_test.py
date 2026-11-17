@@ -1247,6 +1247,203 @@ class BluezConnected(unittest.TestCase):
             asyncio.run(r._loop())
         self.assertEqual(["hudfeed: no BLE keyboard with the layer signal connected or advertising yet"], said)
 
+    def test_what_bluez_had_connected_is_remembered_and_what_the_scan_found_is_not(self):
+        import hudfeed
+        r = hudfeed.BleReader(lambda m: None, address="F9:BD:CA:10:F7:A8", log=lambda *a: None)
+        answers = [self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC])), {}]
+
+        async def objects_now():
+            return answers.pop(0)
+
+        async def scan(address, timeout):
+            return "scanned"
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.object(hudfeed, "bluez_objects", objects_now), \
+                mock.patch.dict(sys.modules, self.fake_bleak(scan)):
+            device = asyncio.run(r._find())
+            self.assertIs(device, r._found_connected)
+            self.assertEqual("scanned", asyncio.run(r._find()))
+            self.assertIsNone(r._found_connected)
+
+
+class BleLeftConnected(unittest.TestCase):
+    """A keyboard BlueZ had connected before the feed came is left connected when the feed is done
+    with it; one the feed connected itself is disconnected, as before. The client here stands in
+    for bleak's BlueZ one as BleReader._let_go reads it: closing it sends Device1.Disconnect while
+    it holds the device connected. BleakBluez, below, holds that reading to bleak itself."""
+
+    def setUp(self):
+        import hudfeed
+        self.said, self.sent, self.backends = [], [], []
+        self.reader = hudfeed.BleReader(lambda m: None, log=self.said.append)
+        self.reader.stop()                      # a session that is read and ends at once
+        self.device = types.SimpleNamespace(name="TwoNr9", address="F9:BD:CA:10:F7:A8")
+
+    def client(self, notify_error=None, members=True, drops=False):
+        sent, backends = self.sent, self.backends
+
+        class Backend:
+            def __init__(self):
+                self._is_connected = True
+                if members:
+                    self._disconnect_monitor_event = self.monitor = asyncio.Event()
+
+            def _cleanup_all(self):
+                sent.append("cleaned up")
+
+        class Client:
+            def __init__(self, device, disconnected_callback):
+                self._backend = Backend()
+                backends.append(self._backend)
+
+            @property
+            def is_connected(self):
+                return self._backend._is_connected
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                if self._backend._is_connected:
+                    sent.append("Disconnect")
+                sent.append("closed")
+                return False
+
+            async def start_notify(self, uuid, callback):
+                if notify_error:
+                    raise notify_error
+                sent.append("StartNotify")
+                if drops:
+                    self._backend._is_connected = False
+
+            async def stop_notify(self, uuid):
+                sent.append("StopNotify")
+        return Client
+
+    def test_a_keyboard_found_connected_is_left_connected_when_the_feed_stops(self):
+        self.reader._found_connected = self.device
+        self.assertIsNone(asyncio.run(self.reader._session(self.client(), self.device)))
+        self.assertEqual(["StartNotify", "StopNotify", "cleaned up", "closed"], self.sent)
+        self.assertEqual(["hudfeed: reading TwoNr9 over BLE"], self.said)
+        # ... and what would disconnect it when the event loop ends has been told it is over
+        self.assertTrue(self.backends[0].monitor.is_set())
+        self.assertIsNone(self.backends[0]._disconnect_monitor_event)
+
+    def test_one_the_feed_connected_itself_is_disconnected_as_before(self):
+        self.reader._found_connected = types.SimpleNamespace(name="Other", address="AA:AA:AA:AA:AA:01")
+        self.assertIsNone(asyncio.run(self.reader._session(self.client(), self.device)))
+        self.assertEqual(["StartNotify", "Disconnect", "closed"], self.sent)
+
+    def test_one_found_connected_that_cannot_be_read_is_left_connected_too(self):
+        self.reader._found_connected = self.device
+        failed = asyncio.run(self.reader._session(self.client(notify_error=OSError("no such characteristic")),
+                                                  self.device))
+        self.assertEqual("TwoNr9 over BLE, not read (OSError: no such characteristic)", failed)
+        self.assertNotIn("Disconnect", self.sent)
+        self.assertEqual(["cleaned up", "closed"], self.sent[-2:])
+
+    def test_one_that_went_by_itself_is_closed_as_bleak_closes_it(self):
+        self.reader._found_connected = self.device
+        asyncio.run(self.reader._session(self.client(drops=True), self.device))
+        self.assertEqual(["StartNotify", "closed"], self.sent)
+
+    def test_a_bleak_without_what_this_reads_disconnects_as_before_and_says_so_once(self):
+        self.reader._found_connected = self.device
+        for _ in range(2):
+            asyncio.run(self.reader._session(self.client(members=False), self.device))
+        self.assertEqual(["StartNotify", "Disconnect", "closed"] * 2, self.sent)
+        self.assertEqual(1, len([s for s in self.said if "cannot leave TwoNr9 connected" in s]), self.said)
+
+
+class BleakBluez(unittest.TestCase):
+    """What BleReader._let_go relies on, held to the bleak that is installed: bleak's own BlueZ
+    client, in the state its connect() leaves it in (backends/bluezdbus/client.py), closed over a
+    bus that only records. Those are bleak's private members, so a bump of bleak that changes them
+    fails here, not on someone's keyboard. dbus_fast is bleak's dependency on Linux alone; where it
+    is not installed it is stood in for, which is enough to import the client."""
+
+    DBUS_FAST = ("dbus_fast", "dbus_fast.aio", "dbus_fast.aio.message_bus", "dbus_fast.auth", "dbus_fast.constants",
+                 "dbus_fast.errors", "dbus_fast.message", "dbus_fast.service", "dbus_fast.signature",
+                 "dbus_fast.validators")
+    PATH = "/org/bluez/hci0/dev_F9_BD_CA_10_F7_A8"
+
+    def setUp(self):
+        import importlib.util
+        if importlib.util.find_spec("bleak") is None:
+            self.skipTest("bleak is not installed")
+        modules = {}
+        if importlib.util.find_spec("dbus_fast") is None:
+            modules = {name: mock.MagicMock(unsafe=True) for name in self.DBUS_FAST}
+            modules["dbus_fast"].Message = modules["dbus_fast.message"].Message = \
+                lambda **kw: types.SimpleNamespace(**kw)
+        patch = mock.patch.dict(sys.modules, modules)   # and whatever of bleak this imports is forgotten after
+        patch.start()
+        self.addCleanup(patch.stop)
+        import bleak
+        from bleak.backends.bluezdbus.client import BleakClientBlueZDBus
+        from bleak.backends.device import BLEDevice
+        self.bleak, self.backend_type = bleak, BleakClientBlueZDBus
+        self.device = BLEDevice("F9:BD:CA:10:F7:A8", "TwoNr9", {"path": self.PATH, "props": {}})
+        self.sent = []
+
+    def connected(self):
+        """-> (client, the task that watches for the loop ending), as after connect()."""
+        sent = self.sent
+
+        class Bus:
+            async def call(self, message):
+                sent.append(message.member)
+                raise ConnectionError("recorded, not answered")
+
+            async def send(self, message):
+                sent.append(message.member)
+
+            def disconnect(self):
+                sent.append("bus closed")
+
+            async def wait_for_disconnect(self):
+                pass
+        client = self.bleak.BleakClient(self.device, backend=self.backend_type)
+        backend = client._backend
+        backend._bus, backend._is_connected, backend.services = Bus(), True, object()
+        backend._disconnect_monitor_event = asyncio.Event()
+        monitor = asyncio.ensure_future(
+            self.backend_type._disconnect_monitor(backend._bus, self.PATH, backend._disconnect_monitor_event))
+        return client, monitor
+
+    def test_closing_bleaks_client_disconnects_the_device(self):
+        async def close():
+            client, monitor = self.connected()
+            with self.assertRaises(ConnectionError):
+                await client.disconnect()
+            monitor.cancel()
+        asyncio.run(close())
+        self.assertEqual("Disconnect", self.sent[0])
+
+    def test_and_so_does_the_loop_ending_with_it_never_closed(self):
+        async def leave():
+            self.connected()
+            await asyncio.sleep(0)
+        asyncio.run(leave())                    # which cancels what is still running, as the feed's does
+        self.assertEqual(["Disconnect"], self.sent)
+
+    def test_let_go_of_it_closes_without_disconnecting(self):
+        import hudfeed
+        said = []
+        r = hudfeed.BleReader(lambda m: None, log=said.append)
+
+        async def close():
+            client, monitor = self.connected()
+            await r._let_go(client, "TwoNr9")
+            await client.disconnect()
+            await asyncio.sleep(0)
+            return client, monitor.done()
+        client, monitor_done = asyncio.run(close())
+        self.assertEqual(["bus closed"], self.sent)
+        self.assertTrue(monitor_done)
+        self.assertFalse(client.is_connected)
+        self.assertEqual([], said)              # bleak has what _let_go reads: nothing to say
+
 
 class HidKeys(unittest.TestCase):
     """The HID keys reader (hidapi, macOS) with a hid module that answers as the test says."""

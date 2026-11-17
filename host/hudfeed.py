@@ -485,6 +485,8 @@ class BleReader:
         self.altgr = altgr
         self._streams = set()  # live Streams, for resync()
         self._stop = threading.Event()
+        self._found_connected = None    # the device BlueZ had connected before the feed came (_connected_bluez)
+        self._said_disconnects = False  # that this bleak cannot leave it connected, said once (_let_go)
 
     def start(self):
         threading.Thread(target=self._run, name="ble-read", daemon=True).start()
@@ -529,13 +531,12 @@ class BleReader:
         """The keyboard BlueZ already has connected, or None; see bluez_connected. Wrapped the way
         bleak's own scanner wraps what it finds, so BleakClient takes it by its path.
 
-        Stopping the feed disconnects that keyboard. bleak (3.0.2, bluezdbus/client.py) sends
-        Device1.Disconnect when its client closes, also for a device it found connected and so
-        never had to connect, and BlueZ's link is shared by every application: the keyboard drops
-        off the system until it reconnects. bleak has no public way to leave it connected, and
-        what it does to the client's own state cannot be undone from outside without its private
-        members. Not checked on hardware."""
+        It is remembered as found connected, which is what keeps the feed from disconnecting it:
+        BlueZ's link is shared by every application, the keyboard types through it, and it was
+        there before the feed came (_let_go). One that drops between this and the client, so that
+        bleak connects it again, is left connected all the same."""
         from bleak.backends.device import BLEDevice
+        self._found_connected = None
         try:
             found = bluez_connected(await bluez_objects(), self.address, self.name)
         except Exception:
@@ -543,7 +544,61 @@ class BleReader:
         if found is None:
             return None
         path, address, label = found
-        return BLEDevice(address, label, {"path": path, "props": {}})
+        self._found_connected = BLEDevice(address, label, {"path": path, "props": {}})
+        return self._found_connected
+
+    @contextlib.asynccontextmanager
+    async def _left_connected(self, client, device):
+        """Around a session, inside the client: on the way out a keyboard BlueZ had connected
+        already is let go of first (_let_go). One the scan found is the feed's own connection and
+        closes as it always did, as does every keyboard on macOS."""
+        try:
+            yield
+        finally:
+            if device is self._found_connected:
+                await self._let_go(client, device.name or str(device.address))
+
+    async def _let_go(self, client, name):
+        """Makes closing `client` leave the keyboard connected to the system. BLEAK'S PRIVATE
+        MEMBERS ARE USED HERE: it has no public way to do this.
+
+        What bleak 3.0.2 does (backends/bluezdbus/client.py), found connected or not: disconnect(),
+        which leaving `async with BleakClient` calls, sends Device1.Disconnect while its
+        `_is_connected` is true (lines 407-417), and a task of its own sends the same when the
+        event loop ends with the client never closed (`_disconnect_monitor`, 333-362). BlueZ's
+        link is shared by every application, so either takes the keyboard off the whole system.
+        BleakClient and BlueZClientArgs have nothing to ask for anything else.
+
+        So the client is put in the state bleak itself leaves it in when the keyboard goes away
+        (on_connected_changed, 170-185): `_is_connected` false, the `_disconnect_monitor_event` set
+        and forgotten, `_cleanup_all()` run. disconnect() then only closes the client's own D-Bus
+        connection. Notifications are stopped first, the public way, as the keyboard stays. A bleak
+        whose client lacks any of the three is closed as before, which disconnects, and that is
+        said once. bleak is pinned in host/requirements.txt, and hudfeed_test.py (BleakBluez) runs
+        bleak's own client through this, so a bump that changes it fails there.
+
+        Not covered: a connect() that fails after bleak has opened its bus disconnects from inside
+        bleak (disconnect_device, 208-240), before there is a client to let go of.
+
+        Checked by running bleak 3.0.2's client against a recording bus; NOT on hardware, so what
+        BlueZ and a keyboard do when the feed leaves this way has not been seen."""
+        if not client.is_connected:
+            return      # it went by itself: bleak has nothing left to disconnect
+        backend = getattr(client, "_backend", None)
+        if not (hasattr(backend, "_is_connected") and hasattr(backend, "_disconnect_monitor_event")
+                and callable(getattr(backend, "_cleanup_all", None))):
+            if not self._said_disconnects:
+                self._said_disconnects = True
+                self.log(f"hudfeed: this bleak cannot leave {name} connected: when the feed stops reading it, "
+                         "it is disconnected from the system")
+            return
+        with contextlib.suppress(Exception):
+            await client.stop_notify(BLE_SIGNAL_UUID)
+        backend._is_connected = False
+        monitor, backend._disconnect_monitor_event = backend._disconnect_monitor_event, None
+        if monitor is not None:
+            monitor.set()
+        backend._cleanup_all()
 
     async def _connected_macos(self):
         """The keyboard macOS already has connected, or None. A bonded keyboard in use is connected
@@ -631,7 +686,8 @@ class BleReader:
         self._streams.add(stream)
         gone = asyncio.Event()
         try:
-            async with BleakClient(device, disconnected_callback=lambda _: gone.set()) as client:
+            async with BleakClient(device, disconnected_callback=lambda _: gone.set()) as client, \
+                    self._left_connected(client, device):
                 import time
 
                 def on_notify(_sender, data):
