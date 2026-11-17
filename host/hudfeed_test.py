@@ -1125,6 +1125,128 @@ class BluezConnected(unittest.TestCase):
                 mock.patch.dict(sys.modules, self.fake_bleak(scan)):
             self.assertEqual("scanned", asyncio.run(r._find()))
 
+    @staticmethod
+    def fake_dbus(reply=None, connect_error=None):
+        """dbus_fast as bluez_objects uses it: a bus that answers `reply` (which dbus_fast returns,
+        and does not raise, when it is a D-Bus error) or whose connect fails. -> (modules, calls)."""
+        calls = []
+
+        class Bus:
+            def __init__(self, bus_type=None):
+                calls.append("new")
+
+            async def connect(self):
+                calls.append("connect")
+                if connect_error:
+                    raise connect_error
+                return self
+
+            async def call(self, message):
+                calls.append("call")
+                return reply
+
+            def disconnect(self):
+                calls.append("disconnect")
+        dbus, aio, constants = (types.ModuleType(n) for n in ("dbus_fast", "dbus_fast.aio", "dbus_fast.constants"))
+        dbus.BusType = types.SimpleNamespace(SYSTEM="system")
+        dbus.Message = lambda **kw: types.SimpleNamespace(**kw)
+        aio.MessageBus = Bus
+        constants.MessageType = types.SimpleNamespace(METHOD_RETURN="return", ERROR="error")
+        return {"dbus_fast": dbus, "dbus_fast.aio": aio, "dbus_fast.constants": constants}, calls
+
+    def test_the_managed_objects_are_what_a_method_return_carries(self):
+        import hudfeed
+        objs = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]))
+        modules, calls = self.fake_dbus(types.SimpleNamespace(message_type="return", body=[objs]))
+        with mock.patch.dict(sys.modules, modules):
+            self.assertIs(objs, asyncio.run(hudfeed.bluez_objects()))
+        self.assertEqual(["new", "connect", "call", "disconnect"], calls)
+
+    def test_an_error_reply_is_not_taken_for_managed_objects(self):
+        import hudfeed
+        error = types.SimpleNamespace(message_type="error", error_name="org.freedesktop.DBus.Error.ServiceUnknown",
+                                      body=["The name org.bluez was not provided by any .service files"])
+        modules, calls = self.fake_dbus(error)
+        with mock.patch.dict(sys.modules, modules):
+            with self.assertRaisesRegex(RuntimeError, "ServiceUnknown"):
+                asyncio.run(hudfeed.bluez_objects())
+        self.assertEqual("disconnect", calls[-1])
+
+    def test_a_bus_whose_connect_failed_is_still_disconnected(self):
+        import hudfeed
+        modules, calls = self.fake_dbus(connect_error=OSError("auth"))
+        with mock.patch.dict(sys.modules, modules):
+            with self.assertRaises(OSError):
+                asyncio.run(hudfeed.bluez_objects())
+        self.assertEqual(["new", "connect", "disconnect"], calls)
+
+    def test_an_error_reply_from_bluez_leaves_the_scan_as_the_way_in(self):
+        import hudfeed
+        r = hudfeed.BleReader(lambda m: None, address="F9:BD:CA:10:F7:A8", log=lambda *a: None)
+        error = types.SimpleNamespace(message_type="error", error_name="org.freedesktop.DBus.Error.ServiceUnknown",
+                                      body=["The name org.bluez was not provided by any .service files"])
+
+        async def scan(address, timeout):
+            return "scanned"
+        modules, _ = self.fake_dbus(error)
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.dict(sys.modules, {**modules, **self.fake_bleak(scan)}):
+            self.assertEqual("scanned", asyncio.run(r._find()))
+
+    def test_managed_objects_that_cannot_be_read_leave_the_scan_as_the_way_in(self):
+        import hudfeed
+        r = hudfeed.BleReader(lambda m: None, address="F9:BD:CA:10:F7:A8", log=lambda *a: None)
+        no_connected = {"/org/bluez/hci0/dev_X": {"org.bluez.Device1": {"Address": types.SimpleNamespace(value="X")}}}
+
+        async def scan(address, timeout):
+            return "scanned"
+        for odd in ("not a dict", no_connected):
+            async def objects_now():
+                return odd
+            with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                    mock.patch.object(hudfeed, "bluez_objects", objects_now), \
+                    mock.patch.dict(sys.modules, self.fake_bleak(scan)):
+                self.assertEqual("scanned", asyncio.run(r._find()), odd)
+
+    def test_with_no_connected_keyboard_and_no_address_the_scan_is_by_service(self):
+        import hudfeed
+        r = hudfeed.BleReader(lambda m: None, name="twonr", log=lambda *a: None)
+        seen = []
+
+        async def objects_now():
+            return {}
+
+        async def by_filter(match, timeout):
+            seen.append(match)
+            return "filtered"
+        modules = self.fake_bleak(None)
+        modules["bleak"].BleakScanner.find_device_by_filter = by_filter
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.object(hudfeed, "bluez_objects", objects_now), \
+                mock.patch.dict(sys.modules, modules):
+            self.assertEqual("filtered", asyncio.run(r._find()))
+        advert = lambda *uuids: types.SimpleNamespace(service_uuids=list(uuids))
+        named = lambda name: types.SimpleNamespace(name=name)
+        self.assertTrue(seen[0](named("TwoNr9"), advert(self.SVC)))
+        self.assertFalse(seen[0](named("TwoNr9"), advert("1812")))
+        self.assertFalse(seen[0](named("Other"), advert(self.SVC)))
+
+    def test_nothing_found_on_linux_does_not_send_the_user_to_an_address(self):
+        import hudfeed
+        said = []
+        r = hudfeed.BleReader(lambda m: None, log=said.append, rescan=0.0)
+
+        async def nothing():
+            return None
+
+        async def pause(seconds):
+            r.stop()
+        r._find, r._pause = nothing, pause
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.dict(sys.modules, {"bleak": types.SimpleNamespace(BleakClient=None)}):
+            asyncio.run(r._loop())
+        self.assertEqual(["hudfeed: no BLE keyboard with the layer signal connected or advertising yet"], said)
+
 
 class HidKeys(unittest.TestCase):
     """The HID keys reader (hidapi, macOS) with a hid module that answers as the test says."""

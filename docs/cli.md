@@ -427,8 +427,8 @@ options:
                         config `serial.port`)
   --no-ble              do not look for BLE keyboards
   --ble-address BLE_ADDRESS
-                        address of the BLE keyboard (default: config `ble.address`); needed where
-                        a connected keyboard no longer advertises
+                        address of the BLE keyboard, to pick one of several (default: config
+                        `ble.address`)
   --no-hid-keys         do not read the keyboard's HID reports for the typed-keys strip (needs
                         Input Monitoring on macOS); layers and positions are unaffected
   --no-inject           refuse messages sent in by a WebSocket client (layers, press, release,

@@ -575,6 +575,14 @@ beside anything that is wrong. What it cannot see:
   Privacy & Security → Bluetooth). `… over BLE, not read` means it connected but found no signal
   service: the firmware was built without `CONFIG_ZMK_LAYER_SIGNAL_GATT`, or macOS has cached the
   keyboard's services from an older firmware — remove and re-pair it.
+  On Linux the feed asks BlueZ (on the system bus) for a connected keyboard that lists the signal
+  service, so no address is needed there either: `ble.address` only picks one of several. BlueZ
+  may still list the services it cached from an older firmware; if the feed never finds the
+  keyboard, `bluetoothctl remove <address>` and pair it again. A keyboard the feed is reading is
+  disconnected when the feed stops (quit, restart, update): the library closes its connection and
+  BlueZ's link is shared by every application, so the keyboard drops off until it reconnects
+  (`bluetoothctl connect <address>` if it does not by itself). That is read from the library's
+  source and has not been checked on hardware.
 - **`no definitions yet`**: `start` waits for `import` to have drawn the keymap:
   `zmk-layer-hud import <your zmk-config>`, or with `keymap:` set, `zmk-layer-hud import`.
 - **No `layers` lines**: `zmk-layer-hud feed --raw` logs every frame it decodes, so silence there

@@ -54,6 +54,8 @@ macOS only -- Linux reads /dev/hidrawN itself (HidrawReader), because the wheel'
 libusb, which wants /dev/bus/usb and detaches the kernel HID driver; PyYAML (or yq) for the config;
 jeepney on Linux only, for the accessibility bus, where a password field with focus is seen
 (host/a11y.py); under Hyprland the session lock is seen on its control socket (host/sessionlock.py).
+On Linux bleak brings dbus-fast, which the feed also uses to ask BlueZ for a keyboard that is already
+connected (bluez_objects).
 Not keymap-drawer: the drawing comes ready in the definitions `zmk-layer-hud import` wrote.
 """
 
@@ -444,15 +446,24 @@ def bluez_connected(objects, address=None, name=None):
 
 
 async def bluez_objects():
+    """BlueZ's managed objects, as bluez_connected reads them. Raises when BlueZ cannot be asked.
+
+    dbus_fast's call() does not raise on a D-Bus error reply, it returns it as a message of type
+    ERROR whose body is the error text (bleak checks every reply for this, bluezdbus/utils.py
+    assert_reply): with bluetoothd not running that is a str, which is no managed objects."""
     from dbus_fast import BusType, Message
     from dbus_fast.aio import MessageBus
-    bus = await MessageBus(bus_type=BusType.SYSTEM).connect()
+    from dbus_fast.constants import MessageType
+    bus = MessageBus(bus_type=BusType.SYSTEM)
     try:
+        await bus.connect()
         reply = await bus.call(Message(destination="org.bluez", path="/",
                                        interface="org.freedesktop.DBus.ObjectManager",
                                        member="GetManagedObjects"))
     finally:
-        bus.disconnect()
+        bus.disconnect()    # also after a connect that failed: dbus_fast wants it either way
+    if reply.message_type != MessageType.METHOD_RETURN:
+        raise RuntimeError(f"BlueZ answered {reply.error_name}: {reply.body}")
     return reply.body[0]
 
 
@@ -463,8 +474,9 @@ class BleReader:
     Two things make BLE harder than the serial port. The characteristic requires encryption, so
     the keyboard has to be bonded to this host already — pair it with the OS first, this cannot do
     it. And a keyboard connected as a HID peripheral stops advertising, so scanning never finds it
-    while it is in use. On macOS the connected keyboard is asked of CoreBluetooth instead
-    (_connected_macos); on Linux give `ble: {address: ...}`, its MAC address."""
+    while it is in use. So the connected keyboard is asked of the system instead: of CoreBluetooth
+    on macOS (_connected_macos), of BlueZ on Linux (_connected_bluez). `ble: {address: ...}` only
+    picks one of several (a MAC address on Linux)."""
 
     def __init__(self, emit, address=None, name=None, rescan=2.0, log=print, raw=False,
                  dead_key_ms=DEAD_KEY_MS, altgr=False):
@@ -515,13 +527,19 @@ class BleReader:
 
     async def _connected_bluez(self):
         """The keyboard BlueZ already has connected, or None; see bluez_connected. Wrapped the way
-        bleak's own scanner wraps what it finds, so BleakClient takes it by its path."""
+        bleak's own scanner wraps what it finds, so BleakClient takes it by its path.
+
+        Stopping the feed disconnects that keyboard. bleak (3.0.2, bluezdbus/client.py) sends
+        Device1.Disconnect when its client closes, also for a device it found connected and so
+        never had to connect, and BlueZ's link is shared by every application: the keyboard drops
+        off the system until it reconnects. bleak has no public way to leave it connected, and
+        what it does to the client's own state cannot be undone from outside without its private
+        members. Not checked on hardware."""
         from bleak.backends.device import BLEDevice
         try:
-            objects = await bluez_objects()
+            found = bluez_connected(await bluez_objects(), self.address, self.name)
         except Exception:
-            return None      # no system bus or no BlueZ: the scan is the way in, as before
-        found = bluez_connected(objects, self.address, self.name)
+            return None      # no system bus, no BlueZ, an answer we cannot read: the scan, as before
         if found is None:
             return None
         path, address, label = found
@@ -580,9 +598,7 @@ class BleReader:
                 device = None
 
             if device is None:
-                note = failed or ("no BLE keyboard with the layer signal connected or advertising yet" + (
-                    "" if self.address or sys.platform == "darwin" else
-                    "; a connected keyboard does not advertise, so it may need `ble: {address: ...}`"))
+                note = failed or "no BLE keyboard with the layer signal connected or advertising yet"
                 if note != said:
                     said = note
                     self.log(f"hudfeed: {note}")
@@ -1533,8 +1549,8 @@ def parse_args(argv=None):
     p.add_argument("--serial", metavar="DEV", help="the keyboard's serial port, instead of finding it by vid/pid "
                                                    "(default: config `serial.port`)")
     p.add_argument("--no-ble", action="store_true", help="do not look for BLE keyboards")
-    p.add_argument("--ble-address", help="address of the BLE keyboard (default: config `ble.address`); needed where a "
-                                         "connected keyboard no longer advertises")
+    p.add_argument("--ble-address", help="address of the BLE keyboard, to pick one of several "
+                                         "(default: config `ble.address`)")
     p.add_argument("--no-hid-keys", action="store_true",
                    help="do not read the keyboard's HID reports for the typed-keys strip "
                         "(needs Input Monitoring on macOS); layers and positions are unaffected")
