@@ -5,6 +5,7 @@ what a report means is host/hiddecode.py's, tested in hiddecode_test.py. Stream 
 """
 
 import asyncio
+import functools
 import json
 import os
 import re
@@ -1401,94 +1402,208 @@ class BleLeftConnected(unittest.TestCase):
         self.assertEqual(1, len([s for s in self.said if "cannot leave TwoNr9 connected" in s]), self.said)
 
 
-class BleakBluez(unittest.TestCase):
-    """What BleReader._let_go relies on, held to the bleak that is installed: bleak's own BlueZ
-    client, in the state its connect() leaves it in (backends/bluezdbus/client.py), closed over a
-    bus that only records. Those are bleak's private members, so a bump of bleak that changes them
-    fails here, not on someone's keyboard. dbus_fast is bleak's dependency on Linux alone; where it
-    is not installed it is stood in for, which is enough to import the client."""
+class SimBluez:
+    """BlueZ on the system bus, as far as bleak's BlueZ client and manager and hudfeed's own lookup
+    talk to it: an adapter and one connected keyboard with the signal characteristic, every method
+    call recorded by its member, a Disconnect answered with the property change BlueZ signals. It
+    comes as the dbus_fast modules those import (`modules`), so there is no D-Bus and no dbus_fast
+    in it, and what runs on it is the same on every system.
 
+    It is bleak's Python that is run, not dbus_fast and not BlueZ: what a real bus or a real
+    keyboard does differently is not seen here."""
+
+    ADAPTER = "/org/bluez/hci0"
+    DEVICE = ADAPTER + "/dev_F9_BD_CA_10_F7_A8"
+    SERVICE = DEVICE + "/service000a"
+    SIGNAL = SERVICE + "/char000b"
     DBUS_FAST = ("dbus_fast", "dbus_fast.aio", "dbus_fast.aio.message_bus", "dbus_fast.auth", "dbus_fast.constants",
                  "dbus_fast.errors", "dbus_fast.message", "dbus_fast.service", "dbus_fast.signature",
                  "dbus_fast.validators")
-    PATH = "/org/bluez/hci0/dev_F9_BD_CA_10_F7_A8"
+
+    def __init__(self):
+        import hudfeed
+        sim = self
+        self.calls, self.buses = [], []
+        self.objects = {
+            self.ADAPTER: {"org.bluez.Adapter1": {"Address": "00:1A:7D:DA:71:13", "Powered": True, "Roles": ["central"]}},
+            self.DEVICE: {"org.bluez.Device1": {
+                "Address": "F9:BD:CA:10:F7:A8", "Name": "TwoNr9", "Alias": "TwoNr9", "Adapter": self.ADAPTER,
+                "Connected": True, "Paired": True, "ServicesResolved": True, "UUIDs": [hudfeed.BLE_SERVICE_UUID]}},
+            self.SERVICE: {"org.bluez.GattService1": {
+                "UUID": hudfeed.BLE_SERVICE_UUID, "Device": self.DEVICE, "Primary": True}},
+            self.SIGNAL: {"org.bluez.GattCharacteristic1": {
+                "UUID": hudfeed.BLE_SIGNAL_UUID, "Service": self.SERVICE, "Flags": ["notify"], "Value": b""}},
+        }
+
+        class Variant:
+            def __init__(self, signature, value):
+                self.signature, self.value = signature, value
+
+        def unpack_variants(value):
+            if isinstance(value, Variant):
+                return unpack_variants(value.value)
+            if isinstance(value, dict):
+                return {k: unpack_variants(v) for k, v in value.items()}
+            return [unpack_variants(v) for v in value] if isinstance(value, list) else value
+
+        class Message:
+            def __init__(self, message_type="call", **fields):
+                self.message_type, self.error_name, self.body, self.unix_fds = message_type, None, [], []
+                self.destination = self.path = self.interface = self.member = self.signature = None
+                self.__dict__.update(fields)
+
+        class MessageBus:
+            def __init__(self, bus_type=None, **kw):
+                self.connected, self.handlers = False, []
+                sim.buses.append(self)
+
+            async def connect(self):
+                self.connected = True
+                return self
+
+            def add_message_handler(self, handler):
+                self.handlers.append(handler)
+
+            async def call(self, message):
+                return sim.answer(message)
+
+            async def send(self, message):
+                sim.answer(message)
+
+            def disconnect(self):
+                self.connected = False
+
+            async def wait_for_disconnect(self):
+                pass
+
+            _finalize = disconnect      # what bleak's manager does to the bus of an event loop that is over
+        self.Variant, self.Message = Variant, Message
+        kinds = types.SimpleNamespace(METHOD_CALL="call", METHOD_RETURN="return", ERROR="error", SIGNAL="signal")
+        buses = types.SimpleNamespace(SYSTEM="system")
+        m = self.modules = {name: mock.MagicMock(unsafe=True) for name in self.DBUS_FAST}
+        m["dbus_fast"].AuthError = type("AuthError", (Exception,), {})
+        m["dbus_fast"].unpack_variants = unpack_variants
+        m["dbus_fast"].Variant = m["dbus_fast.signature"].Variant = Variant
+        m["dbus_fast"].Message = m["dbus_fast.message"].Message = Message
+        m["dbus_fast"].MessageType = m["dbus_fast.constants"].MessageType = kinds
+        m["dbus_fast"].BusType = m["dbus_fast.constants"].BusType = buses
+        m["dbus_fast.constants"].ErrorType = types.SimpleNamespace(
+            UNKNOWN_OBJECT=types.SimpleNamespace(value="org.freedesktop.DBus.Error.UnknownObject"))
+        m["dbus_fast.errors"].InvalidObjectPathError = type("InvalidObjectPathError", (Exception,), {})
+        m["dbus_fast.aio"].MessageBus = m["dbus_fast.aio.message_bus"].MessageBus = MessageBus
+
+    @property
+    def keyboard(self):
+        return self.objects[self.DEVICE]["org.bluez.Device1"]
+
+    def answer(self, message):
+        self.calls.append(message.member)
+        body = []
+        if message.member == "GetManagedObjects":
+            body = [{path: {interface: {k: self.Variant("v", v) for k, v in props.items()}
+                            for interface, props in interfaces.items()}
+                     for path, interfaces in self.objects.items()}]
+        elif message.member == "Disconnect" and message.path == self.DEVICE:
+            self.change(Connected=False, ServicesResolved=False)
+        return self.Message("return", body=body)
+
+    def change(self, **props):
+        """The keyboard's properties change, and every bus that listens is told, as BlueZ tells it."""
+        self.keyboard.update(props)
+        signal = self.Message("signal", path=self.DEVICE, interface="org.freedesktop.DBus.Properties",
+                              member="PropertiesChanged",
+                              body=["org.bluez.Device1", {k: self.Variant("v", v) for k, v in props.items()}, []])
+        for bus in self.buses:
+            for handler in list(bus.handlers) if bus.connected else ():
+                handler(signal)
+
+    def asked(self):
+        """What the keyboard itself was asked for, in order: the calls that reach it or its link."""
+        return [c for c in self.calls if c in ("Connect", "Disconnect", "StartNotify", "StopNotify")]
+
+
+class BleakBluez(unittest.TestCase):
+    """What BleReader._let_go relies on, held to the bleak that is installed. It is bleak's own
+    BleakClient on its own BlueZ client and manager that run here, through their real connect(),
+    start_notify, stop_notify and disconnect(), on a BlueZ that is simulated (SimBluez): _let_go
+    reaches into bleak's private members, so a bump of bleak that changes what they do fails here
+    and not on someone's keyboard.
+
+    Not run: bleak's check of BlueZ's version (it starts `bluetoothctl`), its scanner, dbus_fast,
+    BlueZ, a keyboard."""
 
     def setUp(self):
         import importlib.util
         if importlib.util.find_spec("bleak") is None:
             self.skipTest("bleak is not installed")
-        modules = {}
-        if importlib.util.find_spec("dbus_fast") is None:
-            modules = {name: mock.MagicMock(unsafe=True) for name in self.DBUS_FAST}
-            modules["dbus_fast"].Message = modules["dbus_fast.message"].Message = \
-                lambda **kw: types.SimpleNamespace(**kw)
-        patch = mock.patch.dict(sys.modules, modules)   # and whatever of bleak this imports is forgotten after
+        import hudfeed
+        self.sim = SimBluez()
+        patch = mock.patch.dict(sys.modules, self.sim.modules)    # all of it is put back after the test
         patch.start()
         self.addCleanup(patch.stop)
+        for name in [n for n in sys.modules if n.startswith("bleak.backends.bluezdbus")]:
+            del sys.modules[name]       # bleak's BlueZ modules are imported anew, on the stand-in
         import bleak
         from bleak.backends.bluezdbus.client import BleakClientBlueZDBus
+        from bleak.backends.bluezdbus.version import BlueZFeatures
         from bleak.backends.device import BLEDevice
-        self.bleak, self.backend_type = bleak, BleakClientBlueZDBus
-        self.device = BLEDevice("F9:BD:CA:10:F7:A8", "TwoNr9", {"path": self.PATH, "props": {}})
-        self.sent = []
+        BlueZFeatures.checked_bluez_version = True
+        self.BleakClient = functools.partial(bleak.BleakClient, backend=BleakClientBlueZDBus)
+        # As bleak's scanner hands a device over: by its path, with what BlueZ said of it.
+        self.scanned = BLEDevice(self.sim.keyboard["Address"], "TwoNr9",
+                                 {"path": self.sim.DEVICE, "props": dict(self.sim.keyboard)})
+        self.said = []
+        self.reader = hudfeed.BleReader(lambda m: None, log=self.said.append)
+        self.reader.stop()              # a session that is read and ends at once
 
-    def connected(self):
-        """-> (client, the task that watches for the loop ending), as after connect()."""
-        sent = self.sent
-
-        class Bus:
-            async def call(self, message):
-                sent.append(message.member)
-                raise ConnectionError("recorded, not answered")
-
-            async def send(self, message):
-                sent.append(message.member)
-
-            def disconnect(self):
-                sent.append("bus closed")
-
-            async def wait_for_disconnect(self):
-                pass
-        client = self.bleak.BleakClient(self.device, backend=self.backend_type)
-        backend = client._backend
-        backend._bus, backend._is_connected, backend.services = Bus(), True, object()
-        backend._disconnect_monitor_event = asyncio.Event()
-        monitor = asyncio.ensure_future(
-            self.backend_type._disconnect_monitor(backend._bus, self.PATH, backend._disconnect_monitor_event))
-        return client, monitor
-
-    def test_closing_bleaks_client_disconnects_the_device(self):
-        async def close():
-            client, monitor = self.connected()
-            with self.assertRaises(ConnectionError):
-                await client.disconnect()
-            monitor.cancel()
-        asyncio.run(close())
-        self.assertEqual("Disconnect", self.sent[0])
-
-    def test_and_so_does_the_loop_ending_with_it_never_closed(self):
-        async def leave():
-            self.connected()
-            await asyncio.sleep(0)
-        asyncio.run(leave())                    # which cancels what is still running, as the feed's does
-        self.assertEqual(["Disconnect"], self.sent)
-
-    def test_let_go_of_it_closes_without_disconnecting(self):
+    def session(self, found_connected):
+        """One session of the feed's reader on the keyboard: looked up in BlueZ as on Linux, or handed
+        over as a scan hands it. -> what _session returned."""
         import hudfeed
-        said = []
-        r = hudfeed.BleReader(lambda m: None, log=said.append)
 
-        async def close():
-            client, monitor = self.connected()
-            await r._let_go(client, "TwoNr9")
-            await client.disconnect()
-            await asyncio.sleep(0)
-            return client, monitor.done()
-        client, monitor_done = asyncio.run(close())
-        self.assertEqual(["bus closed"], self.sent)
-        self.assertTrue(monitor_done)
-        self.assertFalse(client.is_connected)
-        self.assertEqual([], said)              # bleak has what _let_go reads: nothing to say
+        async def run():
+            device = self.scanned
+            if found_connected:
+                with mock.patch.object(hudfeed.sys, "platform", "linux"):
+                    device = await self.reader._find()
+                self.assertIs(device, self.reader._found_connected)
+            return await self.reader._session(self.BleakClient, device)
+        return asyncio.run(run())       # and the event loop ends, which cancels what bleak left running
+
+    def test_bleak_disconnects_a_keyboard_it_did_not_connect_when_its_client_closes(self):
+        import hudfeed
+
+        async def use():
+            async with self.BleakClient(self.scanned) as client:
+                await client.start_notify(hudfeed.BLE_SIGNAL_UUID, lambda *a: None)
+        asyncio.run(use())
+        self.assertEqual(["StartNotify", "Disconnect"], self.sim.asked())      # no Connect: it was connected
+        self.assertFalse(self.sim.keyboard["Connected"])
+
+    def test_and_when_the_event_loop_ends_with_its_client_never_closed(self):
+        async def leave():
+            await self.BleakClient(self.scanned).connect()
+        asyncio.run(leave())
+        self.assertEqual(["Disconnect"], self.sim.asked())
+
+    def test_a_session_on_a_keyboard_found_connected_stops_notifying_and_leaves_it_connected(self):
+        self.assertIsNone(self.session(found_connected=True))
+        self.assertEqual(["StartNotify", "StopNotify"], self.sim.asked())
+        self.assertTrue(self.sim.keyboard["Connected"])
+        self.assertEqual(["hudfeed: reading TwoNr9 over BLE"], self.said)      # bleak has what _let_go reads
+        # the client's own bus and the lookup's are closed: the one left open is bleak's manager's
+        self.assertEqual(1, sum(bus.connected for bus in self.sim.buses), len(self.sim.buses))
+
+    def test_a_session_that_cannot_read_a_keyboard_found_connected_leaves_it_connected_too(self):
+        del self.sim.objects[self.sim.SIGNAL]
+        self.assertIn("TwoNr9 over BLE, not read (BleakCharacteristicNotFoundError", self.session(found_connected=True))
+        self.assertEqual([], self.sim.asked())
+        self.assertTrue(self.sim.keyboard["Connected"])
+
+    def test_a_session_on_a_keyboard_the_scan_handed_over_ends_with_bleaks_disconnect(self):
+        self.assertIsNone(self.session(found_connected=False))
+        self.assertEqual(["StartNotify", "Disconnect"], self.sim.asked())
+        self.assertFalse(self.sim.keyboard["Connected"])
 
 
 class HidKeys(unittest.TestCase):
