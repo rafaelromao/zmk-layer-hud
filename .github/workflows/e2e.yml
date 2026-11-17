@@ -1,0 +1,104 @@
+# The real HUD on each platform: started, looked at, driven and stopped (e2e/driver.py), where ci.yml
+# only runs unit tests. It costs two long jobs, so it runs when it matters: on release-please's own pull
+# request, and on any pull request someone labels `release-validation` -- which is how a contributor's
+# change to a panel, a compositor or the shortcuts is shown to work before it merges.
+#
+# What it proves and what it cannot is in docs/development.md ("End-to-end validation").
+#
+# The gate is the jobs' own `if`, and not a path or branch filter on the trigger: a job skipped by its `if`
+# reports as passed, so a required check never waits for a run that is not coming, which a filtered-out
+# workflow would leave it doing. The repository comparison keeps a fork from borrowing the release branch's
+# name.
+name: e2e
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+permissions:
+  contents: read
+
+# One validation at a time per pull request, and a newer push replaces it. A label being added is not a push:
+# GitHub runs this workflow for it too, and cancelling a validation that is half done for that would leave
+# the newer run to report in its place. So a `labeled` run waits its turn (it runs the same jobs under the
+# same gate, never skips them), and only a push, a reopening or an opening cancels.
+concurrency:
+  group: e2e-${{ github.event.pull_request.number }}
+  cancel-in-progress: ${{ github.event.action != 'labeled' }}
+
+env:
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  macos:
+    name: macOS
+    if: >-
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.head_ref, 'release-please--branches--')) ||
+      contains(github.event.pull_request.labels.*.name, 'release-validation')
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: brew install hidapi
+      - name: the venv, as `zmk-layer-hud setup` makes it
+        run: |
+          ZMKHUD_PYTHON="$(command -v python)" bin/zmk-layer-hud setup --venv-only
+          # Only the driver wants this: it asks the window list which windows the panel has.
+          .venv/bin/python3 -m pip install --quiet pyobjc-framework-Quartz==12.2.2
+      - name: no menubar icon
+        # It is a process of its own that `stop` leaves running, and what this run starts it stops.
+        run: |
+          mkdir -p ~/.config/zmk-layer-hud
+          : > ~/.config/zmk-layer-hud/menubar-off
+      - name: the HUD, started, looked at, driven and stopped
+        run: .venv/bin/python3 e2e/driver.py --artifacts "$RUNNER_TEMP/e2e-out"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-macos
+          path: ${{ runner.temp }}/e2e-out
+          if-no-files-found: warn
+
+  hyprland:
+    name: Arch Linux and Hyprland
+    if: >-
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.head_ref, 'release-please--branches--')) ||
+      contains(github.event.pull_request.labels.*.name, 'release-validation')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: a virtual KMS device for Hyprland, and user namespaces for WebKit's sandbox
+        # Hyprland cannot start without a DRM device and a hosted runner has no GPU, so the host loads vkms and
+        # the container below sees it. Ubuntu denies unprivileged user namespaces through AppArmor, which
+        # WebKitGTK's bubblewrap needs (the one public run of this stack failed there until it was lifted).
+        run: |
+          uname -r
+          if ! sudo modprobe vkms; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq "linux-modules-extra-$(uname -r)"
+            sudo modprobe vkms
+          fi
+          ls -l /dev/dri
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: the HUD under Hyprland, in an Arch container
+        run: |
+          mkdir -p "$RUNNER_TEMP/e2e-out"
+          docker run --rm --privileged --shm-size=1g \
+            -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+            -v "$GITHUB_WORKSPACE:/work/repo:ro" -v "$RUNNER_TEMP/e2e-out:/work/out" \
+            archlinux:latest bash /work/repo/e2e/linux/run-in-arch.sh
+      - name: the checks, on the run's page
+        if: always()
+        run: cat "$RUNNER_TEMP/e2e-out/driver/summary.md" >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-hyprland
+          path: ${{ runner.temp }}/e2e-out
+          if-no-files-found: warn
