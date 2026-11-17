@@ -604,7 +604,10 @@ beside anything that is wrong. What it cannot see:
   `host/requirements.txt`, and with a bleak that lacks them it says in its log that the keyboard
   is disconnected instead. bleak also disconnects a keyboard whose services BlueZ does not
   resolve in time, so while BlueZ is resolving them the feed looks again later (`… has not
-  resolved its services yet`). What remains: if the keyboard drops, or BlueZ resolves its
+  resolved its services yet`), for 30 s at most, as long as bleak itself waits. After that it
+  also scans for another keyboard with the signal, passing that one over and leaving it
+  connected; with `ble.address` set it keeps waiting, as the address names that keyboard. What
+  remains: if the keyboard drops, or BlueZ resolves its
   services again, in the moment between the feed's look and bleak's connect, bleak's failed
   connect still disconnects it. All of this is tested against bleak's own code on a simulated
   BlueZ and has not been checked on hardware: if the keyboard does drop off,

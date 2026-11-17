@@ -73,6 +73,7 @@ import secrets
 import sys
 import termios
 import threading
+import time
 import urllib.parse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -92,6 +93,9 @@ ZMK_VID, ZMK_PID = 0x1D50, 0x615E
 BLE_SERVICE_UUID = "d1f0a7c2-6b3e-4f8a-9c21-5e7b4a0d9f31"
 BLE_SIGNAL_UUID = "d1f0a7c3-6b3e-4f8a-9c21-5e7b4a0d9f31"
 BLE_RETRY_MAX_S = 60  # longest gap between scans while none of them find anything
+# How long a connected keyboard BlueZ is still resolving holds the scan back: bleak's own connect
+# timeout (BleakClient's `timeout`, 30 s in 3.0.2), which is how long it waited before the feed did.
+BLE_RESOLVE_WAIT_S = 30
 
 
 class Stream:
@@ -519,6 +523,10 @@ class BleReader:
         self._said_disconnects = False  # that this bleak cannot leave it connected, said once (_let_go)
         self._said_several = None       # which of several connected keyboards is read, as last said
         self._resolving = None          # why nothing was found, while BlueZ resolves a keyboard (_connected_bluez)
+        self._resolving_since = None    # (path, when) of the keyboard seen resolving, look after look
+        self._stuck = None              # the address of one resolving for too long, for the scan to pass over
+        self._said_stuck = None         # ... as last said
+        self._clock = time.monotonic
 
     def start(self):
         threading.Thread(target=self._run, name="ble-read", daemon=True).start()
@@ -554,9 +562,11 @@ class BleReader:
                 return device       # nor a scan while BlueZ resolves one: it would hand that keyboard over
         if self.address:
             return await BleakScanner.find_device_by_address(self.address, timeout=self.rescan)
+        stuck = (self._stuck or "").lower()
         return await BleakScanner.find_device_by_filter(
             lambda d, ad: (BLE_SERVICE_UUID in (ad.service_uuids or [])
-                           and (not self.name or self.name.lower() in (d.name or "").lower())),
+                           and (not self.name or self.name.lower() in (d.name or "").lower())
+                           and not (stuck and str(d.address).lower() == stuck)),
             timeout=self.rescan)
 
     async def _connected_bluez(self):
@@ -574,19 +584,39 @@ class BleReader:
         One whose services BlueZ has not resolved yet is left to the next look (bluez_matches says
         why), and so is the scan: a scan hands over a connected keyboard as soon as BlueZ says
         anything new of it, and a keyboard the scan hands over is closed with a Disconnect
-        (_left_connected). `_resolving` then says so, for the loop's log."""
+        (_left_connected). `_resolving` then says so, for the loop's log.
+
+        For BLE_RESOLVE_WAIT_S at most, as long as bleak's own connect would have waited: a keyboard
+        that never resolves would otherwise keep the scan from ever finding another one. After
+        that the scan runs again, as it did before the feed waited, but it passes over the stuck
+        keyboard (`_stuck`), so that one is never handed over by the scan however it resolves;
+        it is taken by this lookup, when it is. With `ble.address` set there is nothing else to
+        scan for, the stuck keyboard is the one it names, so the wait goes on."""
         from bleak.backends.device import BLEDevice
-        self._found_connected = self._resolving = None
+        self._found_connected = self._resolving = self._stuck = None
         try:
             objects = await bluez_objects()
             matches = bluez_matches(objects, self.address, self.name)
             waiting = [] if matches else bluez_matches(objects, self.address, self.name, resolving=True)
         except Exception:
             return None      # no system bus, no BlueZ, an answer we cannot read: the scan, as before
-        if waiting:
-            _, address, label = waiting[0]
-            self._resolving = (f"{label} ({address}) is connected and BlueZ has not resolved its services yet: "
-                               "looking again rather than connect to it now")
+        if not waiting:
+            self._resolving_since = self._said_stuck = None
+        else:
+            path, address, label = waiting[0]
+            now = self._clock()
+            if self._resolving_since is None or self._resolving_since[0] != path:
+                self._resolving_since = (path, now)
+            if self.address or now - self._resolving_since[1] < BLE_RESOLVE_WAIT_S:
+                self._resolving = (f"{label} ({address}) is connected and BlueZ has not resolved its services yet: "
+                                   "looking again rather than connect to it now")
+            else:
+                self._stuck = address
+                if self._said_stuck != address:
+                    self._said_stuck = address
+                    self.log(f"hudfeed: BlueZ has not resolved the services of {label} ({address}) in "
+                             f"{BLE_RESOLVE_WAIT_S} s: scanning for another keyboard too (the scan passes this one "
+                             "over and leaves it connected)")
         if not matches:
             return None
         path, address, label = matches[0]
