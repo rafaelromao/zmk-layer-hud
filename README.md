@@ -644,7 +644,9 @@ keymap conversion in Python, and the page under node.
 [docs/development.md](docs/development.md) covers what each suite sweeps and how the command line
 is put together. Commit messages start with a Conventional Commits type (`feat:`, `fix:`, `docs:`...):
 releases are made from them by release-please, and CI runs every platform's suites on each pull
-request ([Commits, CI and releases](docs/development.md#commits-ci-and-releases)).
+request ([Commits, CI and releases](docs/development.md#commits-ci-and-releases)). On release pull
+requests, and on any labelled `release-validation`, the real HUD is also started on macOS and under
+Hyprland ([End-to-end validation](docs/development.md#end-to-end-validation)).
 
 ## License
 

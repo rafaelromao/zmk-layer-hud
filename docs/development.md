@@ -310,7 +310,84 @@ entry, and the version in `version.txt`. Merging it tags `vX.Y.Z` and makes the 
 which `install.sh` and `update` take. A `Release-As: x.y.z` footer in a commit's body asks for a
 version outright.
 
-Two repository settings it needs: *Settings › Actions › General › Workflow permissions* allowing
-GitHub Actions to create and approve pull requests, or the release pull request cannot be opened.
-And a pull request opened with the workflow's own token starts no workflow, so CI does not run on
-the release pull request by itself; its commits are the ones already tested on main.
+The release pull request is opened by a GitHub App (the repository variable `ZMK_LAYER_HUD_APP_ID`
+and the secret `ZMK_LAYER_HUD_APP_PRIVATE_KEY`; it asks for contents and pull requests, read and
+write), not by the workflow's own token: a pull request opened with that token starts no workflow, and
+opening one with it needs *Settings › Actions › General › Workflow permissions* changed. Opened by the
+App it gets `ci` like any other pull request, and `e2e` too (below): its branch is named
+`release-please--branches--main--components--zmk-layer-hud`.
+
+## End-to-end validation
+
+`ci` runs unit tests; nothing in it starts a panel or a compositor. `.github/workflows/e2e.yml` does:
+it starts the real HUD on each platform, looks at what the platform shows of it, drives it and stops it.
+`e2e/driver.py` is the one script behind both jobs (standard library only); only its probe of the HUD's
+surfaces differs.
+
+**When it runs.** On release-please's pull request, and on any pull request labelled
+`release-validation` -- which is how a change to a panel, a compositor integration or the shortcuts is
+shown to work before it merges:
+
+```bash
+gh pr edit <number> --add-label release-validation
+```
+
+On every other pull request both jobs are skipped by their own `if`, which GitHub reports as passed.
+That is deliberate: a path or branch filter on the trigger would leave a required check pending for a
+run that never comes. A pull request from a fork is held until a maintainer approves the run, after the
+label is on. A push replaces a validation that is running. A label added to a pull request that is
+being validated does not cancel it: that run waits its turn and then runs the same jobs under the same
+gate, and never skips them: a skipped run would put a passing "skipped" check under the same name beside
+the real one.
+
+| Job | Where | What it starts |
+|---|---|---|
+| macOS | `macos-latest`; the venv from `setup --venv-only`, hidapi from Homebrew, the menubar icon opted out | the real AppKit and WKWebView panel; its surface is the panel process's window in the window list |
+| Arch Linux and Hyprland | an `archlinux` container, `--privileged`, on the Ubuntu runner, whose host loads `vkms` (a virtual KMS device) because Hyprland cannot start without a DRM device | Hyprland on vkms with software GL and a minimal config (`e2e/linux/hyprland.lua`), then the real GTK 3, WebKit2 and layer-shell panel; its surfaces are `zmkhud-layer` and `zmkhud-keys` on `hyprctl layers -j` |
+
+What `e2e/driver.py` checks, in order, with an isolated `$ZMKHUD_STATE`, the 3x5 sample config and the
+Bluetooth reader off:
+
+1. `start` exits 0, and a panel stands behind `status --json` (a live pid, this copy's, the feed where
+   the platform keeps it), and the page loaded and said so over the panel's bridge.
+2. The platform shows the HUD's surfaces. On Hyprland the shortcuts too: `hud.sh` wrote them into
+   `~/.config/hypr`, Hyprland read its config again without errors and lists the toggle bind.
+3. `doctor` runs and names the platform.
+4. The socket: the token file is 0600; the right token upgrades; a wrong token, no token and a foreign
+   Origin each get HTTP 403, and the feed logs each refusal (the property
+   [security-review.md](security-review.md) finding 1 had only by hand).
+5. `poke` is accepted and fanned out: a client that connects afterwards is replayed the layers poked.
+6. `hide`, `show` and `toggle` flip `shown` in `status --json` and panel.json, and the surfaces follow
+   as they are meant to: macOS draws a hidden HUD at alpha 0; on Hyprland the surfaces stay mapped
+   (hidden is drawn as nothing, not unmapped, so the page's timers keep counting).
+7. `stop` leaves no panel or feed process, no listening socket and no surface.
+
+A run leaves its artifacts (`e2e-macos`, `e2e-hyprland`): the driver's log and every command's output,
+the state directory (logs and panel.json, never the socket's token), the platform's own listings
+(`hyprctl` JSON, the window list), best-effort screenshots, and a summary table on the run's page. A
+failed run is read from those first.
+
+**What it does not prove.** It asserts no legend and no pixel: the screenshots are artifacts, never
+checked. The feed runs with no keyboard and Bluetooth off, so reading a real board over USB serial, HID
+or BLE, the layer signal, the typed-keys strip from real reports and the firmware are not exercised
+(`poke` stands in). Nor are lock screens, password probes and Secure Input, how a drag feels, a second
+monitor, the macOS login item or menubar icon, the Omarchy bar plugin, and any GPU: Hyprland runs on a
+virtual device with software rendering, so a driver-specific fault (NVIDIA's DMA-BUF, say) cannot show.
+Those stay with whoever changed them, as the pull request template says.
+
+**What it rests on.** On macOS, the runner's GUI session: the panel's window has to show up in the window
+list, which it did on `macos-latest` (first run, 2026-11-17). If a runner image stops listing it,
+`--surfaces best-effort` makes the driver skip the surface checks, say so in the report and the
+summary (a skip is never counted as a pass), and rely on panel.json and the process; what that run
+would not prove is that anything is on screen. Hyprland's maintainers do not support headless CI, and this job follows what
+others found to work on a hosted runner (vkms, `LIBSEAT_BACKEND=noop`, software GL, the AppArmor
+user-namespace setting for WebKit's sandbox), not what Hyprland documents. A runner image or an Arch
+package change can break it without a change here: read the artifacts before the code. The jobs run a
+pull request's own `e2e/` scripts with `sudo` and a privileged container on a throwaway runner, which
+is why only a maintainer's label starts them on a fork's pull request.
+
+To run the driver by hand (it starts and stops the real HUD of the tree and ends every panel of it, so
+it refuses outside CI without `--local`): `bin/zmk-layer-hud setup --venv-only`, then
+`python3 e2e/driver.py --artifacts DIR --local` -- on macOS with the menubar opted out
+(`touch ~/.config/zmk-layer-hud/menubar-off`) and the venv's Python, on Hyprland from inside the session.
+Its helpers' tests, `e2e/driver_test.py`, run with `make test-host`, and so on every platform's `ci`.
