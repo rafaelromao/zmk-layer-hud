@@ -437,6 +437,66 @@ class HyprlandLua(unittest.TestCase):
         with open(conf) as f:
             self.assertNotIn(shortcuts.HYPR_SOURCE, f.read())
 
+    def start(self):
+        """shortcuts.main() as hud.sh runs it in a Hyprland session with this config; -> (the reload
+        call, stdout, stderr)."""
+        with mock.patch.object(shortcuts, "HYPR_DIR", self.hypr), \
+                mock.patch.object(shortcuts, "on_niri", lambda *a, **k: False), \
+                mock.patch.object(shortcuts, "read", lambda: shortcuts.settings({})), \
+                mock.patch.object(shortcuts.subprocess, "call", return_value=0) as call, \
+                mock.patch.dict(os.environ, {"ZMKHUD_STATE": self.state}), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            shortcuts.main()
+        return call, out.getvalue(), err.getvalue()
+
+    def assert_started_with_the_lua_shortcuts(self, call, out, err):
+        conf = os.path.join(self.hypr, "hyprland.conf")
+        self.assertIn(f"could not take the old `{shortcuts.HYPR_SOURCE}` line out of {conf}", err)
+        self.assertIn("binds nothing", err)
+        self.assertTrue(os.path.exists(os.path.join(self.hypr, shortcuts.HYPR_LUA)))
+        with open(self.main) as f:
+            self.assertIn(shortcuts.LUA_LOAD, f.read().splitlines())
+        self.assertIn("shows or hides", out)
+        self.assertEqual([["hyprctl", "reload"]], [c.args[0] for c in call.call_args_list])
+
+    def test_an_old_hyprland_conf_that_cannot_be_taken_out_is_said_and_the_hud_still_starts(self):
+        # hud.sh runs this under `set -e`, on every start: an error out of the tidying-up of a file
+        # nothing reads would keep the HUD from ever starting. remove_hyprland still raises.
+        with mock.patch.object(shortcuts, "remove_hyprland",
+                               side_effect=OSError(30, "Read-only file system", "/dotfiles/hyprland.conf")) as remove:
+            call, out, err = self.start()               # returns: hud.sh sees exit status 0
+        remove.assert_called_once_with(hypr_dir=self.hypr)
+        self.assertIn("OSError: [Errno 30] Read-only file system", err)
+        self.assert_started_with_the_lua_shortcuts(call, out, err)
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root may write in a read-only directory")
+    def test_as_it_happens_a_hyprland_conf_linked_into_a_directory_that_is_not_writable(self):
+        # The case itself, with nothing stood in: the old hyprland.conf is a link to a file this user
+        # may write, in a directory they may not, so it cannot be replaced; a write in place went through.
+        dotfiles = os.path.join(self.tmp.name, "dotfiles")
+        os.makedirs(dotfiles)
+        target, conf = os.path.join(dotfiles, "hyprland.conf"), os.path.join(self.hypr, "hyprland.conf")
+        with open(target, "w") as f:
+            f.write("monitor = , preferred, auto, 1\n")
+        os.symlink(target, conf)
+        shortcuts.install_hyprland(shortcuts.settings({}), "/x", self.state, hypr_dir=self.hypr)
+        with open(target) as f:
+            text = f.read()
+        self.assertIn(shortcuts.HYPR_SOURCE, text.splitlines())
+        os.chmod(dotfiles, 0o555)
+        self.addCleanup(os.chmod, dotfiles, 0o755)
+        with self.assertRaises(PermissionError):          # for any other caller, as before
+            shortcuts.remove_hyprland(self.hypr)
+        call, out, err = self.start()
+        self.assertIn("PermissionError", err)
+        self.assert_started_with_the_lua_shortcuts(call, out, err)
+        with open(target) as f:
+            self.assertEqual(text, f.read())              # left as it was, line and all
+        self.assertEqual(["hyprland.conf"], os.listdir(dotfiles))
+        call, out, err = self.start()                     # and on the next start: said again, nothing to reload
+        self.assertIn("binds nothing", err)
+        self.assertEqual([], call.call_args_list)
+
     def test_a_hyprctl_that_is_not_on_path_is_not_a_crash(self):
         # hud.sh runs this under `set -e`: a FileNotFoundError here would stop the HUD from starting.
         with mock.patch.object(shortcuts, "HYPR_DIR", self.hypr), \

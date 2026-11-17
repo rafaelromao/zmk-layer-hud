@@ -256,8 +256,10 @@ def _rewrite(path, text):
     file keeps the old text; the owner and group are a new file's (this process's, and what the
     directory gives), and ACLs and extended attributes are not copied; and the directory the file
     lives in has to be writable, so a writable file in a directory that is not is refused
-    (OSError) where a write in place went through -- `zmk-layer-hud uninstall` says so and goes on
-    with the rest (cli.py remove_shortcuts).
+    (OSError) where a write in place went through. Both callers that meet that say so and go on:
+    `zmk-layer-hud uninstall` with the rest of what it removes (cli.py remove_shortcuts), and the
+    HUD's start with the Lua shortcuts, where the file is a hyprland.conf left beside a Lua config
+    (main). remove_niri, remove_lua and remove_hyprland themselves raise.
 
     A failure this process lives to see takes the temporary file away again. A kill or a power cut
     between the write and the replace leaves it beside the file (`<name>.<random>.tmp`), and the
@@ -479,7 +481,15 @@ def main():
         # A Lua config wins: Hyprland reads hyprland.lua where there is one (Omarchy 4), and nothing
         # reads a hyprland.conf left beside it, so what an earlier version wrote there goes.
         if os.path.isfile(os.path.join(HYPR_DIR, "hyprland.lua")):
-            remove_hyprland(hypr_dir=HYPR_DIR)
+            try:
+                remove_hyprland(hypr_dir=HYPR_DIR)
+            except OSError as e:
+                # Said, and no more: hud.sh stops on a failure here, and this is a tidying-up of a
+                # file nothing reads, which must not keep the HUD from starting. What a
+                # hyprland.conf that cannot be written again keeps is a line that binds nothing.
+                print(f"shortcuts: could not take the old `{HYPR_SOURCE}` line out of "
+                      f"{os.path.join(HYPR_DIR, 'hyprland.conf')} ({type(e).__name__}: {e}); Hyprland reads "
+                      "hyprland.lua here, so the line is left where it is and binds nothing", file=sys.stderr)
             done = install_lua(sets, command, state, hypr_dir=HYPR_DIR, start_with=start_with)
             path = os.path.join(HYPR_DIR, HYPR_LUA)
         else:
