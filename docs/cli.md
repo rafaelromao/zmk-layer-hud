@@ -438,7 +438,8 @@ options:
                         as the page
   --debug               log layer messages to stderr
   --probes              say which probes see a secret being typed on this system, one per line
-                        (name, on|off|none, why), and exit; what `zmk-layer-hud doctor` reads
+                        (name, on|off|partial|none, why), and exit; what `zmk-layer-hud doctor`
+                        reads
   --raw                 DEBUG ONLY: log every decoded frame and HID report, your typing included;
                         nothing is logged while secure input is on
 ```

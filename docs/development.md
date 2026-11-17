@@ -242,14 +242,34 @@ The global shortcuts (`host/shortcuts.py`, `shortcuts:` in the config) run the s
   Hyprland fires every bind on a key. When either file changed, `hyprctl reload`, as Omarchy's own
   scripts do after an edit; the first edit of a file keeps a copy as `<file>.bak-zmk-layer-hud`. The
   labels go to `$STATE/shortcuts.json` for the bar's menu.
+- **niri:** the same `shortcuts.py`, writing its config's KDL instead: `~/.config/niri/zmk-layer-hud.kdl`
+  holds one `binds` block (each key a `spawn` of the verb, niri running spawn's arguments with no
+  shell, so the environment rides along as `env`'s own), read by an `include optional=true` line
+  once appended to the end of `config.kdl` -- last, so niri's merge gives these keys from whatever
+  had them. The first edit keeps `config.kdl.bak-zmk-layer-hud`. niri watches its config files and
+  reads them again by itself when one changes; when either file changed, `shortcuts.py` also asks
+  (`niri msg action load-config-file`) so the binds land without the wait; a reload that fails is
+  said on stderr, and a client that is not on PATH is no failure (hud.sh runs this under `set -e`).
+  Each bind is `repeat=false`: niri repeats a held bind, Hyprland's `bind` does not. The include
+  needs niri 26.04 (`NIRI_MIN`; a plain `include` is 25.11): `niri_version` reads `niri --version`
+  (niri's source spells it `MAJOR.MINOR[.PATCH] (commit)`, a distribution build may use a string
+  of its own, so the first `digits.digits` is taken), an older niri leaves `config.kdl` alone, and
+  one that cannot be read is let through. Which compositor it is follows `NIRI_SOCKET` (in
+  everything niri starts), then a niri config beside no Hyprland with `niri` on PATH.
+
+The Linux panel's drag works from what the compositor can say. Under Hyprland the pointer's place
+on the layout is its `cursorpos` (`cursor` in `panel.py`). niri's IPC has no such call, so under
+niri (`NIRI_SOCKET`) the drag is worked out from the pointer's coordinates on the surface itself
+(`follow_surface`, which also lets go of the echo a margin change brings back). That path is
+niri's alone: Hyprland's is as it was. `ZMKHUD_DRAG=1` logs either to `panel.log`.
 
 An output going away -- a monitor asleep or unplugged, a suspend -- takes the Linux panel's layer
 surfaces with it. gtk-layer-shell drops that close from 0.10 on, leaving the window with no surface
 under it, and before 0.10 it destroyed the window: either way the panel answered `show` with
 nothing until it was restarted. So it asks for the close (`set_respect_close`), keeps the window
 (its `delete-event` returns true), and maps its surfaces again on the monitor it would pick now
-whenever monitors come or go, a surface is closed, or a `show` finds Hyprland without the HUD's
-(`surface_there`). A WebKit web process that goes away leaves an empty view, which is a
+whenever monitors come or go, a surface is closed, or a `show` finds the compositor without the
+HUD's (`surface_there`). A WebKit web process that goes away leaves an empty view, which is a
 transparent one, so the page is loaded again, less and less often if it keeps going.
 
 The macOS login item (`autostart enable`) runs `host/macos/launcher.c`, compiled into
@@ -301,7 +321,7 @@ App it gets `ci` like any other pull request, and `e2e` too (below): its branch 
 
 `ci` runs unit tests; nothing in it starts a panel or a compositor. `.github/workflows/e2e.yml` does:
 it starts the real HUD on each platform, looks at what the platform shows of it, drives it and stops it.
-`e2e/driver.py` is the one script behind both jobs (standard library only); only its probe of the HUD's
+`e2e/driver.py` is the one script behind every job (standard library only); only its probe of the HUD's
 surfaces differs.
 
 **When it runs.** On release-please's pull request, and on any pull request labelled
@@ -312,10 +332,12 @@ shown to work before it merges:
 gh pr edit <number> --add-label release-validation
 ```
 
-On every other pull request both jobs are skipped by their own `if`, which GitHub reports as passed.
+On every other pull request every job is skipped by their own `if`, which GitHub reports as passed.
 That is deliberate: a path or branch filter on the trigger would leave a required check pending for a
-run that never comes. A pull request from a fork is held until a maintainer approves the run, after the
-label is on. Every event on a gated pull request (opening, a push, a reopening, any label) runs the
+run that never comes. Whether a fork's run is also held until a maintainer approves it is not this
+workflow's doing: it is the repository's Actions setting for fork pull requests, and where that asks for
+an approval the run waits for it after the label is on ("A fork's pull request", below). Every event on a
+gated pull request (opening, a push, a reopening, any label) runs the
 validation on its own, and no run cancels another. The workflow has no `concurrency` group on purpose: a
 run that is cancelled leaves cancelled checks on the commit, and the pull request shows as failed though
 the validation passed, which is what a group did on the release pull request, whose opening and
@@ -323,31 +345,74 @@ the validation passed, which is what a group did on the release pull request, wh
 `release-validation` does not skip the jobs: a skipped run would put a passing "skipped" check under the
 same name beside the real one.
 
+**A fork's pull request: what the label gates, and what it does not.** These jobs run a pull request's
+own code: its `e2e/` scripts and the HUD of its tree, with `sudo` on the runner and, in the Linux jobs,
+as root in a `--privileged` container. The trigger is `pull_request`, so a fork's run has a read-only
+token and no secrets, and what the code can reach is the throwaway runner.
+
+The label is not what keeps a fork's code from such a run. A `pull_request` run is made from the
+workflow files of the pull request's own merge commit, so a fork that edits `.github/workflows/` can
+take the jobs' `if:` out, or add a workflow of its own, and get the same `sudo` and `--privileged` run
+with no label on the pull request. Against a fork that does that, the only gate is GitHub's own approval
+of fork runs: a setting of the repository (Settings, Actions, General) that decides whose runs wait for
+a maintainer. Nothing in this tree can say how it is set; look at it there, and count on no more than it
+asks for. What the label gates is cost and accident: with the workflow as it is here, there is no long
+job per platform on every pull request, and no privileged run of a contributor's change before someone
+has looked at it.
+
+So, before labelling a fork's pull request, and before approving a run of one that GitHub holds:
+
+1. Read the pull request's whole diff as it stands, `.github/workflows/` included: a change there
+   changes what runs and what gates it, on this very run. What runs is not only `e2e/` either: the
+   jobs set up and start the HUD of that tree.
+2. Check that the commit the run is on is the one that was read. A push between the reading and the
+   label, or the approval, puts the run on a newer commit; the run's page shows its commit, and
+   `gh pr view <number> --json headRefOid` the pull request's head. The run starts when the label
+   goes on, so this check comes after the fact: it cannot keep a newer commit from running, only
+   find that one is. When it is, cancel the run (`gh run cancel <run-id>`), take the label off,
+   and read the new commit before labelling again.
+3. Take the label off when the run is done:
+
+   ```bash
+   gh pr edit <number> --remove-label release-validation
+   ```
+
+The label stays on the pull request. While it is on, and the workflow is as it is here, every later
+push from the fork runs the jobs again, on code nobody has read and with no new decision by a
+maintainer -- unless GitHub's approval holds that run too, which is not to be counted on without having
+looked at the setting. A push that needs validating gets the label again, after its diff has been read.
+The workflow does not take the label off and should not be made to try: a fork's run has a read-only
+token and cannot change the pull request, which is GitHub's design. Taking the label off starts no run
+(`unlabeled` is not among the trigger's types).
+
 | Job | Where | What it starts |
 |---|---|---|
 | macOS | `macos-latest`; the venv from `setup --venv-only`, hidapi from Homebrew, the menubar icon opted out | the real AppKit and WKWebView panel; its surface is the panel process's window in the window list |
 | Arch Linux and Hyprland | an `archlinux` container, `--privileged`, on the Ubuntu runner, whose host loads `vkms` (a virtual KMS device) because Hyprland cannot start without a DRM device | Hyprland on vkms with software GL and a minimal config (`e2e/linux/hyprland.lua`), then the real GTK 3, WebKit2 and layer-shell panel; its surfaces are `zmkhud-layer` and `zmkhud-keys` on `hyprctl layers -j` |
+| Arch Linux and niri | the same container script (`E2E_COMPOSITOR=niri`), with niri running *nested*: its winit backend inside a headless `weston` (pixman), because niri's own DRM backend refuses software rendering | niri with a minimal `config.kdl` (`e2e/linux/niri.kdl`), then the same panel; its surfaces are the same two namespaces on `niri msg --json layers`, which says no geometry, so presence only |
 
 What `e2e/driver.py` checks, in order, with an isolated `$ZMKHUD_STATE`, the 3x5 sample config and the
 Bluetooth reader off:
 
 1. `start` exits 0, and a panel stands behind `status --json` (a live pid, this copy's, the feed where
    the platform keeps it), and the page loaded and said so over the panel's bridge.
-2. The platform shows the HUD's surfaces. On Hyprland the shortcuts too: `hud.sh` wrote them into
-   `~/.config/hypr`, Hyprland read its config again without errors and lists the toggle bind.
-3. `doctor` runs and names the platform.
+2. The platform shows the HUD's surfaces. On Hyprland and niri the shortcuts too: `hud.sh` wrote them
+   (Hyprland: into `~/.config/hypr`, which Hyprland read again without errors and lists as a bind; niri: a KDL
+   file with every bind `repeat=false`, included last in `config.kdl`, that `niri validate` accepts and niri
+   loads without error, at the start and again when asked with `niri msg action load-config-file`).
+3. `doctor` runs and names the platform (niri's is told by `NIRI_SOCKET`).
 4. The socket: the token file is 0600; the right token upgrades; a wrong token, no token and a foreign
    Origin each get HTTP 403, and the feed logs each refusal (the property
    [security-review.md](security-review.md) finding 1 had only by hand).
 5. `poke` is accepted and fanned out: a client that connects afterwards is replayed the layers poked.
 6. `hide`, `show` and `toggle` flip `shown` in `status --json` and panel.json, and the surfaces follow
-   as they are meant to: macOS draws a hidden HUD at alpha 0; on Hyprland the surfaces stay mapped
-   (hidden is drawn as nothing, not unmapped, so the page's timers keep counting).
+   as they are meant to: macOS draws a hidden HUD at alpha 0; under Hyprland and niri the surfaces stay
+   mapped (hidden is drawn as nothing, not unmapped, so the page's timers keep counting).
 7. `stop` leaves no panel or feed process, no listening socket and no surface.
 
-A run leaves its artifacts (`e2e-macos`, `e2e-hyprland`): the driver's log and every command's output,
+A run leaves its artifacts (`e2e-macos`, `e2e-hyprland`, `e2e-niri`): the driver's log and every command's output,
 the state directory (logs and panel.json, never the socket's token), the platform's own listings
-(`hyprctl` JSON, the window list), best-effort screenshots, and a summary table on the run's page. A
+(`hyprctl` or `niri msg` JSON, the window list, taken while the HUD is shown and again at the end), best-effort screenshots, and a summary table on the run's page. A
 failed run is read from those first.
 
 **What it does not prove.** It asserts no legend and no pixel: the screenshots are artifacts, never
@@ -355,7 +420,9 @@ checked. The feed runs with no keyboard and Bluetooth off, so reading a real boa
 or BLE, the layer signal, the typed-keys strip from real reports and the firmware are not exercised
 (`poke` stands in). Nor are lock screens, password probes and Secure Input, how a drag feels, a second
 monitor, the macOS login item or menubar icon, the Omarchy bar plugin, and any GPU: Hyprland runs on a
-virtual device with software rendering, so a driver-specific fault (NVIDIA's DMA-BUF, say) cannot show.
+virtual device with software rendering, so a driver-specific fault (NVIDIA's DMA-BUF, say) cannot show,
+and niri's own DRM backend is not run at all (the HUD never touches it; the nested niri is the same
+compositor to a layer-shell client).
 Those stay with whoever changed them, as the pull request template says.
 
 **What it rests on.** On macOS, the runner's GUI session: the panel's window has to show up in the window
@@ -366,8 +433,16 @@ would not prove is that anything is on screen. Hyprland's maintainers do not sup
 others found to work on a hosted runner (vkms, `LIBSEAT_BACKEND=noop`, software GL, the AppArmor
 user-namespace setting for WebKit's sandbox), not what Hyprland documents. A runner image or an Arch
 package change can break it without a change here: read the artifacts before the code. The jobs run a
-pull request's own `e2e/` scripts with `sudo` and a privileged container on a throwaway runner, which
-is why only a maintainer's label starts them on a fork's pull request.
+pull request's own `e2e/` scripts with `sudo` and a privileged container on a throwaway runner. With
+the workflow as it is here they start on a fork's pull request only when a maintainer labels it, which
+is why that label comes off again after the run; against a fork that changes the workflow, what stands
+in the way is GitHub's approval of fork runs and not the label ("A fork's pull request", above).
+
+niri: its DRM backend skips software EGL renderers on purpose (`src/backend/tty.rs`, "software EGL renderers
+are skipped", v26.04 and main), so on vkms it comes up with no output; the first run of this job found
+that. It therefore runs nested (a `WAYLAND_DISPLAY` makes it take its winit backend) in a headless weston,
+which renders in software for it. The shortcuts' include needs niri 26.04 or newer (`host/shortcuts.py`
+says so and writes nothing for an older one), and Arch's package is what the job gets.
 
 To run the driver by hand (it starts and stops the real HUD of the tree and ends every panel of it, so
 it refuses outside CI without `--local`): `bin/zmk-layer-hud setup --venv-only`, then

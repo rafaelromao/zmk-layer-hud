@@ -16,6 +16,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import signal
 import socket
 import subprocess
@@ -76,6 +77,13 @@ HIDE_SHEET = WebKit2.UserStyleSheet.new("* { visibility: hidden !important; }",
 
 # Where the HUD was dragged to (drag, in main), kept with the macOS panel's frame.
 POSITION = Path.home() / ".config/zmk-layer-hud/state.json"
+# ZMKHUD_DRAG=1 logs presses, moves, saves and the page's size reports to panel.log: the only way
+# to see what a drag did without a hand on the pointer (and to tell an event problem from a math
+# one).
+DEBUG = os.environ.get("ZMKHUD_DRAG") == "1"
+# niri's session, where the drag is worked out from the pointer on the surface (see main): niri's
+# IPC cannot say where the pointer is on the layout, which Hyprland's can (cursor).
+NIRI = bool(os.environ.get("NIRI_SOCKET"))
 
 
 def load_position():
@@ -87,6 +95,8 @@ def load_position():
 
 
 def save_position(top, right):
+    if DEBUG:
+        print(f"drag: save position ({top}, {right})", file=sys.stderr, flush=True)
     try:
         try:
             state = json.loads(POSITION.read_text())
@@ -122,14 +132,37 @@ def cursor():
         return None
 
 
-def pick_monitor():
-    """(Hyprland's monitor, GDK's) for the HUD: the first that is not the laptop's own (eDP), else
-    the laptop's, matched by position rather than by assuming GDK and Hyprland number them alike.
-    (None, None) when Hyprland says nothing, (info, None) while GDK does not have it."""
+def compositor_monitors():
+    """The compositor's monitors as a list of dicts -- name, x, y, and reserved room where it
+    says it (Hyprland does; niri's IPC does not, and none is assumed) -- in logical coordinates,
+    as GDK's geometry has them. niri's own IPC where this is niri's session (NIRI_SOCKET), else
+    Hyprland's; [] where neither answers, which pick_monitor then says."""
+    if os.environ.get("NIRI_SOCKET"):
+        try:
+            got = json.loads(subprocess.check_output(["niri", "msg", "--json", "outputs"], timeout=5))
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return []
+        out = []
+        for m in (got.values() if isinstance(got, dict) else []):
+            if not isinstance(m, dict):
+                continue
+            logical = m.get("logical") or {}
+            if m.get("name") and logical.get("x") is not None and logical.get("y") is not None:
+                out.append({"name": m["name"], "x": logical["x"], "y": logical["y"], "reserved": [0, 0, 0, 0]})
+        return out
     try:
         monitors = json.loads(subprocess.check_output(["hyprctl", "monitors", "-j"], timeout=5))
     except (OSError, subprocess.SubprocessError, ValueError):
-        return None, None
+        return []
+    return monitors if isinstance(monitors, list) else []
+
+
+def pick_monitor():
+    """(the compositor's monitor, GDK's) for the HUD: the first that is not the laptop's own (eDP),
+    else the laptop's, matched by position rather than by assuming the compositor and GDK number
+    them alike. (None, None) when the compositor says nothing, (info, None) while GDK does not
+    have it."""
+    monitors = compositor_monitors()
     if not monitors:
         return None, None
     info = next((m for m in monitors if not m["name"].startswith("eDP")), monitors[0])
@@ -142,9 +175,14 @@ def pick_monitor():
 
 
 def surface_there():
-    """Whether Hyprland has the HUD's surface. A panel can outlive its surface unseen, told to show
-    a HUD there is nothing left of; True when Hyprland cannot be asked."""
+    """Whether the compositor has the HUD's surface. A panel can outlive its surface unseen, told
+    to show a HUD there is nothing left of; True when the compositor cannot be asked."""
     try:
+        if os.environ.get("NIRI_SOCKET"):
+            layers = json.loads(subprocess.check_output(["niri", "msg", "--json", "layers"], timeout=5))
+            if not isinstance(layers, list):
+                return True
+            return any(isinstance(e, dict) and e.get("namespace") == "zmkhud-layer" for e in layers)
         layers = json.loads(subprocess.check_output(["hyprctl", "layers", "-j"], timeout=5))
     except (OSError, subprocess.SubprocessError, ValueError):
         return True
@@ -223,19 +261,31 @@ def main():
         sys.exit("A Wayland compositor with layer-shell support is required")
     info, monitor = pick_monitor()
     if monitor is None:
-        sys.exit(f"Cannot locate recording monitor {info['name'] if info else '(Hyprland lists none)'} in GDK")
+        sys.exit(f"Cannot locate recording monitor {info['name'] if info else '(the compositor lists none)'} in GDK")
 
     css = Gtk.CssProvider()
     css.load_from_data(b"window, webview { background-color: transparent; }")
     Gtk.StyleContext.add_provider_for_screen(Gdk.Screen.get_default(), css,
                                             Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-    windows = json.loads(subprocess.check_output(["hyprctl", "clients", "-j"]))
-    tiled = [w for w in windows if w["monitor"] == info["id"] and not w["floating"] and w["mapped"]]
-    # Stay inside the client area plus an inset: the blue border remains visible.
-    top = min((w["at"][1] - info["y"] for w in tiled), default=info["reserved"][1]) + INSET
-    right_edge = max((w["at"][0] + w["size"][0] - info["x"] for w in tiled),
-                     default=monitor.get_geometry().width - info["reserved"][2])
-    right = monitor.get_geometry().width - right_edge + INSET
+    # Where the HUD sits before a drag has saved a place: inside the client area of the monitor's
+    # tiled windows, as Hyprland says it (niri's IPC does not say where its windows are in pixels,
+    # so under niri it is the corner of the screen itself -- the first drag from there, and the
+    # place is saved). Every failure falls back to the same corner rather than no panel at all.
+    top = right = None
+    if not os.environ.get("NIRI_SOCKET") and shutil.which("hyprctl"):
+        try:
+            windows = json.loads(subprocess.check_output(["hyprctl", "clients", "-j"], timeout=5))
+            tiled = [w for w in windows if w["monitor"] == info["id"] and not w["floating"] and w["mapped"]]
+            # Stay inside the client area plus an inset: the blue border remains visible.
+            top = min((w["at"][1] - info["y"] for w in tiled), default=info["reserved"][1]) + INSET
+            right_edge = max((w["at"][0] + w["size"][0] - info["x"] for w in tiled),
+                             default=monitor.get_geometry().width - info["reserved"][2])
+            right = monitor.get_geometry().width - right_edge + INSET
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError, AttributeError):
+            top = right = None
+    if top is None:
+        top = info["reserved"][1] + INSET
+        right = info["reserved"][2] + INSET
     geo = monitor.get_geometry()
     # Where it was dragged to last, while that is still on this monitor.
     saved = load_position()
@@ -302,7 +352,7 @@ def main():
 
     def to_front():
         if not surface_there():
-            remap("asked to show the HUD, and Hyprland had no surface of it")
+            remap("asked to show the HUD, and the compositor had no surface of it")
 
     no_drag = []
 
@@ -315,34 +365,62 @@ def main():
     # Dragging. A layer surface is not the compositor's to move, so the panel moves it: a press
     # anywhere but on the page's controls (it says where they are, kind "nodrag") starts a drag,
     # and the margins follow the pointer until it is let go. The press never reaches the page.
+    # Under Hyprland the pointer's place on the layout is its own word (cursorpos, `cursor`), and
+    # the drag follows that. niri's IPC has no such call, so under niri (NIRI) the drag is worked
+    # out from where the pointer is on the surface instead: each motion's coordinates differenced
+    # against the last one's are the pointer's movement over that event, and the surface carrying
+    # that reading with it is what keeps the difference honest -- a move that has not reached the
+    # commit yet is read against the old place all the same, so it is only ever counted once
+    # (follow_surface). A mouse reports motion hundreds of times a second, so either way the
+    # movement is only counted on the event and one move a frame applies it: done per event, they
+    # queue up and the HUD trails the pointer. Under niri the move itself brings the motion back a
+    # second time (moved), which is not the pointer at all.
     drag = {}
 
     def move_to(top, right):
+        """The surfaces to (top, right) margins; what they actually moved by, which is less than
+        asked at the screen's edges."""
         top = max(0, min(top, geo.height - size[1]))
         right = max(0, min(right, geo.width - size[0]))
-        if [top, right] == pos:
-            return
+        delta = (top - pos[0], right - pos[1])
+        if delta == (0, 0):
+            return delta
         pos[:] = [top, right]
         GtkLayerShell.set_margin(hud, GtkLayerShell.Edge.TOP, top)
         GtkLayerShell.set_margin(hud, GtkLayerShell.Edge.RIGHT, right)
         GtkLayerShell.set_margin(keys, GtkLayerShell.Edge.TOP, top + size[1] + KEYS_GAP)
         GtkLayerShell.set_margin(keys, GtkLayerShell.Edge.RIGHT, right)
+        if NIRI:
+            # Margins are the surface's double-buffered state: they take effect on its next commit,
+            # and an idle page draws nothing of its own, so without this the panel would sit where
+            # it was until something else next redrew -- while every pointer event in between were
+            # read against that old place. Drawing both surfaces here is the commit.
+            hud.queue_draw()
+            keys.queue_draw()
+        return delta
 
     def pressed(_view, event):
+        if DEBUG:
+            hit = any(x <= event.x <= x + w and y <= event.y <= y + h for x, y, w, h in no_drag)
+            print(f"drag: press at ({event.x:.1f}, {event.y:.1f}) button={event.button} "
+                  f"type={event.type} nodrag={hit} pos={pos}", file=sys.stderr, flush=True)
         if event.button != 1 or event.type != Gdk.EventType.BUTTON_PRESS:
             return False
         if any(x <= event.x <= x + w and y <= event.y <= y + h for x, y, w, h in no_drag):
             return False                # a control: the page has it
+        if NIRI:
+            drag.update(at=(event.x, event.y), echo=(event.x, event.y),
+                        pending=[0.0, 0.0], pos=list(pos), ticking=False)
+            return True
         at = cursor()
         if at is None:
             return False
         drag.update(at=at, pos=list(pos))
         return True
 
-    # A mouse reports motion hundreds of times a second, and each move asks Hyprland where the
-    # pointer is and commits the surface: done per event, they queue up and the HUD trails the
-    # pointer. So motion only marks the drag, and one move a frame catches up with the pointer.
-    def follow():
+    # Hyprland: each move asks it where the pointer is and commits the surface, so motion only
+    # marks the drag, and one move a frame catches up with the pointer.
+    def follow_pointer():
         at = cursor()
         if drag and at is not None:
             move_to(drag["pos"][0] + at[1] - drag["at"][1], drag["pos"][1] - (at[0] - drag["at"][0]))
@@ -350,9 +428,54 @@ def main():
             return GLib.SOURCE_CONTINUE
         return GLib.SOURCE_REMOVE
 
+    def follow_surface():
+        if drag and drag["pending"] != [0.0, 0.0]:
+            # The pointer moved `pending` over the last frame: on the surface, so down it is the
+            # top margin (the surface follows it down), and right it is the right margin the other
+            # way round (the surface is anchored by its right edge, so following right is a
+            # smaller gap to it).
+            before, pending = list(drag["pos"]), tuple(drag["pending"])
+            d_top, d_right = move_to(drag["pos"][0] + drag["pending"][1],
+                                     drag["pos"][1] - drag["pending"][0])
+            drag["pos"] = list(pos)
+            drag["pending"] = [0.0, 0.0]
+            # `at` stays where the last event left it: the margins this moved only land on the
+            # surface's next commit, so the motion read against them in the meantime is still
+            # read against the old place -- carrying `at` forward here as well would count this
+            # very move a second time, and again every frame it went uncommitted: the panel ran
+            # away from the pointer as if the pointer had accelerated.
+            if DEBUG:
+                print(f"drag: pending={pending} moved {before}->{list(pos)} "
+                      f"by ({d_top:.1f}, {d_right:.1f})", file=sys.stderr, flush=True)
+        if drag:
+            return GLib.SOURCE_CONTINUE
+        return GLib.SOURCE_REMOVE
+
+    follow = follow_surface if NIRI else follow_pointer
+
     def moved(_view, event):
         if not drag:
             return False
+        if NIRI:
+            here = (event.x, event.y)
+            echo = drag.get("echo")
+            # Every margin change configures the surface, and the toolkit then re-delivers the
+            # last motion with a fresh timestamp but its coordinates as they were -- the pointer
+            # has not moved at all. Differenced against `at`, which the surface's own move has
+            # just carried forward, such an echo reads as exactly that move again: the panel
+            # would follow itself for as long as the button is held. A real move always changes
+            # where the pointer is, so one that has not is the echo and lets go of it.
+            if echo is not None and abs(here[0] - echo[0]) < 1e-6 and abs(here[1] - echo[1]) < 1e-6:
+                if DEBUG:
+                    print(f"drag: echo ({here[0]:.2f}, {here[1]:.2f}) let go", file=sys.stderr, flush=True)
+                return True
+            drag["echo"] = here
+            if DEBUG:
+                print(f"drag: motion ({event.x:.2f}, {event.y:.2f}) t={event.time} at={drag['at']}",
+                      file=sys.stderr, flush=True)
+            drag["pending"][0] += event.x - drag["at"][0]
+            drag["pending"][1] += event.y - drag["at"][1]
+            drag["at"] = here
         if not drag.get("ticking"):
             drag["ticking"] = GLib.timeout_add(16, follow)
         return True
@@ -363,7 +486,7 @@ def main():
         tick = drag.get("ticking")
         if tick:
             GLib.source_remove(tick)
-        follow()                    # to where it was let go
+        follow()                    # to where it was let go (niri: what was counted since the last frame)
         drag.clear()
         if rail is not None:
             rail.set_size_request(size[0] + pos[1] + INSET, 1)
@@ -392,6 +515,9 @@ def main():
             w, h = int(width or size[0]), int(height or 0)
         except (ValueError, TypeError):
             return
+        if DEBUG:
+            print(f"drag: page says {w}x{h} grip={grip} pos={pos} size={size}",
+                  file=sys.stderr, flush=True)
         if not grip and gripped:
             gripped.clear()
             save_position(*pos)
@@ -441,7 +567,7 @@ def main():
     # with it: the compositor closes them, and gtk-layer-shell hands that on as a delete event, which
     # would destroy the windows and leave a panel answering `show` with nothing. So a closed window
     # is kept, and the surfaces are put on the monitor the panel would pick now and mapped again
-    # whenever monitors come or go, a surface is closed, or `show` finds Hyprland without the HUD's.
+    # whenever monitors come or go, a surface is closed, or `show` finds the compositor without the HUD's.
     screen = {"monitor": monitor, "due": None}
 
     def remap(why):
@@ -467,7 +593,7 @@ def main():
         return False
 
     def remap_soon(why):
-        # Monitors come and go in bursts, and Hyprland places an output a moment after it appears.
+        # Monitors come and go in bursts, and the compositor places an output a moment after it appears.
         if screen["due"] is None:
             screen["due"] = GLib.timeout_add(1000, remap, why)
 
@@ -509,8 +635,8 @@ def main():
     with os.fdopen(os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w") as output:
         os.chmod(log_path, 0o600)
         feed_python = os.environ.get("ZMKHUD_PYTHON", sys.executable)
-        debug = ["--debug"] if os.environ.get("ZMKHUD_DEBUG") == "1" else []
-        feed = subprocess.Popen([feed_python, "-u", str(ROOT / "host" / "hudfeed.py"), *debug],
+        feed_debug = ["--debug"] if os.environ.get("ZMKHUD_DEBUG") == "1" else []
+        feed = subprocess.Popen([feed_python, "-u", str(ROOT / "host" / "hudfeed.py"), *feed_debug],
                                 stdout=output, stderr=output, start_new_session=True,
                                 env=dict(os.environ, ZMKHUD_TALLY_TOKEN=TALLY_TOKEN, ZMKHUD_TOKEN=SOCKET_TOKEN))
     def watch_feed():

@@ -368,12 +368,92 @@ class Secure(unittest.TestCase):
     def test_the_report_names_each_probe(self):
         lines = [line.split("\t") for line in probe_report()]
         self.assertEqual(["carbon", "terminals", "a11y", "lock"], [name for name, _, _ in lines])
-        self.assertTrue(all(state in ("on", "off", "none") and why for _, state, why in lines), lines)
+        self.assertTrue(all(state in ("on", "off", "partial", "none") and why for _, state, why in lines), lines)
         if sys.platform == "darwin":
             self.assertEqual("on", lines[0][1])
             self.assertEqual(("none", "none"), (lines[2][1], lines[3][1]))
             with mock.patch("hudfeed.carbon_probe", return_value=None):
                 self.assertEqual("off", probe_report()[0].split("\t")[1])
+
+    def test_under_niri_the_lock_row_is_partial_and_says_what_it_sees(self):
+        # niri has no lock state: only a locker named by process is seen, which is not `on`.
+        with tempfile.TemporaryDirectory() as d:
+            sock = os.path.join(d, "niri.sock")
+            with open(sock, "w"):
+                pass
+            with mock.patch("hudfeed.sys.platform", "linux"), \
+                    mock.patch("hudfeed.a11y.HAVE_JEEPNEY", False), \
+                    mock.patch("hudfeed.terminal_probe", return_value=None):
+                lines = [line.split("\t") for line in probe_report(environ={"NIRI_SOCKET": sock})]
+        lock = dict((name, (state, why)) for name, state, why in lines)["lock"]
+        self.assertEqual("partial", lock[0])
+        self.assertIn("process name", lock[1])
+        self.assertIn("feed.lockers", lock[1])
+
+    def test_the_lock_row_is_partial_whenever_the_probe_goes_by_name_whichever_socket_led_there(self):
+        # The report against the probe itself (sessionlock.probe), case by case: `on` only where the
+        # compositor says, `partial` wherever the lockers' names are the answer -- niri, and a
+        # Hyprland socket that does not say (an older Hyprland, or one left behind that no longer
+        # answers, in a niri session as well) -- and `off` where there is no probe at all.
+        import sessionlock
+        old, says, gone = [{"name": "eDP-1"}], [{"solitaryBlockedBy": []}], OSError(111, "Connection refused")
+        with tempfile.TemporaryDirectory() as d:
+            niri = os.path.join(d, "niri.sock")
+            hypr = os.path.join(d, "hypr", "sig", ".socket.sock")
+            os.makedirs(os.path.dirname(hypr))
+            for path in (niri, hypr):
+                with open(path, "w"):
+                    pass
+            in_niri = {"NIRI_SOCKET": niri}
+            in_hypr = {"HYPRLAND_INSTANCE_SIGNATURE": "sig", "XDG_RUNTIME_DIR": d}
+            for what, env, answer, state, reason in (
+                    ("niri", in_niri, says, "partial", "niri does not say"),
+                    ("an older Hyprland", in_hypr, old, "partial", "Hyprland's socket does not say"),
+                    ("a Hyprland that does not answer", in_hypr, gone, "partial", "Hyprland's socket does not say"),
+                    ("a Hyprland socket left behind in a niri session", {**in_hypr, **in_niri}, gone, "partial",
+                     "Hyprland's socket does not say"),
+                    ("Hyprland", in_hypr, says, "on", "Hyprland says the session is unlocked"),
+                    ("neither", {}, says, "off", "no Hyprland or niri")):
+                with self.subTest(what), mock.patch("hudfeed.sys.platform", "linux"), \
+                        mock.patch("hudfeed.a11y.HAVE_JEEPNEY", False), \
+                        mock.patch("hudfeed.terminal_probe", return_value=None), \
+                        mock.patch.object(sessionlock, "monitors", side_effect=[answer] * 2), \
+                        mock.patch.object(sessionlock, "locker_running", return_value=False) as by_name:
+                    lock = dict(line.split("\t", 1) for line in probe_report(environ=env))["lock"].split("\t")
+                    self.assertEqual(state, lock[0])
+                    self.assertIn(reason, lock[1])
+                    self.assertEqual(state == "partial", "feed.lockers" in lock[1] and "one not named is not seen" in lock[1])
+                    probe = sessionlock.probe(log=lambda *_: None, environ=env)
+                    self.assertEqual(state == "off", probe is None)
+                    if probe is not None:
+                        self.assertFalse(probe())
+                    self.assertEqual(state == "partial", by_name.called)     # the report says what the probe does
+
+    def test_a_hyprland_socket_nothing_answers_on_is_partial_without_a_stand_in(self):
+        # No mock of the socket: a file where the socket was is what a Hyprland that crashed leaves.
+        with tempfile.TemporaryDirectory() as d:
+            hypr = os.path.join(d, "hypr", "sig", ".socket.sock")
+            os.makedirs(os.path.dirname(hypr))
+            with open(hypr, "w"):
+                pass
+            with mock.patch("hudfeed.sys.platform", "linux"), \
+                    mock.patch("hudfeed.a11y.HAVE_JEEPNEY", False), \
+                    mock.patch("hudfeed.terminal_probe", return_value=None):
+                lines = probe_report(environ={"HYPRLAND_INSTANCE_SIGNATURE": "sig", "XDG_RUNTIME_DIR": d})
+        self.assertEqual("partial", dict(line.split("\t", 1) for line in lines)["lock"].split("\t")[0])
+
+    @mock.patch("hudfeed.a11y.available", new=lambda: False)
+    def test_the_configs_lockers_reach_the_lock_probe(self):
+        with mock.patch("hudfeed.carbon_probe", return_value=None), \
+             mock.patch("hudfeed.terminal_probe", return_value=None), \
+             mock.patch("hudfeed.sessionlock.probe", return_value=None) as lock, \
+             tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "config.yaml")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("keyboard: {name: Test Board}\nserial: {port: /dev/cu.test}\nble: {enabled: false}\n"
+                        "feed: {lockers: [my-locker]}\n")
+            Feed(lambda msg: None, log=lambda *a: None, config=path, keys=False, sessions=False)
+        self.assertEqual(["my-locker"], lock.call_args.kwargs["extra"])
 
     def test_any_of_the_probes(self):
         self.assertIsNone(any_of([lambda: False, lambda: None])())
@@ -440,7 +520,7 @@ class Secure(unittest.TestCase):
         self.assertTrue(feed.secure.probe())
 
     @mock.patch("hudfeed.a11y.available", new=lambda: False)
-    @mock.patch("hudfeed.sessionlock.probe", new=lambda log=None: None)
+    @mock.patch("hudfeed.sessionlock.probe", new=lambda log=None, **_: None)
     def test_raw_logging_is_held_while_it_is_on(self):
         # `feed --raw` logs what the readers decode, which is the typing: not while a secret is typed.
         said = {"terminal": False}
@@ -462,7 +542,7 @@ class Secure(unittest.TestCase):
             quiet = Feed(lambda msg: None, log=lambda *a: None, config=path, keys=False, sessions=False)
             self.assertFalse(quiet.reader.raw)                   # and without --raw, no log at all
 
-    @mock.patch("hudfeed.sessionlock.probe", new=lambda log=None: None)
+    @mock.patch("hudfeed.sessionlock.probe", new=lambda log=None, **_: None)
     def test_on_linux_the_accessibility_bus_is_watched_too(self):
         # A password field with focus in a window (host/a11y.py), with the apps told to expose their
         # widgets unless the config says to leave that alone.

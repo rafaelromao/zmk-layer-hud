@@ -1,14 +1,39 @@
 # The real HUD on each platform: started, looked at, driven and stopped (e2e/driver.py), where ci.yml
-# only runs unit tests. It costs two long jobs, so it runs when it matters: on release-please's own pull
+# only runs unit tests. It costs a long job per platform, so it runs when it matters: on release-please's own pull
 # request, and on any pull request someone labels `release-validation` -- which is how a contributor's
 # change to a panel, a compositor or the shortcuts is shown to work before it merges.
 #
 # What it proves and what it cannot is in docs/development.md ("End-to-end validation").
 #
+# MAINTAINERS, ON A FORK'S PULL REQUEST: these jobs run the pull request's own code -- its `e2e/` scripts and
+# the HUD of its tree -- with `sudo` on the runner and, in the Linux jobs, as root in a `--privileged`
+# container. The trigger is `pull_request`, so a fork's run has a read-only token and no secrets, and what the
+# code can reach is the throwaway runner.
+#
+# The label is NOT what keeps a fork's code from such a run. A `pull_request` run is made from the workflow
+# files of the pull request's own merge commit, this one included: a fork that edits `.github/workflows/` can
+# take the `if:` below out, or add a workflow of its own, and get the same `sudo` and `--privileged` run with
+# no label on the pull request. Against that the only gate is GitHub's own approval of fork runs, a setting of
+# the repository (Settings, Actions, General) that this file can neither see nor vouch for. What the label
+# gates is cost and accident: with this file as it is, no long job per platform on every pull request, and no
+# privileged run of a contributor's change before someone has looked at it.
+#
+# So, before labelling a fork's pull request, and before approving a run of one that GitHub holds:
+#   1. Read the pull request's whole diff as it stands, `.github/workflows/` included.
+#   2. Check that the commit the run is on is the one that was read: a push in between moves it. The run
+#      starts when the label goes on, so the check comes after the fact. If a newer commit is running, cancel
+#      the run, take the label off, and read the new commit before labelling again.
+#   3. Take the label off when the run is done (`gh pr edit <number> --remove-label release-validation`).
+# The label stays on the pull request, and while it is on every later push runs these jobs again, on code
+# nobody has read and with no new decision by anyone. A push that needs validating gets the label again, after
+# its diff has been read. Nothing here takes the label off for you, and nothing should be made to try: a
+# fork's run has a read-only token and cannot change the pull request, by GitHub's design. Taking it off
+# starts no run (`unlabeled` is not among the trigger's types below).
+#
 # The gate is the jobs' own `if`, and not a path or branch filter on the trigger: a job skipped by its `if`
 # reports as passed, so a required check never waits for a run that is not coming, which a filtered-out
 # workflow would leave it doing. The repository comparison keeps a fork from borrowing the release branch's
-# name.
+# name -- a fork that leaves this file as it is: see above for one that does not.
 name: e2e
 
 on:
@@ -90,7 +115,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/e2e-out"
           docker run --rm --privileged --shm-size=1g \
-            -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+            -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e E2E_COMPOSITOR=hyprland \
             -v "$GITHUB_WORKSPACE:/work/repo:ro" -v "$RUNNER_TEMP/e2e-out:/work/out" \
             archlinux:latest bash /work/repo/e2e/linux/run-in-arch.sh
       - name: the checks, on the run's page
@@ -100,5 +125,37 @@ jobs:
         if: always()
         with:
           name: e2e-hyprland
+          path: ${{ runner.temp }}/e2e-out
+          if-no-files-found: warn
+
+  niri:
+    name: Arch Linux and niri
+    if: >-
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.head_ref, 'release-please--branches--')) ||
+      contains(github.event.pull_request.labels.*.name, 'release-validation')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: user namespaces for WebKit's sandbox
+        # niri runs nested in a headless weston, so it needs no DRM device (its own DRM backend skips software
+        # rendering, which is all a hosted runner has). WebKitGTK's bubblewrap needs what Ubuntu denies through
+        # AppArmor, as under Hyprland above.
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: the HUD under niri, in an Arch container
+        run: |
+          mkdir -p "$RUNNER_TEMP/e2e-out"
+          docker run --rm --privileged --shm-size=1g \
+            -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e E2E_COMPOSITOR=niri \
+            -v "$GITHUB_WORKSPACE:/work/repo:ro" -v "$RUNNER_TEMP/e2e-out:/work/out" \
+            archlinux:latest bash /work/repo/e2e/linux/run-in-arch.sh
+      - name: the checks, on the run's page
+        if: always()
+        run: cat "$RUNNER_TEMP/e2e-out/driver/summary.md" >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-niri
           path: ${{ runner.temp }}/e2e-out
           if-no-files-found: warn

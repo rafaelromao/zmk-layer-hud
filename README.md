@@ -22,11 +22,13 @@ between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`
 - **Any ZMK keyboard**: a small ZMK module on the keyboard; on the host, `import` draws its keymap.
 - **Live**: under `sync --watch`, edit the keymap or its drawing and the HUD redraws; every size
   and timing lives in one config file.
-- **Native panels**: a macOS overlay panel, a Hyprland layer-shell panel on Linux.
+- **Native panels**: a macOS overlay panel, a layer-shell panel on Linux (Hyprland or niri).
 
 ## Requirements
 
-- macOS, or Linux running Hyprland (the panel is a layer-shell surface).
+- macOS, or Linux running Hyprland or niri (the panel is a layer-shell surface). On niri the global
+  shortcuts need niri 26.04 or newer, for the `include optional=true` they are read through (see
+  [Hidden, and at login](#hidden-and-at-login)); on an older niri they are left unbound.
 - Python 3.10 or newer. `setup` builds a virtualenv; on macOS, Apple's `/usr/bin/python3` is 3.9
   and is not enough on its own.
 - A ZMK keyboard whose firmware you can build and flash, and its zmk-config: a GitHub URL, or a
@@ -191,6 +193,17 @@ off.
   The binds stay after the HUD stops, so the power shortcut starts it again. They unbind those keys
   first, so anything else bound to them stops working. A config change takes effect on the next
   start, and `uninstall` removes both the file and the line.
+- **On niri** they are binds in its config's KDL: every `start` writes `~/.config/niri/zmk-layer-hud.kdl`
+  (one `binds` block) and the first one appends `include optional=true "zmk-layer-hud.kdl"` to the
+  end of `config.kdl`, keeping a copy as `config.kdl.bak-zmk-layer-hud` first. niri merges binds
+  from included files, the last for a key winning, so the include being last takes these keys from
+  whatever had them. niri watches its config files and reads them again by itself when one changes;
+  `start` also asks (`niri msg action load-config-file`) so a change lands without the wait. The
+  binds stay after the HUD stops, and `uninstall` removes both the file and the line. They are
+  `repeat=false` binds (niri repeats a held bind otherwise), and they need niri 26.04 or newer,
+  which is where niri's docs put `include optional=true`: `start` reads `niri --version`, and on an
+  older niri leaves `config.kdl` alone and says so, the HUD starting all the same. A version it
+  cannot read is not a reason to leave them out.
 
 `zmk-layer-hud autostart enable` starts the HUD hidden at every login, and `autostart disable`
 stops doing so; it leaves a running HUD alone.
@@ -295,6 +308,7 @@ Where things live, and what moves them:
 | `ZMKHUD_REF` | `latest` | what `install.sh` and `update` fetch: `latest` (the newest release), a release's tag like `v1.0.0`, or a branch |
 | `ZMKHUD_RESERVE` | `0` | what `start --reserve` sets |
 | `ZMKHUD_DEBUG` | unset | the panel and the feed log every layer message with a timestamp (never the key positions) |
+| `ZMKHUD_DRAG` | unset | (Linux) `1` makes the panel log its drags to `panel.log`: where the pointer was pressed and moved on the HUD, and the margins saved (never keys) |
 
 ### Sessions
 
@@ -361,8 +375,14 @@ is on), the system turns on secure input. On Linux, a password field with focus 
 accessibility bus, where the apps -- browsers, password managers, polkit's dialog -- say which
 widget has focus and what it is. For that the feed tells them assistive technology is wanted, as a
 screen reader would; a browser running since before shows nothing until it is started again, and
-`feed.accessibility: 0` leaves that setting alone. Under Hyprland the session lock is seen too, on
-Hyprland's own socket, so the unlock password goes nowhere. On both systems, while a terminal is
+`feed.accessibility: 0` leaves that setting alone. The session lock is seen too — under Hyprland
+on its own socket; under niri, where the compositor says nothing, and under a Hyprland whose socket
+does not say, by the process name of hyprlock, swaylock, gtklock or waylock, and of any lock screen
+`feed.lockers` names — so the unlock password goes nowhere. By name, a lock screen built into a
+shell is seen only once its process is named there (`feed.lockers: [name]`, as `comm` in `/proc`
+spells it). `zmk-layer-hud doctor` cannot tell whether the lock screen in use is one of the named,
+so wherever the lock is seen by name only — under niri, unless a Hyprland socket in the session's
+environment answers instead — its session lock row is a warning, never ok. On both systems, while a terminal is
 asking for a password -- `sudo`, `ssh`, `su`, anything that reads a line with echo off -- the feed
 sees that too. Either way it then passes on nothing typed: no characters, no keys lit, no layer
 changes, nothing counted. The strip clears, the board dims and the banner says `secure input ·
@@ -616,9 +636,12 @@ beside anything that is wrong. What it cannot see:
   feed turns on, so a browser from before the first start needs starting again. An app that
   exposes nothing (no accessibility bus, `GTK_A11Y=none`, a toolkit of its own) gives no sign, and
   there the strip shows what is typed and the board lights its keys. The session lock is seen
-  under Hyprland alone (by name -- hyprlock, swaylock, gtklock, waylock -- where Hyprland does not
-  say); another compositor's lock screen is not. `zmk-layer-hud doctor` says what sees a secret
-  being typed here. Stop the HUD, or record with it hidden, when that matters.
+  under Hyprland (from its own socket, by name -- hyprlock, swaylock, gtklock, waylock -- where
+  Hyprland does not say) and under niri (by name only, its IPC having no lock state); by name, a
+  lock screen built into a shell is seen once `feed.lockers` names its process. Another
+  compositor's lock screen is not. `zmk-layer-hud doctor` says what sees a secret
+  being typed here, and warns of what is seen only in part (a lock seen by name: niri's, and
+  Hyprland's where it does not say). Stop the HUD, or record with it hidden, when that matters.
 - A terminal's prompt is seen when it reads a line with echo off, as `sudo`, `ssh`, `su`, `passwd`
   and `getpass` do. One that takes the keys raw, one at a time -- `sudo` with `pwfeedback`,
   `systemd-ask-password`, a pinentry, a prompt that masks with stars -- is not, and nor is a prompt
@@ -641,8 +664,8 @@ keymap conversion in Python, and the page under node.
 is put together. Commit messages start with a Conventional Commits type (`feat:`, `fix:`, `docs:`...):
 releases are made from them by release-please, and CI runs every platform's suites on each pull
 request ([Commits, CI and releases](docs/development.md#commits-ci-and-releases)). On release pull
-requests, and on any labelled `release-validation`, the real HUD is also started on macOS and under
-Hyprland ([End-to-end validation](docs/development.md#end-to-end-validation)).
+requests, and on any labelled `release-validation`, the real HUD is also started on macOS, under
+Hyprland and under niri ([End-to-end validation](docs/development.md#end-to-end-validation)).
 
 ## License
 

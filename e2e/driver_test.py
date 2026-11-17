@@ -159,6 +159,93 @@ class Config(unittest.TestCase):
         self.assertEqual({k: v for k, v in cfg.items() if k != "ble"}, yaml.safe_load(text))
 
 
+class NiriReading(unittest.TestCase):
+    LAYERS = [{"namespace": "zmkhud-layer", "output": "Virtual-1", "layer": "Top", "keyboard_interactivity": "None"},
+              {"namespace": "zmkhud-keys", "output": "Virtual-1", "layer": "Top", "keyboard_interactivity": "None"},
+              {"namespace": "waybar", "output": "Virtual-1", "layer": "Top", "keyboard_interactivity": "None"}]
+
+    def test_both_surfaces_found_among_others(self):
+        ok, detail = driver.niri_present(self.LAYERS)
+        self.assertTrue(ok, detail)
+        self.assertIn("zmkhud-layer on Virtual-1 (Top)", detail)
+        self.assertNotIn("waybar", detail)
+
+    def test_one_missing_is_named(self):
+        ok, detail = driver.niri_present(self.LAYERS[:1] + self.LAYERS[2:])
+        self.assertFalse(ok)
+        self.assertIn("zmkhud-keys", detail)
+
+    def test_nothing_that_is_not_a_listing(self):
+        for doc in (None, {}, "x", [None, 3, {"namespace": None}]):
+            self.assertEqual(driver.niri_layer_surfaces(doc), {})
+
+    SAMPLE = (
+        "// Written by zmk-layer-hud on every start; edits here are lost.\n"
+        "// `include optional=true \"zmk-layer-hud.kdl\"` at the end of config.kdl reads it.\n"
+        "\n"
+        "binds {\n"
+        "    Ctrl+Alt+L repeat=false { spawn \"env\" \"ZMKHUD_STATE=/s\" \"/c\" \"toggle\"; } // ZMK HUD show/hide\n"
+        "    Ctrl+Alt+Super+L repeat=false { spawn \"uwsm-app\" \"--\" \"env\" \"/c\" \"power\"; } // ZMK HUD start/stop\n"
+        "}\n")
+
+    def test_binds_of_a_kdl_file(self):
+        binds = driver.kdl_binds(self.SAMPLE)
+        self.assertEqual([b["key"] for b in binds], ["Ctrl+Alt+L", "Ctrl+Alt+Super+L"])
+        self.assertTrue(all(b["props"] == {"repeat": "false"} for b in binds))
+
+    def test_a_bind_that_repeats_is_seen_as_one(self):
+        binds = driver.kdl_binds('binds {\n    Ctrl+Alt+L { spawn "x"; }\n    Mod+T repeat=true { spawn "y"; }\n}\n')
+        self.assertEqual([b["props"] for b in binds], [{}, {"repeat": "true"}])
+
+    def test_only_the_binds_block_and_no_comments(self):
+        text = 'input { keyboard { xkb { layout "us" } } }\nbinds {\n    // Mod+X repeat=false { spawn "z"; }\n}\nlayout { gaps 8 }\n'
+        self.assertEqual(driver.kdl_binds(text), [])
+
+    def test_what_shortcuts_writes_is_what_is_read(self):
+        sys_path = os.path.join(str(ROOT), "host")
+        import sys
+        sys.path.insert(0, sys_path)
+        try:
+            import shortcuts
+        except ImportError:
+            self.skipTest("no host/shortcuts.py")
+        finally:
+            sys.path.remove(sys_path)
+        if not hasattr(shortcuts, "niri_conf"):
+            self.skipTest("this host/shortcuts.py has no niri support")
+        text = shortcuts.niri_conf({"toggle": (("ctrl", "alt"), "l"), "power": (("ctrl", "alt", "gui"), "l")}, "/c", "/s", "uwsm-app --")
+        binds = driver.kdl_binds(text)
+        self.assertEqual([b["key"] for b in binds], ["Ctrl+Alt+L", "Ctrl+Alt+Super+L"])
+        self.assertTrue(all(b["props"].get("repeat") == "false" for b in binds))
+        self.assertEqual(driver.NIRI_INCLUDE, shortcuts.NIRI_INCLUDE)
+
+    def test_the_include_has_to_be_last(self):
+        inc = driver.NIRI_INCLUDE
+        self.assertTrue(driver.include_is_last("a {}\n\n// mark\n" + inc + "\n", inc))
+        self.assertTrue(driver.include_is_last(inc + "\n// trailing comment\n\n", inc))
+        self.assertFalse(driver.include_is_last(inc + "\nlayout { gaps 8 }\n", inc))
+        self.assertFalse(driver.include_is_last("", inc))
+
+    def test_config_loaded_events(self):
+        self.assertIs(driver.config_loaded('{"ConfigLoaded":{"failed":false}}'), False)
+        self.assertIs(driver.config_loaded('{"ConfigLoaded":{"failed":true}}'), True)
+        for line in ('{"WorkspacesChanged":{"workspaces":[]}}', "not json", "[1]", '{"ConfigLoaded":{"failed":"no"}}', ""):
+            self.assertIsNone(driver.config_loaded(line), line)
+
+    def test_lines_as_they_arrive(self):
+        r, w = os.pipe()
+        self.addCleanup(os.close, r)
+        lines = driver.Lines(r)
+        os.write(w, b'one\ntw')
+        self.assertEqual(lines.readline(1), "one")
+        self.assertIsNone(lines.readline(0.05))          # half a line is not a line
+        os.write(w, b"o\nthree\n")
+        self.assertEqual(lines.readline(1), "two")
+        self.assertEqual(lines.readline(1), "three")
+        os.close(w)
+        self.assertIsNone(lines.readline(1))            # the end of the stream
+
+
 def frame(payload, opcode=1, fin=True):
     """A server's WebSocket frame."""
     first = (0x80 if fin else 0) | opcode
@@ -361,7 +448,7 @@ class Workflow(unittest.TestCase):
         self.assertEqual(sorted(on["pull_request"]["types"]), ["labeled", "opened", "reopened", "synchronize"])
 
     def test_the_jobs_and_their_limits(self):
-        self.assertEqual(sorted(self.wf["jobs"]), ["hyprland", "macos"])
+        self.assertEqual(sorted(self.wf["jobs"]), ["hyprland", "macos", "niri"])
         for name, job in self.wf["jobs"].items():
             self.assertLessEqual(job["timeout-minutes"], 20, name)
 
