@@ -113,17 +113,11 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
-      - name: a virtual KMS device for niri, and user namespaces for WebKit's sandbox
-        # As for Hyprland above: niri's DRM backend wants a card too, and the same WebKit sandbox runs under it.
-        run: |
-          uname -r
-          if ! sudo modprobe vkms; then
-            sudo apt-get update -qq
-            sudo apt-get install -y -qq "linux-modules-extra-$(uname -r)"
-            sudo modprobe vkms
-          fi
-          ls -l /dev/dri
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: user namespaces for WebKit's sandbox
+        # niri runs nested in a headless weston, so it needs no DRM device (its own DRM backend skips software
+        # rendering, which is all a hosted runner has). WebKitGTK's bubblewrap needs what Ubuntu denies through
+        # AppArmor, as under Hyprland above.
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
       - name: the HUD under niri, in an Arch container
         run: |
           mkdir -p "$RUNNER_TEMP/e2e-out"

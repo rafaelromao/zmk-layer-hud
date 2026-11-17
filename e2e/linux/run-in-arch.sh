@@ -3,17 +3,21 @@
 # container on a GitHub-hosted runner (.github/workflows/e2e.yml). Nothing here is for a machine you care
 # about: it installs packages and creates a user.
 #
-# A compositor cannot start without a DRM device, and a hosted runner has no GPU. The runner's host loads
-# vkms (a virtual KMS device), and the container is --privileged so it sees /dev/dri. Everything the
-# container does:
+# Hyprland cannot start without a DRM device, and a hosted runner has no GPU. The runner's host loads vkms
+# (a virtual KMS device), and the container is --privileged so it sees /dev/dri. Everything the container does:
 #
-#   run-in-arch.sh            as root: the packages, the vkms card, a user; then the session below, as that user
-#   run-in-arch.sh session    as that user, inside dbus-run-session: the compositor on vkms, the venv, e2e/driver.py
+#   run-in-arch.sh            as root: the packages, (Hyprland) the vkms card, a user; then the session below, as that user
+#   run-in-arch.sh session    as that user, inside dbus-run-session: the compositor, the venv, e2e/driver.py
 #
 # Hyprland's maintainers do not support headless CI; this follows what worked for others (the recipe is
-# in e2e/linux/hyprland.lua's header) and is checked by each run, which is the point of it. niri is the same
-# idea by the same route -- its DRM backend on vkms through libseat's noop backend, which it takes when none
-# of WAYLAND_DISPLAY, WAYLAND_SOCKET and DISPLAY is set -- and is not documented as a CI use either.
+# in e2e/linux/hyprland.lua's header) and is checked by each run, which is the point of it.
+#
+# niri does not run on vkms: its DRM backend skips software EGL renderers on purpose (src/backend/tty.rs,
+# "software EGL renderers are skipped", v26.04 and main), a hosted runner has no GPU, and the first run of this
+# job on vkms ended there with no output. So niri runs nested, as its winit backend, which it takes when
+# WAYLAND_DISPLAY is set, in a headless weston (pixman). What niri then does for the HUD -- layer-shell
+# surfaces, its IPC, its config and the shortcuts' include -- is the same code; what is not exercised is niri's
+# own DRM backend, which the HUD never touches.
 set -uo pipefail
 
 OUT="${E2E_OUT:-/work/out}"
@@ -53,8 +57,23 @@ start_hyprland() {
 start_niri() {
   mkdir -p "$HOME/.config/niri"
   cp e2e/linux/niri.kdl "$HOME/.config/niri/config.kdl"
-  # niri takes its DRM backend when none of these is set, and not `--session`, which is for a TTY login.
-  env -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u DISPLAY RUST_BACKTRACE=1 niri >"$OUT/niri-stdout.log" 2>&1 &
+  # The host: weston without a display, drawing in software. A name of its own, so that the only wayland-N
+  # socket there is later is niri's.
+  weston --backend=headless --renderer=pixman --shell=kiosk --socket=e2e-host --width=1280 --height=800 \
+    >"$OUT/weston.log" 2>&1 &
+  WPID=$!
+  for _ in $(seq 1 60); do
+    [ -S "$XDG_RUNTIME_DIR/e2e-host" ] && break
+    kill -0 "$WPID" 2>/dev/null || break
+    sleep 0.5
+  done
+  if [ ! -S "$XDG_RUNTIME_DIR/e2e-host" ]; then
+    echo "weston made no socket (alive: $(kill -0 "$WPID" 2>/dev/null && echo yes || echo no))"
+    tail -n 40 "$OUT/weston.log"
+    return 3
+  fi
+  # With WAYLAND_DISPLAY set and not `--session` (a TTY login's), niri nests: its winit backend.
+  env WAYLAND_DISPLAY=e2e-host RUST_BACKTRACE=1 niri >"$OUT/niri-stdout.log" 2>&1 &
   CPID=$!
   local sock=""
   for _ in $(seq 1 120); do
@@ -82,7 +101,7 @@ session() {
   bin/zmk-layer-hud setup --venv-only >"$OUT/venv.log" 2>&1 || { tail -n 30 "$OUT/venv.log"; echo venv-failed >"$OUT/status.txt"; return 2; }
 
   say "$COMPOSITOR on ${VKMS_CARD:-no card}"
-  CPID=""
+  CPID=""; WPID=""
   if [ "$COMPOSITOR" = niri ]; then start_niri; else start_hyprland; fi || { echo "$COMPOSITOR-failed" >"$OUT/status.txt"; return 3; }
   local wl=""
   for _ in $(seq 1 40); do
@@ -109,7 +128,8 @@ session() {
   say "the compositor's own log"
   case "$COMPOSITOR" in
     hyprland) hyprctl dispatch exit >/dev/null 2>&1 || kill "$CPID" 2>/dev/null ;;
-    niri)     niri msg action quit --skip-confirmation >/dev/null 2>&1 || kill "$CPID" 2>/dev/null ;;
+    niri)     niri msg action quit --skip-confirmation >/dev/null 2>&1 || kill "$CPID" 2>/dev/null
+              [ -n "$WPID" ] && kill "$WPID" 2>/dev/null ;;
   esac
   wait "$CPID" 2>/dev/null
   find "$XDG_RUNTIME_DIR/hypr" "$HOME/.cache/hyprland" -name '*.log' 2>/dev/null | while read -r f; do
@@ -134,39 +154,46 @@ root() {
     hyprland|niri) ;;
     *) echo "E2E_COMPOSITOR is hyprland or niri, not '$COMPOSITOR'"; return 2 ;;
   esac
-  local ok=1
+  local ok=1 PACKAGES=("$COMPOSITOR")
+  [ "$COMPOSITOR" = niri ] && PACKAGES+=(weston)
   for attempt in 1 2 3; do
     echo "pacman attempt $attempt" >>"$OUT/pacman.log"
     if pacman -Syu --noconfirm --needed \
          python python-pip git make gcc procps-ng \
-         "$COMPOSITOR" mesa seatd dbus gtk3 webkit2gtk-4.1 gtk-layer-shell python-gobject python-cairo grim ttf-dejavu \
+         "${PACKAGES[@]}" mesa seatd dbus gtk3 webkit2gtk-4.1 gtk-layer-shell python-gobject python-cairo grim ttf-dejavu \
          >>"$OUT/pacman.log" 2>&1; then ok=0; break; fi
     sleep 10
   done
   if [ "$ok" != 0 ]; then tail -n 20 "$OUT/pacman.log"; echo pacman-failed >"$OUT/status.txt"; return 2; fi
-  pacman -Q "$COMPOSITOR" mesa webkit2gtk-4.1 gtk3 gtk-layer-shell python python-gobject seatd grim 2>&1 | tee "$OUT/packages.txt"
+  pacman -Q "${PACKAGES[@]}" mesa webkit2gtk-4.1 gtk3 gtk-layer-shell python python-gobject seatd grim 2>&1 | tee "$OUT/packages.txt"
 
-  say "the virtual KMS device"
-  # Its index varies, and kernel 7 registers vkms as a faux device (driver faux_driver), so the card is
-  # found by what its device is called.
-  local card drv dev vkms=""
-  for card in /sys/class/drm/card[0-9]; do
-    [ -e "$card" ] || continue
-    drv=$(basename "$(readlink -f "$card/device/driver" 2>/dev/null)")
-    dev=$(basename "$(readlink -f "$card/device" 2>/dev/null)")
-    echo "$(basename "$card") driver=$drv device=$dev" | tee -a "$OUT/drm.txt"
-    if [ "$drv" = vkms ] || [ "$dev" = vkms ]; then vkms="/dev/dri/$(basename "$card")"; fi
-  done
-  # shellcheck disable=SC2012
-  ls -l /dev/dri | tee -a "$OUT/drm.txt"
-  if [ -z "$vkms" ]; then
-    echo "no vkms card: the compositor has nothing to run on (the runner's host did not load the module?)" | tee -a "$OUT/drm.txt"
-    echo no-vkms >"$OUT/status.txt"
-    return 4
+  local vkms=""
+  if [ "$COMPOSITOR" = hyprland ]; then
+    say "the virtual KMS device"
+    # Its index varies, and kernel 7 registers vkms as a faux device (driver faux_driver), so the card is
+    # found by what its device is called.
+    local card drv dev
+    for card in /sys/class/drm/card[0-9]; do
+      [ -e "$card" ] || continue
+      drv=$(basename "$(readlink -f "$card/device/driver" 2>/dev/null)")
+      dev=$(basename "$(readlink -f "$card/device" 2>/dev/null)")
+      echo "$(basename "$card") driver=$drv device=$dev" | tee -a "$OUT/drm.txt"
+      if [ "$drv" = vkms ] || [ "$dev" = vkms ]; then vkms="/dev/dri/$(basename "$card")"; fi
+    done
+    # shellcheck disable=SC2012
+    ls -l /dev/dri | tee -a "$OUT/drm.txt"
+    if [ -z "$vkms" ]; then
+      echo "no vkms card: the compositor has nothing to run on (the runner's host did not load the module?)" | tee -a "$OUT/drm.txt"
+      echo no-vkms >"$OUT/status.txt"
+      return 4
+    fi
+    echo "vkms card: $vkms" | tee -a "$OUT/drm.txt"
+    # The nodes carry the host's video GID, which this container's video group does not have.
+    chmod 0666 "$vkms"
+
+  else
+    echo "$COMPOSITOR runs nested, with no DRM device of its own to use (see the top of this file)" | tee -a "$OUT/drm.txt"
   fi
-  echo "vkms card: $vkms" | tee -a "$OUT/drm.txt"
-  # The nodes carry the host's video GID, which this container's video group does not have.
-  chmod 0666 "$vkms"
 
   say "a user (Hyprland refuses root) and a copy of the repo it owns"
   useradd -m -s /bin/bash -G video "$USER_NAME"
