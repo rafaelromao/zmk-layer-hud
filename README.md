@@ -180,7 +180,9 @@ work:
   HUD is hidden, struck through while it is not running -- its three WPMs a right-click away
   (`zmk-layer-hud menubar wpm current|average|top` does the same), and the HUD's stats in its
   tooltip. It needs Noctalia running to load the plugin; if the icon does not appear,
-  `noctalia msg config-reload`.
+  `noctalia msg config-reload`. A bar it cannot read or change is said, not skipped over, and
+  `menubar disable` takes the icon out of every bar before it removes the plugin: with Noctalia not
+  running it says so and leaves the plugin where it is, so run it again once the shell is up.
 
 Two global shortcuts do the same from the keyboard, on both systems: **Ctrl+Alt+L** shows or
 hides the HUD, and **Ctrl+Alt+Gui+L** (Cmd on macOS, Super on Omarchy) starts or stops it. The

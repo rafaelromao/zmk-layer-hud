@@ -1382,12 +1382,20 @@ def cmd_menubar(args):
         omarchy_out = remove_plugin() if (omarchy_here or omarchy_installed) else False
         if omarchy_out:
             rescan_plugins()
-        noctalia_out = noctalia_disable() if noctalia_plugin_there else False
-        if omarchy_out or noctalia_out:
-            bars = [name for name, out in (("Omarchy", omarchy_out), ("Noctalia", noctalia_out)) if out]
-            print("the HUD's icon is out of " + " and ".join(f"{name}'s bar" for name in bars))
-        else:
+        # Noctalia's too is asked wherever Noctalia is, for an entry whose folder is already gone.
+        noctalia_out, problems = noctalia_disable() if (noctalia_here or noctalia_plugin_there) else (False, [])
+        gone = [name for name, out in (("Omarchy", omarchy_out), ("Noctalia", noctalia_out and not problems)) if out]
+        if gone:
+            print("the HUD's icon is out of " + " and ".join(f"{name}'s bar" for name in gone))
+        elif not problems:
             print("the bar plugin was not installed")
+        for why in problems:
+            warn(f"Noctalia: {why}")
+        if problems:
+            if os.path.isdir(noctalia_plugin_dir()):
+                warn("the Noctalia plugin was left in place, so `zmk-layer-hud menubar disable` can finish "
+                     "once Noctalia answers")
+            return 1
         return 0
     if omarchy_here:
         for old in OLD_OMARCHY_IDS:
@@ -1455,21 +1463,81 @@ def noctalia(*argv):
     return p.returncode, p.stdout or "", p.stderr or ""
 
 
+NOCTALIA_KEY = r"""(?:[A-Za-z0-9_-]+|"[^"]*"|'[^']*')"""
+NOCTALIA_BARE = re.compile(r"[A-Za-z0-9_-]+")
+NOCTALIA_ESCAPES = {'"': '"', "\\": "\\", "n": "\n", "t": "\t", "r": "\r"}
+
+
+def noctalia_said(r):
+    """What a failed `noctalia` call said, for a message."""
+    if not r:
+        return "no answer"
+    return (r[2] or r[1]).strip() or f"exit {r[0]}"
+
+
 def noctalia_config(path):
-    """What the shell says of a config path, as the TOML value text after `= `, or None."""
+    """What the shell says of a config path, as the TOML value text (the `path = ` in front of it,
+    if it prints one, taken off), or None: an error, or no words at all -- an older shell answered
+    an unknown path and a defaulted one alike with an empty reply, so an empty one is not read as
+    an empty value."""
     r = noctalia("msg", "config-get", path)
     if not r or r[0] != 0:
         return None
-    text = r[1].strip()
-    return text.split("=", 1)[1].strip() if "=" in text else text
+    text = re.sub(rf"^{NOCTALIA_KEY}(?:\.{NOCTALIA_KEY})*\s*=\s*", "", r[1].strip())
+    return text or None
+
+
+def noctalia_strings(text):
+    """The strings of a TOML array of strings, as written with ' or " (config-get's quoting is not
+    documented, so both are read), or None when it is anything else -- a number, a comment, an
+    escape it does not know, an array that does not close. None means "cannot read it", which is
+    not the same as `[]`: what is written back over a list it could not read would drop the rest."""
+    text = text.strip()
+    if not (text.startswith("[") and text.endswith("]")):
+        return None
+    body, out, i = text[1:-1], [], 0
+    while True:
+        while i < len(body) and body[i] in " \t\r\n":
+            i += 1
+        if i >= len(body):
+            return out
+        quote = body[i]
+        if quote == "'":                                # a literal string: no escapes
+            end = body.find("'", i + 1)
+            if end < 0:
+                return None
+            out.append(body[i + 1:end])
+            i = end + 1
+        elif quote == '"':
+            chars, i = [], i + 1
+            while i < len(body) and body[i] != '"':
+                if body[i] == "\\":
+                    if body[i + 1:i + 2] not in NOCTALIA_ESCAPES:
+                        return None
+                    chars.append(NOCTALIA_ESCAPES[body[i + 1]])
+                    i += 2
+                else:
+                    chars.append(body[i])
+                    i += 1
+            if i >= len(body):
+                return None
+            out.append("".join(chars))
+            i += 1
+        else:
+            return None
+        while i < len(body) and body[i] in " \t\r\n":
+            i += 1
+        if i < len(body):
+            if body[i] != ",":
+                return None
+            i += 1
 
 
 def noctalia_list(path):
-    """The array at a config path, as the strings in it (config-get prints TOML, quoted with ')."""
+    """The array of strings at a config path, or None when the shell does not say or what it says
+    cannot be read as one."""
     text = noctalia_config(path)
-    if text is None or "[" not in text:
-        return None
-    return re.findall(r"'((?:[^'\\]|\\.)*)'", text[text.index("["):text.rindex("]") + 1])
+    return None if text is None else noctalia_strings(text)
 
 
 def noctalia_bool(path):
@@ -1481,35 +1549,68 @@ def noctalia_bool(path):
 
 
 def noctalia_bars():
-    """The bars the config names, minus the ones switched off (an unset `enabled` counts as on)."""
-    return [b for b in (noctalia_list("bar.order") or [])
-            if noctalia_bool(f"bar.{b}.enabled") is not False]
+    """The bars the config names, minus the ones switched off (an unset `enabled` counts as on);
+    None when the shell does not say which bars there are."""
+    order = noctalia_list("bar.order")
+    if order is None:
+        return None
+    return [b for b in order if noctalia_bool(f"bar.{b}.enabled") is not False]
+
+
+def noctalia_toml_string(s):
+    """One string as TOML, the way `config-set` documents it: single quotes (a literal string, no
+    escapes) where it can be, a double-quoted one with JSON's escapes -- which TOML reads the same --
+    where it cannot."""
+    return f"'{s}'" if re.fullmatch(r"[^'\x00-\x1f\x7f]*", s) else json.dumps(s, ensure_ascii=False)
 
 
 def noctalia_toml_array(items):
-    return "[" + ", ".join("'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'" for s in items) + "]"
+    return "[" + ", ".join(noctalia_toml_string(s) for s in items) + "]"
 
 
 def noctalia_place(put_in):
     """The widget at the end of `end` of every enabled bar (or out of every side of it, when put_in
-    is False); whether any bar had to be changed. Read back from the shell rather than the file, so
-    what it writes and what it said stay the same answer."""
-    changed = False
-    for bar in noctalia_bars():
+    is False). -> (changed, failed, there): the lists it changed (`bar.main.end`), what it could not
+    do, each as a sentence, and how many bars end up with the widget in `end` (put_in only).
+    Read back from the shell rather than the file, so what it writes and what it said stay the same
+    answer -- and never written over a list the shell did not say: `end` is the one side this adds
+    to, so an `end` that cannot be read is a failure, where another side that cannot be read (this
+    only ever put the widget in `end`) is skipped."""
+    changed, failed, there = [], [], 0
+    bars = noctalia_bars()
+    if bars is None:
+        return changed, ["Noctalia does not say which bars there are (`noctalia msg config-get bar.order` "
+                         "gave no list: is the shell running?)"], there
+    for bar in bars:
+        if not NOCTALIA_BARE.fullmatch(bar):
+            failed.append(f"the bar {bar!r} has a name a config path cannot carry here")
+            continue
         for side in NOCTALIA_SIDES:
-            items = noctalia_list(f"bar.{bar}.{side}") or []
+            if put_in and side != "end":
+                continue
+            path = f"bar.{bar}.{side}"
+            items = noctalia_list(path)
+            if items is None:
+                if side == "end":
+                    failed.append(f"{path} could not be read, so it was not touched")
+                continue
             if put_in:
-                if side != "end" or NOCTALIA_WIDGET in items:
+                if NOCTALIA_WIDGET in items:
+                    there += 1
                     continue
                 items.append(NOCTALIA_WIDGET)
             elif NOCTALIA_WIDGET in items:
                 items.remove(NOCTALIA_WIDGET)
             else:
                 continue
-            r = noctalia("msg", "config-set", f"bar.{bar}.{side}", noctalia_toml_array(items))
+            r = noctalia("msg", "config-set", path, noctalia_toml_array(items))
             if r and r[0] == 0:
-                changed = True
-    return changed
+                changed.append(path)
+                if put_in:
+                    there += 1
+            else:
+                failed.append(f"{path} was not taken: {noctalia_said(r)}")
+    return changed, failed, there
 
 
 def install_noctalia_plugin():
@@ -1540,27 +1641,64 @@ def noctalia_enable():
                    "the plugin; start it, then run this again")
     r = noctalia("msg", "plugins", "enable", NOCTALIA_ID)
     if not r or r[0] != 0:
-        raise Fail(f"Noctalia would not enable {NOCTALIA_ID}: " + (r[2] or r[1]).strip())
+        raise Fail(f"Noctalia would not enable {NOCTALIA_ID}: {noctalia_said(r)}")
     r = noctalia("msg", "config-set", f"widget.{NOCTALIA_WIDGET}.type",
-                 "'" + f"{NOCTALIA_ID}:{NOCTALIA_ENTRY}" + "'")
+                 noctalia_toml_string(f"{NOCTALIA_ID}:{NOCTALIA_ENTRY}"))
     if not r or r[0] != 0:
-        raise Fail("Noctalia would not take the widget's name: " + ((r[2] or r[1]).strip() if r else "no answer"))
-    added = noctalia_place(put_in=True)
-    print(("the HUD's icon is in Noctalia's bar" if added else "the bar already has the HUD's icon")
-          + "; if the bar does not show it, `noctalia msg config-reload`")
+        raise Fail(f"Noctalia would not take the widget's name: {noctalia_said(r)}")
+    changed, failed, there = noctalia_place(put_in=True)
+    if not there and not failed:
+        failed = ["no bar of `bar.order` is switched on to put it in"]
+    if there:
+        print(("the HUD's icon is in Noctalia's bar" if changed else "the bar already has the HUD's icon")
+              + "; if the bar does not show it, `noctalia msg config-reload`")
+    if failed:
+        # Said, not shrugged off: "already there" and "could not tell" are not the same answer.
+        raise Fail("the icon is not in " + ("every" if there else "the") + " bar: " + "; ".join(failed)
+                   + " (the plugin is installed and enabled; `zmk-layer-hud menubar enable` tries again)")
     return 0
 
 
 def noctalia_disable():
-    """Out of the bar and off the disk; whether there was anything to take. The widget's `[widget.
-    zmk-hud]` definition is left where it is: it is inert without the plugin, and the next enable
-    writes the same one over it."""
-    had = noctalia_place(put_in=False)
-    noctalia("msg", "plugins", "disable", NOCTALIA_ID)
-    if os.path.isdir(noctalia_plugin_dir()):
+    """Out of the bar and off the disk -> (took, problems): whether there was anything to take, and
+    what could not be done, as sentences. The widget's `[widget.zmk-hud]` definition is left where
+    it is: it is inert without the plugin, and the next enable writes the same one over it.
+    When the shell cannot be asked, or will not take a bar's list, the plugin stays on the disk:
+    gone from it with the icon still in the bar, a later `disable` would find nothing to do and
+    this command could never take the icon out. Where there is no `noctalia` at all there is no
+    bar of its to clean, and the folder is all there is to take."""
+    installed = noctalia_installed()
+    asked = bool(shutil.which("noctalia"))
+    changed, failed = noctalia_place(put_in=False)[:2] if asked else ([], [])
+    if not installed and not changed:
+        return False, []                  # nothing of ours is known here, and no bar has any
+    if failed:
+        return bool(changed), failed
+    problems = []
+    if asked:
+        r = noctalia("msg", "plugins", "disable", NOCTALIA_ID)
+        if not r or r[0] != 0:
+            problems.append(f"Noctalia would not disable {NOCTALIA_ID} ({noctalia_said(r)}); "
+                            f"`noctalia msg plugins disable {NOCTALIA_ID}` does it by hand")
+    removed = os.path.isdir(noctalia_plugin_dir())
+    if removed:
         shutil.rmtree(noctalia_plugin_dir(), ignore_errors=True)
-        had = True
-    return had
+    return bool(changed) or removed, problems
+
+
+def noctalia_uninstall():
+    """`uninstall`'s step for Noctalia's bar: the icon out of it and the plugin off the disk, or
+    what stopped that, said. By hand, because this command goes with the tree."""
+    if not (noctalia_installed() or shutil.which("noctalia")):
+        return
+    took, problems = noctalia_disable()
+    if took and not problems:
+        print("    took the bar plugin out of Noctalia")
+    for why in problems:
+        print(f"    Noctalia: {why}")
+    if problems and os.path.isdir(noctalia_plugin_dir()):
+        print(f"    left {noctalia_plugin_dir()} in place: take `{NOCTALIA_WIDGET}` out of the bars' lists "
+              "in Noctalia's settings, then delete it")
 
 
 def noctalia_status():
@@ -1573,8 +1711,11 @@ def noctalia_status():
         return here + ", and Noctalia is not running to ask about the bar"
     enabled = any(line.startswith(NOCTALIA_ID + " ") and line.rstrip().endswith("enabled")
                   for line in r[1].splitlines())
+    bars = noctalia_bars()
+    if bars is None:
+        return here + ", and Noctalia does not say which bars there are"
     placed = any(NOCTALIA_WIDGET in (noctalia_list(f"bar.{bar}.{side}") or [])
-                 for bar in noctalia_bars() for side in NOCTALIA_SIDES)
+                 for bar in bars for side in NOCTALIA_SIDES)
     if placed and noctalia_saved_placed() is False:
         return here + ("" if enabled else ", disabled (zmk-layer-hud menubar enable)") + \
             ", in the bar now but not in Noctalia's saved settings (zmk-layer-hud menubar enable)"
@@ -2160,8 +2301,7 @@ def cmd_uninstall(args):
         for pid in (OMARCHY_ID,) + OLD_OMARCHY_IDS:
             if remove_plugin(pid):
                 print(f"    took the {pid} bar plugin out of Omarchy")
-        if noctalia_installed() and noctalia_disable():
-            print("    took the bar plugin out of Noctalia")
+        noctalia_uninstall()
     if os.path.islink(BIN_LINK) and os.path.realpath(BIN_LINK).startswith(os.path.realpath(ROOT)):
         os.unlink(BIN_LINK)
         print(f"    removed {BIN_LINK}")

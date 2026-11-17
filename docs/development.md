@@ -232,6 +232,18 @@ is running or not:
   with a hover popout, and a right-click walks the three WPMs through `zmk-layer-hud menubar wpm`,
   read back from `status --json`.
 
+  The bar lists come back from `noctalia msg config-get`, whose output format Noctalia's docs do
+  not give (they say a path's effective value is printed and an unknown path is an error; older
+  shells answered an unknown or defaulted path with an empty reply and exit 0). So both quote
+  styles are read, and a list that cannot be read as an array of strings -- an error, an empty
+  reply, anything else -- is "cannot tell", never `[]`: `end` is reported and left alone, where the
+  other sides (which this only ever sweeps for copies) are skipped. `enable` says per bar what it
+  could not do, and exits 1 for it, rather than "already there". `disable` removes the plugin's
+  folder only once the shell has taken the icon out of the bars (the folder is what lets a later
+  `disable` try again); with no `noctalia` on the PATH there is no bar of its to clean and the
+  folder goes alone. `menubar status` reads Noctalia's saved `settings.toml` with `tomllib` where
+  there is one (Python 3.11) and says nothing about it where there is not.
+
 What the icons show comes from the page: `{"kind":"stats"}` (docs/protocol.md) carries the
 session's average and top WPM and the rows of its stats column, at most once a second, and the
 panel writes them into `panel.json`. Which WPM an icon shows, the live one or the session's
