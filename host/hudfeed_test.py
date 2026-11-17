@@ -1086,6 +1086,25 @@ class BluezConnected(unittest.TestCase):
         self.assertEqual("TwoNr9", hudfeed.bluez_connected(objs, name="twonr")[2])
         self.assertIsNone(hudfeed.bluez_connected(objs, address="11:22:33:44:55:66"))
 
+    def test_a_name_comes_back_fit_for_the_log_whatever_the_device_called_itself(self):
+        import hudfeed
+        forged = "TwoNr9\nhudfeed: reading Diamond over BLE\r\x1b[2K\x1b]0;title\x07‮ \x00"
+        objs = self.objects(self.device("F9:BD:CA:10:F7:A8", forged, uuids=[self.SVC]),
+                            self.device("AA:AA:AA:AA:AA:01", "K" * 300, uuids=[self.SVC]))
+        (_, _, long), (_, _, label) = hudfeed.bluez_matches(objs)
+        self.assertEqual("TwoNr9?hudfeed: reading Diamond over BLE??[2K?]0;title????", label)
+        self.assertEqual("K" * 63 + "…", long)
+        # ... and that is the name every line of the log about it is written with
+        devices, said = self.finds(objs)
+        self.assertEqual(long, devices[0].name)
+        self.assertEqual(1, len(said))
+        self.assertTrue(said[0].isprintable(), said[0])
+        self.assertIn(label, said[0])
+        # the configured name is still matched against the name as BlueZ gave it
+        self.assertEqual("F9:BD:CA:10:F7:A8", hudfeed.bluez_connected(objs, name="twonr9\nhudfeed")[1])
+        self.assertEqual("Keychron K4", hudfeed.printable("Keychron K4"))
+        self.assertEqual("Ünïcödé ⌨ 键盘", hudfeed.printable("Ünïcödé ⌨ 键盘"))
+
     def test_of_several_the_first_by_object_path_is_taken_however_bluez_lists_them(self):
         import hudfeed
         two = [self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]),

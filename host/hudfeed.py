@@ -425,11 +425,22 @@ class SerialReader(Reader):
 
 
 
+def printable(text, limit=64):
+    """A name a remote device chose for itself, made fit for a line of the log and for the pages:
+    whatever does not print becomes `?` (control characters and escapes, line and paragraph breaks,
+    the invisible and the direction-turning ones), and it is cut at `limit` characters."""
+    text = "".join(c if c.isprintable() else "?" for c in str(text))
+    return text if len(text) <= limit else text[:limit - 1] + "…"
+
+
 def bluez_matches(objects, address=None, name=None):
     """Every BlueZ device the keyboard may be connected as, from BlueZ's managed objects (path ->
     interfaces -> properties): (path, address, name), in the order of their object paths. Connected
     and exposing the module's service: a keyboard in use is connected and no longer advertises, so
-    a scan never finds it, but BlueZ already has it."""
+    a scan never finds it, but BlueZ already has it.
+
+    The name is the device's own choice and goes into the log, of keyboards that are not read too,
+    so it comes back printable; `name` is matched against it as BlueZ gave it."""
     matches = []
     for path in sorted(objects):
         props = objects[path].get("org.bluez.Device1")
@@ -443,7 +454,7 @@ def bluez_matches(objects, address=None, name=None):
         label = props["Name"].value if "Name" in props else found
         if name and name.lower() not in label.lower():
             continue
-        matches.append((path, found, label))
+        matches.append((path, found, printable(label)))
     return matches
 
 
