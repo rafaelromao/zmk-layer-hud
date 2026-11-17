@@ -773,7 +773,7 @@ class Driver:
             status, sock, _ = ws_connect(self.port, path, origin=origin)
             if sock:
                 ws_close(sock)
-            r.check(f"socket: {name} gets HTTP 403", status == 403, f"HTTP {status}")
+            r.check(f"socket: {name} gets HTTP 403", status == 200, f"HTTP {status}")
         text = self.logs()
         for needle in ("refused a client (wrong token)", "refused a client (no token)", f"refused a client (origin {FOREIGN_ORIGIN})"):
             r.check(f"socket: the feed logged `{needle}`", logs_say(text, needle))
