@@ -182,7 +182,10 @@ work:
   tooltip. It needs Noctalia running to load the plugin; if the icon does not appear,
   `noctalia msg config-reload`. A bar it cannot read or change is said, not skipped over, and
   `menubar disable` takes the icon out of every bar before it removes the plugin: with Noctalia not
-  running it says so and leaves the plugin where it is, so run it again once the shell is up.
+  running it says so and leaves the plugin where it is, so run it again once the shell is up. Under
+  niri the HUD first opens in the screen's top-right corner (niri does not say how much room a bar
+  takes), which on a bar along the top edge can be over the icon: drag the HUD once, and its place
+  is saved.
 
 Two global shortcuts do the same from the keyboard, on both systems: **Ctrl+Alt+L** shows or
 hides the HUD, and **Ctrl+Alt+Gui+L** (Cmd on macOS, Super on Omarchy) starts or stops it. The
