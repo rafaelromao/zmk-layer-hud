@@ -108,7 +108,15 @@ there means something is sending the signal as HID usages rather than on this ch
 
 `zmk-layer-hud import ~/projects/keyboards --keyboard diamond` reads the ids from the keymap
 itself, each layer node in the order ZMK numbers them, and writes them into the HUD's definitions;
-`zmk-layer-hud sync` reads them again after a change. Which drawn layer shows each one is
+`zmk-layer-hud sync` reads them again after a change. The shipped config records
+`~/projects/keyboards` as that source, so `sync` reads the working copy on whichever branch is
+checked out (the ids of one branch are not the ids of another, and the firmware reports the ones it
+was built with); where that directory does not exist it reads `github.com/rafaelromao/keyboards`
+instead and says so. To follow the remote's default branch instead,
+`zmk-layer-hud import github.com/rafaelromao/keyboards`. An install whose record still
+says that URL is moved to the working copy by `sync` itself, found from the drawing file the config
+names (its git `origin` must be that repo); `import github.com/rafaelromao/keyboards` pins the URL
+so that it is not. Which drawn layer shows each one is
 `layers.map` in [config/diamond.yaml](../config/diamond.yaml), for the layers the keymap-drawer
 file names differently, and a layer added to the keymap is listed as undecided until it gets an
 entry there. Ids must be 0–31; the module's `BUILD_ASSERT` enforces it.
