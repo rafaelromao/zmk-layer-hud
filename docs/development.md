@@ -315,10 +315,13 @@ gh pr edit <number> --add-label release-validation
 On every other pull request both jobs are skipped by their own `if`, which GitHub reports as passed.
 That is deliberate: a path or branch filter on the trigger would leave a required check pending for a
 run that never comes. A pull request from a fork is held until a maintainer approves the run, after the
-label is on. A push replaces a validation that is running. A label added to a pull request that is
-being validated does not cancel it: that run waits its turn and then runs the same jobs under the same
-gate, and never skips them: a skipped run would put a passing "skipped" check under the same name beside
-the real one.
+label is on. Every event on a gated pull request (opening, a push, a reopening, any label) runs the
+validation on its own, and no run cancels another. The workflow has no `concurrency` group on purpose: a
+run that is cancelled leaves cancelled checks on the commit, and the pull request shows as failed though
+the validation passed, which is what a group did on the release pull request, whose opening and
+`autorelease: pending` label are two events in the same second. For the same reason a label that is not
+`release-validation` does not skip the jobs: a skipped run would put a passing "skipped" check under the
+same name beside the real one.
 
 | Job | Where | What it starts |
 |---|---|---|
