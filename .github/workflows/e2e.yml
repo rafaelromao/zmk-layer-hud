@@ -18,13 +18,13 @@ on:
 permissions:
   contents: read
 
-# One validation at a time per pull request, and a newer push replaces it. A label being added is not a push:
-# GitHub runs this workflow for it too, and cancelling a validation that is half done for that would leave
-# the newer run to report in its place. So a `labeled` run waits its turn (it runs the same jobs under the
-# same gate, never skips them), and only a push, a reopening or an opening cancels.
-concurrency:
-  group: e2e-${{ github.event.pull_request.number }}
-  cancel-in-progress: ${{ github.event.action != 'labeled' }}
+# No `concurrency` group, on purpose. A run that another run cancels leaves CANCELLED checks under the same
+# job names on the commit, and the pull request then shows as failed although the validation passed. That is
+# what a group did on release-please's own pull request (#31): opening it and adding its `autorelease: pending`
+# label are two events in the same second, so two runs of the same commit, and GitHub cancelled one ("Canceling
+# since a higher priority waiting request ... exists"). Every event on a gated pull request therefore runs the
+# validation on its own, and a label, a reopening or a newer push costs a minute of runner and cancels nothing.
+# (A run of an older commit that goes on after a push is harmless: its checks are on that commit.)
 
 env:
   PYTHON_VERSION: "3.14"
