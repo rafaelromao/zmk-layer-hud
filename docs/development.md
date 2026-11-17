@@ -321,7 +321,7 @@ App it gets `ci` like any other pull request, and `e2e` too (below): its branch 
 
 `ci` runs unit tests; nothing in it starts a panel or a compositor. `.github/workflows/e2e.yml` does:
 it starts the real HUD on each platform, looks at what the platform shows of it, drives it and stops it.
-`e2e/driver.py` is the one script behind both jobs (standard library only); only its probe of the HUD's
+`e2e/driver.py` is the one script behind every job (standard library only); only its probe of the HUD's
 surfaces differs.
 
 **When it runs.** On release-please's pull request, and on any pull request labelled
@@ -332,7 +332,7 @@ shown to work before it merges:
 gh pr edit <number> --add-label release-validation
 ```
 
-On every other pull request both jobs are skipped by their own `if`, which GitHub reports as passed.
+On every other pull request every job is skipped by their own `if`, which GitHub reports as passed.
 That is deliberate: a path or branch filter on the trigger would leave a required check pending for a
 run that never comes. A pull request from a fork is held until a maintainer approves the run, after the
 label is on. A push replaces a validation that is running. A label added to a pull request that is
@@ -344,27 +344,30 @@ the real one.
 |---|---|---|
 | macOS | `macos-latest`; the venv from `setup --venv-only`, hidapi from Homebrew, the menubar icon opted out | the real AppKit and WKWebView panel; its surface is the panel process's window in the window list |
 | Arch Linux and Hyprland | an `archlinux` container, `--privileged`, on the Ubuntu runner, whose host loads `vkms` (a virtual KMS device) because Hyprland cannot start without a DRM device | Hyprland on vkms with software GL and a minimal config (`e2e/linux/hyprland.lua`), then the real GTK 3, WebKit2 and layer-shell panel; its surfaces are `zmkhud-layer` and `zmkhud-keys` on `hyprctl layers -j` |
+| Arch Linux and niri | the same container script (`E2E_COMPOSITOR=niri`), with niri running *nested*: its winit backend inside a headless `weston` (pixman), because niri's own DRM backend refuses software rendering | niri with a minimal `config.kdl` (`e2e/linux/niri.kdl`), then the same panel; its surfaces are the same two namespaces on `niri msg --json layers`, which says no geometry, so presence only |
 
 What `e2e/driver.py` checks, in order, with an isolated `$ZMKHUD_STATE`, the 3x5 sample config and the
 Bluetooth reader off:
 
 1. `start` exits 0, and a panel stands behind `status --json` (a live pid, this copy's, the feed where
    the platform keeps it), and the page loaded and said so over the panel's bridge.
-2. The platform shows the HUD's surfaces. On Hyprland the shortcuts too: `hud.sh` wrote them into
-   `~/.config/hypr`, Hyprland read its config again without errors and lists the toggle bind.
-3. `doctor` runs and names the platform.
+2. The platform shows the HUD's surfaces. On Hyprland and niri the shortcuts too: `hud.sh` wrote them
+   (Hyprland: into `~/.config/hypr`, which Hyprland read again without errors and lists as a bind; niri: a KDL
+   file with every bind `repeat=false`, included last in `config.kdl`, that `niri validate` accepts and niri
+   loads without error, at the start and again when asked with `niri msg action load-config-file`).
+3. `doctor` runs and names the platform (niri's is told by `NIRI_SOCKET`).
 4. The socket: the token file is 0600; the right token upgrades; a wrong token, no token and a foreign
    Origin each get HTTP 403, and the feed logs each refusal (the property
    [security-review.md](security-review.md) finding 1 had only by hand).
 5. `poke` is accepted and fanned out: a client that connects afterwards is replayed the layers poked.
 6. `hide`, `show` and `toggle` flip `shown` in `status --json` and panel.json, and the surfaces follow
-   as they are meant to: macOS draws a hidden HUD at alpha 0; on Hyprland the surfaces stay mapped
-   (hidden is drawn as nothing, not unmapped, so the page's timers keep counting).
+   as they are meant to: macOS draws a hidden HUD at alpha 0; under Hyprland and niri the surfaces stay
+   mapped (hidden is drawn as nothing, not unmapped, so the page's timers keep counting).
 7. `stop` leaves no panel or feed process, no listening socket and no surface.
 
-A run leaves its artifacts (`e2e-macos`, `e2e-hyprland`): the driver's log and every command's output,
+A run leaves its artifacts (`e2e-macos`, `e2e-hyprland`, `e2e-niri`): the driver's log and every command's output,
 the state directory (logs and panel.json, never the socket's token), the platform's own listings
-(`hyprctl` JSON, the window list), best-effort screenshots, and a summary table on the run's page. A
+(`hyprctl` or `niri msg` JSON, the window list, taken while the HUD is shown and again at the end), best-effort screenshots, and a summary table on the run's page. A
 failed run is read from those first.
 
 **What it does not prove.** It asserts no legend and no pixel: the screenshots are artifacts, never
@@ -372,7 +375,9 @@ checked. The feed runs with no keyboard and Bluetooth off, so reading a real boa
 or BLE, the layer signal, the typed-keys strip from real reports and the firmware are not exercised
 (`poke` stands in). Nor are lock screens, password probes and Secure Input, how a drag feels, a second
 monitor, the macOS login item or menubar icon, the Omarchy bar plugin, and any GPU: Hyprland runs on a
-virtual device with software rendering, so a driver-specific fault (NVIDIA's DMA-BUF, say) cannot show.
+virtual device with software rendering, so a driver-specific fault (NVIDIA's DMA-BUF, say) cannot show,
+and niri's own DRM backend is not run at all (the HUD never touches it; the nested niri is the same
+compositor to a layer-shell client).
 Those stay with whoever changed them, as the pull request template says.
 
 **What it rests on.** On macOS, the runner's GUI session: the panel's window has to show up in the window
@@ -385,6 +390,12 @@ user-namespace setting for WebKit's sandbox), not what Hyprland documents. A run
 package change can break it without a change here: read the artifacts before the code. The jobs run a
 pull request's own `e2e/` scripts with `sudo` and a privileged container on a throwaway runner, which
 is why only a maintainer's label starts them on a fork's pull request.
+
+niri: its DRM backend skips software EGL renderers on purpose (`src/backend/tty.rs`, "software EGL renderers
+are skipped", v26.04 and main), so on vkms it comes up with no output; the first run of this job found
+that. It therefore runs nested (a `WAYLAND_DISPLAY` makes it take its winit backend) in a headless weston,
+which renders in software for it. The shortcuts' include needs niri 26.04 or newer (`host/shortcuts.py`
+says so and writes nothing for an older one), and Arch's package is what the job gets.
 
 To run the driver by hand (it starts and stops the real HUD of the tree and ends every panel of it, so
 it refuses outside CI without `--local`): `bin/zmk-layer-hud setup --venv-only`, then
