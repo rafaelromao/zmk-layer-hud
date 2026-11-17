@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.3.0](https://github.com/rafaelromao/zmk-layer-hud/compare/v1.2.0...v1.3.0) (2026-11-17)
+
+
+### Features
+
+* sync moves an old URL record to the working copy the drawing lives in ([#36](https://github.com/rafaelromao/zmk-layer-hud/issues/36)) ([dc8c359](https://github.com/rafaelromao/zmk-layer-hud/commit/dc8c359c3be826f4aa97435f5ac960b9f873be24))
+* sync reads the keyboard's local working copy by default ([#34](https://github.com/rafaelromao/zmk-layer-hud/issues/34)) ([be83553](https://github.com/rafaelromao/zmk-layer-hud/commit/be8355300ceb98aaba278364a9590d4d3f10ea79))
+
+
+### Documentation
+
+* end-to-end validation, and the release pull request does start workflows ([98e762a](https://github.com/rafaelromao/zmk-layer-hud/commit/98e762a3659e350b88499d2a99e7ac294ffb478f))
+
 ## [1.2.0](https://github.com/rafaelromao/zmk-layer-hud/compare/v1.1.1...v1.2.0) (2026-11-11)
 
 
