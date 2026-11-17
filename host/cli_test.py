@@ -1424,7 +1424,9 @@ class NoctaliaPlugin(unittest.TestCase):
         os.remove(os.path.join(left, "old", "plugin.toml"))          # no longer says whose it is
         code, said = self.run_cli("menubar", "enable")
         self.assertEqual(0, code, said)
-        self.assertIn(left, said)
+        self.assertIn(f"{left} is named like the directory", said)
+        self.assertIn("not a copy of this plugin", said)
+        self.assertIn("no plugin.toml of its own, so Noctalia does not load it", said)
         self.assertIn("can be deleted by hand", said)
         self.assertEqual(["widget.luau"], os.listdir(os.path.join(left, "old")))
         code, said = self.run_cli("menubar", "disable")
@@ -1437,6 +1439,32 @@ class NoctaliaPlugin(unittest.TestCase):
             f.write("a file\n")
         self.assertEqual(0, self.run_cli("menubar", "enable")[0])
         self.assertTrue(os.path.isfile(left))
+
+    def test_a_staging_directory_noctalia_loads_is_said_to_be_one(self):
+        # A plugin.toml at its top makes it a plugin directory to Noctalia (plugin_registry.cpp,
+        # scanDir), whatever its name: so the note does not say Noctalia leaves it be.
+        left = self.killed_install()
+        with open(os.path.join(left, "plugin.toml"), "w", encoding="utf-8") as f:
+            f.write('id = "someone/else"\n')
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertIn(f"{left} is named like the directory", said)
+        self.assertIn("has a plugin.toml of its own, so Noctalia tries to load it as a plugin", said)
+        self.assertNotIn("does not load", said)
+        self.assertEqual(["plugin.toml"], os.listdir(left))
+
+    @unittest.skipIf(os.geteuid() == 0, "root removes what it likes")
+    def test_copies_of_ours_the_disk_keeps_in_a_staging_directory_are_said_to_be_ours(self):
+        left = self.killed_install("old")
+        self.read_only(os.path.join(left, "old"))
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertIn(f"{left} holds only copies of this plugin", said)
+        self.assertIn("could not be removed", said)
+        self.assertIn("Permission denied", said)
+        self.assertNotIn("not a copy of this plugin", said)
+        # Still whole, manifest and all: a removal that stops goes no further than that.
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(os.path.join(left, "old"))))
 
     def test_enable_looks_again_at_whose_the_directory_is_right_before_it_moves_it(self):
         self.run_cli("menubar", "enable")

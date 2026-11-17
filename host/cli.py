@@ -1575,34 +1575,48 @@ NOCTALIA_STAGING = ".zmk-layer-hud."
 
 def noctalia_leftovers():
     """The staging directories an install that was killed left in the plugins directory, removed
-    -> the ones that were not, for the user to be told of. One is removed only when all that is in
-    it is what an install puts there: directories that are copies of this plugin (the new one, and
-    the old one moved aside), or empty. Anything else under that name is not known to be ours."""
-    kept = []
+    -> what is to be said of the ones that were not, as sentences. One is removed only when all
+    that is in it is what an install puts there: directories that are copies of this plugin (the
+    new one, and the old one moved aside), or empty; each copy goes as noctalia_remove_copy takes
+    one, its manifest last. Anything else under that name is not known to be ours, and is left.
+    What is said of each is what was found: copies of ours the disk would not let go of, or
+    something else -- and then whether Noctalia loads it, which it does with any directory of the
+    plugins directory that has a plugin.toml of its own."""
+    said = []
     try:
         names = sorted(os.listdir(NOCTALIA_PLUGINS))
     except OSError:
-        return kept
+        return said
     for name in names:
         path = os.path.join(NOCTALIA_PLUGINS, name)
         if not name.startswith(NOCTALIA_STAGING) or os.path.islink(path) or not os.path.isdir(path):
             continue
         try:
+            entries = [os.path.join(path, n) for n in os.listdir(path)]
             ours = all(not os.path.islink(p) and os.path.isdir(p)
-                       and (not os.listdir(p) or noctalia_manifest_id(p) == NOCTALIA_ID)
-                       for p in (os.path.join(path, n) for n in os.listdir(path)))
+                       and (not os.listdir(p) or noctalia_manifest_id(p) == NOCTALIA_ID) for p in entries)
         except OSError:
             ours = False
         if ours:
-            shutil.rmtree(path, ignore_errors=True)
-        if os.path.lexists(path):
-            kept.append(path)
-    return kept
-
-
-def noctalia_leftover_said(path):
-    return (f"{path} looks like what an interrupted `menubar enable` leaves, but not all in it is this "
-            "plugin's, so it was left alone; Noctalia does not load it, and it can be deleted by hand")
+            try:
+                for entry in entries:
+                    if os.listdir(entry):
+                        noctalia_remove_copy(entry)
+                    else:
+                        os.rmdir(entry)
+                os.rmdir(path)
+            except OSError as e:
+                said.append(f"{path} holds only copies of this plugin, set aside by a `menubar enable` that "
+                            f"was cut short, but could not be removed ({e}); Noctalia does not load them, "
+                            "and it can be deleted by hand")
+            continue
+        loaded = os.path.isfile(os.path.join(path, "plugin.toml"))
+        said.append(f"{path} is named like the directory `menubar enable` makes a copy ready in, but holds "
+                    "something that is not a copy of this plugin, so it was left alone; "
+                    + ("it has a plugin.toml of its own, so Noctalia tries to load it as a plugin"
+                       if loaded else "it has no plugin.toml of its own, so Noctalia does not load it")
+                    + ", and it can be deleted by hand if it is not wanted")
+    return said
 
 
 def noctalia(*argv):
@@ -1791,8 +1805,8 @@ def install_noctalia_plugin():
     staging = None
     try:
         os.makedirs(NOCTALIA_PLUGINS, exist_ok=True)
-        for left in noctalia_leftovers():
-            warn(noctalia_leftover_said(left))
+        for why in noctalia_leftovers():
+            warn(why)
         staging = tempfile.mkdtemp(prefix=NOCTALIA_STAGING, dir=NOCTALIA_PLUGINS)
         staged, old = os.path.join(staging, "new"), os.path.join(staging, "old")
         os.mkdir(staged)
@@ -1871,7 +1885,7 @@ def noctalia_disable():
     def notes():
         # Asked when it is said, after anything was removed: what is there now.
         theirs = [noctalia_theirs() + ", so it was left alone"] if noctalia_plugin_state() == "theirs" else []
-        return theirs + [noctalia_leftover_said(left) for left in noctalia_leftovers()]
+        return theirs + noctalia_leftovers()
 
     ours = noctalia_installed()
     asked = bool(shutil.which("noctalia"))
