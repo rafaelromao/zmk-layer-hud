@@ -7,6 +7,7 @@ The same script runs on every platform; only the probe of the HUD's surfaces dif
 
     macOS      the panel process's window in the window list (Quartz), and its alpha
     Hyprland   `hyprctl layers -j`: the namespaces zmkhud-layer and zmkhud-keys
+    niri       `niri msg --json layers`: the same two namespaces (niri says no geometry, so presence only)
 
 What it proves, in order, with an isolated $ZMKHUD_STATE, the 3x5 sample config (it ships its own
 definitions) and the Bluetooth reader off:
@@ -45,6 +46,7 @@ import json
 import os
 import platform
 import re
+import select
 import shutil
 import socket
 import stat
@@ -63,6 +65,8 @@ import panelstate  # noqa: E402  (host/panelstate.py: stdlib only, the one defin
 # Where the three phases of a wait are given up on (seconds), unless --timeout says otherwise.
 TIMEOUT = 90.0
 HYPR_NAMESPACES = ("zmkhud-layer", "zmkhud-keys")
+# What host/shortcuts.py appends to niri's config.kdl once, and the file it names.
+NIRI_INCLUDE = 'include optional=true "zmk-layer-hud.kdl"'
 WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 FOREIGN_ORIGIN = "https://e2e-foreign-origin.invalid"
 
@@ -204,6 +208,91 @@ def hypr_present(doc):
         return False, f"missing from `hyprctl layers`: {', '.join(missing)}"
     return True, ", ".join(f"{n} {found[n].get('w')}x{found[n].get('h')} at {found[n].get('x')},{found[n].get('y')}"
                            for n in HYPR_NAMESPACES)
+
+
+def niri_layer_surfaces(doc, namespaces=HYPR_NAMESPACES):
+    """{namespace: entry} of this HUD's surfaces in `niri msg --json layers`: a list of {namespace, output,
+    layer, keyboard_interactivity}, with no geometry."""
+    found = {}
+    for e in doc if isinstance(doc, list) else []:
+        if isinstance(e, dict) and e.get("namespace") in namespaces:
+            found[e["namespace"]] = e
+    return found
+
+
+def niri_present(doc):
+    """(ok, detail): both of the HUD's surfaces are on niri's layers. Presence only: niri says where a
+    surface is not."""
+    found = niri_layer_surfaces(doc)
+    missing = [n for n in HYPR_NAMESPACES if n not in found]
+    if missing:
+        return False, f"missing from `niri msg layers`: {', '.join(missing)}"
+    return True, ", ".join(f"{n} on {found[n].get('output')} ({found[n].get('layer')})" for n in HYPR_NAMESPACES)
+
+
+BIND_LINE = re.compile(r"^\s*([A-Za-z0-9_+]+)((?:\s+[A-Za-z-]+=\S+)*)\s*\{")
+
+
+def kdl_binds(text):
+    """The binds of a niri KDL file's `binds { }` block, as [{"key": "Ctrl+Alt+L", "props": {"repeat":
+    "false"}}]: what host/shortcuts.py writes, one bind to a line, and nothing of KDL beyond that."""
+    out, inside = [], False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not inside:
+            inside = re.match(r"binds\s*\{", stripped) is not None
+            continue
+        if stripped == "}":
+            inside = False
+            continue
+        m = BIND_LINE.match(line)
+        if m and not stripped.startswith("//"):
+            out.append({"key": m.group(1), "props": dict(p.split("=", 1) for p in m.group(2).split())})
+    return out
+
+
+def include_is_last(text, include):
+    """Whether `include` is the last line of a KDL config that is not a comment or blank: it has to be, so
+    that its binds are the ones that win a key (niri takes the last)."""
+    lines = [l.strip() for l in text.splitlines() if l.strip() and not l.strip().startswith("//")]
+    return bool(lines) and lines[-1] == include
+
+
+def config_loaded(line):
+    """From a line of `niri msg --json event-stream`: True if it says the config failed to load, False if
+    it says it loaded, None for any other event."""
+    try:
+        obj = json.loads(line)
+    except ValueError:
+        return None
+    body = obj.get("ConfigLoaded") if isinstance(obj, dict) else None
+    if isinstance(body, dict) and isinstance(body.get("failed"), bool):
+        return body["failed"]
+    return None
+
+
+class Lines:
+    """Lines from a file descriptor as they arrive, each waited for up to a deadline."""
+
+    def __init__(self, fd):
+        self.fd, self.buf = fd, b""
+
+    def readline(self, timeout):
+        """The next line, or None when none comes in `timeout` seconds or the stream ends."""
+        deadline = time.monotonic() + timeout
+        while b"\n" not in self.buf:
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return None
+            ready, _, _ = select.select([self.fd], [], [], left)
+            if not ready:
+                return None
+            chunk = os.read(self.fd, 65536)
+            if not chunk:
+                return None
+            self.buf += chunk
+        line, _, self.buf = self.buf.partition(b"\n")
+        return line.decode("utf-8", "replace")
 
 
 def windows_of(pid, infos):
@@ -525,6 +614,108 @@ class HyprlandProbe(Probe):
             report.failed("shortcuts: asking Hyprland", str(e))
 
 
+class NiriProbe(Probe):
+    name = "niri"
+    feed = "running"
+    doctor_says = "platform: Linux with niri"
+
+    def niri(self, *args, timeout=15):
+        try:
+            p = subprocess.run(["niri", *args], capture_output=True, text=True, timeout=timeout)
+        except (OSError, subprocess.SubprocessError) as e:
+            raise DriverError(f"niri {' '.join(args)}: {e}")
+        if p.returncode != 0:
+            raise DriverError(f"niri {' '.join(args)} exited {p.returncode}: {(p.stderr or p.stdout).strip()[:300]}")
+        return p.stdout
+
+    def layers(self):
+        try:
+            return json.loads(self.niri("msg", "--json", "layers"))
+        except ValueError as e:
+            raise DriverError(f"`niri msg --json layers` is not JSON: {e}")
+
+    def preflight(self):
+        for var in ("NIRI_SOCKET", "XDG_RUNTIME_DIR"):
+            if not os.environ.get(var):
+                raise DriverError(f"{var} is not set: this needs a running niri (e2e/linux/run-in-arch.sh starts one)")
+        self.drv.log("niri: " + self.niri("--version").strip())
+        outputs = json.loads(self.niri("msg", "--json", "outputs"))
+        if not outputs:
+            raise DriverError("niri has no output to put the HUD on")
+
+    def present(self):
+        return niri_present(self.layers())
+
+    def gone(self):
+        left = niri_layer_surfaces(self.layers())
+        if left:
+            return False, "still on niri's layers: " + ", ".join(sorted(left))
+        return True, "no zmkhud surface on niri's layers"
+
+    def screenshot(self, path):
+        p = subprocess.run(["grim", str(path)], capture_output=True, text=True, timeout=30)
+        return p.returncode == 0 and Path(path).exists(), (p.stderr or "").strip()[:200]
+
+    def collect(self, directory):
+        for name, args in (("layers", ("msg", "--json", "layers")), ("outputs", ("msg", "--json", "outputs")),
+                           ("windows", ("msg", "--json", "windows")), ("version", ("msg", "version"))):
+            try:
+                (directory / f"niri-{name}.txt").write_text(self.niri(*args))
+            except (DriverError, OSError) as e:
+                (directory / f"niri-{name}.txt").write_text(f"unavailable: {e}\n")
+
+    def config_loaded_next(self, lines, timeout=10.0):
+        """The `failed` flag of the next ConfigLoaded event on the stream; None if none comes."""
+        deadline = time.monotonic() + timeout
+        while True:
+            line = lines.readline(max(0.0, deadline - time.monotonic()))
+            if line is None:
+                return None
+            failed = config_loaded(line)
+            if failed is not None:
+                return failed
+
+    def extras(self, report):
+        """host/shortcuts.py, run by hud.sh on every start, writes niri's binds: its own KDL file, read by an
+        `include optional=true` line at the end of config.kdl, every bind `repeat=false` (niri repeats a held
+        key, and a held toggle would flicker). niri has to accept the result, and read it again without error."""
+        niri_dir = Path(os.path.expanduser("~/.config/niri"))
+        written, main = niri_dir / "zmk-layer-hud.kdl", niri_dir / "config.kdl"
+        report.check("shortcuts: hud.sh wrote the binds", written.exists(), str(written))
+        if written.exists():
+            binds = kdl_binds(written.read_text(encoding="utf-8"))
+            report.check("shortcuts: every bind is repeat=false",
+                         len(binds) >= 2 and all(b["props"].get("repeat") == "false" for b in binds),
+                         ", ".join(f"{b['key']} {b['props']}" for b in binds) or "no binds found")
+        report.check("shortcuts: config.kdl ends with the include", include_is_last(main.read_text(encoding="utf-8"), NIRI_INCLUDE),
+                     NIRI_INCLUDE)
+        try:
+            self.niri("validate", "-c", str(main))
+            report.passed("shortcuts: `niri validate` accepts config.kdl with the include")
+        except DriverError as e:
+            report.failed("shortcuts: `niri validate` accepts config.kdl with the include", str(e))
+        proc = subprocess.Popen(["niri", "msg", "--json", "event-stream"], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        try:
+            lines = Lines(proc.stdout.fileno())
+            first = self.config_loaded_next(lines)
+            report.check("shortcuts: niri's last config load did not fail", first is False,
+                         "no ConfigLoaded event on the stream" if first is None else f"failed={first}")
+            try:
+                self.niri("msg", "action", "load-config-file")
+                report.passed("shortcuts: `niri msg action load-config-file` exits 0")
+            except DriverError as e:
+                report.failed("shortcuts: `niri msg action load-config-file` exits 0", str(e))
+            again = self.config_loaded_next(lines)
+            report.check("shortcuts: the reload leaves no config error", again is False,
+                         "no ConfigLoaded event after the reload" if again is None else f"failed={again}")
+        finally:
+            proc.terminate()
+            try:
+                proc.wait(5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+
+
 class MacProbe(Probe):
     name = "macos"
     feed = "in the panel"
@@ -598,7 +789,7 @@ class MacProbe(Probe):
             (directory / "windows-all.json").write_text(f"unavailable: {e}\n")
 
 
-PROBES = {"hyprland": HyprlandProbe, "macos": MacProbe}
+PROBES = {"hyprland": HyprlandProbe, "macos": MacProbe, "niri": NiriProbe}
 
 
 # ---------- the run itself ----------
