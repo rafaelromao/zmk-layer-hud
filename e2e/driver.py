@@ -689,12 +689,14 @@ class Driver:
             raise DriverError("no .venv: `bin/zmk-layer-hud setup --venv-only` first (the verbs that start the HUD need it)")
         shutil.rmtree(self.state, ignore_errors=True)
         self.state.mkdir(parents=True, mode=0o700)
+        # The config's `keymap: ../examples/3x5.yaml`, which only import reads, is copied first and the definitions
+        # last: `doctor` warns when the keymap is newer than the definitions drawn from it.
+        (self.work / "examples").mkdir(exist_ok=True)
+        shutil.copy(ROOT / "examples" / "3x5.yaml", self.work / "examples" / "3x5.yaml")
         config = self.work / "config" / "example-3x5.yaml"
         config.parent.mkdir(parents=True, exist_ok=True)
         config.write_text(config_with_ble_off((ROOT / "config" / "example-3x5.yaml").read_text(encoding="utf-8")), encoding="utf-8")
         shutil.copy(ROOT / "config" / "example-3x5.definitions.json", config.parent / "example-3x5.definitions.json")
-        (self.work / "examples").mkdir(exist_ok=True)       # the config's `keymap: ../examples/3x5.yaml`, which only import reads
-        shutil.copy(ROOT / "examples" / "3x5.yaml", self.work / "examples" / "3x5.yaml")
         self.env = dict(os.environ, ZMKHUD_STATE=str(self.state), ZMKHUD_CONFIG=str(config), ZMKHUD_ROOT=str(ROOT))
         self.env.pop("ZMKHUD_TOKEN", None)         # poke reads the run's own from $STATE/token
         self.env.pop("ZMKHUD_HIDDEN", None)
