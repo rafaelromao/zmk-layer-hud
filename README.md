@@ -415,6 +415,13 @@ by URL is read from the remote's default branch, whatever you have checked out. 
 config records `~/projects/keyboards`; to follow the remote instead, `zmk-layer-hud import
 github.com/rafaelromao/keyboards`, and to go back, `zmk-layer-hud import ~/projects/keyboards`.
 
+An install made before that was the default keeps its URL record, so `sync` moves it by itself: when
+the config's `keymap:` or `drawer_config:` file sits in a git working copy whose `origin` is the
+recorded repo (and which holds the keyboard's keymap), that working copy is read from then on, and
+`sync` says so once. The record then holds `~/…` and the remote as `host/owner/repo`. Only a record
+that was not pinned is moved: `zmk-layer-hud import github.com/you/zmk-config` pins the URL, and a
+pinned record is never moved back to a working copy, so `import <working copy>` is the way to undo that.
+
 The config stays yours: anything set there wins, and a sync never touches it. What a repo's keymap
 says is also written for you to read, in `config.imported.yaml`. When the drawing is a curated
 keymap-drawer file, the one thing import cannot know is which drawn layer shows which ZMK layer —
