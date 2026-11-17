@@ -118,6 +118,23 @@ class Lockers(unittest.TestCase):
         self.assertFalse(sessionlock.locker_running(proc="/nowhere/proc"))
 
 
+class LockerNames(unittest.TestCase):
+    """feed.lockers: the lock screens a user has that are not on the list."""
+
+    def test_the_configs_names_come_after_the_known_lockers(self):
+        self.assertEqual(sessionlock.LOCKERS, sessionlock.locker_names())
+        self.assertEqual(sessionlock.LOCKERS + ("my-locker", "other"),
+                         sessionlock.locker_names([" my-locker ", "other"]))
+        self.assertEqual(sessionlock.LOCKERS + ("my-locker",), sessionlock.locker_names("my-locker"))
+
+    def test_a_name_is_cut_as_proc_comm_cuts_it(self):
+        self.assertEqual("a-very-long-loc", sessionlock.locker_names(["a-very-long-locker"])[-1])
+
+    def test_what_is_not_a_name_is_left_out(self):
+        for bad in (None, 5, {"a": 1}, [], [None, "", "  ", 7, ["x"]]):
+            self.assertEqual(sessionlock.LOCKERS, sessionlock.locker_names(bad), bad)
+
+
 class Probe(unittest.TestCase):
     def test_the_answer_is_kept_for_a_moment(self):
         answers, asked = [[{"solitaryBlockedBy": ["LOCK"]}]], []
@@ -159,14 +176,45 @@ class Probe(unittest.TestCase):
             self.assertEqual(path, sessionlock.niri_socket_path(env))
             self.assertEqual(sys.platform == "linux", sessionlock.available(env))
             # No lock state over niri's IPC: `locked` is never asked, and the lockers are the
-            # whole answer.
-            with mock.patch.object(sessionlock, "locked") as said, \
+            # whole answer. probe() is None off Linux (no compositor of this kind to ask), so the
+            # platform is Linux's for this part: the test runs on macOS too.
+            with mock.patch.object(sessionlock.sys, "platform", "linux"), \
+                    mock.patch.object(sessionlock, "locked") as said, \
                     mock.patch.object(sessionlock, "locker_running", return_value=True) as by_name:
                 probe = sessionlock.probe(log=lambda *_: None, environ=env)
                 self.assertIsNotNone(probe)
                 self.assertTrue(probe())
-            said.assert_not_called()
-            by_name.assert_called_once()
+                said.assert_not_called()
+                by_name.assert_called_once()
+                self.assertEqual(sessionlock.LOCKERS, by_name.call_args[0][0])
+                # The names a config adds (feed.lockers) are looked for as well.
+                with_extra = sessionlock.probe(log=lambda *_: None, environ=env, extra=["my-locker"])
+                self.assertTrue(with_extra())
+                self.assertEqual(sessionlock.LOCKERS + ("my-locker",), by_name.call_args[0][0])
+
+    def test_off_linux_there_is_no_probe_whatever_the_environment_says(self):
+        with tempfile.TemporaryDirectory() as sock:
+            path = os.path.join(sock, "niri.sock")
+            with open(path, "w"):
+                pass
+            with mock.patch.object(sessionlock.sys, "platform", "darwin"):
+                self.assertIsNone(sessionlock.probe(environ={"NIRI_SOCKET": path}))
+
+    def test_under_niri_it_is_said_once_that_lockers_are_looked_for_by_name_the_configs_too(self):
+        proc = tempfile.TemporaryDirectory()
+        self.addCleanup(proc.cleanup)
+        logged = []
+        lock = sessionlock.SessionLock(None, log=logged.append, keep_s=0, proc=proc.name,
+                                       names=sessionlock.locker_names(["my-locker"]))
+        self.assertFalse(lock.probe())
+        self.assertFalse(lock.probe())
+        os.makedirs(os.path.join(proc.name, "77"))
+        with open(os.path.join(proc.name, "77", "comm"), "w") as f:
+            f.write("my-locker\n")
+        self.assertTrue(lock.probe())
+        self.assertEqual(1, len(logged), logged)
+        self.assertIn("niri does not say", logged[0])
+        self.assertIn("my-locker", logged[0])
 
     def test_a_niri_socket_that_is_not_there_is_no_probe(self):
         self.assertIsNone(sessionlock.niri_socket_path({}))

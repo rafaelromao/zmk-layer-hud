@@ -1148,6 +1148,14 @@ class Doctor(unittest.TestCase):
         self.assertIn("seen by the terminals' prompts, the session lock", said)
         self.assertIn("secure input: the accessibility bus: jeepney is not in the venv", said)
 
+    def test_a_probe_that_sees_only_what_is_named_says_so_in_the_row(self):
+        # niri's session lock: a locker is seen by its process name alone, which is not the same as seen.
+        results, said = self.rows("carbon\tnone\tnot macOS\nterminals\ton\ta prompt is seen\n"
+                                  "a11y\ton\tthe apps expose their widgets\nlock\tpartial\tby process name\n")
+        self.assertEqual([cli.OK], results)
+        self.assertIn("seen by the terminals' prompts, the accessibility bus, "
+                      "the session lock (by process name only: feed.lockers adds more)", said)
+
     def test_nothing_watching_is_a_warning_with_what_to_do(self):
         results, said = self.rows("carbon\tnone\tnot macOS\nterminals\toff\tno terminals' directory\n"
                                   "a11y\toff\tno bus\nlock\toff\tno Hyprland\n")

@@ -18,6 +18,8 @@ Under niri the IPC has no word for it at all (`niri msg` lists no lock state), s
 are always looked for by process name, which is less: a locker whose name is not known here is
 not seen. Either way the lookup is by name when the compositor does not say, and one not named
 here is not seen; Omarchy's shell (`qs`, which is also the bar, so never a sign) is not a sign.
+A lock screen built into a shell is such a locker: `feed.lockers` in the config adds the process
+names of the ones a user has, to LOCKERS (locker_names).
 
 No compositor here at all -- the feed runs under a browser page on any Linux -- is no probe
 (`probe` is None), as no terminals is for terminal_probe.
@@ -33,6 +35,21 @@ import time
 LOCKERS = ("hyprlock", "swaylock", "gtklock", "waylock")    # by name, where the compositor does not say
 TIMEOUT_S = 1.0             # for the compositor's control socket
 KEEP_S = 0.1                # how long an answer stands before the compositor is asked again
+COMM_LEN = 15               # /proc/<pid>/comm keeps this many characters of a process's name
+
+
+def locker_names(extra=()):
+    """LOCKERS and the names a config adds (`feed.lockers`), as /proc/<pid>/comm spells them: the
+    kernel keeps COMM_LEN characters of a name, so a longer one is cut the same way. A bare
+    string is one name (`lockers: foo` is an easy way to write the list); anything that is not a
+    non-empty string is left out."""
+    names = list(LOCKERS)
+    if isinstance(extra, str):
+        extra = [extra]
+    for name in extra if isinstance(extra, (list, tuple)) else ():
+        if isinstance(name, str) and name.strip():
+            names.append(name.strip()[:COMM_LEN])
+    return tuple(names)
 
 
 def socket_path(environ=os.environ):
@@ -113,11 +130,12 @@ def locker_running(names=LOCKERS, proc="/proc", uid=None):
 class SessionLock:
     """Whether the session is locked, asked of the compositor and kept for `keep_s`. `probe()` is
     what SecureInput asks, from the reader threads and the poll at once, hence the lock. `path` is
-    None under niri, where the compositor does not say and the lockers are looked for by name on
-    every ask (locker_running), with nothing to keep."""
+    None under niri, where the compositor does not say and the lockers (`names`) are looked for
+    by name (locker_running) whenever the kept answer has run out."""
 
-    def __init__(self, path, log=print, keep_s=KEEP_S, clock=time.monotonic, proc="/proc"):
+    def __init__(self, path, log=print, keep_s=KEEP_S, clock=time.monotonic, proc="/proc", names=LOCKERS):
         self.path, self.log, self.keep_s, self.clock, self.proc = path, log, keep_s, clock, proc
+        self.names = names
         self.said = None
         self.lock = threading.Lock()
         self._at, self._was = None, False
@@ -136,18 +154,19 @@ class SessionLock:
                               "this Hyprland does not say whether the session is locked "
                               "(no solitaryBlockedBy in `hyprctl -j monitors`)")
                     self.log(f"sessionlock: {reason}: a locker is looked for by name instead "
-                             f"({', '.join(LOCKERS)}), and one not named here is not seen")
-                got = locker_running(proc=self.proc)
+                             f"({', '.join(self.names)}), and one not named here is not seen")
+                got = locker_running(self.names, proc=self.proc)
             self._at, self._was = now, got
             return got
 
 
-def probe(log=print, environ=os.environ):
+def probe(log=print, environ=os.environ, extra=()):
     """-> whether the session is locked (SessionLock.probe), or None where no compositor here is
-    a way to tell: no Hyprland socket to ask, and no niri to say a locker is worth looking for."""
+    a way to tell: no Hyprland socket to ask, and no niri to say a locker is worth looking for.
+    `extra`: the lockers' process names a config adds (`feed.lockers`)."""
     if sys.platform != "linux":
         return None
     path = socket_path(environ)
     if path or niri_socket_path(environ):
-        return SessionLock(path, log=log).probe
+        return SessionLock(path, log=log, names=locker_names(extra)).probe
     return None

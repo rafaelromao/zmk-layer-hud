@@ -26,7 +26,9 @@ between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`
 
 ## Requirements
 
-- macOS, or Linux running Hyprland or niri (the panel is a layer-shell surface).
+- macOS, or Linux running Hyprland or niri (the panel is a layer-shell surface). On niri the global
+  shortcuts need niri 26.04 or newer, for the `include optional=true` they are read through (see
+  [Hidden, and at login](#hidden-and-at-login)); on an older niri they are left unbound.
 - Python 3.10 or newer. `setup` builds a virtualenv; on macOS, Apple's `/usr/bin/python3` is 3.9
   and is not enough on its own.
 - A ZMK keyboard whose firmware you can build and flash, and its zmk-config: a GitHub URL, or a
@@ -209,7 +211,11 @@ off.
   from included files, the last for a key winning, so the include being last takes these keys from
   whatever had them. niri watches its config files and reads them again by itself when one changes;
   `start` also asks (`niri msg action load-config-file`) so a change lands without the wait. The
-  binds stay after the HUD stops, and `uninstall` removes both the file and the line.
+  binds stay after the HUD stops, and `uninstall` removes both the file and the line. They are
+  `repeat=false` binds (niri repeats a held bind otherwise), and they need niri 26.04 or newer,
+  which is where niri's docs put `include optional=true`: `start` reads `niri --version`, and on an
+  older niri leaves `config.kdl` alone and says so, the HUD starting all the same. A version it
+  cannot read is not a reason to leave them out.
 
 `zmk-layer-hud autostart enable` starts the HUD hidden at every login, and `autostart disable`
 stops doing so; it leaves a running HUD alone.
@@ -314,6 +320,7 @@ Where things live, and what moves them:
 | `ZMKHUD_REF` | `latest` | what `install.sh` and `update` fetch: `latest` (the newest release), a release's tag like `v1.0.0`, or a branch |
 | `ZMKHUD_RESERVE` | `0` | what `start --reserve` sets |
 | `ZMKHUD_DEBUG` | unset | the panel and the feed log every layer message with a timestamp (never the key positions) |
+| `ZMKHUD_DRAG` | unset | (Linux) `1` makes the panel log its drags to `panel.log`: where the pointer was pressed and moved on the HUD, and the margins saved (never keys) |
 
 ### Sessions
 
@@ -381,8 +388,11 @@ accessibility bus, where the apps -- browsers, password managers, polkit's dialo
 widget has focus and what it is. For that the feed tells them assistive technology is wanted, as a
 screen reader would; a browser running since before shows nothing until it is started again, and
 `feed.accessibility: 0` leaves that setting alone. The session lock is seen too — under Hyprland
-on its own socket, under niri where the compositor says nothing by a locker's process name — so
-the unlock password goes nowhere. On both systems, while a terminal is
+on its own socket, under niri (where the compositor says nothing) by the process name of hyprlock,
+swaylock, gtklock or waylock, and of any lock screen `feed.lockers` names — so the unlock password
+goes nowhere. A lock screen built into a shell is seen under niri only once its process is named
+there (`feed.lockers: [name]`, as `comm` in `/proc` spells it; `zmk-layer-hud doctor` says it is
+by name only). On both systems, while a terminal is
 asking for a password -- `sudo`, `ssh`, `su`, anything that reads a line with echo off -- the feed
 sees that too. Either way it then passes on nothing typed: no characters, no keys lit, no layer
 changes, nothing counted. The strip clears, the board dims and the banner says `secure input ·
@@ -621,7 +631,8 @@ beside anything that is wrong. What it cannot see:
   exposes nothing (no accessibility bus, `GTK_A11Y=none`, a toolkit of its own) gives no sign, and
   there the strip shows what is typed and the board lights its keys. The session lock is seen
   under Hyprland (from its own socket, by name -- hyprlock, swaylock, gtklock, waylock -- where
-  Hyprland does not say) and under niri (by name only, its IPC having no lock state); another
+  Hyprland does not say) and under niri (by name only, its IPC having no lock state; a lock
+  screen built into a shell is seen once `feed.lockers` names its process); another
   compositor's lock screen is not. `zmk-layer-hud doctor` says what sees a secret
   being typed here. Stop the HUD, or record with it hidden, when that matters.
 - A terminal's prompt is seen when it reads a line with echo off, as `sudo`, `ssh`, `su`, `passwd`

@@ -29,6 +29,7 @@ Stdlib only: the menubar runs it in the venv, but the CLI's `uninstall` may not.
 import contextlib
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -65,6 +66,9 @@ NIRI_MAIN = "config.kdl"
 NIRI_FILE = "zmk-layer-hud.kdl"
 NIRI_INCLUDE = f'include optional=true "{NIRI_FILE}"'
 NIRI_MARK = "// zmk-layer-hud's shortcuts (`shortcuts:` in its config)"
+# The first niri that reads `include optional=true` (niri's docs: "Since: 26.04"; a plain `include`
+# is 25.11). Older, the line is not a config niri can parse, so it is not written there.
+NIRI_MIN = (26, 4)
 
 
 class ShortcutError(ValueError):
@@ -196,7 +200,9 @@ def niri_conf(sets, command, state, start_with=""):
     """The niri file, in KDL: each shortcut bound to its verb in one `binds` block. niri runs
     spawn's arguments directly, with no shell, so the verb's environment rides along as `env`'s
     own arguments; `start_with` (uwsm-app --) goes before it, for the power shortcut alone, as the
-    Hyprland binds do."""
+    Hyprland binds do. niri repeats a bind while its key is held unless told `repeat=false`, as
+    Hyprland's `bind` does not: held, a toggle would flicker and the power shortcut would start
+    and stop the HUD over and over."""
     lines = ["// Written by zmk-layer-hud on every start, from `shortcuts:` in its config; edits here are lost.",
              f"// `{NIRI_INCLUDE}` at the end of {NIRI_MAIN} reads it. `zmk-layer-hud uninstall` takes both out.",
              "",
@@ -209,7 +215,7 @@ def niri_conf(sets, command, state, start_with=""):
             ["env", f"ZMKHUD_STATE={state}", command, name]
         combo = "+".join([LINUX_NAMES[m] for m in mods] + [key.upper()])
         what = f"ZMK HUD {'show/hide' if name == 'toggle' else 'start/stop'}"
-        lines.append(f"    {combo} {{ spawn {' '.join(kdl_string(a) for a in argv)}; }} // {what}")
+        lines.append(f"    {combo} repeat=false {{ spawn {' '.join(kdl_string(a) for a in argv)}; }} // {what}")
     lines.append("}")
     return "\n".join(lines) + "\n"
 
@@ -390,12 +396,27 @@ def remove(hypr_dir=HYPR_DIR, niri_dir=NIRI_DIR):
 def on_niri(environ=os.environ):
     """Whether this session is niri's: its socket says so at once (NIRI_SOCKET, in the environment
     of everything niri starts). Without one, a niri config beside no Hyprland says it, for the
-    scripts run where neither is set; a Hyprland session is never niri's however its config looks."""
+    scripts run where neither is set -- when niri is installed at all, or a config left behind
+    on a machine that never had it would take the binds from the compositor that is there; a
+    Hyprland session is never niri's however its config looks."""
     if environ.get("NIRI_SOCKET"):
         return True
     if environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
         return False
-    return os.path.isfile(os.path.join(NIRI_DIR, NIRI_MAIN))
+    return shutil.which("niri") is not None and os.path.isfile(os.path.join(NIRI_DIR, NIRI_MAIN))
+
+
+def niri_version():
+    """niri's (major, minor) from `niri --version`, or None where that cannot be told: niri not on
+    PATH, or an answer with no year.month in it. niri spells its version MAJOR.MINOR[.PATCH]
+    (commit), the minor with two digits, but a distribution may build it with a string of its own,
+    and what `--version` puts before that is not relied on: the first `digits.digits` is the version."""
+    try:
+        out = subprocess.check_output(["niri", "--version"], text=True, stderr=subprocess.DEVNULL, timeout=5)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    found = re.search(r"(\d+)\.(\d+)", out)
+    return (int(found.group(1)), int(found.group(2))) if found else None
 
 
 def main():
@@ -409,6 +430,13 @@ def main():
     command = os.path.join(root, "bin", "zmk-layer-hud")
     start_with = "uwsm-app --" if shutil.which("uwsm-app") else ""
     if on_niri():
+        version = niri_version()
+        if version is not None and version < NIRI_MIN:
+            # Not written: the include line would make config.kdl one this niri cannot parse.
+            print(f"shortcuts: niri {version[0]}.{version[1]:02d} is older than {NIRI_MIN[0]}.{NIRI_MIN[1]:02d}, "
+                  f"which `{NIRI_INCLUDE}` needs, so none are bound and {NIRI_DIR}/{NIRI_MAIN} is left as it is",
+                  file=sys.stderr)
+            return
         done = install_niri(sets, command, state, niri_dir=NIRI_DIR, start_with=start_with)
         path = os.path.join(NIRI_DIR, NIRI_FILE)
         reload_what = ["niri", "msg", "action", "load-config-file"]
@@ -430,10 +458,18 @@ def main():
     elif done:
         # The compositor told to read its config again, so the binds are there without waiting for
         # its watcher to notice: niri's load-config-file, Hyprland's reload (as Omarchy's own
-        # scripts do after editing its config).
-        subprocess.call(reload_what, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # scripts do after editing its config). Its client not being on PATH is not a failure of
+        # the HUD's start (hud.sh stops on one): there is nothing to ask, and the compositor's own
+        # watcher reads the files when it can.
+        try:
+            code = subprocess.call(reload_what, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except OSError:
+            code = None
         print("shortcuts: " + ", ".join(f"{label(sc)} {WHAT[n]} the HUD" for n, sc in sets.items() if sc) +
               f" ({path})")
+        if code not in (0, None):
+            print(f"shortcuts: `{' '.join(reload_what)}` exited {code}: the compositor may not have taken the new "
+                  "config (its own message says why)", file=sys.stderr)
 
 
 if __name__ == "__main__":
