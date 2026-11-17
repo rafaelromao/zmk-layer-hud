@@ -268,9 +268,13 @@ is running or not:
   that removes or moves it, right before it does, since `disable` first asks the shell several
   things (each up to 20 seconds) and `enable` first copies the new plugin. A link to a copy of the
   plugin is removed as a link. The new copy is made ready one level down in a directory of its
-  own (`mkdtemp`) and renamed into place, so nothing that was already there is removed for it, and
-  the shell, which takes every directory of the plugins directory with a `plugin.toml` in it for a
-  plugin, never sees a half-made copy.
+  own (`mkdtemp`, named `.zmk-layer-hud.*`), so the shell, which takes every directory of the
+  plugins directory with a `plugin.toml` in it for a plugin, never sees a half-made copy. An older
+  copy of ours is moved aside into that directory whole, the new one is moved into its place, and
+  only then does the old one go: killed at any point, `enable` leaves a whole copy in place or
+  none, never one that has lost its `plugin.toml` and so would read as someone else's. The next
+  `enable` or `disable` removes such a staging directory when all in it is copies of this plugin
+  (or empty), and otherwise names it and leaves it.
 
 What the icons show comes from the page: `{"kind":"stats"}` (docs/protocol.md) carries the
 session's average and top WPM and the rows of its stats column, at most once a second, and the

@@ -1540,6 +1540,44 @@ def noctalia_remove_plugin():
     return True
 
 
+# What mkdtemp names the directory a new copy is made ready in. The copy is one level down in it,
+# so the directory itself never has a plugin.toml, and the shell -- which takes every directory of
+# the plugins directory with one in it for a plugin -- never takes it for one.
+NOCTALIA_STAGING = ".zmk-layer-hud."
+
+
+def noctalia_leftovers():
+    """The staging directories an install that was killed left in the plugins directory, removed
+    -> the ones that were not, for the user to be told of. One is removed only when all that is in
+    it is what an install puts there: directories that are copies of this plugin (the new one, and
+    the old one moved aside), or empty. Anything else under that name is not known to be ours."""
+    kept = []
+    try:
+        names = sorted(os.listdir(NOCTALIA_PLUGINS))
+    except OSError:
+        return kept
+    for name in names:
+        path = os.path.join(NOCTALIA_PLUGINS, name)
+        if not name.startswith(NOCTALIA_STAGING) or os.path.islink(path) or not os.path.isdir(path):
+            continue
+        try:
+            ours = all(not os.path.islink(p) and os.path.isdir(p)
+                       and (not os.listdir(p) or noctalia_manifest_id(p) == NOCTALIA_ID)
+                       for p in (os.path.join(path, n) for n in os.listdir(path)))
+        except OSError:
+            ours = False
+        if ours:
+            shutil.rmtree(path, ignore_errors=True)
+        if os.path.lexists(path):
+            kept.append(path)
+    return kept
+
+
+def noctalia_leftover_said(path):
+    return (f"{path} looks like what an interrupted `menubar enable` leaves, but not all in it is this "
+            "plugin's, so it was left alone; Noctalia does not load it, and it can be deleted by hand")
+
+
 def noctalia(*argv):
     """One `noctalia` command: (code, stdout, stderr) -- or None when noctalia is not here or does
     not answer. Everything below goes through the running shell, which is what loads a plugin."""
@@ -1709,28 +1747,47 @@ def install_noctalia_plugin():
     place, never over anything else: a directory of that name that is not this plugin's is someone
     else's, and stops the install.
     The copy is made ready inside a directory made here and now (mkdtemp), so nothing that was
-    already there is written over or removed for it, and one level down in it, where the shell --
-    which takes every directory of the plugins directory with a plugin.toml in it for a plugin --
-    does not see a half-made copy, nor one a killed install left behind. Whose the place is, is
-    asked again right before the old copy goes: the copying in between takes its time."""
+    already there is written over or removed for it, and one level down in it (NOCTALIA_STAGING).
+    An older copy is not removed where it stands: it is moved aside into that same directory, the
+    new one is moved into its place, and only then does the old one go, with the directory. Killed
+    at any point, this leaves the old copy, the new one, or neither in place with both set aside --
+    never half of one, which would no longer say whose it is -- and the next run clears what was
+    set aside (noctalia_leftovers). Whose the place is, is asked again right before the old copy is
+    moved: the copying in between takes its time."""
     import tempfile
     dest = noctalia_plugin_dir()
     if noctalia_plugin_state() == "theirs":
         raise noctalia_refusal()
+    source = os.path.join(ROOT, "host", "linux", "noctalia")
     os.makedirs(NOCTALIA_PLUGINS, exist_ok=True)
-    staging = tempfile.mkdtemp(prefix=".zmk-layer-hud.", dir=NOCTALIA_PLUGINS)
+    for left in noctalia_leftovers():
+        warn(noctalia_leftover_said(left))
+    staging = tempfile.mkdtemp(prefix=NOCTALIA_STAGING, dir=NOCTALIA_PLUGINS)
     try:
-        staged = os.path.join(staging, os.path.basename(dest))
-        shutil.copytree(os.path.join(ROOT, "host", "linux", "noctalia"), staged)
+        staged, old = os.path.join(staging, "new"), os.path.join(staging, "old")
+        os.mkdir(staged)
+        # The manifest first: a copy cut short still says whose it is, to the run that finds it.
+        shutil.copy2(os.path.join(source, "plugin.toml"), staged)
+        shutil.copytree(source, staged, dirs_exist_ok=True)
         script = os.path.join(staged, "widget.luau")
         with open(script, encoding="utf-8") as f:
             text = bake_marks(f.read())
         with open(script, "w", encoding="utf-8") as f:
             f.write(text)
-        if noctalia_plugin_state() == "theirs":
+        state = noctalia_plugin_state()
+        if state == "theirs":
             raise noctalia_refusal()
-        noctalia_remove_plugin()            # which looks again at whose it is
-        os.rename(staged, dest)
+        if state == "ours":
+            if os.path.islink(dest):
+                os.unlink(dest)             # a link to a copy of it: the link goes, the copy stays
+            else:
+                os.rename(dest, old)
+        try:
+            os.rename(staged, dest)
+        except OSError:
+            if os.path.isdir(old) and not os.path.lexists(dest):
+                os.rename(old, dest)        # the copy that was there, back where it was
+            raise
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     return dest
@@ -1780,7 +1837,8 @@ def noctalia_disable():
     the only way to make a failure go away would be to move someone else's plugin."""
     def notes():
         # Asked when it is said, after anything was removed: what is there now.
-        return [noctalia_theirs() + ", so it was left alone"] if noctalia_plugin_state() == "theirs" else []
+        theirs = [noctalia_theirs() + ", so it was left alone"] if noctalia_plugin_state() == "theirs" else []
+        return theirs + [noctalia_leftover_said(left) for left in noctalia_leftovers()]
 
     ours = noctalia_installed()
     asked = bool(shutil.which("noctalia"))

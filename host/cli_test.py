@@ -1230,6 +1230,106 @@ class NoctaliaPlugin(unittest.TestCase):
         with open(os.path.join(self.dir(), "widget.luau"), encoding="utf-8") as f:
             self.assertEqual(before, f.read())
 
+    def test_a_new_copy_that_cannot_be_moved_into_place_puts_the_old_one_back(self):
+        self.run_cli("menubar", "enable")
+        with open(os.path.join(self.dir(), "old.luau"), "w", encoding="utf-8") as f:
+            f.write("-- from a release before\n")
+        rename = os.rename
+
+        def refuse_the_new_copy(src, dst):
+            if dst == self.dir() and os.path.basename(src) == "new":
+                raise OSError(13, "Permission denied", dst)
+            return rename(src, dst)
+        with mock.patch.object(cli.os, "rename", side_effect=refuse_the_new_copy), \
+                mock.patch.object(cli.shutil, "which", return_value=None):
+            with self.assertRaises(OSError):
+                cli.install_noctalia_plugin()
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+        self.assertEqual(sorted(os.listdir(self.SRC) + ["old.luau"]), sorted(os.listdir(self.dir())))
+
+    def staging(self):
+        return [n for n in os.listdir(self.plugins) if n.startswith(cli.NOCTALIA_STAGING)]
+
+    def test_an_older_copy_is_moved_aside_whole_and_removed_only_once_the_new_one_is_in_place(self):
+        self.run_cli("menubar", "enable")
+        with open(os.path.join(self.dir(), "old.luau"), "w", encoding="utf-8") as f:
+            f.write("-- from a release before\n")
+        seen, rename = [], os.rename
+
+        def watch(src, dst):
+            rename(src, dst)
+            # After each move: is a copy in place, and is the old one still whole somewhere.
+            (held,) = self.staging()
+            old = os.path.join(self.plugins, held, "old")
+            seen.append((os.path.basename(src), os.path.isdir(self.dir()) and sorted(os.listdir(self.dir())),
+                         os.path.isdir(old) and sorted(os.listdir(old))))
+        with mock.patch.object(cli.os, "rename", side_effect=watch):
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        new, old = sorted(os.listdir(self.SRC)), sorted(os.listdir(self.SRC) + ["old.luau"])
+        # Never a copy with some of its files gone: the old one aside whole, then the new one in.
+        self.assertEqual([("layer-hud", False, old), ("new", new, old)], seen)
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+        self.assertEqual(new, sorted(os.listdir(self.dir())))
+
+    def test_the_copy_being_made_ready_is_never_where_the_shell_takes_a_directory_for_a_plugin(self):
+        # Noctalia takes every directory of the plugins directory with a plugin.toml in it for a
+        # plugin (plugin_registry.cpp, scanDir): the staged copy is one level further down.
+        seen = []
+
+        def look(text):
+            (held,) = self.staging()
+            seen.append((sorted(os.listdir(os.path.join(self.plugins, held))),
+                         os.path.exists(os.path.join(self.plugins, held, "plugin.toml")),
+                         cli.noctalia_manifest_id(os.path.join(self.plugins, held, "new"))))
+            return text
+        with mock.patch.object(cli, "bake_marks", side_effect=look):
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertEqual([(["new"], False, cli.NOCTALIA_ID)], seen)
+
+    def killed_install(self, *copies):
+        """What an install killed half way leaves: its staging directory, with these copies in it."""
+        left = os.path.join(self.plugins, cli.NOCTALIA_STAGING + "k1ll3d")
+        os.makedirs(left)
+        for name in copies:
+            shutil.copytree(self.SRC, os.path.join(left, name))
+        return left
+
+    def test_what_a_killed_install_left_is_cleared_by_the_next_one(self):
+        # Killed between the two moves: nothing in place, the old copy and the new one set aside.
+        self.killed_install("old", "new")
+        self.assertIsNone(cli.noctalia_plugin_state())              # an empty place, not someone else's
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+        # Killed while copying, before or after the manifest was there; and by `disable` as well.
+        left = self.killed_install("new")
+        os.mkdir(os.path.join(left, "old"))
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertNotIn(left, said)
+        self.assertEqual([], os.listdir(self.plugins))
+
+    def test_a_staging_directory_with_anything_else_in_it_is_named_and_left(self):
+        left = self.killed_install("old")
+        os.remove(os.path.join(left, "old", "plugin.toml"))          # no longer says whose it is
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertIn(left, said)
+        self.assertIn("can be deleted by hand", said)
+        self.assertEqual(["widget.luau"], os.listdir(os.path.join(left, "old")))
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertIn(left, said)
+        self.assertEqual([os.path.basename(left)], os.listdir(self.plugins))
+        # Nor is someone's file or link under that name taken for one.
+        shutil.rmtree(left)
+        with open(left, "w", encoding="utf-8") as f:
+            f.write("a file\n")
+        self.assertEqual(0, self.run_cli("menubar", "enable")[0])
+        self.assertTrue(os.path.isfile(left))
+
     def test_enable_looks_again_at_whose_the_directory_is_right_before_it_moves_it(self):
         self.run_cli("menubar", "enable")
 
