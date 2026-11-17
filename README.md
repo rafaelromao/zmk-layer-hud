@@ -436,6 +436,22 @@ zmk-layer-hud sync                                     # read the same sources a
 zmk-layer-hud sync --watch                             # and again each time one of them is saved
 ```
 
+`sync` reads the source the last `import` recorded. A working copy is read as it is on disk, so
+whichever branch you have checked out is the keymap the HUD takes its layer ids from, and uncommitted
+edits count. It is recorded as `~/…` when it is under your home, so the same record works on Linux
+and macOS, and the working copy's `origin` is recorded beside it: on a machine where the working copy
+is not, `sync` reads that remote instead (and says so), without changing the record. A repo imported
+by URL is read from the remote's default branch, whatever you have checked out. The shipped Diamond
+config records `~/projects/keyboards`; to follow the remote instead, `zmk-layer-hud import
+github.com/rafaelromao/keyboards`, and to go back, `zmk-layer-hud import ~/projects/keyboards`.
+
+An install made before that was the default keeps its URL record, so `sync` moves it by itself: when
+the config's `keymap:` or `drawer_config:` file sits in a git working copy whose `origin` is the
+recorded repo (and which holds the keyboard's keymap), that working copy is read from then on, and
+`sync` says so once. The record then holds `~/…` and the remote as `host/owner/repo`. Only a record
+that was not pinned is moved: `zmk-layer-hud import github.com/you/zmk-config` pins the URL, and a
+pinned record is never moved back to a working copy, so `import <working copy>` is the way to undo that.
+
 The config stays yours: anything set there wins, and a sync never touches it. What a repo's keymap
 says is also written for you to read, in `config.imported.yaml`. When the drawing is a curated
 keymap-drawer file, the one thing import cannot know is which drawn layer shows which ZMK layer —
@@ -656,7 +672,9 @@ keymap conversion in Python, and the page under node.
 [docs/development.md](docs/development.md) covers what each suite sweeps and how the command line
 is put together. Commit messages start with a Conventional Commits type (`feat:`, `fix:`, `docs:`...):
 releases are made from them by release-please, and CI runs every platform's suites on each pull
-request ([Commits, CI and releases](docs/development.md#commits-ci-and-releases)).
+request ([Commits, CI and releases](docs/development.md#commits-ci-and-releases)). On release pull
+requests, and on any labelled `release-validation`, the real HUD is also started on macOS and under
+Hyprland ([End-to-end validation](docs/development.md#end-to-end-validation)).
 
 ## License
 
