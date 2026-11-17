@@ -276,17 +276,6 @@ With source symbols available, unknown keys are reported and ignored. Only legac
 without source symbols fall back to positional order. A normal sync preserves your config
 and carries earlier drawing decisions with their symbols.
 
-A key in the drawing may also say what it produces with Ctrl and with Ctrl and Shift, which is
-what a mod-morph makes: `left` is the Ctrl legend and `right` the Ctrl+Shift one, next to `tap`
-(plain) and `shifted` (Shift). A chord shows the legend for the modifiers held when it fires:
-
-```yaml
-- k: {tap: "(", shifted: ")", left: "==", right: "!="}
-```
-
-Plain shows `(` with `)` small, Shift shows `)` with `(` small, Ctrl shows `==` with `!=` small,
-and Ctrl+Shift shows `!=` with `==` small. A chord without `left` or `right` is drawn as always.
-
 Symbol discovery reads decimal `#define NAME number` lines in quoted includes, not arbitrary
 preprocessor expressions. Numeric defines can also describe key positions or timings: use
 the firmware's actual layer symbols in your map; colliding numeric defines are kept as aliases.
@@ -463,6 +452,39 @@ is held, groups positions pressed within the combo term into the combo the drawe
 a one-shot layer on screen through its key's flash, and shows typed characters in a strip below.
 A key also glows once it is pressed, and cools over `hud.heatmap_ms` (3 s; `0` turns it off): a
 live heatmap of what was just typed, where a key struck again and again stays warm longest.
+
+A combo in the drawing may also say what it makes with Ctrl and with Ctrl and Shift, which is what a
+mod-morph makes: `left` is the Ctrl legend and `right` the Ctrl+Shift one, next to `t` (plain) and
+`s` (Shift). `left` is what turns this on. A combo with it draws the legend for the modifiers held
+when it fires; one without it is drawn as always, a Shift held or not, and a `right` alone says
+nothing. The legends reach the HUD with the definitions, so run `zmk-layer-hud sync` after adding them.
+
+```yaml
+combos:
+  - p: [0, 1]
+    k: {t: "(", s: ")", left: "==", right: "!="}
+    l: [Base]
+```
+
+Plain shows `(` with `)` small, Shift shows `)` with `(` small, Ctrl shows `==` with `!=` small, and
+Ctrl+Shift shows `!=` with `==` small. With `left` but no `right`, Ctrl and Ctrl+Shift both show
+`left`, nothing small. What counts as held is read from the keys, on the premise that a mod-morph's
+modifiers are left out of the keyboard's report while it runs:
+- a key that is down and carries the modifier in its legend: a Ctrl or Shift key, or a home-row mod
+  whose hold legend has it. The key is what it was on the layers it went down on. A hold-tap counts
+  while it is down, whether or not it has turned into its hold yet (not checked on a keyboard, and
+  what ZMK does may depend on the hold-tap's flavour);
+- Ctrl also from the keyboard's report, when no key carries it. Shift never is: a sticky Shift, or
+  caps word, reaches the HUD only in the report, where (the premise, not checked on a keyboard) a
+  macro's own Shift is too and the two cannot be told apart, so only a Shift key held down is read;
+- the combo's own keys are never a modifier held for it;
+- with Command or Option held on a key outside a combo that has `left`, no pill is drawn: the
+  premise (not checked on a keyboard) is that what it makes is then a shortcut, which its legends do
+  not describe. It is still counted as the combo that fired.
+
+Without what is typed to go by (`--no-hid-keys`), a combo with `left` waits `hud.combo_decide_ms`
+(300 ms), or the first release of one of its keys, before its pill is drawn, for a modifier report
+that trails its keys; any other combo is drawn at once.
 
 Beside the panel, a block of its own, headed by the HUD's name, says how the typing goes. A click
 on the heading opens [the landing page](https://rafaelromao.github.io/zmk-layer-hud/) in the
