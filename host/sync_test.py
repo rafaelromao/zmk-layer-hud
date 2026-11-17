@@ -672,6 +672,131 @@ class WorkingCopy(unittest.TestCase):
         self.assertEqual("github.com/you/keys", imported.call_args.kwargs["remote"])
         self.assertEqual("~/moved-away", imported.call_args.args[0])
 
+    def url_recorded(self, drawing_in_repo=True, origin="git@github.com:you/keys.git", **sources):
+        """The state of an install made before the working copy was the default: the definitions
+        record the repo by URL, and the config's drawing is a file in the keyboard's working copy."""
+        if origin:
+            git(self.repo, "remote", "add", "origin", origin)
+        drawing = write(self.repo if drawing_in_repo else self.d, "docs/board.yaml", RENUMBER_YAML)
+        self.config = write(self.d, "config.yaml", f"keymap: {drawing}\ntitle: T\n")
+        self.defs = sync.definitions_path(self.config)
+        self.run_sync(self.repo)
+        with open(self.defs, encoding="utf-8") as f:
+            defs = json.load(f)
+        defs["sources"] = dict(defs["sources"], repo="github.com/you/keys", **sources)
+        defs["sources"].pop("remote", None)
+        with open(self.defs, "w", encoding="utf-8") as f:
+            json.dump(defs, f)
+
+    def sync_verb(self, *args):
+        out, err = io.StringIO(), io.StringIO()
+        real = sync.resolve_source
+
+        def never_the_remote(spec, fresh=False):
+            if not os.path.isdir(os.path.expanduser(spec)):       # checked first: reading it would be a clone
+                raise AssertionError(f"the remote {spec} was read")
+            return real(spec, fresh)
+        with mock.patch.object(sync, "parse_keymap", return_value={"combos": []}), \
+                mock.patch.object(sync, "resolve_source", side_effect=never_the_remote), \
+                contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = sync.main(["sync", "--config", self.config, "--no-fetch", *args])
+        return code, out.getvalue() + err.getvalue()
+
+    def test_an_old_url_record_is_moved_to_the_working_copy_the_drawing_lives_in(self):
+        self.url_recorded()
+        with mock.patch.dict(os.environ, {"HOME": self.d}):
+            code, said = self.sync_verb()
+            self.assertEqual(0, code)
+            self.assertIn("the repo was recorded by URL; reading its working copy ~/repo instead", said)
+            self.assertEqual("~/repo", self.recorded_repo())
+            self.assertEqual("github.com/you/keys", self.recorded_sources()["remote"])
+            self.assertNotIn("pinned", self.recorded_sources())
+            git(self.repo, "switch", "-q", "taken-out")
+            code, said = self.sync_verb()
+            self.assertNotIn("recorded by URL", said)           # said once, when it was done
+            self.assertEqual(["ALPHA", "NAVIGATION"], self.layers())
+
+    def reading_the_remote(self, clone=None):
+        """What `sync` does with a URL record it did not move: read the remote, here a clone made earlier."""
+        asked = []
+
+        def cloned(spec, fresh=False):
+            asked.append(spec)
+            return clone or self.repo, "url"
+        return asked, mock.patch.object(sync, "resolve_source", side_effect=cloned)
+
+    def assert_left_on_the_remote(self, **kw):
+        self.url_recorded(**kw.pop("recorded", {}))
+        for change in kw.pop("then", ()):
+            change()
+        asked, patched = self.reading_the_remote(kw.pop("clone", None))
+        with mock.patch.dict(os.environ, {"HOME": self.d}), patched, \
+                mock.patch.object(sync, "parse_keymap", return_value={"combos": []}), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()):
+            sync.main(["sync", "--config", self.config, "--no-fetch"])
+        self.assertEqual(["github.com/you/keys"], asked)
+        self.assertNotIn("recorded by URL", out.getvalue())
+        self.assertEqual("github.com/you/keys", self.recorded_repo())
+
+    def test_a_working_copy_of_another_repo_is_not_taken_for_the_one_recorded(self):
+        self.assert_left_on_the_remote(recorded={"origin": "git@github.com:someone/else.git"})
+
+    def test_a_drawing_outside_any_working_copy_moves_nothing(self):
+        self.assert_left_on_the_remote(recorded={"drawing_in_repo": False})
+
+    def test_a_working_copy_without_the_keyboards_keymap_moves_nothing(self):
+        clone = os.path.join(self.d, "clone")
+        shutil.copytree(self.repo, clone, ignore=shutil.ignore_patterns(".git"))
+        self.assert_left_on_the_remote(then=[lambda: os.remove(os.path.join(self.repo, "boards/dia/dia.keymap"))],
+                                       clone=clone)
+
+    def test_a_record_pinned_by_an_import_of_the_url_is_not_moved_and_stays_pinned(self):
+        self.assert_left_on_the_remote(recorded={"pinned": True})
+        self.assertTrue(self.recorded_sources()["pinned"])         # kept through a plain sync
+
+    def test_importing_a_url_pins_it_and_importing_a_working_copy_does_not(self):
+        self.url_recorded()
+        asked, patched = self.reading_the_remote()
+        with patched, mock.patch.object(sync, "parse_keymap", return_value={"combos": []}), \
+                contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            sync.main(["import", "github.com/you/keys", "--config", self.config, "--no-fetch"])
+        self.assertEqual(["github.com/you/keys"], asked)
+        self.assertTrue(self.recorded_sources()["pinned"])
+        self.run_sync(self.repo)
+        self.assertNotIn("pinned", self.recorded_sources())
+
+    def test_a_pin_is_kept_by_a_drawing_only_sync_and_by_pristine_only_when_the_repo_is(self):
+        self.url_recorded(pinned=True)
+        quietly = dict(quiet=True, fetch=False)
+        sync.do_import(None, None, self.config, **quietly)
+        self.assertTrue(self.recorded_sources()["pinned"])
+        sync.do_import(None, None, self.config, pristine=True, keep=True, **quietly)
+        self.assertTrue(self.recorded_sources()["pinned"])
+        sync.do_import(None, None, self.config, pristine=True, keep=False, **quietly)
+        self.assertNotIn("pinned", self.recorded_sources())
+
+    def test_watching_moves_the_record_once_and_a_pinned_url_cannot_be_watched(self):
+        self.url_recorded()
+        out = io.StringIO()
+        with mock.patch.dict(os.environ, {"HOME": self.d}), mock.patch.object(sync, "do_import") as imported, \
+                mock.patch.object(sync, "inputs", return_value=[]), contextlib.redirect_stderr(out), \
+                contextlib.redirect_stdout(out):
+            sync.watch(self.config, quiet=False, interval=0, sleep=lambda s: None, rounds=2)
+        self.assertEqual(1, out.getvalue().count("recorded by URL"))
+        self.assertEqual("~/repo", imported.call_args.args[0])
+        with mock.patch.object(sync, "recorded_pinned", return_value=True):
+            with self.assertRaisesRegex(sync.SyncError, "cannot be watched"):
+                sync.watch(self.config, quiet=True, rounds=0)
+
+    def test_a_home_reached_through_a_link_still_makes_the_record_home_relative(self):
+        # macOS: git says /private/var/…, the temporary home is spelled /var/…
+        real = os.path.join(self.d, "real-home")
+        os.makedirs(os.path.join(real, "repo"))
+        link = os.path.join(self.d, "linked-home")
+        os.symlink(real, link)
+        self.assertEqual("~/repo", sync.portable_path(os.path.join(real, "repo"), link))
+        self.assertEqual("~/repo", sync.portable_path(os.path.join(link, "repo"), link))
+
     def test_what_was_read_is_said_with_its_branch(self):
         said = self.run_sync(self.repo, say=True)
         self.assertIn(f"from {self.repo} (branch main)", said)
