@@ -1132,10 +1132,11 @@ class BluezConnected(unittest.TestCase):
                           "yet: looking again rather than connect to it now"], said)
         self.assertIsNone(r._resolving)
 
-    def stuck(self, times, resolved_from=None, **picked):
+    def stuck(self, times, resolved_from=None, objects_at=None, **picked):
         """A keyboard BlueZ never resolves (TwoNr9), Other advertising, looked for at `times` (s):
         -> (what each look found, the scan's filters by look, the log), the scan finding Other
-        when it runs. `resolved_from`: the look from which TwoNr9 is resolved after all."""
+        when it runs. `resolved_from`: the look from which TwoNr9 is resolved after all;
+        `objects_at(look)`: what BlueZ has at each look, instead of TwoNr9 alone."""
         import hudfeed
         said, scans = [], {}
         r = hudfeed.BleReader(lambda m: None, log=said.append, rescan=0.0, **picked)
@@ -1144,6 +1145,8 @@ class BluezConnected(unittest.TestCase):
         other = types.SimpleNamespace(address="AA:AA:AA:AA:AA:01", name="Other")
 
         async def objects_now():
+            if objects_at:
+                return objects_at(look)
             resolved = resolved_from is not None and look >= resolved_from
             return self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC], resolved=resolved))
 
@@ -1176,21 +1179,23 @@ class BluezConnected(unittest.TestCase):
         self.assertFalse(scans[3](keyboard("f9:bd:ca:10:f7:a8"), advert))     # the scan passes the stuck one over
         self.assertTrue(scans[3](keyboard("AA:AA:AA:AA:AA:01"), advert))
         self.assertEqual(["hudfeed: BlueZ has not resolved the services of TwoNr9 (F9:BD:CA:10:F7:A8) in 30 s: "
-                          "scanning for another keyboard too (the scan passes this one over and leaves it connected)"],
-                         said)
+                          "scanning for another keyboard too (the scan passes over every keyboard BlueZ is still "
+                          "resolving and leaves them connected)"], said)
 
-    def test_one_resolved_inside_the_wait_or_after_it_is_taken_by_the_lookup_and_never_by_the_scan(self):
-        found, scans, _ = self.stuck([0, 10, 20], resolved_from=2)
-        self.assertEqual([None, None, ("F9:BD:CA:10:F7:A8", True)], found)
-        self.assertEqual({}, scans)
-        found, scans, _ = self.stuck([0, 31, 32], resolved_from=2)
-        self.assertEqual([None, ("AA:AA:AA:AA:AA:01", False), ("F9:BD:CA:10:F7:A8", True)], found)
-        self.assertEqual([1], list(scans))
-
-    def test_with_ble_address_set_the_one_it_names_is_waited_for_and_no_scan_runs(self):
-        found, scans, said = self.stuck([0, 31, 300], address="f9:bd:ca:10:f7:a8")
-        self.assertEqual([None, None, None], found)
-        self.assertEqual(({}, []), (scans, said))
+    def test_past_the_wait_the_scan_passes_over_every_keyboard_bluez_is_still_resolving(self):
+        # TwoNr9 never resolves; Corne, connected too, is still resolving: were BlueZ to resolve it
+        # while the scan runs, the scan would hand it over and the session would end with a Disconnect.
+        def bluez(look):
+            return self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC], resolved=False),
+                                self.device("C0:C0:C0:C0:C0:02", "Corne", uuids=[self.SVC], resolved=look >= 2))
+        found, scans, said = self.stuck([0, 31, 32], objects_at=bluez)
+        self.assertEqual([None, ("AA:AA:AA:AA:AA:01", False), ("C0:C0:C0:C0:C0:02", True)], found)
+        advert = types.SimpleNamespace(service_uuids=[self.SVC])
+        keyboard = lambda address: types.SimpleNamespace(address=address, name="")
+        self.assertEqual([False, False, True], [scans[1](keyboard(a), advert) for a in
+                                                ("F9:BD:CA:10:F7:A8", "c0:c0:c0:c0:c0:02", "AA:AA:AA:AA:AA:01")])
+        self.assertEqual([1], list(scans))                       # Corne, once resolved, by the lookup
+        self.assertEqual(1, len(said))
 
     def test_the_wait_starts_again_for_a_keyboard_that_resolved_and_is_resolving_once_more(self):
         import hudfeed
@@ -1209,7 +1214,7 @@ class BluezConnected(unittest.TestCase):
             for now in answers:
                 asyncio.run(r._connected_bluez())
                 stuck.append(r._stuck)
-        self.assertEqual([None, None, None, None, "F9:BD:CA:10:F7:A8"], stuck)     # 40 + 30, not 0 + 30
+        self.assertEqual([None, None, None, None, {"f9:bd:ca:10:f7:a8"}], stuck)   # 40 + 30, not 0 + 30
 
     def test_looks_while_bluez_resolves_keep_to_the_rescan_and_do_not_back_off(self):
         import hudfeed

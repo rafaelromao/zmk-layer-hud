@@ -524,7 +524,7 @@ class BleReader:
         self._said_several = None       # which of several connected keyboards is read, as last said
         self._resolving = None          # why nothing was found, while BlueZ resolves a keyboard (_connected_bluez)
         self._resolving_since = None    # (path, when) of the keyboard seen resolving, look after look
-        self._stuck = None              # the address of one resolving for too long, for the scan to pass over
+        self._stuck = None              # once one resolves for too long: the addresses the scan passes over
         self._said_stuck = None         # ... as last said
         self._clock = time.monotonic
 
@@ -562,11 +562,11 @@ class BleReader:
                 return device       # nor a scan while BlueZ resolves one: it would hand that keyboard over
         if self.address:
             return await BleakScanner.find_device_by_address(self.address, timeout=self.rescan)
-        stuck = (self._stuck or "").lower()
+        stuck = self._stuck or frozenset()
         return await BleakScanner.find_device_by_filter(
             lambda d, ad: (BLE_SERVICE_UUID in (ad.service_uuids or [])
                            and (not self.name or self.name.lower() in (d.name or "").lower())
-                           and not (stuck and str(d.address).lower() == stuck)),
+                           and not (stuck and str(d.address).lower() in stuck)),
             timeout=self.rescan)
 
     async def _connected_bluez(self):
@@ -589,9 +589,10 @@ class BleReader:
         For BLE_RESOLVE_WAIT_S at most, as long as bleak's own connect would have waited: a keyboard
         that never resolves would otherwise keep the scan from ever finding another one. After
         that the scan runs again, as it did before the feed waited, but it passes over the stuck
-        keyboard (`_stuck`), so that one is never handed over by the scan however it resolves;
-        it is taken by this lookup, when it is. With `ble.address` set there is nothing else to
-        scan for, the stuck keyboard is the one it names, so the wait goes on."""
+        keyboard and every other one BlueZ is still resolving (`_stuck`, their addresses), so none
+        of them is handed over by the scan however it resolves; each is taken by this lookup, when
+        it is. With `ble.address` set there is nothing else to scan for, the stuck keyboard is the
+        one it names, so the wait goes on."""
         from bleak.backends.device import BLEDevice
         self._found_connected = self._resolving = self._stuck = None
         try:
@@ -611,12 +612,12 @@ class BleReader:
                 self._resolving = (f"{label} ({address}) is connected and BlueZ has not resolved its services yet: "
                                    "looking again rather than connect to it now")
             else:
-                self._stuck = address
+                self._stuck = frozenset(a.lower() for _, a, _ in waiting)
                 if self._said_stuck != address:
                     self._said_stuck = address
                     self.log(f"hudfeed: BlueZ has not resolved the services of {label} ({address}) in "
-                             f"{BLE_RESOLVE_WAIT_S} s: scanning for another keyboard too (the scan passes this one "
-                             "over and leaves it connected)")
+                             f"{BLE_RESOLVE_WAIT_S} s: scanning for another keyboard too (the scan passes over "
+                             "every keyboard BlueZ is still resolving and leaves them connected)")
         if not matches:
             return None
         path, address, label = matches[0]
