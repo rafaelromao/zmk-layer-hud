@@ -1,5 +1,5 @@
 # The real HUD on each platform: started, looked at, driven and stopped (e2e/driver.py), where ci.yml
-# only runs unit tests. It costs two long jobs, so it runs when it matters: on release-please's own pull
+# only runs unit tests. It costs a long job per platform, so it runs when it matters: on release-please's own pull
 # request, and on any pull request someone labels `release-validation` -- which is how a contributor's
 # change to a panel, a compositor or the shortcuts is shown to work before it merges.
 #
@@ -90,7 +90,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/e2e-out"
           docker run --rm --privileged --shm-size=1g \
-            -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" \
+            -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e E2E_COMPOSITOR=hyprland \
             -v "$GITHUB_WORKSPACE:/work/repo:ro" -v "$RUNNER_TEMP/e2e-out:/work/out" \
             archlinux:latest bash /work/repo/e2e/linux/run-in-arch.sh
       - name: the checks, on the run's page
@@ -100,5 +100,37 @@ jobs:
         if: always()
         with:
           name: e2e-hyprland
+          path: ${{ runner.temp }}/e2e-out
+          if-no-files-found: warn
+
+  niri:
+    name: Arch Linux and niri
+    if: >-
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.head_ref, 'release-please--branches--')) ||
+      contains(github.event.pull_request.labels.*.name, 'release-validation')
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - name: user namespaces for WebKit's sandbox
+        # niri runs nested in a headless weston, so it needs no DRM device (its own DRM backend skips software
+        # rendering, which is all a hosted runner has). WebKitGTK's bubblewrap needs what Ubuntu denies through
+        # AppArmor, as under Hyprland above.
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+      - name: the HUD under niri, in an Arch container
+        run: |
+          mkdir -p "$RUNNER_TEMP/e2e-out"
+          docker run --rm --privileged --shm-size=1g \
+            -e HOST_UID="$(id -u)" -e HOST_GID="$(id -g)" -e E2E_COMPOSITOR=niri \
+            -v "$GITHUB_WORKSPACE:/work/repo:ro" -v "$RUNNER_TEMP/e2e-out:/work/out" \
+            archlinux:latest bash /work/repo/e2e/linux/run-in-arch.sh
+      - name: the checks, on the run's page
+        if: always()
+        run: cat "$RUNNER_TEMP/e2e-out/driver/summary.md" >> "$GITHUB_STEP_SUMMARY" || true
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-niri
           path: ${{ runner.temp }}/e2e-out
           if-no-files-found: warn

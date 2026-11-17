@@ -1,0 +1,8 @@
+// The smallest niri config the end-to-end run needs (e2e/linux/run-in-arch.sh, E2E_COMPOSITOR=niri).
+//
+// niri writes a default config of its own where there is none, whose hotkey overlay opens on the first
+// start and which spawns programs this container has not got. host/shortcuts.py needs a config.kdl to
+// put its include in: under niri it writes nothing without one.
+hotkey-overlay {
+    skip-at-startup
+}
