@@ -6,6 +6,7 @@ import contextlib
 import io
 import json
 import os
+import stat
 import sys
 import tempfile
 import unittest
@@ -146,6 +147,70 @@ class Niri(unittest.TestCase):
             self.assertTrue(shortcuts.remove_niri(self.niri))
             with open(self.main) as f:
                 self.assertEqual(original.rstrip("\n") + ("\n" if original else ""), f.read())
+
+    def installed(self):
+        shortcuts.install_niri({"toggle": (("ctrl", "alt"), "l")}, "/x", self.state, niri_dir=self.niri)
+        with open(self.main) as f:
+            return f.read()
+
+    def test_remove_puts_a_whole_file_in_config_kdls_place_and_leaves_no_temporary_one(self):
+        self.installed()
+        before = os.stat(self.main).st_ino
+        self.assertTrue(shortcuts.remove_niri(self.niri))
+        self.assertNotEqual(before, os.stat(self.main).st_ino)       # another file in its place, not this one written into
+        self.assertEqual({shortcuts.NIRI_MAIN, shortcuts.NIRI_MAIN + ".bak-zmk-layer-hud"}, set(os.listdir(self.niri)))
+
+    def test_a_remove_cut_short_leaves_config_kdl_as_it_was(self):
+        # Wherever the rewrite stops -- the text half written, or written and not yet in place --
+        # config.kdl is whole, as it was before: it is never the file being written.
+        text = self.installed()
+        for where, cut in (("write", mock.patch.object(shortcuts.os, "fsync", side_effect=OSError(28, "No space left"))),
+                           ("replace", mock.patch.object(shortcuts.os, "replace", side_effect=OSError(5, "I/O error")))):
+            with self.subTest(where), cut, self.assertRaises(OSError):
+                shortcuts.remove_niri(self.niri)
+            with open(self.main) as f:
+                self.assertEqual(text, f.read(), where)
+            self.assertEqual([], [n for n in os.listdir(self.niri) if n.endswith(".tmp")], where)
+        self.assertTrue(shortcuts.remove_niri(self.niri))             # and the next one takes the include out
+        with open(self.main) as f:
+            self.assertEqual(self.original, f.read())
+
+    def test_a_config_kdl_that_is_a_link_stays_one_and_the_file_it_leads_to_is_the_one_replaced(self):
+        dotfiles = os.path.join(self.tmp.name, "dotfiles")
+        os.makedirs(dotfiles)
+        os.replace(self.main, os.path.join(dotfiles, "niri.kdl"))
+        link = os.path.join("..", "dotfiles", "niri.kdl")              # relative, as a dotfiles manager writes it
+        os.symlink(link, self.main)
+        self.assertIn(shortcuts.NIRI_INCLUDE, self.installed())
+        self.assertTrue(shortcuts.remove_niri(self.niri))
+        self.assertTrue(os.path.islink(self.main))
+        self.assertEqual(link, os.readlink(self.main))
+        self.assertEqual(["niri.kdl"], os.listdir(dotfiles))           # replaced where it lives, nothing left beside it
+        self.assertFalse(os.path.islink(os.path.join(dotfiles, "niri.kdl")))
+        for path in (self.main, os.path.join(dotfiles, "niri.kdl")):
+            with open(path) as f:
+                self.assertEqual(self.original, f.read())
+
+    def test_config_kdl_keeps_its_mode(self):
+        for mode in (0o640, 0o600, 0o664):
+            self.installed()
+            os.chmod(self.main, mode)
+            self.assertTrue(shortcuts.remove_niri(self.niri))
+            self.assertEqual(mode, stat.S_IMODE(os.stat(self.main).st_mode), oct(mode))
+            with open(self.main) as f:
+                self.assertEqual(self.original, f.read())
+
+    @unittest.skipIf(hasattr(os, "geteuid") and os.geteuid() == 0, "root may write a read-only file")
+    def test_a_config_kdl_this_user_may_not_write_is_refused_and_left_as_it_is(self):
+        # As when it was written in place. A rename asks only the directory, and would replace it.
+        text = self.installed()
+        os.chmod(self.main, 0o444)
+        with self.assertRaises(PermissionError):
+            shortcuts.remove_niri(self.niri)
+        with open(self.main) as f:
+            self.assertEqual(text, f.read())
+        self.assertEqual(0o444, stat.S_IMODE(os.stat(self.main).st_mode))
+        self.assertEqual([], [n for n in os.listdir(self.niri) if n.endswith(".tmp")])
 
     def run_main(self, version=(26, 4), call_effect=None, call_code=0):
         """shortcuts.main() as niri's session, with niri's version, the reload call and the
@@ -437,7 +502,6 @@ class Hyprland(unittest.TestCase):
             self.assertIn("killactive", f.read())                                   # and the edit survived the removal
 
     def test_what_is_written_is_this_users_alone_and_whole(self):
-        import stat
         self.install()
         for path in (os.path.join(self.hypr, shortcuts.HYPR_FILE), os.path.join(self.state, shortcuts.JSON_FILE)):
             self.assertEqual(0o600, stat.S_IMODE(os.stat(path).st_mode), path)

@@ -32,6 +32,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -241,6 +242,29 @@ def _write_if_changed(path, text):
     return True
 
 
+def _rewrite(path, text):
+    """The user's own file written again whole, so that at any moment it is either as it was or as
+    it is meant to be: the text goes to a temporary file beside it, which then takes its place
+    (os.replace). Written straight into the file, a write cut short would leave the user's
+    config with its end missing. A path that is a link stays one, pointing where it did: the
+    file it leads to is the one replaced. The file keeps its mode, and one this user may not
+    write is refused as it was when it was written in place, though a rename would not ask."""
+    real = os.path.realpath(path)
+    os.close(os.open(real, os.O_WRONLY))
+    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(real) + ".", suffix=".tmp", dir=os.path.dirname(real))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.chmod(tmp, stat.S_IMODE(os.stat(real).st_mode))
+        os.replace(tmp, real)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
+
+
 def _backup_once(path):
     """A copy of the user's file as it was before this ever touched it, kept beside it as
     `<file>.bak-zmk-layer-hud` (the name `menubar enable` uses for Omarchy's shell.json). Made
@@ -288,8 +312,7 @@ def remove_hyprland(hypr_dir=HYPR_DIR):
         out = text.replace("\n# zmk-layer-hud's shortcuts (`shortcuts:` in its config)\n" + HYPR_SOURCE + "\n", "")
         out = "\n".join(line for line in out.split("\n") if line != HYPR_SOURCE)
         _backup_once(main)
-        with open(main, "w", encoding="utf-8") as f:
-            f.write(out)
+        _rewrite(main, out)
         had = True
     try:
         os.remove(os.path.join(hypr_dir, HYPR_FILE))
@@ -330,8 +353,7 @@ def remove_lua(hypr_dir=HYPR_DIR):
         out = text.replace("\n" + LUA_MARK + "\n" + LUA_LOAD + "\n", "")
         out = "\n".join(line for line in out.split("\n") if line != LUA_LOAD)
         _backup_once(main)
-        with open(main, "w", encoding="utf-8") as f:
-            f.write(out)
+        _rewrite(main, out)
         had = True
     try:
         os.remove(os.path.join(hypr_dir, HYPR_LUA))
@@ -375,8 +397,7 @@ def remove_niri(niri_dir=NIRI_DIR):
         out = text.replace("\n" + NIRI_MARK + "\n" + NIRI_INCLUDE + "\n", "")
         out = "\n".join(line for line in out.split("\n") if line != NIRI_INCLUDE)
         _backup_once(main)
-        with open(main, "w", encoding="utf-8") as f:
-            f.write(out)
+        _rewrite(main, out)
         had = True
     try:
         os.remove(os.path.join(niri_dir, NIRI_FILE))
