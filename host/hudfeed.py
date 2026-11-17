@@ -939,8 +939,9 @@ PROBE_WORDS = {"carbon": "macOS's secure input", "terminals": "the terminals' pr
 
 
 def probe_report(environ=os.environ):
-    """One line per probe, for `--probes` and `zmk-layer-hud doctor`: its name, `on`, `off` or
-    `none` (not for this system), and why. Asked here rather than in the doctor because the probes
+    """One line per probe, for `--probes` and `zmk-layer-hud doctor`: its name, `on`, `off`,
+    `partial` (on, but seeing only what is named: niri's session lock) or `none` (not for this
+    system), and why. Asked here rather than in the doctor because the probes
     need the venv (jeepney) and the feed's own tables."""
     lines = []
 
@@ -988,8 +989,9 @@ def probe_report(environ=os.environ):
         say("lock", "off", "no Hyprland or niri (HYPRLAND_INSTANCE_SIGNATURE and NIRI_SOCKET unset, or no "
                             "control socket): a lock screen is not seen")
     elif not path:
-        say("lock", "on", "niri does not say whether the session is locked (its IPC has no lock state): a locker is "
-            f"looked for by name ({', '.join(sessionlock.LOCKERS)}), and one not named here is not seen")
+        say("lock", "partial", "niri does not say whether the session is locked (its IPC has no lock state): a locker "
+            f"is looked for by process name ({', '.join(sessionlock.LOCKERS)}, and `feed.lockers` in the config), "
+            "and one not named is not seen, a lock screen built into a shell among them")
     else:
         got = sessionlock.locked(path)
         say("lock", "on", "Hyprland does not say (no solitaryBlockedBy in `hyprctl -j monitors`): a locker is looked for "
@@ -1163,7 +1165,7 @@ class Feed:
         self.watched = ()
         self.secure_wanted = bool(int(feed_cfg.get("secure_input", 1)))
         if self.secure_wanted:
-            probes = {"carbon": carbon_probe(), "terminals": terminal_probe(), "lock": sessionlock.probe(log)}
+            probes = {"carbon": carbon_probe(), "terminals": terminal_probe(), "lock": sessionlock.probe(log, extra=feed_cfg.get("lockers"))}
             if a11y.available():
                 self.focus = a11y.PasswordFocus(log=log, enable=bool(int(feed_cfg.get("accessibility", 1))))
                 probes["a11y"] = self.focus.probe

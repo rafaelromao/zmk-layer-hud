@@ -248,8 +248,20 @@ The global shortcuts (`host/shortcuts.py`, `shortcuts:` in the config) run the s
   once appended to the end of `config.kdl` -- last, so niri's merge gives these keys from whatever
   had them. The first edit keeps `config.kdl.bak-zmk-layer-hud`. niri watches its config files and
   reads them again by itself when one changes; when either file changed, `shortcuts.py` also asks
-  (`niri msg action load-config-file`) so the binds land without the wait. Which it is follows
-  `NIRI_SOCKET` (in everything niri starts), then a niri config beside no Hyprland.
+  (`niri msg action load-config-file`) so the binds land without the wait; a reload that fails is
+  said on stderr, and a client that is not on PATH is no failure (hud.sh runs this under `set -e`).
+  Each bind is `repeat=false`: niri repeats a held bind, Hyprland's `bind` does not. The include
+  needs niri 26.04 (`NIRI_MIN`; a plain `include` is 25.11): `niri_version` reads `niri --version`
+  (niri's source spells it `MAJOR.MINOR[.PATCH] (commit)`, a distribution build may use a string
+  of its own, so the first `digits.digits` is taken), an older niri leaves `config.kdl` alone, and
+  one that cannot be read is let through. Which compositor it is follows `NIRI_SOCKET` (in
+  everything niri starts), then a niri config beside no Hyprland with `niri` on PATH.
+
+The Linux panel's drag works from what the compositor can say. Under Hyprland the pointer's place
+on the layout is its `cursorpos` (`cursor` in `panel.py`). niri's IPC has no such call, so under
+niri (`NIRI_SOCKET`) the drag is worked out from the pointer's coordinates on the surface itself
+(`follow_surface`, which also lets go of the echo a margin change brings back). That path is
+niri's alone: Hyprland's is as it was. `ZMKHUD_DRAG=1` logs either to `panel.log`.
 
 An output going away -- a monitor asleep or unplugged, a suspend -- takes the Linux panel's layer
 surfaces with it. gtk-layer-shell drops that close from 0.10 on, leaving the window with no surface

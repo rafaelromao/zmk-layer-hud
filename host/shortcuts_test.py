@@ -81,15 +81,28 @@ class Niri(unittest.TestCase):
     def test_each_key_is_a_spawn_of_the_command_in_one_binds_block(self):
         text = self.conf()
         self.assertIn("binds {", text)
-        self.assertIn('Ctrl+Alt+L { spawn "env" "ZMKHUD_STATE=' + self.state +
+        self.assertIn('Ctrl+Alt+L repeat=false { spawn "env" "ZMKHUD_STATE=' + self.state +
                       '" "/x/zmk-layer-hud" "toggle"; } // ZMK HUD show/hide', text)
-        self.assertIn('Ctrl+Alt+Super+L { spawn "env"', text)
+        self.assertIn('Ctrl+Alt+Super+L repeat=false { spawn "env"', text)
         self.assertNotIn('"off"', text)                 # a null shortcut binds nothing
+
+    def test_no_bind_repeats_while_its_key_is_held(self):
+        # niri repeats a held bind unless told not to (Hyprland's `bind` does not): held, the toggle
+        # would flicker and the power shortcut would start and stop the HUD over and over.
+        binds = [line for line in self.conf().splitlines() if "spawn" in line]
+        self.assertEqual(2, len(binds))
+        self.assertTrue(all(" repeat=false { spawn " in line for line in binds), binds)
 
     def test_the_power_shortcut_takes_uwsm_app_and_the_toggle_does_not(self):
         text = self.conf(start_with="uwsm-app --")
-        self.assertIn('Ctrl+Alt+Super+L { spawn "uwsm-app" "--" "env"', text)
-        self.assertIn('Ctrl+Alt+L { spawn "env"', text)     # no uwsm prefix on the toggle
+        self.assertIn('Ctrl+Alt+Super+L repeat=false { spawn "uwsm-app" "--" "env"', text)
+        self.assertIn('Ctrl+Alt+L repeat=false { spawn "env"', text)     # no uwsm prefix on the toggle
+
+    def test_what_a_path_may_hold_is_escaped_in_the_kdl_strings(self):
+        self.assertEqual(r'"a \"b\" \\ c\nd"', shortcuts.kdl_string('a "b" \\ c\nd'))
+        text = shortcuts.niri_conf({"toggle": (("ctrl", "alt"), "l")}, '/home/u/my "dir"/zmk-layer-hud',
+                                   "/s", "")
+        self.assertIn(r'"/home/u/my \"dir\"/zmk-layer-hud" "toggle"', text)
 
     def test_the_file_is_written_and_the_include_appended_once(self):
         changed = shortcuts.install_niri({"toggle": (("ctrl", "alt"), "l")}, "/x", self.state,
@@ -122,21 +135,110 @@ class Niri(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.niri, shortcuts.NIRI_FILE)))
         self.assertFalse(shortcuts.remove_niri(self.niri))
 
-    def test_main_writes_niris_files_and_asks_niri_to_read_them_again(self):
+    def test_a_config_without_a_final_newline_or_with_nothing_in_it_round_trips(self):
+        for original in ("input {}", ""):
+            with open(self.main, "w") as f:
+                f.write(original)
+            shortcuts.install_niri({"toggle": (("ctrl", "alt"), "l")}, "/x", self.state, niri_dir=self.niri)
+            with open(self.main) as f:
+                text = f.read()
+            self.assertEqual(1, text.splitlines().count(shortcuts.NIRI_INCLUDE), repr(text))
+            self.assertTrue(shortcuts.remove_niri(self.niri))
+            with open(self.main) as f:
+                self.assertEqual(original.rstrip("\n") + ("\n" if original else ""), f.read())
+
+    def run_main(self, version=(26, 4), call_effect=None, call_code=0):
+        """shortcuts.main() as niri's session, with niri's version, the reload call and the
+        output said; -> (the call mock, stdout, stderr)."""
         with mock.patch.object(shortcuts, "NIRI_DIR", self.niri), \
                 mock.patch.object(shortcuts, "on_niri", lambda *a, **k: True), \
+                mock.patch.object(shortcuts, "niri_version", lambda: version), \
                 mock.patch.object(shortcuts, "read", lambda: shortcuts.settings({})), \
-                mock.patch.object(shortcuts.subprocess, "call") as call, \
+                mock.patch.object(shortcuts.subprocess, "call", return_value=call_code,
+                                  side_effect=call_effect) as call, \
                 mock.patch.dict(os.environ, {"ZMKHUD_STATE": self.state}), \
-                contextlib.redirect_stdout(io.StringIO()) as out:
+                contextlib.redirect_stdout(io.StringIO()) as out, \
+                contextlib.redirect_stderr(io.StringIO()) as err:
             shortcuts.main()
+        return call, out.getvalue(), err.getvalue()
+
+    def test_main_writes_niris_files_and_asks_niri_to_read_them_again(self):
+        call, out, err = self.run_main()
         self.assertTrue(os.path.exists(os.path.join(self.niri, shortcuts.NIRI_FILE)))
         with open(self.main) as f:
             self.assertIn(shortcuts.NIRI_INCLUDE, f.read())
         call.assert_called_once_with(["niri", "msg", "action", "load-config-file"],
                                      stdout=mock.ANY, stderr=mock.ANY)
-        self.assertIn("shows or hides", out.getvalue())
-        self.assertIn("starts or stops", out.getvalue())
+        self.assertIn("shows or hides", out)
+        self.assertIn("starts or stops", out)
+        self.assertEqual("", err)
+
+    def test_a_niri_older_than_the_include_needs_is_left_alone_and_it_is_said(self):
+        for version in ((25, 11), (26, 3), (24, 12)):
+            call, out, err = self.run_main(version=version)
+            self.assertFalse(os.path.exists(os.path.join(self.niri, shortcuts.NIRI_FILE)), version)
+            with open(self.main) as f:
+                self.assertEqual(self.original, f.read())        # config.kdl as it was
+            self.assertFalse(os.path.exists(self.main + ".bak-zmk-layer-hud"))
+            call.assert_not_called()
+            self.assertIn("is older than 26.04", err)
+            self.assertIn("none are bound", err)
+            self.assertEqual("", out)
+
+    def test_the_first_niri_that_reads_the_include_and_later_ones_are_written(self):
+        for version in ((26, 4), (26, 10), (27, 1)):
+            call, out, err = self.run_main(version=version)
+            self.assertTrue(os.path.exists(os.path.join(self.niri, shortcuts.NIRI_FILE)), version)
+            self.assertEqual("", err)
+            shortcuts.remove_niri(self.niri)
+
+    def test_a_version_that_cannot_be_told_does_not_stop_the_binds(self):
+        # No niri on PATH, or a build whose version string has no year.month: not a reason to refuse.
+        call, out, err = self.run_main(version=None)
+        self.assertTrue(os.path.exists(os.path.join(self.niri, shortcuts.NIRI_FILE)))
+        self.assertEqual("", err)
+
+    def test_a_niri_client_that_is_not_on_path_is_not_a_crash(self):
+        # hud.sh runs this under `set -e`: a FileNotFoundError here would stop the HUD from starting.
+        call, out, err = self.run_main(call_effect=FileNotFoundError(2, "No such file", "niri"))
+        self.assertTrue(os.path.exists(os.path.join(self.niri, shortcuts.NIRI_FILE)))
+        with open(self.main) as f:
+            self.assertIn(shortcuts.NIRI_INCLUDE, f.read())
+        self.assertIn("shows or hides", out)
+        self.assertEqual("", err)                           # nothing was asked, so nothing failed
+
+    def test_a_reload_niri_refuses_is_said_beside_what_was_written(self):
+        call, out, err = self.run_main(call_code=1)
+        self.assertIn("shows or hides", out)
+        self.assertIn("`niri msg action load-config-file` exited 1", err)
+
+
+class NiriVersion(unittest.TestCase):
+    """`niri --version`: MAJOR.MINOR[.PATCH] (commit) in niri's source, the minor in two digits; what
+    comes before it is not relied on."""
+
+    def version(self, said):
+        with mock.patch.object(shortcuts.subprocess, "check_output", return_value=said) as run:
+            got = shortcuts.niri_version()
+        self.assertEqual(["niri", "--version"], run.call_args[0][0])
+        return got
+
+    def test_the_year_and_month_are_read_out_of_the_answer(self):
+        self.assertEqual((26, 4), self.version("niri 26.04 (abc1234)\n"))
+        self.assertEqual((25, 11), self.version("25.11 (unknown commit)\n"))
+        self.assertEqual((26, 4), self.version("niri 26.04.1 (a1b2c3d)\n"))        # a patch release
+        self.assertEqual((25, 8), self.version("niri 25.08 (v25.08)\n"))
+
+    def test_an_answer_with_no_version_in_it_is_none(self):
+        self.assertIsNone(self.version("niri (a distribution's build)\n"))
+        self.assertIsNone(self.version(""))
+
+    def test_no_niri_on_path_or_one_that_hangs_or_fails_is_none(self):
+        for effect in (FileNotFoundError(2, "No such file", "niri"),
+                       shortcuts.subprocess.TimeoutExpired("niri", 5),
+                       shortcuts.subprocess.CalledProcessError(1, "niri")):
+            with mock.patch.object(shortcuts.subprocess, "check_output", side_effect=effect):
+                self.assertIsNone(shortcuts.niri_version())
 
 
 class OnNiri(unittest.TestCase):
@@ -154,11 +256,26 @@ class OnNiri(unittest.TestCase):
         self.addCleanup(tmp.cleanup)
         niri = os.path.join(tmp.name, "niri")
         os.makedirs(niri)
-        with mock.patch.object(shortcuts, "NIRI_DIR", niri):
+        with mock.patch.object(shortcuts, "NIRI_DIR", niri), \
+                mock.patch.object(shortcuts.shutil, "which", return_value="/usr/bin/niri"):
             self.assertFalse(shortcuts.on_niri({}))
             with open(os.path.join(niri, shortcuts.NIRI_MAIN), "w") as f:
                 f.write("")
             self.assertTrue(shortcuts.on_niri({}))
+
+    def test_a_niri_config_left_where_niri_is_not_installed_is_not_the_sign(self):
+        # A Hyprland machine that once had niri, run where neither compositor's variable is set
+        # (ssh, a service): its binds are Hyprland's to take, and `niri` is not there to ask.
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        niri = os.path.join(tmp.name, "niri")
+        os.makedirs(niri)
+        with open(os.path.join(niri, shortcuts.NIRI_MAIN), "w") as f:
+            f.write("")
+        with mock.patch.object(shortcuts, "NIRI_DIR", niri), \
+                mock.patch.object(shortcuts.shutil, "which", return_value=None):
+            self.assertFalse(shortcuts.on_niri({}))
+            self.assertTrue(shortcuts.on_niri({"NIRI_SOCKET": "/run/user/1000/niri.sock"}))   # the socket still says it
 
 
 class HyprlandLua(unittest.TestCase):
@@ -226,6 +343,7 @@ class HyprlandLua(unittest.TestCase):
                 mock.patch.object(shortcuts, "read", lambda: shortcuts.settings({})), \
                 mock.patch.object(shortcuts.subprocess, "call") as call, \
                 mock.patch.dict(os.environ, {"ZMKHUD_STATE": self.state}), contextlib.redirect_stdout(io.StringIO()):
+            call.return_value = 0
             shortcuts.main()
             shortcuts.main()                                  # nothing changed: Hyprland is left alone
         self.assertEqual([mock.call(["hyprctl", "reload"], stdout=shortcuts.subprocess.DEVNULL,
@@ -234,6 +352,19 @@ class HyprlandLua(unittest.TestCase):
         self.assertFalse(os.path.exists(os.path.join(self.hypr, shortcuts.HYPR_FILE)))
         with open(conf) as f:
             self.assertNotIn(shortcuts.HYPR_SOURCE, f.read())
+
+    def test_a_hyprctl_that_is_not_on_path_is_not_a_crash(self):
+        # hud.sh runs this under `set -e`: a FileNotFoundError here would stop the HUD from starting.
+        with mock.patch.object(shortcuts, "HYPR_DIR", self.hypr), \
+                mock.patch.object(shortcuts, "on_niri", lambda *a, **k: False), \
+                mock.patch.object(shortcuts, "read", lambda: shortcuts.settings({})), \
+                mock.patch.object(shortcuts.subprocess, "call",
+                                  side_effect=FileNotFoundError(2, "No such file", "hyprctl")), \
+                mock.patch.dict(os.environ, {"ZMKHUD_STATE": self.state}), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            shortcuts.main()
+        self.assertTrue(os.path.exists(os.path.join(self.hypr, shortcuts.HYPR_LUA)))
+        self.assertIn("shows or hides", out.getvalue())
 
 
 class Hyprland(unittest.TestCase):

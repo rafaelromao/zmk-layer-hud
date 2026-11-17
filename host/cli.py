@@ -1614,12 +1614,14 @@ def check_secure(results):
         name, _, rest = line.partition("\t")
         state, _, why = rest.partition("\t")
         if state == "on":
-            on.append(name)
+            on.append(PROBE_WORDS.get(name, name))
+        elif state == "partial":        # seen only by what is named (niri's lock): said, not left to a green row
+            on.append(PROBE_WORDS.get(name, name) + " (by process name only: feed.lockers adds more)")
         elif state == "off":
             off.append((name, why))
     if on:
         results.append(report(OK, "secure input", "a secret being typed is seen by " +
-                              ", ".join(PROBE_WORDS.get(n, n) for n in on) + " (feed.secure_input)"))
+                              ", ".join(on) + " (feed.secure_input)"))
     else:
         results.append(report(WARN, "secure input", "nothing here sees a secret being typed",
                               "what is typed into a password field reaches the pages; stop the HUD before typing one"))
