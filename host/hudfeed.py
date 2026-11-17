@@ -593,7 +593,8 @@ class BleReader:
         if len(matches) > 1:
             others = ", ".join(f"{n} ({a})" for _, a, n in matches[1:])
             note = (f"{len(matches)} connected BLE keyboards have the layer signal: reading {label} ({address}), "
-                    f"not {others}; `ble.address` or `keyboard.name` in the config picks one")
+                    f"not {others}; `ble.address` in the config picks one (`keyboard.name` does too, and also "
+                    "picks the keyboard the serial and HID readers take)")
             if note != self._said_several:
                 self._said_several = note
                 self.log(f"hudfeed: {note}")

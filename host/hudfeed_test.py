@@ -1185,8 +1185,9 @@ class BluezConnected(unittest.TestCase):
         devices, said = self.finds(objs, times=3)
         self.assertEqual(["AA:AA:AA:AA:AA:01"] * 3, [d.address for d in devices])
         self.assertEqual(["hudfeed: 2 connected BLE keyboards have the layer signal: reading Other "
-                          "(AA:AA:AA:AA:AA:01), not TwoNr9 (F9:BD:CA:10:F7:A8); `ble.address` or `keyboard.name` "
-                          "in the config picks one"], said)
+                          "(AA:AA:AA:AA:AA:01), not TwoNr9 (F9:BD:CA:10:F7:A8); `ble.address` in the config picks "
+                          "one (`keyboard.name` does too, and also picks the keyboard the serial and HID readers "
+                          "take)"], said)
 
     def test_one_connected_or_one_picked_of_several_is_taken_without_a_word(self):
         one = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]),

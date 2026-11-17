@@ -594,9 +594,9 @@ beside anything that is wrong. What it cannot see:
   On Linux the feed asks BlueZ (on the system bus) for a connected keyboard that lists the signal
   service, so no address is needed there either: `ble.address` only picks one of several. With
   several connected and none picked, the feed reads the first by BlueZ's object path, the same
-  one every time, and its log names it and the others; `ble.address`, or `keyboard.name`, picks
-  one. BlueZ may still list the services it cached from an older firmware; if the feed never
-  finds the keyboard, `bluetoothctl remove <address>` and pair it again. The feed does not
+  one every time, and its log names it and the others; `ble.address` picks one. `keyboard.name`
+  does too, but it also picks the keyboard the serial and HID readers take. BlueZ may still list
+  the services it cached from an older firmware; if the feed never finds the keyboard, `bluetoothctl remove <address>` and pair it again. The feed does not
   disconnect a keyboard it found connected, when it stops (quit, restart, update) or when it
   cannot read it: BlueZ's link is shared by every application, and the library (bleak) asks
   BlueZ to disconnect what it closes, so the feed lets go of the keyboard first. bleak has no
