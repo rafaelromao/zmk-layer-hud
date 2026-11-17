@@ -20,7 +20,9 @@
 #
 # So, before labelling a fork's pull request, and before approving a run of one that GitHub holds:
 #   1. Read the pull request's whole diff as it stands, `.github/workflows/` included.
-#   2. Check that the commit the run is on is the one that was read: a push in between moves it.
+#   2. Check that the commit the run is on is the one that was read: a push in between moves it. The run
+#      starts when the label goes on, so the check comes after the fact. If a newer commit is running, cancel
+#      the run, take the label off, and read the new commit before labelling again.
 #   3. Take the label off when the run is done (`gh pr edit <number> --remove-label release-validation`).
 # The label stays on the pull request, and while it is on every later push runs these jobs again, on code
 # nobody has read and with no new decision by anyone. A push that needs validating gets the label again, after

@@ -686,7 +686,7 @@ class Doctor(unittest.TestCase):
         self.assertIn("secure input: the accessibility bus: jeepney is not in the venv", said)
 
     def test_a_probe_that_sees_only_what_is_named_is_a_warning_of_its_own(self):
-        # A session lock the compositor does not say (niri's, always): a locker is seen by its process
+        # A session lock the compositor does not say (niri's, say): a locker is seen by its process
         # name alone, which is not the same as seen, so it is never in the green row. What is fully
         # on is said as before.
         results, said = self.rows("carbon\tnone\tnot macOS\nterminals\ton\ta prompt is seen\n"

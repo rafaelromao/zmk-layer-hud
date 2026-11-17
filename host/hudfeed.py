@@ -941,7 +941,8 @@ PROBE_WORDS = {"carbon": "macOS's secure input", "terminals": "the terminals' pr
 def probe_report(environ=os.environ):
     """One line per probe, for `--probes` and `zmk-layer-hud doctor`: its name, `on`, `off`,
     `partial` (on, but seeing only what is named: a session lock the compositor does not say,
-    which is niri's always and Hyprland's where its socket has no answer) or `none` (not for this
+    which is niri's, and Hyprland's where its socket has no answer; a Hyprland socket in the
+    environment is asked first, in a niri session too) or `none` (not for this
     system), and why. Asked here rather than in the doctor because the probes
     need the venv (jeepney) and the feed's own tables."""
     lines = []

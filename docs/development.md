@@ -367,7 +367,10 @@ So, before labelling a fork's pull request, and before approving a run of one th
    jobs set up and start the HUD of that tree.
 2. Check that the commit the run is on is the one that was read. A push between the reading and the
    label, or the approval, puts the run on a newer commit; the run's page shows its commit, and
-   `gh pr view <number> --json headRefOid` the pull request's head.
+   `gh pr view <number> --json headRefOid` the pull request's head. The run starts when the label
+   goes on, so this check comes after the fact: it cannot keep a newer commit from running, only
+   find that one is. When it is, cancel the run (`gh run cancel <run-id>`), take the label off,
+   and read the new commit before labelling again.
 3. Take the label off when the run is done:
 
    ```bash

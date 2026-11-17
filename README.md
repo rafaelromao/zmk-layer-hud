@@ -381,8 +381,8 @@ does not say, by the process name of hyprlock, swaylock, gtklock or waylock, and
 `feed.lockers` names — so the unlock password goes nowhere. By name, a lock screen built into a
 shell is seen only once its process is named there (`feed.lockers: [name]`, as `comm` in `/proc`
 spells it). `zmk-layer-hud doctor` cannot tell whether the lock screen in use is one of the named,
-so wherever the lock is seen by name only — under niri always — its session lock row is a warning,
-never ok. On both systems, while a terminal is
+so wherever the lock is seen by name only — under niri, unless a Hyprland socket in the session's
+environment answers instead — its session lock row is a warning, never ok. On both systems, while a terminal is
 asking for a password -- `sudo`, `ssh`, `su`, anything that reads a line with echo off -- the feed
 sees that too. Either way it then passes on nothing typed: no characters, no keys lit, no layer
 changes, nothing counted. The strip clears, the board dims and the banner says `secure input ·

@@ -1601,8 +1601,8 @@ def check_secure(results):
     the compositor's session lock. Asked of the feed itself (`hudfeed.py --probes`), which has the venv
     and the probes; without a venv, the accessibility bus alone, through systemd's busctl.
     The row that says ok names only the probes that are fully on. One that sees part (`partial`:
-    a session lock seen by its locker's process name, as under niri always and under a Hyprland
-    whose socket does not say) is a warning with what to do."""
+    a session lock seen by its locker's process name, as under niri and under a Hyprland whose
+    socket does not say) is a warning with what to do."""
     if not venv_ok():
         check_accessibility(results)
         return

@@ -109,9 +109,10 @@ in-process; the firmware sends positions and a layer bitmap, never usages or cha
   `feed.lockers` in the config (a lock screen built into a shell is such a one: its process is
   the shell's, so it has to be named). A Hyprland whose socket does not say (an older one, with no
   `solitaryBlockedBy`, or a socket nothing answers on) is the same case: the lockers' names. `doctor`
-  reports a lock seen by process name only as a warning of its own, never in its ok row -- niri's
-  always, Hyprland's where it does not say: a lock screen not named is not seen, and the thing to do
-  is to name it in `feed.lockers` or stop the HUD before locking.
+  reports a lock seen by process name only as a warning of its own, never in its ok row -- niri's,
+  and Hyprland's where it does not say: a lock screen not named is not seen, and the thing to do
+  is to name it in `feed.lockers` or stop the HUD before locking. (Hyprland's socket is asked first
+  wherever the session's environment has one, a niri session's too, and what it says is taken.)
   Any other compositor's lock screen is not seen at all: the lockers set no logind hint, so there
   is nothing to ask. Stop the HUD before locking where none of these applies.
 - **When the gate misses, a session keeps the keys as a multiset**: a count per key and layer,
