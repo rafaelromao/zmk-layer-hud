@@ -871,6 +871,22 @@ class NoctaliaPlugin(unittest.TestCase):
             del os.environ["NOCTALIA_DATA_HOME"], os.environ["XDG_DATA_HOME"]
             self.assertEqual(os.path.expanduser("~/.local/share/noctalia"), cli.noctalia_home("DATA", "~/.local/share"))
 
+    def test_the_plugins_directory_is_under_noctalias_data_home(self):
+        # The constant is made when the module is read, so the module is read again, as another
+        # one, with the variables set: nothing of `cli` itself changes.
+        import importlib.util
+
+        def plugins(**env):
+            with mock.patch.dict(os.environ, env):
+                spec = importlib.util.spec_from_file_location("cli_read_again", cli.__file__)
+                again = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(again)
+            return again.NOCTALIA_PLUGINS
+        self.assertEqual("/n/data/noctalia/plugins", plugins(NOCTALIA_DATA_HOME="/n/data", XDG_DATA_HOME="/x/data"))
+        self.assertEqual("/x/data/noctalia/plugins", plugins(NOCTALIA_DATA_HOME="", XDG_DATA_HOME="/x/data"))
+        self.assertEqual(os.path.expanduser("~/.local/share/noctalia/plugins"),
+                         plugins(NOCTALIA_DATA_HOME="", XDG_DATA_HOME=""))
+
     @unittest.skipUnless(tomllib, "the saved settings are read with tomllib (Python 3.11)")
     def test_the_saved_settings_are_read_from_noctalias_own_state_home_when_it_is_set(self):
         self.run_cli("menubar", "enable")
