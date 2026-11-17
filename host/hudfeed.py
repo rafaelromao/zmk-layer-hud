@@ -445,8 +445,8 @@ def bluez_matches(objects, address=None, name=None, resolving=False):
 
     And with its services resolved (ServicesResolved): bleak's connect() waits for that, and when
     it does not come in time, or the property is missing, bleak sends Disconnect on its way out
-    (bluezdbus/manager.py _wait_for_services_discovery, client.py disconnect_device), which takes
-    off a keyboard the feed never connected. `resolving` gives the others instead: connected, the
+    (bluezdbus/manager.py _wait_for_services_discovery, client.py disconnect_device), for a
+    keyboard the feed never connected. `resolving` gives the others instead: connected, the
     service listed, the services not resolved yet.
 
     The name is the device's own choice and goes into the log, of keyboards that are not read too,
@@ -680,7 +680,7 @@ class BleReader:
             if not self._said_disconnects:
                 self._said_disconnects = True
                 self.log(f"hudfeed: this bleak cannot leave {name} connected: when the feed stops reading it, "
-                         "it is disconnected from the system")
+                         "bleak sends BlueZ a Disconnect for it")
             return
         with contextlib.suppress(Exception):
             await client.stop_notify(BLE_SIGNAL_UUID)
