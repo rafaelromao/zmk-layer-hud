@@ -433,11 +433,17 @@ def printable(text, limit=64):
     return text if len(text) <= limit else text[:limit - 1] + "…"
 
 
-def bluez_matches(objects, address=None, name=None):
+def bluez_matches(objects, address=None, name=None, resolving=False):
     """Every BlueZ device the keyboard may be connected as, from BlueZ's managed objects (path ->
     interfaces -> properties): (path, address, name), in the order of their object paths. Connected
     and exposing the module's service: a keyboard in use is connected and no longer advertises, so
     a scan never finds it, but BlueZ already has it.
+
+    And with its services resolved (ServicesResolved): bleak's connect() waits for that, and when
+    it does not come in time, or the property is missing, bleak sends Disconnect on its way out
+    (bluezdbus/manager.py _wait_for_services_discovery, client.py disconnect_device), which takes
+    off a keyboard the feed never connected. `resolving` gives the others instead: connected, the
+    service listed, the services not resolved yet.
 
     The name is the device's own choice and goes into the log, of keyboards that are not read too,
     so it comes back printable; `name` is matched against it as BlueZ gave it."""
@@ -453,6 +459,9 @@ def bluez_matches(objects, address=None, name=None):
             continue
         label = props["Name"].value if "Name" in props else found
         if name and name.lower() not in label.lower():
+            continue
+        resolved = bool(props["ServicesResolved"].value) if "ServicesResolved" in props else False
+        if resolved == resolving:
             continue
         matches.append((path, found, printable(label)))
     return matches
@@ -509,6 +518,7 @@ class BleReader:
         self._found_connected = None    # the device BlueZ had connected before the feed came (_connected_bluez)
         self._said_disconnects = False  # that this bleak cannot leave it connected, said once (_let_go)
         self._said_several = None       # which of several connected keyboards is read, as last said
+        self._resolving = None          # why nothing was found, while BlueZ resolves a keyboard (_connected_bluez)
 
     def start(self):
         threading.Thread(target=self._run, name="ble-read", daemon=True).start()
@@ -540,8 +550,8 @@ class BleReader:
                 return device
         elif sys.platform.startswith("linux"):
             device = await self._connected_bluez()
-            if device is not None:
-                return device
+            if device is not None or self._resolving:
+                return device       # nor a scan while BlueZ resolves one: it would hand that keyboard over
         if self.address:
             return await BleakScanner.find_device_by_address(self.address, timeout=self.rescan)
         return await BleakScanner.find_device_by_filter(
@@ -559,13 +569,24 @@ class BleReader:
         bleak connects it again, is left connected all the same.
 
         With several such keyboards connected the first by object path is read, as bluez_connected
-        has it, and the log says which and how to pick: once, until what it says changes."""
+        has it, and the log says which and how to pick: once, until what it says changes.
+
+        One whose services BlueZ has not resolved yet is left to the next look (bluez_matches says
+        why), and so is the scan: a scan hands over a connected keyboard as soon as BlueZ says
+        anything new of it, the feed would take that for one of its own, and close it with a
+        Disconnect. `_resolving` then says so, for the loop's log."""
         from bleak.backends.device import BLEDevice
-        self._found_connected = None
+        self._found_connected = self._resolving = None
         try:
-            matches = bluez_matches(await bluez_objects(), self.address, self.name)
+            objects = await bluez_objects()
+            matches = bluez_matches(objects, self.address, self.name)
+            waiting = [] if matches else bluez_matches(objects, self.address, self.name, resolving=True)
         except Exception:
             return None      # no system bus, no BlueZ, an answer we cannot read: the scan, as before
+        if waiting:
+            _, address, label = waiting[0]
+            self._resolving = (f"{label} ({address}) is connected and BlueZ has not resolved its services yet: "
+                               "looking again rather than connect to it now")
         if not matches:
             return None
         path, address, label = matches[0]
@@ -597,9 +618,9 @@ class BleReader:
         What bleak 3.0.2 does (backends/bluezdbus/client.py), found connected or not: disconnect(),
         which leaving `async with BleakClient` calls, sends Device1.Disconnect while its
         `_is_connected` is true (lines 407-417), and a task of its own sends the same when the
-        event loop ends with the client never closed (`_disconnect_monitor`, 333-362). BlueZ's
-        link is shared by every application, so either takes the keyboard off the whole system.
-        BleakClient and BlueZClientArgs have nothing to ask for anything else.
+        event loop ends with the client never closed (`_disconnect_monitor`, 333-362). Either
+        asks BlueZ to disconnect the keyboard, whose link every application shares. BleakClient
+        and BlueZClientArgs have nothing to ask for anything else.
 
         So the client is put in the state bleak itself leaves it in when the keyboard goes away
         (on_connected_changed, 170-185): `_is_connected` false, the `_disconnect_monitor_event` set
@@ -610,10 +631,13 @@ class BleReader:
         bleak's own client through this, so a bump that changes it fails there.
 
         Not covered: a connect() that fails after bleak has opened its bus disconnects from inside
-        bleak (disconnect_device, 208-240), before there is a client to let go of.
+        bleak (disconnect_device, 208-240), before there is a client to let go of. The way it
+        fails most, services BlueZ has not resolved, is kept from it (bluez_matches); a keyboard
+        that drops or is resolved again between the look and the connect() is not.
 
-        Checked by running bleak 3.0.2's client against a recording bus; NOT on hardware, so what
-        BlueZ and a keyboard do when the feed leaves this way has not been seen."""
+        Checked by running bleak 3.0.2's client, manager and connect() against a simulated BlueZ
+        (hudfeed_test.py, SimBluez); NOT on hardware, so what BlueZ and a keyboard do when the feed
+        leaves this way has not been seen."""
         if not client.is_connected:
             return      # it went by itself: bleak has nothing left to disconnect
         backend = getattr(client, "_backend", None)
@@ -685,7 +709,7 @@ class BleReader:
                 device = None
 
             if device is None:
-                note = failed or "no BLE keyboard with the layer signal connected or advertising yet"
+                note = failed or self._resolving or "no BLE keyboard with the layer signal connected or advertising yet"
                 if note != said:
                     said = note
                     self.log(f"hudfeed: {note}")

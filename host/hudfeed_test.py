@@ -1053,9 +1053,12 @@ class BluezConnected(unittest.TestCase):
     SVC = "d1f0a7c2-6b3e-4f8a-9c21-5e7b4a0d9f31"
 
     @staticmethod
-    def device(address, name, connected=True, uuids=(), path=None):
+    def device(address, name, connected=True, uuids=(), path=None, resolved=True):
+        """`resolved`: ServicesResolved, and None for a device that does not have the property."""
         v = lambda x: types.SimpleNamespace(value=x)
         props = {"Connected": v(connected), "Address": v(address), "Name": v(name), "UUIDs": v(list(uuids))}
+        if resolved is not None:
+            props["ServicesResolved"] = v(resolved)
         return (path or "/org/bluez/hci0/dev_" + address.replace(":", "_")), {"org.bluez.Device1": props}
 
     def objects(self, *devices):
@@ -1085,6 +1088,49 @@ class BluezConnected(unittest.TestCase):
         self.assertEqual("F9:BD:CA:10:F7:A8", hudfeed.bluez_connected(objs, address="f9:bd:ca:10:f7:a8")[1])
         self.assertEqual("TwoNr9", hudfeed.bluez_connected(objs, name="twonr")[2])
         self.assertIsNone(hudfeed.bluez_connected(objs, address="11:22:33:44:55:66"))
+
+    def test_a_keyboard_whose_services_are_not_resolved_is_not_taken_yet(self):
+        import hudfeed
+        for resolved in (False, None):          # not yet, or a device without the property
+            objs = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC], resolved=resolved))
+            self.assertIsNone(hudfeed.bluez_connected(objs), resolved)
+            self.assertEqual([("/org/bluez/hci0/dev_F9_BD_CA_10_F7_A8", "F9:BD:CA:10:F7:A8", "TwoNr9")],
+                             hudfeed.bluez_matches(objs, resolving=True), resolved)
+        both = self.objects(self.device("AA:AA:AA:AA:AA:01", "Other", uuids=[self.SVC], resolved=False),
+                            self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]))
+        self.assertEqual("F9:BD:CA:10:F7:A8", hudfeed.bluez_connected(both)[1])
+        self.assertEqual(["AA:AA:AA:AA:AA:01"], [a for _, a, _ in hudfeed.bluez_matches(both, resolving=True)])
+
+    def test_while_bluez_resolves_the_keyboard_there_is_no_scan_and_the_log_says_why(self):
+        import hudfeed
+        said = []
+        r = hudfeed.BleReader(lambda m: None, log=said.append, rescan=0.0)
+        answers = [self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC], resolved=False))] * 2
+
+        async def objects_now():
+            return answers.pop(0) if answers else self.objects(
+                self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]))
+
+        async def scan(*a, **kw):
+            raise AssertionError("the scan should not run")
+
+        async def pause(seconds):
+            if not answers:
+                r.stop()
+        r._pause = pause
+        modules = self.fake_bleak(scan)
+        modules["bleak"].BleakScanner.find_device_by_filter = scan
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.object(hudfeed, "bluez_objects", objects_now), \
+                mock.patch.dict(sys.modules, modules):
+            self.assertIsNone(asyncio.run(r._find()))
+            self.assertIsNone(r._found_connected)
+            modules["bleak"].BleakClient = None
+            asyncio.run(r._loop())          # one more look while it resolves, said once, then stopped
+            self.assertEqual("F9:BD:CA:10:F7:A8", asyncio.run(r._find()).address)   # resolved: taken
+        self.assertEqual(["hudfeed: TwoNr9 (F9:BD:CA:10:F7:A8) is connected and BlueZ has not resolved its services "
+                          "yet: looking again rather than connect to it now"], said)
+        self.assertIsNone(r._resolving)
 
     def test_a_name_comes_back_fit_for_the_log_whatever_the_device_called_itself(self):
         import hudfeed
@@ -1495,7 +1541,8 @@ class SimBluez:
             async def wait_for_disconnect(self):
                 pass
 
-            _finalize = disconnect      # what bleak's manager does to the bus of an event loop that is over
+            def _finalize(self, err):   # what bleak's manager does to the bus of an event loop that is over
+                self.connected = False
         self.Variant, self.Message = Variant, Message
         kinds = types.SimpleNamespace(METHOD_CALL="call", METHOD_RETURN="return", ERROR="error", SIGNAL="signal")
         buses = types.SimpleNamespace(SYSTEM="system")
@@ -1604,6 +1651,30 @@ class BleakBluez(unittest.TestCase):
             await self.BleakClient(self.scanned).connect()
         asyncio.run(leave())
         self.assertEqual(["Disconnect"], self.sim.asked())
+
+    def test_and_when_its_connect_gives_up_on_services_that_do_not_resolve_or_are_not_said(self):
+        # Why bluez_matches wants ServicesResolved: this is the keyboard it would otherwise hand over.
+        import bleak.exc
+        for resolved, error in ((False, asyncio.TimeoutError), (None, bleak.exc.BleakError)):
+            self.sim.calls.clear()
+            self.sim.keyboard.update(Connected=True, ServicesResolved=resolved)
+            if resolved is None:
+                del self.sim.keyboard["ServicesResolved"]
+
+            async def connect():
+                await self.BleakClient(self.scanned, timeout=0.05).connect()
+            with self.assertRaises(error):
+                asyncio.run(connect())
+            self.assertEqual(["Disconnect"], self.sim.asked(), resolved)     # no Connect: it was connected
+            self.assertFalse(self.sim.keyboard["Connected"])
+
+    def test_while_bluez_resolves_a_keyboard_the_feed_asks_nothing_of_it_and_does_not_scan(self):
+        import hudfeed
+        self.sim.keyboard["ServicesResolved"] = False
+        with mock.patch.object(hudfeed.sys, "platform", "linux"):
+            self.assertIsNone(asyncio.run(self.reader._find()))
+        self.assertEqual(["GetManagedObjects"], self.sim.calls)                 # and no StartDiscovery
+        self.assertTrue(self.sim.keyboard["Connected"])
 
     def test_a_session_on_a_keyboard_found_connected_stops_notifying_and_leaves_it_connected(self):
         self.assertIsNone(self.session(found_connected=True))
