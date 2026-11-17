@@ -1017,6 +1017,15 @@ class Driver:
                 else:
                     r.failed(f"{label}: the surfaces follow", str(e))
 
+    def snapshot(self, name):
+        """The platform's own listings now, while the HUD is up: at the end there is nothing left in them."""
+        directory = self.artifacts / name
+        directory.mkdir(exist_ok=True)
+        try:
+            self.probe.collect(directory)
+        except Exception as e:     # noqa: BLE001 -- best effort, like the rest of the artifacts
+            self.log(f"could not take the listings: {e}")
+
     def screenshot(self, name):
         path = self.artifacts / f"screenshot-{name}.png"
         try:
@@ -1085,6 +1094,7 @@ class Driver:
             self.start()
             self.assert_up()
             self.assert_surfaces()
+            self.snapshot("while-shown")
             self.probe.extras(r)
             self.assert_doctor()
             self.assert_socket()
