@@ -717,8 +717,11 @@ class BleReader:
                 if note != said:
                     said = note
                     self.log(f"hudfeed: {note}")
+                # A keyboard BlueZ is resolving is there, and is read the first look after it is
+                # resolved: those looks keep to the rescan instead of backing off like an empty one.
+                wait = self.rescan if self._resolving else wait
                 await self._pause(wait)
-                wait = min(wait * 2, BLE_RETRY_MAX_S)
+                wait = self.rescan if self._resolving else min(wait * 2, BLE_RETRY_MAX_S)
                 continue
 
             failed = await self._session(BleakClient, device)

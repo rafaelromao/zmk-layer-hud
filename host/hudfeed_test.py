@@ -1132,6 +1132,25 @@ class BluezConnected(unittest.TestCase):
                           "yet: looking again rather than connect to it now"], said)
         self.assertIsNone(r._resolving)
 
+    def test_looks_while_bluez_resolves_keep_to_the_rescan_and_do_not_back_off(self):
+        import hudfeed
+        r = hudfeed.BleReader(lambda m: None, log=lambda *a: None, rescan=2.0)
+        rounds = [None, None, "resolving", "resolving", "resolving", None, None]
+        paused = []
+
+        async def find():
+            r._resolving = rounds.pop(0)
+            return None
+
+        async def pause(seconds):
+            paused.append(seconds)
+            if not rounds:
+                r.stop()
+        r._find, r._pause = find, pause
+        with mock.patch.dict(sys.modules, {"bleak": types.SimpleNamespace(BleakClient=None)}):
+            asyncio.run(r._loop())
+        self.assertEqual([2.0, 4.0, 2.0, 2.0, 2.0, 2.0, 4.0], paused)
+
     def test_a_name_comes_back_fit_for_the_log_whatever_the_device_called_itself(self):
         import hudfeed
         forged = "TwoNr9\nhudfeed: reading Diamond over BLE\r\x1b[2K\x1b]0;title\x07‮ \x00"
