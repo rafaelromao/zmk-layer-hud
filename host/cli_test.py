@@ -1397,11 +1397,19 @@ class NoctaliaPlugin(unittest.TestCase):
         self.assertEqual([(["new"], False, cli.NOCTALIA_ID)], seen)
 
     def killed_install(self, *copies):
-        """What an install killed half way leaves: its staging directory, with these copies in it."""
+        """What an install killed half way leaves: its staging directory, with these copies in it,
+        last changed long enough ago that no run is still at work in it."""
         left = os.path.join(self.plugins, cli.NOCTALIA_STAGING + "k1ll3d")
         os.makedirs(left)
         for name in copies:
             shutil.copytree(self.SRC, os.path.join(left, name))
+        return self.aged(left)
+
+    def aged(self, left, seconds=None):
+        """A staging directory (and what is in it) last changed that long ago: an hour, by default."""
+        when = time.time() - (3600 if seconds is None else seconds)
+        for p in [left] + [os.path.join(left, n) for n in os.listdir(left)]:
+            os.utime(p, (when, when), follow_symlinks=False)
         return left
 
     def test_what_a_killed_install_left_is_cleared_by_the_next_one(self):
@@ -1414,6 +1422,7 @@ class NoctaliaPlugin(unittest.TestCase):
         # Killed while copying, before or after the manifest was there; and by `disable` as well.
         left = self.killed_install("new")
         os.mkdir(os.path.join(left, "old"))
+        self.aged(left)
         code, said = self.run_cli("menubar", "disable")
         self.assertEqual(0, code, said)
         self.assertNotIn(left, said)
@@ -1422,6 +1431,7 @@ class NoctaliaPlugin(unittest.TestCase):
     def test_a_staging_directory_with_anything_else_in_it_is_named_and_left(self):
         left = self.killed_install("old")
         os.remove(os.path.join(left, "old", "plugin.toml"))          # no longer says whose it is
+        self.aged(left)
         code, said = self.run_cli("menubar", "enable")
         self.assertEqual(0, code, said)
         self.assertIn(f"{left} is named like the directory", said)
@@ -1440,12 +1450,59 @@ class NoctaliaPlugin(unittest.TestCase):
         self.assertEqual(0, self.run_cli("menubar", "enable")[0])
         self.assertTrue(os.path.isfile(left))
 
+    def test_a_staging_directory_changed_in_the_last_few_minutes_is_left_to_the_run_at_work_in_it(self):
+        left = self.killed_install("old", "new")
+        self.aged(left, cli.NOCTALIA_STAGING_AGE - 30)               # not quite old enough
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertNotIn(left, said)
+        self.assertEqual(["new", "old"], sorted(os.listdir(left)))
+        # A copy in it changed just now counts too, however old the directory itself.
+        self.aged(left)
+        os.utime(os.path.join(left, "new"))
+        self.assertEqual(0, self.run_cli("menubar", "disable")[0])
+        self.assertEqual(["new", "old"], sorted(os.listdir(left)))
+        self.aged(left, cli.NOCTALIA_STAGING_AGE + 30)               # and then, older than that, it goes
+        self.assertEqual(0, self.run_cli("menubar", "enable")[0])
+        self.assertFalse(os.path.lexists(left))
+
+    def another_run_while_copying(self, *argv):
+        """`menubar enable`, with another run of the command (argv) let in while it is copying the
+        new plugin, as a second terminal or the bar's own click would -> both results."""
+        bake, other = cli.bake_marks, []
+
+        def meanwhile(text):
+            if not other:
+                other.append(None)
+                other[0] = self.run_cli(*argv)
+            return bake(text)
+        with mock.patch.object(cli, "bake_marks", side_effect=meanwhile):
+            first = self.run_cli("menubar", "enable")
+        return first, other[0]
+
+    def test_a_disable_while_an_enable_copies_does_not_take_the_enables_copy(self):
+        self.run_cli("menubar", "enable")
+        (code, said), (other_code, other_said) = self.another_run_while_copying("menubar", "disable")
+        self.assertEqual(0, other_code, other_said)
+        self.assertEqual(0, code, said)
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(self.dir())))   # the last run wins
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+
+    def test_two_enables_at_once_leave_one_copy_installed(self):
+        self.run_cli("menubar", "enable")
+        (code, said), (other_code, other_said) = self.another_run_while_copying("menubar", "enable")
+        self.assertEqual(0, other_code, other_said)
+        self.assertEqual(0, code, said)
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(self.dir())))
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+
     def test_a_staging_directory_noctalia_loads_is_said_to_be_one(self):
         # A plugin.toml at its top makes it a plugin directory to Noctalia (plugin_registry.cpp,
         # scanDir), whatever its name: so the note does not say Noctalia leaves it be.
         left = self.killed_install()
         with open(os.path.join(left, "plugin.toml"), "w", encoding="utf-8") as f:
             f.write('id = "someone/else"\n')
+        self.aged(left)
         code, said = self.run_cli("menubar", "enable")
         self.assertEqual(0, code, said)
         self.assertIn(f"{left} is named like the directory", said)

@@ -279,7 +279,10 @@ is running or not:
   `enable` or `disable` removes such a staging directory when all in it is copies of this plugin
   (or empty), and otherwise names it and leaves it, saying which it found: copies of ours the disk
   would not let go of, or something else -- and then whether it has a `plugin.toml` of its own,
-  which makes Noctalia try to load it whatever its name. What the disk refuses (a plugins directory
+  which makes Noctalia try to load it whatever its name. A staging directory, or a copy in it,
+  changed in the last five minutes is neither touched nor named: it may belong to another run at
+  work right now (two `enable`s, or an `enable` and a `disable`, at once), whose copies taken from
+  under it would leave nothing installed when both are done. What the disk refuses (a plugins directory
   that cannot be written to, a move or a removal that fails) is said with the path and the reason,
   and the command exits 1, rather than ending in a traceback.
 

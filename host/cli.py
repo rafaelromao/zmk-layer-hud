@@ -1571,6 +1571,19 @@ def noctalia_remove_copy(path):
 # so the directory itself never has a plugin.toml, and the shell -- which takes every directory of
 # the plugins directory with one in it for a plugin -- never takes it for one.
 NOCTALIA_STAGING = ".zmk-layer-hud."
+# A staging directory changed this recently may be another run's, still at work (two `enable`s,
+# or an `enable` and a `disable`, at once): an install takes seconds, so one this young is not
+# taken for a leftover. Older than this, it is one a run that was killed left behind.
+NOCTALIA_STAGING_AGE = 5 * 60
+
+
+def noctalia_staging_in_use(path):
+    """Whether a staging directory, or a copy in it, was changed within NOCTALIA_STAGING_AGE."""
+    try:
+        times = [os.lstat(path).st_mtime] + [os.lstat(os.path.join(path, n)).st_mtime for n in os.listdir(path)]
+    except OSError:
+        return True                     # it moved under us: someone is at work in it
+    return time.time() - max(times) < NOCTALIA_STAGING_AGE
 
 
 def noctalia_leftovers():
@@ -1581,7 +1594,9 @@ def noctalia_leftovers():
     one, its manifest last. Anything else under that name is not known to be ours, and is left.
     What is said of each is what was found: copies of ours the disk would not let go of, or
     something else -- and then whether Noctalia loads it, which it does with any directory of the
-    plugins directory that has a plugin.toml of its own."""
+    plugins directory that has a plugin.toml of its own.
+    One that changed in the last few minutes is neither touched nor said: it may be another run's,
+    at work right now, and taking its copies would leave nothing installed when both are done."""
     said = []
     try:
         names = sorted(os.listdir(NOCTALIA_PLUGINS))
@@ -1590,6 +1605,8 @@ def noctalia_leftovers():
     for name in names:
         path = os.path.join(NOCTALIA_PLUGINS, name)
         if not name.startswith(NOCTALIA_STAGING) or os.path.islink(path) or not os.path.isdir(path):
+            continue
+        if noctalia_staging_in_use(path):
             continue
         try:
             entries = [os.path.join(path, n) for n in os.listdir(path)]
