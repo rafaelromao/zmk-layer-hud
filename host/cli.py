@@ -1408,7 +1408,7 @@ def cmd_menubar(args):
         if problems:
             if noctalia_installed():
                 warn("the Noctalia plugin was left in place, so `zmk-layer-hud menubar disable` can finish "
-                     "once Noctalia answers")
+                     "once what is said above is put right")
             return 1
         return 0
     if omarchy_here:
@@ -1502,10 +1502,16 @@ def noctalia_plugin_state():
     another author's plugin can have too, so the name alone says nothing: "ours" when the
     plugin.toml in it opens with this plugin's id, "theirs" when anything else is there -- another
     plugin, a directory without a manifest, a file -- and None when nothing is. Only "ours" is
-    ever removed or written over."""
+    ever removed or written over. An empty directory is nothing: there is nothing in it to lose,
+    and it is all a removal of ours stopped by the disk at its very last step can leave."""
     path = noctalia_plugin_dir()
     if not os.path.lexists(path):
         return None
+    try:
+        if not os.path.islink(path) and os.path.isdir(path) and not os.listdir(path):
+            return None
+    except OSError:
+        pass
     return "ours" if noctalia_manifest_id(path) == NOCTALIA_ID else "theirs"
 
 
@@ -1529,15 +1535,36 @@ def noctalia_remove_plugin():
     """The plugin off the disk -> whether there was one to take. Whose the directory is, is looked
     at here, the moment before it goes, whatever the caller saw earlier: `disable` asks the shell
     several things first, each of which may take its time, and what was this plugin's then may be
-    something else by now. A link to a copy of it goes as a link, and what it points at stays."""
+    something else by now. A link to a copy of it goes as a link, and what it points at stays.
+    What the disk refuses is raised, never passed over: a copy still there is not "removed"."""
     path = noctalia_plugin_dir()
     if noctalia_plugin_state() != "ours":
         return False
     if os.path.islink(path):
         os.unlink(path)
     else:
-        shutil.rmtree(path, ignore_errors=True)
+        noctalia_remove_copy(path)
     return True
+
+
+def noctalia_remove_copy(path):
+    """A copy of this plugin off the disk, its plugin.toml last: stopped part way by the disk, what
+    is left still says whose it is, so the next run takes it for ours and tries again, where a copy
+    that had lost its manifest first would read as someone else's from then on. The directory goes
+    after it, and if that is what the disk refuses, an empty directory is left, which is nothing
+    (noctalia_plugin_state). Anything refused is raised."""
+    for name in os.listdir(path):
+        if name == "plugin.toml":
+            continue
+        entry = os.path.join(path, name)
+        if os.path.isdir(entry) and not os.path.islink(entry):
+            shutil.rmtree(entry)
+        else:
+            os.unlink(entry)
+    manifest = os.path.join(path, "plugin.toml")
+    if os.path.lexists(manifest):
+        os.unlink(manifest)
+    os.rmdir(path)
 
 
 # What mkdtemp names the directory a new copy is made ready in. The copy is one level down in it,

@@ -267,7 +267,10 @@ is running or not:
   the plugin not installed and says why. Whose the directory is, is asked again in the function
   that removes or moves it, right before it does, since `disable` first asks the shell several
   things (each up to 20 seconds) and `enable` first copies the new plugin. A link to a copy of the
-  plugin is removed as a link. The new copy is made ready one level down in a directory of its
+  plugin is removed as a link. A copy is removed with its `plugin.toml` last, so one the disk
+  stops part way still reads as ours and the next run tries again; an empty directory in its place
+  (all that is left when only the directory itself cannot go) counts as nothing, not as someone
+  else's. The new copy is made ready one level down in a directory of its
   own (`mkdtemp`, named `.zmk-layer-hud.*`), so the shell, which takes every directory of the
   plugins directory with a `plugin.toml` in it for a plugin, never sees a half-made copy. An older
   copy of ours is moved aside into that directory whole, the new one is moved into its place, and

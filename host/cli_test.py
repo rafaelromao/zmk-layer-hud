@@ -1296,6 +1296,65 @@ class NoctaliaPlugin(unittest.TestCase):
         self.assertNotIn("Traceback", said)
         self.assertTrue(os.path.islink(self.dir()))
 
+    def read_only(self, path):
+        os.chmod(path, 0o555)
+        # Writable again for the temp dir's own cleanup, if it is still there by then.
+        self.addCleanup(lambda: os.path.isdir(path) and os.chmod(path, 0o755))
+
+    @unittest.skipIf(os.geteuid() == 0, "root removes what it likes")
+    def test_a_copy_the_disk_will_not_let_go_of_is_a_failure_and_still_ours(self):
+        # A real read-only copy: none of its files can be removed. It was once reported as gone.
+        self.run_cli("menubar", "enable")
+        self.read_only(self.dir())
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(1, code, said)
+        self.assertIn(f"{self.dir()} could not be removed", said)
+        self.assertIn("Permission denied", said)
+        self.assertIn("left in place", said)
+        self.assertNotIn("is out of Noctalia's bar", said)
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(self.dir())))
+        self.assertTrue(cli.noctalia_installed())
+        self.assertIn(f"is in {self.dir()}", self.run_cli("menubar")[1])
+        os.chmod(self.dir(), 0o755)                                 # put right: the next disable finishes
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertFalse(os.path.lexists(self.dir()))
+
+    def test_a_removal_stopped_part_way_leaves_a_copy_that_still_says_it_is_ours(self):
+        # Stopped at the manifest, the last file to go: what is left is still this plugin's.
+        self.run_cli("menubar", "enable")
+        unlink = os.unlink
+
+        def keep_the_manifest(path, *a, **k):
+            if os.path.basename(path) == "plugin.toml":
+                raise OSError(5, "Input/output error", path)
+            return unlink(path, *a, **k)
+        with mock.patch.object(cli.os, "unlink", side_effect=keep_the_manifest):
+            code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(1, code, said)
+        self.assertEqual(["plugin.toml"], os.listdir(self.dir()))
+        self.assertTrue(cli.noctalia_installed())
+        code, said = self.run_cli("menubar", "enable")              # and a later run takes it for ours
+        self.assertEqual(0, code, said)
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(self.dir())))
+
+    @unittest.skipIf(os.geteuid() == 0, "root removes what it likes")
+    def test_a_plugins_directory_that_keeps_the_emptied_copy_leaves_nothing_anyone_owns(self):
+        # A read-only plugins directory: every file of the copy goes, the directory cannot. An empty
+        # directory is nothing, so it is not taken for someone else's and the next enable fills it.
+        self.run_cli("menubar", "enable")
+        self.read_only(self.plugins)
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(1, code, said)
+        self.assertIn(f"{self.dir()} could not be removed", said)
+        self.assertEqual([], os.listdir(self.dir()))
+        self.assertIsNone(cli.noctalia_plugin_state())
+        self.assertNotIn("is not this plugin's", self.run_cli("menubar")[1])
+        os.chmod(self.plugins, 0o755)
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(self.dir())))
+
     def staging(self):
         return [n for n in os.listdir(self.plugins) if n.startswith(cli.NOCTALIA_STAGING)]
 
