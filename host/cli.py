@@ -1361,7 +1361,8 @@ def cmd_menubar(args):
     omarchy_here = os.path.isfile(SHELL_JSON) or bool(shutil.which("omarchy-shell"))
     omarchy_installed = os.path.isfile(os.path.join(plugin_dir(), "manifest.json"))
     noctalia_here = bool(shutil.which("noctalia"))
-    noctalia_plugin_there = noctalia_installed()      # not `noctalia_installed`: that is the function
+    # Ours, or something else in its place, which `status` and `disable` have a word to say about.
+    noctalia_plugin_there = bool(noctalia_plugin_state())
     if args.action == "status":
         if omarchy_here or omarchy_installed:
             try:
@@ -1392,7 +1393,7 @@ def cmd_menubar(args):
         for why in problems:
             warn(f"Noctalia: {why}")
         if problems:
-            if os.path.isdir(noctalia_plugin_dir()):
+            if noctalia_installed():
                 warn("the Noctalia plugin was left in place, so `zmk-layer-hud menubar disable` can finish "
                      "once Noctalia answers")
             return 1
@@ -1446,8 +1447,58 @@ def noctalia_plugin_dir():
     return os.path.join(NOCTALIA_PLUGINS, "layer-hud")
 
 
+# A manifest's `id = "author/plugin"` line: a bare or quoted key, a string with no escapes in it.
+NOCTALIA_MANIFEST_ID = re.compile(r"""\s*(?:id|"id"|'id')\s*=\s*(?:"([^"\\]*)"|'([^']*)')\s*(?:#.*)?""")
+
+
+def noctalia_manifest_id(directory):
+    """The `id` a plugin directory's plugin.toml gives, or None: no such file, or no id this can
+    read. Read a line at a time, not with tomllib, which the Python 3.10 this supports does not
+    have: the plugin's id is a key of the top level, which ends at the first table header, so a
+    `[[widget]]`'s own `id` is never taken for it. An id written any way this does not read is
+    None, and None is never this plugin's."""
+    try:
+        with open(os.path.join(directory, "plugin.toml"), encoding="utf-8") as f:
+            for line in f:
+                if line.lstrip().startswith("["):
+                    return None
+                m = NOCTALIA_MANIFEST_ID.fullmatch(line.rstrip("\r\n"))
+                if m:
+                    return m.group(1) if m.group(1) is not None else m.group(2)
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def noctalia_plugin_state():
+    """Whose the directory `menubar enable` installs into is. The name is only the id's tail, which
+    another author's plugin can have too, so the name alone says nothing: "ours" when the
+    plugin.toml in it carries this plugin's id, "theirs" when anything else is there -- another
+    plugin, a directory without a manifest, a file -- and None when nothing is. Only "ours" is
+    ever removed or written over."""
+    path = noctalia_plugin_dir()
+    if not os.path.lexists(path):
+        return None
+    return "ours" if noctalia_manifest_id(path) == NOCTALIA_ID else "theirs"
+
+
 def noctalia_installed():
-    return os.path.isfile(os.path.join(noctalia_plugin_dir(), "plugin.toml"))
+    return noctalia_plugin_state() == "ours"
+
+
+def noctalia_theirs():
+    """What is said of something in the plugin's place that is not the plugin."""
+    return f"{noctalia_plugin_dir()} is not this plugin's (no plugin.toml in it carries the id {NOCTALIA_ID})"
+
+
+def noctalia_remove_plugin():
+    """The plugin off the disk; the caller has seen that it is ours. A link to a copy of it goes
+    as a link, and what it points at stays."""
+    path = noctalia_plugin_dir()
+    if os.path.islink(path):
+        os.unlink(path)
+    else:
+        shutil.rmtree(path, ignore_errors=True)
 
 
 def noctalia(*argv):
@@ -1615,18 +1666,35 @@ def noctalia_place(put_in):
 
 def install_noctalia_plugin():
     """host/linux/noctalia copied where Noctalia looks for local plugins, as regular files, with
-    the marks above written into the widget."""
+    the marks above written into the widget. Over an older copy of this plugin or into an empty
+    place, never over anything else: a directory of that name that is not this plugin's is someone
+    else's, and stops the install.
+    The copy is made ready inside a directory made here and now (mkdtemp), so nothing that was
+    already there is written over or removed for it, and one level down in it, where the shell --
+    which takes every directory of the plugins directory with a plugin.toml in it for a plugin --
+    does not see a half-made copy, nor one a killed install left behind."""
+    import tempfile
     dest = noctalia_plugin_dir()
-    staged = dest + ".new"
-    shutil.rmtree(staged, ignore_errors=True)
-    shutil.copytree(os.path.join(ROOT, "host", "linux", "noctalia"), staged)
-    script = os.path.join(staged, "widget.luau")
-    with open(script, encoding="utf-8") as f:
-        text = bake_marks(f.read())
-    with open(script, "w", encoding="utf-8") as f:
-        f.write(text)
-    shutil.rmtree(dest, ignore_errors=True)
-    os.rename(staged, dest)
+    state = noctalia_plugin_state()
+    if state == "theirs":
+        raise Fail(f"{noctalia_theirs()}, so it was left alone and the HUD's plugin is not installed: "
+                   "Noctalia finds a local plugin by the tail of its id, so both cannot be there. Move "
+                   "that one away, then `zmk-layer-hud menubar enable` again")
+    os.makedirs(NOCTALIA_PLUGINS, exist_ok=True)
+    staging = tempfile.mkdtemp(prefix=".zmk-layer-hud.", dir=NOCTALIA_PLUGINS)
+    try:
+        staged = os.path.join(staging, os.path.basename(dest))
+        shutil.copytree(os.path.join(ROOT, "host", "linux", "noctalia"), staged)
+        script = os.path.join(staged, "widget.luau")
+        with open(script, encoding="utf-8") as f:
+            text = bake_marks(f.read())
+        with open(script, "w", encoding="utf-8") as f:
+            f.write(text)
+        if state == "ours":
+            noctalia_remove_plugin()
+        os.rename(staged, dest)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
     return dest
 
 
@@ -1666,44 +1734,53 @@ def noctalia_disable():
     When the shell cannot be asked, or will not take a bar's list, the plugin stays on the disk:
     gone from it with the icon still in the bar, a later `disable` would find nothing to do and
     this command could never take the icon out. Where there is no `noctalia` at all there is no
-    bar of its to clean, and the folder is all there is to take."""
-    installed = noctalia_installed()
+    bar of its to clean, and the folder is all there is to take.
+    Only this plugin's folder is taken. Something else in its place -- another author's plugin
+    whose id ends the same way -- is left alone, and that is one of the problems: said, with the
+    command failing for it, rather than passed over as if the place had been empty."""
+    state = noctalia_plugin_state()
+    theirs = [noctalia_theirs() + ", so it was left alone"] if state == "theirs" else []
     asked = bool(shutil.which("noctalia"))
     changed, failed = noctalia_place(put_in=False)[:2] if asked else ([], [])
-    if not installed and not changed:
-        return False, []                  # nothing of ours is known here, and no bar has any
+    if state != "ours" and not changed:
+        return False, theirs              # nothing of ours is known here, and no bar has any
     if failed:
-        return bool(changed), failed
+        return bool(changed), failed + theirs
     problems = []
     if asked:
         r = noctalia("msg", "plugins", "disable", NOCTALIA_ID)
         if not r or r[0] != 0:
             problems.append(f"Noctalia would not disable {NOCTALIA_ID} ({noctalia_said(r)}); "
                             f"`noctalia msg plugins disable {NOCTALIA_ID}` does it by hand")
-    removed = os.path.isdir(noctalia_plugin_dir())
+    removed = state == "ours"
     if removed:
-        shutil.rmtree(noctalia_plugin_dir(), ignore_errors=True)
-    return bool(changed) or removed, problems
+        noctalia_remove_plugin()
+    return bool(changed) or removed, problems + theirs
 
 
 def noctalia_uninstall():
     """`uninstall`'s step for Noctalia's bar: the icon out of it and the plugin off the disk, or
     what stopped that, said. By hand, because this command goes with the tree."""
-    if not (noctalia_installed() or shutil.which("noctalia")):
+    if not (noctalia_plugin_state() or shutil.which("noctalia")):
         return
     took, problems = noctalia_disable()
     if took and not problems:
         print("    took the bar plugin out of Noctalia")
     for why in problems:
         print(f"    Noctalia: {why}")
-    if problems and os.path.isdir(noctalia_plugin_dir()):
+    if problems and noctalia_installed():     # ours and still there; someone else's is not ours to delete
         print(f"    left {noctalia_plugin_dir()} in place: take `{NOCTALIA_WIDGET}` out of the bars' lists "
               "in Noctalia's settings, then delete it")
 
 
 def noctalia_status():
     """What `menubar status` says of Noctalia's bar."""
-    if not noctalia_installed():
+    state = noctalia_plugin_state()
+    if state == "theirs":
+        # Not "installed", whatever is there: and said before `enable` is tried, which refuses it.
+        return (f"the Noctalia bar plugin is not installed: {noctalia_theirs()}, and "
+                "`zmk-layer-hud menubar enable` will not replace it")
+    if state != "ours":
         return "the Noctalia bar plugin is not installed (zmk-layer-hud menubar enable)"
     here = f"the Noctalia bar plugin is in {noctalia_plugin_dir()}"
     r = noctalia("msg", "plugins", "list")
@@ -2261,7 +2338,7 @@ def cmd_update(args):
         # and quick when nothing changed.
         subprocess.call([VENV_PYTHON, "-m", "pip", "install", "--quiet", "-r", REQUIREMENTS])
         print("    venv refreshed")
-    if os.path.isdir(plugin_dir()) or os.path.isdir(noctalia_plugin_dir()):
+    if os.path.isdir(plugin_dir()) or noctalia_installed():
         # The new tree's own command: this process is still the old code.
         subprocess.call([os.path.join(ROOT, "bin", "zmk-layer-hud"), "menubar", "enable"])
     print("ready: zmk-layer-hud doctor")

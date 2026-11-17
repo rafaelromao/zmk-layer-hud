@@ -244,6 +244,19 @@ is running or not:
   folder goes alone. `menubar status` reads Noctalia's saved `settings.toml` with `tomllib` where
   there is one (Python 3.11) and says nothing about it where there is not.
 
+  Because the directory's name is only the id's tail, another author's plugin can have it too
+  (`someone/layer-hud`), so the name is never taken as proof. The directory is this plugin's when
+  the `plugin.toml` in it carries the id `zmk/layer-hud` (`noctalia_plugin_state`; the id is read
+  a line at a time from the manifest's top level, since Python 3.10 has no `tomllib`), and only
+  then do `enable`, `disable`, `update` and `uninstall` write over it or remove it. Anything else
+  in its place -- another plugin, a directory without a manifest, a file -- is left alone: `enable`
+  and `disable` say so and exit 1, `uninstall` says so, `update` does not run `menubar enable` for
+  it, and `menubar status` calls the plugin not installed and says why. A link to a copy of the
+  plugin is removed as a link. The new copy is made ready one level down in a directory of its
+  own (`mkdtemp`) and renamed into place, so nothing that was already there is removed for it, and
+  the shell, which takes every directory of the plugins directory with a `plugin.toml` in it for a
+  plugin, never sees a half-made copy.
+
 What the icons show comes from the page: `{"kind":"stats"}` (docs/protocol.md) carries the
 session's average and top WPM and the rows of its stats column, at most once a second, and the
 panel writes them into `panel.json`. Which WPM an icon shows, the live one or the session's
