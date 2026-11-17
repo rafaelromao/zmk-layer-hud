@@ -195,7 +195,7 @@ so `host/panelcore_test.py` drives the panel with a window that records what it 
 
 Showing and hiding goes to the running panel directly: `show` and `hide` write what they want to
 `$STATE/panel.want` and send the panel SIGUSR2, and the panel does it and says so in
-`$STATE/panel.json` (`{"pid", "shown", "wpm"}`), which `status` and both menubar icons read too
+`$STATE/panel.json` (`{"pid", "shown", "wpm"}`), which `status` and the menubar icons read too
 (`host/panelstate.py`). The live WPM gets there from the page, which posts `{"kind":"wpm"}` to its
 panel whenever the number changes. One signal and a file rather than one signal each, because on Linux WebKit
 suspends its own threads with SIGUSR1, and the GTK panel is a WebKit process. Hidden is drawn as
@@ -205,8 +205,8 @@ takes the page for a hidden one and slows the timers it counts with.
 Whether the HUD runs, and what it shows, is read one way: `panelstate.hud`. It takes `panel.json`
 only when a HUD panel stands behind it (a pid alive and a panel's, never one handed out again), says
 which copy of zmk-layer-hud that panel runs from, and adds the feed. Every verb reads it, the
-macOS icon reads it, and the Omarchy bar, which cannot import Python, reads it as `zmk-layer-hud
-status --json`, the same object for any other bar or script.
+macOS icon reads it, and the bars -- Omarchy's and Noctalia's, which cannot import Python -- read it
+as `zmk-layer-hud status --json`, the same object for any other bar or script.
 
 The icons read the HUD's state and run the command line, so they work the same whether the HUD
 is running or not:
@@ -220,11 +220,79 @@ is running or not:
   (`qs.Ui`): the menu in click mode, drawn as the tray draws its menus, and the stats in hover mode,
   with an owner of their own, because the bar closes a popout through its owner's `close()` and
   PopupCard's own would undo the binding to `open`.
+- **Noctalia:** `host/linux/noctalia` is a bar-widget plugin for Noctalia v5's bar, written in Luau
+  (Noctalia's plugins are a `plugin.toml` plus Luau entries, not QML). `menubar enable` copies it
+  into `~/.local/share/noctalia/plugins/layer-hud` (under `$NOCTALIA_DATA_HOME`, else
+  `$XDG_DATA_HOME`, when one is set: the order the shell itself looks in, and the same goes for its
+  `settings.toml` under `$NOCTALIA_STATE_HOME`, else `$XDG_STATE_HOME`; a `NOCTALIA_` variable set
+  only for the shell is not one this command sees), with the paths written into the Luau, then asks
+  the running shell to load it, to enable it (`noctalia msg plugins enable zmk/layer-hud`) and to
+  name the widget in the config (`widget.zmk-hud.type`), and lists `zmk-hud` at the end of `end` of
+  every enabled bar. The directory is named for the id's tail, `layer-hud`, not for the app:
+  enabling a plugin from a path source makes Noctalia re-read `<source>/<id tail>/plugin.toml`, so
+  any other directory name loads on a scan yet fails to enable ("parse error: File could not be
+  opened for reading"). The bar's own tooltip shows the HUD's stats the way the Omarchy widget does
+  with a hover popout, and a right-click walks the three WPMs through `zmk-layer-hud menubar wpm`,
+  read back from `status --json`.
+
+  The bar lists come back from `noctalia msg config-get`, whose output format Noctalia's docs do
+  not give (they say a path's effective value is printed and an unknown path is an error; older
+  shells answered an unknown or defaulted path with an empty reply and exit 0). So both quote
+  styles are read, and a list that cannot be read as an array of strings -- an error, an empty
+  reply, anything else -- is "cannot tell", never `[]`: `end` is reported and left alone, where the
+  other sides (which this only ever sweeps for copies) are skipped. `enable` says per bar what it
+  could not do, and exits 1 for it, rather than "already there". `disable` removes the plugin's
+  folder only once the shell has taken the icon out of the bars (the folder is what lets a later
+  `disable` try again); with no `noctalia` on the PATH there is no bar of its to clean and the
+  folder goes alone. `menubar status` reads Noctalia's saved `settings.toml` with `tomllib` where
+  there is one (Python 3.11) and says nothing about it where there is not. The bars are the ones
+  `bar.order` names: Noctalia also runs a bar its config defines without naming it there (it puts
+  those after the named ones), and such a bar is not one `enable`, `disable` or `status` sees.
+
+  Because the directory's name is only the id's tail, another author's plugin can have it too
+  (`someone/layer-hud`), so the name is never taken as proof. The directory is this plugin's when
+  the `plugin.toml` in it opens with the id `zmk/layer-hud` (`noctalia_plugin_state`). Python 3.10
+  has no `tomllib`, so the id is read by hand, and only where no TOML parser is needed to be sure
+  of it: as the manifest's first statement, after nothing but blank lines and comments, as this
+  plugin's own manifest has it. An `id = ...` further down could be a line inside a multi-line
+  string or an entry's own id, and is not looked for; nor is a line with whitespace or a line
+  ending TOML does not allow (a no-break space, a form feed, a carriage return alone). What it
+  cannot be sure of is someone else's, never ours. Only then do `enable`, `disable`, `update` and
+  `uninstall` write over it or remove it. Anything else in its place -- another plugin, a
+  directory without a manifest, a file -- is left alone: `enable` says so and exits 1, since the
+  directory stands where the plugin has to go; `disable` takes our icon out of the bars as ever,
+  says on stderr what it left, and exits 0, for what it promises still holds and only moving
+  someone else's plugin could clear a failure (it exits 1 only for what it could not do itself);
+  `uninstall` says so, `update` does not run `menubar enable` for it, and `menubar status` calls
+  the plugin not installed and says why. Whose the directory is, is asked again in the function
+  that removes or moves it, right before it does, since `disable` first asks the shell several
+  things (each up to 20 seconds) and `enable` first copies the new plugin. A link to a copy of the
+  plugin is removed as a link. A copy is removed with its `plugin.toml` last, so one the disk
+  stops part way still reads as ours and the next run tries again; an empty directory in its place
+  (all that is left when only the directory itself cannot go) counts as nothing, not as someone
+  else's. The new copy is made ready one level down in a directory of its
+  own (`mkdtemp`, named `.zmk-layer-hud.*`), so the shell, which takes every directory of the
+  plugins directory with a `plugin.toml` in it for a plugin, never sees a half-made copy. An older
+  copy of ours is moved aside into that directory whole, the new one is moved into its place, and
+  only then does the old one go: killed at any point, `enable` leaves a whole copy in place or
+  none, never one that has lost its `plugin.toml` and so would read as someone else's. If the new
+  copy cannot move in, the old one is moved back; if that fails too, the staging directory is kept
+  with the old copy whole inside it, and both failures are said, with where the copy is. A link
+  in the plugin's place is put back the same way, pointing where it pointed. The next
+  `enable` or `disable` removes such a staging directory when all in it is copies of this plugin
+  (or empty), and otherwise names it and leaves it, saying which it found: copies of ours the disk
+  would not let go of, or something else -- and then whether it has a `plugin.toml` of its own,
+  which makes Noctalia try to load it whatever its name. A staging directory, or a copy in it,
+  changed in the last five minutes is neither touched nor named: it may belong to another run at
+  work right now (two `enable`s, or an `enable` and a `disable`, at once), whose copies taken from
+  under it would leave nothing installed when both are done. What the disk refuses (a plugins directory
+  that cannot be written to, a move or a removal that fails) is said with the path and the reason,
+  and the command exits 1, rather than ending in a traceback.
 
 What the icons show comes from the page: `{"kind":"stats"}` (docs/protocol.md) carries the
 session's average and top WPM and the rows of its stats column, at most once a second, and the
 panel writes them into `panel.json`. Which WPM an icon shows, the live one or the session's
-average or top, is `$STATE/menubar.json`, which both icons read and set through
+average or top, is `$STATE/menubar.json`, which the icons read and set through
 `zmk-layer-hud menubar wpm`.
 
 The global shortcuts (`host/shortcuts.py`, `shortcuts:` in the config) run the same verbs:
@@ -242,14 +310,34 @@ The global shortcuts (`host/shortcuts.py`, `shortcuts:` in the config) run the s
   Hyprland fires every bind on a key. When either file changed, `hyprctl reload`, as Omarchy's own
   scripts do after an edit; the first edit of a file keeps a copy as `<file>.bak-zmk-layer-hud`. The
   labels go to `$STATE/shortcuts.json` for the bar's menu.
+- **niri:** the same `shortcuts.py`, writing its config's KDL instead: `~/.config/niri/zmk-layer-hud.kdl`
+  holds one `binds` block (each key a `spawn` of the verb, niri running spawn's arguments with no
+  shell, so the environment rides along as `env`'s own), read by an `include optional=true` line
+  once appended to the end of `config.kdl` -- last, so niri's merge gives these keys from whatever
+  had them. The first edit keeps `config.kdl.bak-zmk-layer-hud`. niri watches its config files and
+  reads them again by itself when one changes; when either file changed, `shortcuts.py` also asks
+  (`niri msg action load-config-file`) so the binds land without the wait; a reload that fails is
+  said on stderr, and a client that is not on PATH is no failure (hud.sh runs this under `set -e`).
+  Each bind is `repeat=false`: niri repeats a held bind, Hyprland's `bind` does not. The include
+  needs niri 26.04 (`NIRI_MIN`; a plain `include` is 25.11): `niri_version` reads `niri --version`
+  (niri's source spells it `MAJOR.MINOR[.PATCH] (commit)`, a distribution build may use a string
+  of its own, so the first `digits.digits` is taken), an older niri leaves `config.kdl` alone, and
+  one that cannot be read is let through. Which compositor it is follows `NIRI_SOCKET` (in
+  everything niri starts), then a niri config beside no Hyprland with `niri` on PATH.
+
+The Linux panel's drag works from what the compositor can say. Under Hyprland the pointer's place
+on the layout is its `cursorpos` (`cursor` in `panel.py`). niri's IPC has no such call, so under
+niri (`NIRI_SOCKET`) the drag is worked out from the pointer's coordinates on the surface itself
+(`follow_surface`, which also lets go of the echo a margin change brings back). That path is
+niri's alone: Hyprland's is as it was. `ZMKHUD_DRAG=1` logs either to `panel.log`.
 
 An output going away -- a monitor asleep or unplugged, a suspend -- takes the Linux panel's layer
 surfaces with it. gtk-layer-shell drops that close from 0.10 on, leaving the window with no surface
 under it, and before 0.10 it destroyed the window: either way the panel answered `show` with
 nothing until it was restarted. So it asks for the close (`set_respect_close`), keeps the window
 (its `delete-event` returns true), and maps its surfaces again on the monitor it would pick now
-whenever monitors come or go, a surface is closed, or a `show` finds Hyprland without the HUD's
-(`surface_there`). A WebKit web process that goes away leaves an empty view, which is a
+whenever monitors come or go, a surface is closed, or a `show` finds the compositor without the
+HUD's (`surface_there`). A WebKit web process that goes away leaves an empty view, which is a
 transparent one, so the page is loaded again, less and less often if it keeps going.
 
 The macOS login item (`autostart enable`) runs `host/macos/launcher.c`, compiled into

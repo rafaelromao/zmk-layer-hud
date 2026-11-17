@@ -22,11 +22,13 @@ between the vim layers. Rendered by `docs/make-gif.sh` from `docs/demo-vim.json`
 - **Any ZMK keyboard**: a small ZMK module on the keyboard; on the host, `import` draws its keymap.
 - **Live**: under `sync --watch`, edit the keymap or its drawing and the HUD redraws; every size
   and timing lives in one config file.
-- **Native panels**: a macOS overlay panel, a Hyprland layer-shell panel on Linux.
+- **Native panels**: a macOS overlay panel, a layer-shell panel on Linux (Hyprland or niri).
 
 ## Requirements
 
-- macOS, or Linux running Hyprland (the panel is a layer-shell surface).
+- macOS, or Linux running Hyprland or niri (the panel is a layer-shell surface). On niri the global
+  shortcuts need niri 26.04 or newer, for the `include optional=true` they are read through (see
+  [Hidden, and at login](#hidden-and-at-login)); on an older niri they are left unbound.
 - Python 3.10 or newer. `setup` builds a virtualenv; on macOS, Apple's `/usr/bin/python3` is 3.9
   and is not enough on its own.
 - A ZMK keyboard whose firmware you can build and flash, and its zmk-config: a GitHub URL, or a
@@ -174,6 +176,23 @@ work:
   Resting the pointer on it also opens the HUD's stats column, laid out across in the shell's
   popout: the same tiles the HUD shows (`stats:` in the config picks them). If it does not appear,
   run `omarchy-restart-shell`: the shell caches the plugins it has loaded.
+- On Noctalia v5, `zmk-layer-hud menubar enable` puts the same icon in the bar. It installs the
+  plugin `zmk/layer-hud`, enables it, and adds a `zmk-hud` widget to the end of every enabled bar
+  that `bar.order` names. It looks and works like the macOS one -- the live WPM beside the keyboard glyph, dimmed while the
+  HUD is hidden, struck through while it is not running -- its three WPMs a right-click away
+  (`zmk-layer-hud menubar wpm current|average|top` does the same), and the HUD's stats in its
+  tooltip. It needs Noctalia running to load the plugin; if the icon does not appear,
+  `noctalia msg config-reload`. A bar it cannot read or change is said, not skipped over, and
+  `menubar disable` takes the icon out of every bar before it removes the plugin: with Noctalia not
+  running it says so and leaves the plugin where it is, so run it again once the shell is up. The
+  plugin's directory, `~/.local/share/noctalia/plugins/layer-hud`, is named for the end of its id
+  alone, which another plugin can share: `enable`, `disable` and `uninstall` replace or remove it
+  only when the `plugin.toml` in it opens with the id `zmk/layer-hud`. Anything else there is left
+  alone and said: `enable` fails for it, since the HUD's plugin cannot go in, while `disable` and
+  `uninstall` still take the icon out of the bars and succeed. Under
+  niri the HUD first opens in the screen's top-right corner (niri does not say how much room a bar
+  takes), which on a bar along the top edge can be over the icon: drag the HUD once, and its place
+  is saved.
 
 Two global shortcuts do the same from the keyboard, on both systems: **Ctrl+Alt+L** shows or
 hides the HUD, and **Ctrl+Alt+Gui+L** (Cmd on macOS, Super on Omarchy) starts or stops it. The
@@ -191,6 +210,17 @@ off.
   The binds stay after the HUD stops, so the power shortcut starts it again. They unbind those keys
   first, so anything else bound to them stops working. A config change takes effect on the next
   start, and `uninstall` removes both the file and the line.
+- **On niri** they are binds in its config's KDL: every `start` writes `~/.config/niri/zmk-layer-hud.kdl`
+  (one `binds` block) and the first one appends `include optional=true "zmk-layer-hud.kdl"` to the
+  end of `config.kdl`, keeping a copy as `config.kdl.bak-zmk-layer-hud` first. niri merges binds
+  from included files, the last for a key winning, so the include being last takes these keys from
+  whatever had them. niri watches its config files and reads them again by itself when one changes;
+  `start` also asks (`niri msg action load-config-file`) so a change lands without the wait. The
+  binds stay after the HUD stops, and `uninstall` removes both the file and the line. They are
+  `repeat=false` binds (niri repeats a held bind otherwise), and they need niri 26.04 or newer,
+  which is where niri's docs put `include optional=true`: `start` reads `niri --version`, and on an
+  older niri leaves `config.kdl` alone and says so, the HUD starting all the same. A version it
+  cannot read is not a reason to leave them out.
 
 `zmk-layer-hud autostart enable` starts the HUD hidden at every login, and `autostart disable`
 stops doing so; it leaves a running HUD alone.
@@ -218,7 +248,7 @@ flags of any one of them, and [docs/cli.md](docs/cli.md) has every verb's in one
 | `heatmap [live\|session\|physical\|speed\|off]` | what the keys glow with: what was just typed, every press this session on the layer on screen or on all of them, each key's time, or nothing |
 | `doctor` | check this machine and say what is missing |
 | `autostart [enable\|disable]` | start the HUD hidden at login, counting from the first keystroke, or stop doing so |
-| `menubar [enable\|disable\|wpm]` | the icon that shows, hides or starts the HUD, with its WPM (`wpm current\|average\|top` picks it): in the macOS menubar, and on Omarchy a plugin for its bar |
+| `menubar [enable\|disable\|wpm]` | the icon that shows, hides or starts the HUD, with its WPM (`wpm current\|average\|top` picks it): in the macOS menubar, and as a bar plugin on Omarchy 4 and Noctalia v5 |
 | `setup` | prepare this machine: packages, virtualenv, config, permissions |
 | `update`, `uninstall` | fetch a newer tree; remove the tree and the command |
 | `keymap` | check the HUD's own files load: the config and the definitions import wrote |
@@ -295,6 +325,7 @@ Where things live, and what moves them:
 | `ZMKHUD_REF` | `latest` | what `install.sh` and `update` fetch: `latest` (the newest release), a release's tag like `v1.0.0`, or a branch |
 | `ZMKHUD_RESERVE` | `0` | what `start --reserve` sets |
 | `ZMKHUD_DEBUG` | unset | the panel and the feed log every layer message with a timestamp (never the key positions) |
+| `ZMKHUD_DRAG` | unset | (Linux) `1` makes the panel log its drags to `panel.log`: where the pointer was pressed and moved on the HUD, and the margins saved (never keys) |
 
 ### Sessions
 
@@ -361,8 +392,12 @@ is on), the system turns on secure input. On Linux, a password field with focus 
 accessibility bus, where the apps -- browsers, password managers, polkit's dialog -- say which
 widget has focus and what it is. For that the feed tells them assistive technology is wanted, as a
 screen reader would; a browser running since before shows nothing until it is started again, and
-`feed.accessibility: 0` leaves that setting alone. Under Hyprland the session lock is seen too, on
-Hyprland's own socket, so the unlock password goes nowhere. On both systems, while a terminal is
+`feed.accessibility: 0` leaves that setting alone. The session lock is seen too — under Hyprland
+on its own socket, under niri (where the compositor says nothing) by the process name of hyprlock,
+swaylock, gtklock or waylock, and of any lock screen `feed.lockers` names — so the unlock password
+goes nowhere. A lock screen built into a shell is seen under niri only once its process is named
+there (`feed.lockers: [name]`, as `comm` in `/proc` spells it; `zmk-layer-hud doctor` says it is
+by name only). On both systems, while a terminal is
 asking for a password -- `sudo`, `ssh`, `su`, anything that reads a line with echo off -- the feed
 sees that too. Either way it then passes on nothing typed: no characters, no keys lit, no layer
 changes, nothing counted. The strip clears, the board dims and the banner says `secure input ·
@@ -616,8 +651,10 @@ beside anything that is wrong. What it cannot see:
   feed turns on, so a browser from before the first start needs starting again. An app that
   exposes nothing (no accessibility bus, `GTK_A11Y=none`, a toolkit of its own) gives no sign, and
   there the strip shows what is typed and the board lights its keys. The session lock is seen
-  under Hyprland alone (by name -- hyprlock, swaylock, gtklock, waylock -- where Hyprland does not
-  say); another compositor's lock screen is not. `zmk-layer-hud doctor` says what sees a secret
+  under Hyprland (from its own socket, by name -- hyprlock, swaylock, gtklock, waylock -- where
+  Hyprland does not say) and under niri (by name only, its IPC having no lock state; a lock
+  screen built into a shell is seen once `feed.lockers` names its process); another
+  compositor's lock screen is not. `zmk-layer-hud doctor` says what sees a secret
   being typed here. Stop the HUD, or record with it hidden, when that matters.
 - A terminal's prompt is seen when it reads a line with echo off, as `sudo`, `ssh`, `su`, `passwd`
   and `getpass` do. One that takes the keys raw, one at a time -- `sudo` with `pwfeedback`,

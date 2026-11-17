@@ -122,6 +122,7 @@ FEED_DEFAULTS = {
     "session_poll_s": 1,       # how often the session files are looked at for `zmk-layer-hud session` changes
     "secure_input": 1,         # while a password field has focus or a terminal asks for a password, pass on nothing typed (0: pass it all)
     "accessibility": 1,        # (Linux) tell the apps assistive technology is wanted, so a password field with focus is seen (0: leave that setting alone)
+    "lockers": [],             # (Linux) process names of lock screens to look for besides hyprlock, swaylock, gtklock and waylock, where the compositor does not say (niri)
     # Native default; a configured 0/1 wins. Linux: US-International (ç is AltGr+,), macOS: Option.
     "altgr": int(sys.platform.startswith("linux")),
 }

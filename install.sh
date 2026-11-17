@@ -29,7 +29,7 @@ is_tree() { [ -x "$1/bin/zmk-layer-hud" ]; }
 main() {
   case "$(uname -s)" in
     Darwin|Linux) ;;
-    *) echo "zmk-layer-hud: no host for $(uname -s); macOS and Linux (Hyprland) only" >&2; exit 1 ;;
+    *) echo "zmk-layer-hud: no host for $(uname -s); macOS and Linux (Hyprland or niri) only" >&2; exit 1 ;;
   esac
 
   command -v tar >/dev/null 2>&1 || { echo "zmk-layer-hud: tar is needed" >&2; exit 1; }

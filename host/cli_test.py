@@ -7,6 +7,8 @@ import contextlib
 import io
 import json
 import os
+import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -19,6 +21,11 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import cli  # noqa: E402
+
+try:
+    import tomllib
+except ImportError:             # before Python 3.11; 3.10 is supported, and has none
+    tomllib = None
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHIM = os.path.join(ROOT, "bin", "zmk-layer-hud")
@@ -499,8 +506,14 @@ class OmarchyPlugin(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.shell = os.path.join(self.tmp.name, "shell.json")
         self.plugins = os.path.join(self.tmp.name, "plugins")
+        # Noctalia is here in these tests (which= says so), so its plugin dir and its shell must be
+        # fakes too: a `menubar disable` here once took the real HUD out of the real bar. Its bar is
+        # asked about (disable cleans wherever it is), and the fake's has none of ours in it.
+        self.noctalia = FakeNoctalia()
         for p in (mock.patch.object(cli, "OMARCHY_PLUGINS", self.plugins),
                   mock.patch.object(cli, "SHELL_JSON", self.shell),
+                  mock.patch.object(cli, "NOCTALIA_PLUGINS", os.path.join(self.tmp.name, "noctalia")),
+                  mock.patch.object(cli, "noctalia", self.noctalia),
                   mock.patch.object(cli.platform, "system", return_value="Linux")):
             p.start()
             self.addCleanup(p.stop)
@@ -566,6 +579,42 @@ class OmarchyPlugin(unittest.TestCase):
             self.assertEqual(SHELL_JSON, f.read())
         self.assertFalse(os.path.exists(os.path.join(self.plugins, cli.OMARCHY_ID)))
 
+    def test_disable_takes_an_entry_out_of_the_bar_when_its_folder_is_gone(self):
+        # A plugin folder deleted by hand leaves its entry in shell.json: `disable` still cleans it,
+        # as it did before it looked at the folder.
+        with open(self.shell, "w", encoding="utf-8") as f:
+            f.write(SHELL_JSON)
+        self.run_cli("menubar", "enable")
+        self.assertTrue(cli.bar_has(self.bar(), cli.OMARCHY_ID))
+        shutil.rmtree(os.path.join(self.plugins, cli.OMARCHY_ID))
+        code, said, _ = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertFalse(cli.bar_has(self.bar(), cli.OMARCHY_ID))
+        self.assertIn("Omarchy's bar", said)
+        self.assertEqual([], [c for c in self.noctalia.calls if c[:2] == ("msg", "config-set")])
+
+    def test_someone_elses_noctalia_plugin_does_not_fail_omarchys_disable(self):
+        # Both bars on one machine: another author's directory in the Noctalia plugin's place is
+        # said, and a disable that took the icon out of Omarchy's bar still succeeds.
+        with open(self.shell, "w", encoding="utf-8") as f:
+            f.write(SHELL_JSON)
+        self.run_cli("menubar", "enable")
+        theirs = os.path.join(self.tmp.name, "noctalia", "layer-hud")
+        os.makedirs(theirs)
+        with open(os.path.join(theirs, "plugin.toml"), "w", encoding="utf-8") as f:
+            f.write('id = "someone/layer-hud"\n')
+        code, said, _ = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertIn("Omarchy's bar", said)
+        self.assertIn("is not this plugin's", said)
+        self.assertEqual(["plugin.toml"], os.listdir(theirs))
+
+    def test_disable_on_a_machine_without_omarchy_touches_nothing(self):
+        code, said, _ = self.run_cli("menubar", "disable", which=lambda n: None)
+        self.assertEqual(0, code, said)
+        self.assertIn("not installed", said)
+        self.assertFalse(os.path.exists(self.shell))
+
     def test_the_old_id_is_taken_out(self):
         cfg = json.loads(SHELL_JSON)
         cfg["bar"]["layout"]["right"].append({"id": cli.APP_ID})
@@ -595,6 +644,1149 @@ class OmarchyPlugin(unittest.TestCase):
             self.assertIn("off", self.run_cli("menubar")[1])
             self.assertEqual(0, self.run_cli("menubar", "enable")[0])
             self.assertFalse(os.path.exists(off))
+
+
+class FakeNoctalia:
+    """The noctalia CLI as the tests see it: a small config tree, a plugin list, and every call
+    kept. Enough of `msg config-get/config-set` and `msg plugins` for the bar code to be exercised
+    against the same answers the running shell gives."""
+
+    def __init__(self, quote="'"):
+        self.cfg = {"bar": {"order": ["main"],
+                            "main": {"enabled": True, "start": [], "center": [], "end": ["tray"]}},
+                    "widget": {}}
+        self.enabled = set()
+        self.calls = []
+        self.quote = quote          # how config-get quotes a string; its docs do not say which
+        self.refuse = []            # predicates on argv: a call each of them matches fails
+        self.empty = set()          # paths config-get answers with nothing at all, and exit 0
+
+    def __call__(self, *argv):
+        self.calls.append(argv)
+        what = argv[1] if argv and argv[0] == "msg" else None
+        if any(refused(argv) for refused in self.refuse):
+            return 1, "", "error: refused"
+        if what == "config-reload":
+            return 0, "", ""
+        if what == "config-get":
+            if argv[2] in self.empty:
+                return 0, "", ""
+            value = self.get(argv[2])
+            if value is None:
+                return 1, "", f"error: path not found: {argv[2]}"
+            return 0, f"{argv[2].rsplit('.', 1)[-1]} = {self.toml(value)}", ""
+        if what == "config-set":
+            self.set(argv[2], self.parse(argv[3]))
+            return 0, "", ""
+        if what == "plugins" and argv[2] in ("enable", "disable"):
+            (self.enabled.add if argv[2] == "enable" else self.enabled.discard)(argv[3])
+            return 0, "", ""
+        if what == "plugins" and argv[2] == "list":
+            rows = [f"{name} [local] 1.0.0 {'enabled' if name in self.enabled else 'disabled'}"
+                    for name in sorted(self.enabled)]
+            return 0, ("\n".join(rows) + "\n") if rows else "(no plugins)\n", ""
+        return 1, "", f"unexpected: {argv!r}"
+
+    def get(self, path):
+        node = self.cfg
+        for part in path.split("."):
+            if not isinstance(node, dict) or part not in node:
+                return None
+            node = node[part]
+        return node
+
+    def set(self, path, value):
+        parts = path.split(".")
+        node = self.cfg
+        for part in parts[:-1]:
+            node = node.setdefault(part, {})
+        node[parts[-1]] = value
+
+    def toml(self, value):
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        q = self.quote
+        if isinstance(value, list):
+            return "[ " + ", ".join(q + v + q for v in value) + " ]"
+        return q + str(value) + q
+
+    def parse(self, value):
+        if value.startswith("["):
+            return re.findall(r"""['"]([^'"]*)['"]""", value)
+        return value[1:-1] if value[:1] in ("'", '"') and value[-1:] == value[:1] else value
+
+
+class NoctaliaPlugin(unittest.TestCase):
+    """The bar widget Noctalia loads (a Luau plugin, not QML), and `menubar` putting it where
+    Noctalia looks for plugins and in the bar."""
+
+    SRC = os.path.join(ROOT, "host", "linux", "noctalia")
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.plugins = os.path.join(self.tmp.name, "plugins")
+        self.shell = os.path.join(self.tmp.name, "shell.json")   # never written: this is not Omarchy's bar
+        self.fake = FakeNoctalia()
+        # Both bars' plugins live under the temp dir, so a bar of the real machine never shows up here.
+        for p in (mock.patch.object(cli, "NOCTALIA_PLUGINS", self.plugins),
+                  mock.patch.object(cli, "OMARCHY_PLUGINS", os.path.join(self.tmp.name, "omarchy")),
+                  mock.patch.object(cli, "SHELL_JSON", self.shell),
+                  mock.patch.object(cli.platform, "system", return_value="Linux"),
+                  mock.patch.object(cli, "noctalia", self.fake),
+                  # Noctalia's own variable comes before XDG's, so it is emptied (which is unset): a
+                  # machine that sets it must not have its real settings.toml read here.
+                  mock.patch.dict(os.environ, {"XDG_STATE_HOME": os.path.join(self.tmp.name, "state"),
+                                               "NOCTALIA_STATE_HOME": ""})):
+            p.start()
+            self.addCleanup(p.stop)
+
+    def dir(self):
+        # The id's tail: the name Noctalia rebuilds the manifest path from when enabling.
+        return os.path.join(self.plugins, "layer-hud")
+
+    def run_cli(self, *argv, which=lambda n: None if n.startswith("omarchy") else "/usr/bin/" + n):
+        with mock.patch.object(cli.shutil, "which", side_effect=which), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            code = cli.main(list(argv))
+        return code, out.getvalue() + err.getvalue()
+
+    def test_the_manifest_is_one_noctalia_can_load(self):
+        with open(os.path.join(self.SRC, "plugin.toml"), encoding="utf-8") as f:
+            manifest = f.read()
+        self.assertIn(f'id          = "{cli.NOCTALIA_ID}"', manifest)
+        # Everything the widget uses is in the oldest API level, so it runs on any Noctalia v5.
+        self.assertIn("plugin_api  = 3", manifest)
+        self.assertIn(f'id    = "{cli.NOCTALIA_ENTRY}"', manifest)
+        self.assertIn('entry = "widget.luau"', manifest)
+        with open(os.path.join(self.SRC, "widget.luau"), encoding="utf-8") as f:
+            script = f.read()
+        for mark in ("__ZMK_LAYER_HUD_COMMAND__", "__ZMK_LAYER_HUD_STATE__", "__ZMK_LAYER_HUD_START_WITH__"):
+            self.assertIn(mark, script)              # the marks `menubar enable` writes in
+        for fn in ("function update()", "function onClick()", "function onRightClick()"):
+            self.assertIn(fn, script)
+        # The word on a HUD from another copy, as the macOS icon and the Omarchy widget take it by.
+        self.assertIn('h.icon == "another copy"', script)
+
+    def test_enable_copies_it_where_noctalia_looks_and_writes_the_marks_in(self):
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        with open(os.path.join(self.dir(), "widget.luau"), encoding="utf-8") as f:
+            script = f.read()
+        self.assertNotIn("__ZMK_LAYER_HUD_", script)
+        self.assertIn(os.path.join(ROOT, "bin", "zmk-layer-hud"), script)
+        self.assertIn(cli.STATE, script)
+        self.assertIn(("msg", "config-reload"), self.fake.calls)
+        self.assertIn(("msg", "plugins", "enable", cli.NOCTALIA_ID), self.fake.calls)
+        self.assertIn(("msg", "config-set", f"widget.{cli.NOCTALIA_WIDGET}.type",
+                       f"'{cli.NOCTALIA_ID}:{cli.NOCTALIA_ENTRY}'"), self.fake.calls)
+        self.assertEqual(["tray", cli.NOCTALIA_WIDGET], self.fake.cfg["bar"]["main"]["end"])
+        # Only `end`: start and center are other widgets' places.
+        self.assertEqual([], self.fake.cfg["bar"]["main"]["start"])
+        self.assertEqual([], self.fake.cfg["bar"]["main"]["center"])
+        self.assertIn("Noctalia's bar", said)
+
+    def test_enable_again_puts_it_in_only_once(self):
+        self.run_cli("menubar", "enable")
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(1, self.fake.cfg["bar"]["main"]["end"].count(cli.NOCTALIA_WIDGET))
+
+    def test_disable_takes_it_out_again(self):
+        self.run_cli("menubar", "enable")
+        # Even from a side it should never have been in: disable leaves no copy of it anywhere.
+        self.fake.cfg["bar"]["main"]["start"] = [cli.NOCTALIA_WIDGET]
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(["tray"], self.fake.cfg["bar"]["main"]["end"])
+        self.assertEqual([], self.fake.cfg["bar"]["main"]["start"])
+        self.assertIn(("msg", "plugins", "disable", cli.NOCTALIA_ID), self.fake.calls)
+        self.assertFalse(os.path.exists(self.dir()))
+        self.assertIn("Noctalia's bar", said)
+
+    def test_status_says_what_state_it_is_in(self):
+        code, said = self.run_cli("menubar")
+        self.assertEqual(0, code)
+        self.assertIn("not installed", said)
+        self.run_cli("menubar", "enable")
+        code, said = self.run_cli("menubar")
+        self.assertEqual(0, code)
+        self.assertIn(f"in {self.dir()}", said)
+        self.assertNotIn("but not in the bar", said)
+        # Installed but out of the bar: said so.
+        self.fake.cfg["bar"]["main"]["end"] = ["tray"]
+        code, said = self.run_cli("menubar")
+        self.assertEqual(0, code)
+        self.assertIn("but not in the bar", said)
+
+    # Without tomllib the saved settings are not read and nothing is said of them, which
+    # test_status_claims_nothing_about_saved_settings_it_cannot_read holds on every Python.
+    @unittest.skipUnless(tomllib, "the saved settings are read with tomllib (Python 3.11)")
+    def test_status_says_when_the_bar_has_it_but_the_saved_settings_do_not(self):
+        self.run_cli("menubar", "enable")
+        state = os.path.join(self.tmp.name, "state", "noctalia")
+        os.makedirs(state)
+        settings = os.path.join(state, "settings.toml")
+        with open(settings, "w", encoding="utf-8") as f:
+            f.write('[bar.main]\nend = [ "tray", "zmk-hud" ]\n')
+        code, said = self.run_cli("menubar")
+        self.assertNotIn("saved settings", said)
+        with open(settings, "w", encoding="utf-8") as f:
+            f.write('[bar.main]\nend = [ "tray" ]\n')
+        code, said = self.run_cli("menubar")
+        self.assertEqual(0, code)
+        self.assertIn("not in Noctalia's saved settings", said)
+        self.assertNotIn("but not in the bar", said)
+
+    def test_status_claims_nothing_about_saved_settings_it_cannot_read(self):
+        self.run_cli("menubar", "enable")
+        state = os.path.join(self.tmp.name, "state", "noctalia")
+        self.assertIsNone(cli.noctalia_saved_placed())            # no file where it looks
+        self.assertNotIn("saved settings", self.run_cli("menubar")[1])
+        os.makedirs(state)
+        settings = os.path.join(state, "settings.toml")
+        with open(settings, "w", encoding="utf-8") as f:
+            f.write("[bar.main\nend = ")                          # not TOML
+        self.assertIsNone(cli.noctalia_saved_placed())
+        self.assertNotIn("saved settings", self.run_cli("menubar")[1])
+        with open(settings, "w", encoding="utf-8") as f:
+            f.write('[bar.main]\nend = [ "tray" ]\n')              # would be said, if it could be read
+        # Python 3.10 has no tomllib, and the README supports 3.10: status must still run.
+        with mock.patch.dict(sys.modules, {"tomllib": None}):
+            self.assertIsNone(cli.noctalia_saved_placed())
+            code, said = self.run_cli("menubar")
+        self.assertEqual(0, code, said)
+        self.assertNotIn("saved settings", said)
+        self.assertIn(f"in {self.dir()}", said)
+
+    def test_noctalias_directories_are_found_the_way_the_shell_finds_them(self):
+        # lib/util/file_utils.h, applicationXdgDir: NOCTALIA_<kind>_HOME, else XDG_<kind>_HOME, else
+        # under the home directory, a variable set to nothing counting as not set.
+        with mock.patch.dict(os.environ, {"NOCTALIA_DATA_HOME": "/n/data", "XDG_DATA_HOME": "/x/data"}):
+            self.assertEqual("/n/data/noctalia", cli.noctalia_home("DATA", "~/.local/share"))
+            os.environ["NOCTALIA_DATA_HOME"] = ""
+            self.assertEqual("/x/data/noctalia", cli.noctalia_home("DATA", "~/.local/share"))
+            os.environ["XDG_DATA_HOME"] = ""
+            self.assertEqual(os.path.expanduser("~/.local/share/noctalia"), cli.noctalia_home("DATA", "~/.local/share"))
+            del os.environ["NOCTALIA_DATA_HOME"], os.environ["XDG_DATA_HOME"]
+            self.assertEqual(os.path.expanduser("~/.local/share/noctalia"), cli.noctalia_home("DATA", "~/.local/share"))
+
+    def test_the_plugins_directory_is_under_noctalias_data_home(self):
+        # The constant is made when the module is read, so the module is read again, as another
+        # one, with the variables set: nothing of `cli` itself changes.
+        import importlib.util
+
+        def plugins(**env):
+            with mock.patch.dict(os.environ, env):
+                spec = importlib.util.spec_from_file_location("cli_read_again", cli.__file__)
+                again = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(again)
+            return again.NOCTALIA_PLUGINS
+        self.assertEqual("/n/data/noctalia/plugins", plugins(NOCTALIA_DATA_HOME="/n/data", XDG_DATA_HOME="/x/data"))
+        self.assertEqual("/x/data/noctalia/plugins", plugins(NOCTALIA_DATA_HOME="", XDG_DATA_HOME="/x/data"))
+        self.assertEqual(os.path.expanduser("~/.local/share/noctalia/plugins"),
+                         plugins(NOCTALIA_DATA_HOME="", XDG_DATA_HOME=""))
+
+    @unittest.skipUnless(tomllib, "the saved settings are read with tomllib (Python 3.11)")
+    def test_the_saved_settings_are_read_from_noctalias_own_state_home_when_it_is_set(self):
+        self.run_cli("menubar", "enable")
+        for home, end in (("state", '"tray", "zmk-hud"'), ("profile", '"tray"')):
+            os.makedirs(os.path.join(self.tmp.name, home, "noctalia"))
+            with open(os.path.join(self.tmp.name, home, "noctalia", "settings.toml"), "w", encoding="utf-8") as f:
+                f.write(f"[bar.main]\nend = [ {end} ]\n")
+        self.assertNotIn("saved settings", self.run_cli("menubar")[1])    # XDG_STATE_HOME's has it
+        with mock.patch.dict(os.environ, {"NOCTALIA_STATE_HOME": os.path.join(self.tmp.name, "profile")}):
+            self.assertIn("not in Noctalia's saved settings", self.run_cli("menubar")[1])
+
+    def bar_writes(self):
+        return [c for c in self.fake.calls if c[:2] == ("msg", "config-set") and c[2].startswith("bar.")]
+
+    def test_an_array_of_strings_is_read_in_either_quoting_or_not_at_all(self):
+        read = cli.noctalia_strings
+        self.assertEqual(["tray", "clock"], read("[ 'tray', 'clock' ]"))
+        self.assertEqual(["tray", "clock"], read('["tray","clock",]'))
+        self.assertEqual(["a\"b", "c'd", "e\\f"], read(r'''[ "a\"b", "c'd", "e\\f" ]'''))
+        self.assertEqual(["x", "y"], read("[\n  'x',\n  \"y\",\n]\n"))
+        self.assertEqual([], read("[]"))
+        self.assertEqual([], read("[ ]"))
+        # Anything else is "cannot read it", never an empty list: written back over, it would
+        # drop whatever the list held.
+        for unreadable in ("", "tray", "[ 1, 2 ]", "[ 'a' 'b' ]", "[ 'a', , 'b' ]", "[ 'a'",
+                           "[ # note\n 'a' ]", r'[ "\q" ]', "[ 'a', tray ]", "'a'"):
+            self.assertIsNone(read(unreadable), unreadable)
+
+    def test_a_string_is_written_as_a_literal_where_it_can_be(self):
+        self.assertEqual("['tray', 'zmk-hud']", cli.noctalia_toml_array(["tray", "zmk-hud"]))
+        self.assertEqual("[\"it's\"]", cli.noctalia_toml_array(["it's"]))
+        self.assertEqual('["a\\\\b\\n"]', cli.noctalia_toml_array(["a\\b\n"]))  # a control character needs escaping
+        self.assertEqual("'zmk/layer-hud:hud'", cli.noctalia_toml_string("zmk/layer-hud:hud"))
+
+    def test_config_get_with_or_without_the_path_in_front_is_the_same_value(self):
+        for said in ("end = [ 'tray' ]", "bar.main.end = [ 'tray' ]", "[ 'tray' ]", "bar.main.enabled = true"):
+            with mock.patch.object(cli, "noctalia", lambda *a, said=said: (0, said + "\n", "")):
+                text = cli.noctalia_config("x")
+                self.assertTrue(text.startswith("[") or text == "true", text)
+        with mock.patch.object(cli, "noctalia", lambda *a: (0, "\n", "")):
+            self.assertIsNone(cli.noctalia_config("x"))             # an empty reply says nothing
+        with mock.patch.object(cli, "noctalia", lambda *a: (1, "", "error: unknown path")):
+            self.assertIsNone(cli.noctalia_config("x"))
+        with mock.patch.object(cli, "noctalia", lambda *a: (0, "'a=b'\n", "")):
+            self.assertEqual("'a=b'", cli.noctalia_config("x"))     # an = inside a string is not the key's
+
+    def test_a_double_quoted_bar_list_is_read_and_everything_in_it_is_kept(self):
+        self.fake.quote = '"'
+        self.fake.cfg["bar"]["main"]["end"] = ["tray", "clock"]
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(["tray", "clock", cli.NOCTALIA_WIDGET], self.fake.cfg["bar"]["main"]["end"])
+        self.assertEqual(0, self.run_cli("menubar", "enable")[0])
+        self.assertEqual(1, self.fake.cfg["bar"]["main"]["end"].count(cli.NOCTALIA_WIDGET))
+
+    def test_enable_says_so_when_the_shell_will_not_take_the_bar_list(self):
+        self.fake.refuse.append(lambda argv: argv[1] == "config-set" and argv[2] == "bar.main.end")
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn("bar.main.end was not taken: error: refused", said)
+        self.assertNotIn("already has", said)
+        self.assertEqual(["tray"], self.fake.cfg["bar"]["main"]["end"])
+
+    def test_enable_does_not_write_over_a_list_it_could_not_read(self):
+        # Unset, so config-get errors: and answering with nothing at all (older shells did that for an
+        # unknown or a defaulted path) is no more an empty list than an error is.
+        del self.fake.cfg["bar"]["main"]["end"]
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn("bar.main.end could not be read", said)
+        self.assertEqual([], self.bar_writes())
+        self.fake.cfg["bar"]["main"]["end"] = ["tray", "clock"]
+        self.fake.empty.add("bar.main.end")
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertEqual([], self.bar_writes())
+        self.assertEqual(["tray", "clock"], self.fake.cfg["bar"]["main"]["end"])
+
+    def test_enable_without_the_bars_listed_is_not_already_there(self):
+        self.fake.empty.add("bar.order")
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn("does not say which bars there are", said)
+        self.assertNotIn("already has", said)
+        self.assertEqual([], self.bar_writes())
+        # And a config whose every bar is switched off has none to put it in.
+        self.fake.empty.clear()
+        self.fake.cfg["bar"]["main"]["enabled"] = False
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn("switched on", said)
+        self.assertNotIn("already has", said)
+
+    def test_enable_puts_it_in_the_bars_that_take_it_and_says_about_the_rest(self):
+        self.fake.cfg["bar"]["order"] = ["main", "second"]
+        self.fake.cfg["bar"]["second"] = {"enabled": True, "start": [], "center": [], "end": ["clock"]}
+        self.fake.refuse.append(lambda argv: argv[1] == "config-set" and argv[2] == "bar.second.end")
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn("the HUD's icon is in Noctalia's bar", said)
+        self.assertIn("not in every bar", said)
+        self.assertEqual(["tray", cli.NOCTALIA_WIDGET], self.fake.cfg["bar"]["main"]["end"])
+        self.assertEqual(["clock"], self.fake.cfg["bar"]["second"]["end"])
+
+    def test_a_bar_named_so_that_no_config_path_carries_it_is_left_alone(self):
+        self.fake.cfg["bar"]["order"] = ["my.bar"]
+        self.fake.cfg["bar"]["my.bar"] = {"enabled": True, "start": [], "center": [], "end": ["tray"]}
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn("a name a config path cannot carry", said)
+        self.assertEqual([], self.bar_writes())
+
+    def test_disable_with_the_shell_down_keeps_the_plugin_so_a_later_disable_can_finish(self):
+        self.run_cli("menubar", "enable")
+        with mock.patch.object(cli, "noctalia", lambda *a: None):
+            code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(1, code)
+        self.assertNotIn("is out of", said)                       # it is not, and is not said to be
+        self.assertIn("does not say which bars there are", said)
+        self.assertIn("left in place", said)
+        self.assertTrue(os.path.isdir(self.dir()))
+        self.assertIn(cli.NOCTALIA_WIDGET, self.fake.cfg["bar"]["main"]["end"])
+        code, said = self.run_cli("menubar", "disable")             # the shell is back
+        self.assertEqual(0, code, said)
+        self.assertEqual(["tray"], self.fake.cfg["bar"]["main"]["end"])
+        self.assertFalse(os.path.exists(self.dir()))
+        self.assertIn("Noctalia's bar", said)
+
+    def test_disable_with_a_bar_list_the_shell_will_not_take_keeps_the_plugin_too(self):
+        self.run_cli("menubar", "enable")
+        self.fake.refuse.append(lambda argv: argv[1] == "config-set" and argv[2] == "bar.main.end")
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(1, code)
+        self.assertIn("bar.main.end was not taken", said)
+        self.assertTrue(os.path.isdir(self.dir()))
+        self.assertNotIn(("msg", "plugins", "disable", cli.NOCTALIA_ID), self.fake.calls)
+
+    def test_disable_takes_a_bar_entry_out_when_the_folder_is_already_gone(self):
+        self.run_cli("menubar", "enable")
+        shutil.rmtree(self.dir())
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(["tray"], self.fake.cfg["bar"]["main"]["end"])
+        self.assertIn("Noctalia's bar", said)
+
+    def test_disable_with_nothing_installed_is_quiet_even_with_the_shell_down(self):
+        with mock.patch.object(cli, "noctalia", lambda *a: None):
+            code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertIn("not installed", said)
+        self.assertNotIn("Noctalia:", said)
+
+    def test_disable_without_noctalia_on_the_path_has_only_the_folder_to_take(self):
+        self.run_cli("menubar", "enable")
+        calls = len(self.fake.calls)
+        code, said = self.run_cli("menubar", "disable",
+                                  which=lambda n: None if n.startswith("omarchy") or n == "noctalia" else "/usr/bin/" + n)
+        self.assertEqual(0, code, said)
+        self.assertFalse(os.path.exists(self.dir()))
+        self.assertEqual(calls, len(self.fake.calls))                # nothing was asked
+
+    def test_disable_says_when_the_shell_would_not_disable_the_plugin_but_still_takes_the_folder(self):
+        self.run_cli("menubar", "enable")
+        self.fake.refuse.append(lambda argv: argv[1:3] == ("plugins", "disable"))
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(1, code)
+        self.assertIn("would not disable", said)
+        self.assertIn("noctalia msg plugins disable", said)
+        self.assertEqual(["tray"], self.fake.cfg["bar"]["main"]["end"])
+        self.assertFalse(os.path.exists(self.dir()))
+        self.assertNotIn("left in place", said)
+
+    def test_status_says_when_the_shell_does_not_list_the_bars(self):
+        self.run_cli("menubar", "enable")
+        self.fake.empty.add("bar.order")
+        code, said = self.run_cli("menubar")
+        self.assertEqual(0, code)
+        self.assertIn("does not say which bars there are", said)
+        self.assertNotIn("but not in the bar", said)
+
+    # The directory is named for the tail of the id alone (`layer-hud`), which another author's
+    # plugin can have too: only one whose plugin.toml carries this plugin's id is ever removed or
+    # written over.
+
+    THEIRS = 'id = "someone/layer-hud"\nname = "Theirs"\nversion = "1.0.0"\nplugin_api = 3\n'
+
+    def someone_elses(self, manifest=THEIRS):
+        os.makedirs(self.dir())
+        if manifest is not None:
+            with open(os.path.join(self.dir(), "plugin.toml"), "w", encoding="utf-8") as f:
+                f.write(manifest)
+        with open(os.path.join(self.dir(), "widget.luau"), "w", encoding="utf-8") as f:
+            f.write("-- theirs\n")
+
+    def assert_theirs_is_untouched(self, manifest=THEIRS):
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))      # and nothing staged beside it
+        self.assertEqual(sorted(["widget.luau"] + (["plugin.toml"] if manifest is not None else [])),
+                         sorted(os.listdir(self.dir())))
+        with open(os.path.join(self.dir(), "widget.luau"), encoding="utf-8") as f:
+            self.assertEqual("-- theirs\n", f.read())
+        if manifest is not None:
+            with open(os.path.join(self.dir(), "plugin.toml"), encoding="utf-8") as f:
+                self.assertEqual(manifest, f.read())
+
+    OURS = b'id = "zmk/layer-hud"\n'
+
+    # Manifests the reader takes an id from: the id is the first statement, written plainly.
+    READ = (
+        (b'id = "a/b"\n', "a/b"),
+        (b'id = "a/b"', "a/b"),                                           # no newline at the end
+        (b"id='a/b'   # the id\r\n", "a/b"),                              # TOML's other line ending
+        (b'"id" = "a/b"\n', "a/b"),
+        (b"'id'\t=\t'a/b'\n", "a/b"),
+        (b'# a comment\n\n  \t\n\r\nid = "a/b"\nname = "B"\n', "a/b"),
+        ('# café   still the comment\nid = "a/b" # café\n'.encode("utf-8"), "a/b"),
+        # A `[[widget]]`'s own id, further down, is not the plugin's.
+        (b'id = "a/b"\n\n[[widget]]\nid = "zmk/layer-hud"\n', "a/b"),
+    )
+
+    # Manifests it takes none from, each with this plugin's id somewhere a careless reader finds it.
+    UNREAD = (
+        # Someone else's valid manifest, with our id as a line of a multi-line string.
+        b'description = """\nid = "zmk/layer-hud"\n"""\nid = "someone/layer-hud"\n',
+        b"description = '''\nid = \"zmk/layer-hud\"\n'''\nid = \"someone/layer-hud\"\n",
+        b'description = """Shows"""\nid = "zmk/layer-hud"\n',
+        b'id = """zmk/layer-hud"""\n',
+        b'id = """\nzmk/layer-hud"""\n',
+        # Not the first statement: after another key, inside an array, under a table header.
+        b'name = "B"\n' + OURS,
+        b'tags = [\n' + OURS + b']\n',
+        b'[[widget]]\n' + OURS,
+        b'[plugin]\n' + OURS,
+        # Whitespace and line endings that are not TOML's, which Python's own would let through.
+        'id = "zmk/layer-hud"\n'.encode("utf-8"),
+        ' id = "zmk/layer-hud"\n'.encode("utf-8"),
+        b'id\x0c= "zmk/layer-hud"\n',
+        b'id\x0b= "zmk/layer-hud"\n',
+        b'name = "B"\r' + OURS,
+        b'# a comment\r' + OURS,
+        b'\r' + OURS,
+        b'id = "zmk/layer-hud"\r',
+        b'id = "zmk/layer-hud"\r\r\n',
+        'name = "B\u0085id = "zmk/layer-hud"\n'.encode("utf-8"),
+        '# a comment id = "zmk/layer-hud"\n'.encode("utf-8"),
+        b'# a comment\x00\n' + OURS,
+        b'\xef\xbb\xbf' + OURS,                                          # a byte order mark
+        # An id that is not one plain string, or not an id.
+        b"", b"\n\n# nothing\n", b"name = 'B'\n", b"id = 3\n", b'id = "zmk\\u002flayer-hud"\n',
+        b'idx = "zmk/layer-hud"\n', b'id.x = "zmk/layer-hud"\n', b'id = "zmk/layer-hud" "c"\n',
+        b'id = "zmk/layer-hud", name = "B"\n', b'id = "zmk/layer-hud\n', b'id = "zmk/layer-hud\x7f"\n',
+        b'id = "zmk/layer-hud\xff"\n', b'id == "zmk/layer-hud"\n', b'= "zmk/layer-hud"\n',
+    )
+
+    def manifest_id(self, data):
+        where = tempfile.mkdtemp(dir=self.tmp.name)
+        with open(os.path.join(where, "plugin.toml"), "wb") as f:
+            f.write(data)
+        return cli.noctalia_manifest_id(where)
+
+    def test_the_id_of_a_manifest_is_read_without_tomllib(self):
+        # Python 3.10 has no tomllib, and the README supports 3.10.
+        with mock.patch.dict(sys.modules, {"tomllib": None}):
+            # The manifest this ships, as it is written: were its id ever written a way this does
+            # not read, `enable` would take its own older copy for someone else's.
+            self.assertEqual(cli.NOCTALIA_ID, cli.noctalia_manifest_id(self.SRC))
+            for data, said in self.READ:
+                self.assertEqual(said, self.manifest_id(data), data)
+        self.assertIsNone(cli.noctalia_manifest_id(os.path.join(self.tmp.name, "nowhere")))
+
+    def test_an_id_the_reader_cannot_be_sure_of_is_no_id(self):
+        # What is read as this plugin's id gets the directory removed, so what is not plainly the
+        # manifest's first statement is not read at all: None, never a guess.
+        for data in self.UNREAD:
+            self.assertIsNone(self.manifest_id(data), data)
+
+    @unittest.skipUnless(tomllib, "compared with tomllib (Python 3.11)")
+    def test_whatever_id_the_reader_gives_is_the_one_a_toml_parser_gives(self):
+        # On a manifest that is valid TOML, and one way only: the reader may give no id where a
+        # parser finds one (it reads less), never one a parser does not find. Every shape above
+        # that it gives an id for is valid TOML, as is the manifest this ships. What follows the id
+        # is not read, so a file that stops being TOML after it is not compared here: the reader
+        # gives its id, and Noctalia refuses the file.
+        with open(os.path.join(self.SRC, "plugin.toml"), "rb") as f:
+            shipped = f.read()
+        self.assertEqual(cli.NOCTALIA_ID, tomllib.loads(shipped.decode("utf-8"))["id"])
+        for data in (shipped,) + tuple(d for d, _ in self.READ) + self.UNREAD:
+            said = self.manifest_id(data)
+            if said is not None:
+                self.assertEqual(said, tomllib.loads(data.decode("utf-8")).get("id"), data)
+
+    def test_someone_elses_manifest_with_this_plugins_id_inside_a_string_is_left_alone(self):
+        # Valid TOML whose id is someone/layer-hud: read a line at a time without knowing of the
+        # string, it was taken for this plugin, written over by `enable` and removed by `disable`.
+        manifest = ('description = """\nid = "zmk/layer-hud"\n"""\nid = "someone/layer-hud"\n'
+                    'name = "Theirs"\nversion = "1.0.0"\nplugin_api = 3\n')
+        self.someone_elses(manifest)
+        self.assertFalse(cli.noctalia_installed())
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn("is not this plugin's", said)
+        self.assert_theirs_is_untouched(manifest)
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertIn("is not this plugin's", said)
+        self.assert_theirs_is_untouched(manifest)
+        self.assertIn("is not this plugin's", self.uninstall_step())
+        self.assert_theirs_is_untouched(manifest)
+
+    def test_enable_leaves_another_plugins_directory_alone_and_says_so(self):
+        self.someone_elses()
+        self.assertFalse(cli.noctalia_installed())
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn(f"{self.dir()} is not this plugin's", said)
+        self.assertIn("left alone", said)
+        self.assertNotIn("Noctalia's bar", said)
+        self.assert_theirs_is_untouched()
+        self.assertEqual([], self.fake.calls)                       # and the shell was asked nothing
+        self.assertEqual(["tray"], self.fake.cfg["bar"]["main"]["end"])
+
+    def test_enable_takes_nothing_it_cannot_tell_is_this_plugin_for_this_plugin(self):
+        # No manifest, one that does not parse, one with no id, and one that only names this
+        # plugin's id further down, where it is something else's id.
+        for manifest in (None, "[[[", 'name = "ZMK Layer HUD"\n',
+                         f'id = "someone/layer-hud"\n\n[[widget]]\nid = "{cli.NOCTALIA_ID}"\n'):
+            with self.subTest(manifest=manifest):
+                self.someone_elses(manifest)
+                code, said = self.run_cli("menubar", "enable")
+                self.assertEqual(1, code)
+                self.assertIn("is not this plugin's", said)
+                self.assert_theirs_is_untouched(manifest)
+                shutil.rmtree(self.dir())
+        with open(self.dir(), "w", encoding="utf-8") as f:              # not even a directory
+            f.write("a file\n")
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn("is not this plugin's", said)
+        with open(self.dir(), encoding="utf-8") as f:
+            self.assertEqual("a file\n", f.read())
+        self.assertEqual([], self.fake.calls)
+
+    def test_enable_writes_over_an_older_copy_of_this_plugin_and_leaves_nothing_staged(self):
+        self.run_cli("menubar", "enable")
+        with open(os.path.join(self.dir(), "old.luau"), "w", encoding="utf-8") as f:
+            f.write("-- from a release before\n")
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(self.dir())))
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+
+    def installed_widget(self):
+        with open(os.path.join(self.dir(), "widget.luau"), encoding="utf-8") as f:
+            return f.read()
+
+    def test_an_install_that_fails_says_why_and_leaves_nothing_staged_and_the_copy_that_was_there(self):
+        self.run_cli("menubar", "enable")
+        before = self.installed_widget()
+        # The disk's refusals are said as this command says any failure: no traceback.
+        with mock.patch.object(cli, "bake_marks", side_effect=OSError(28, "No space left on device")):
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn(f"could not install the Noctalia plugin in {self.dir()}", said)
+        self.assertIn("No space left on device", said)
+        self.assertNotIn("Traceback", said)
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+        self.assertEqual(before, self.installed_widget())
+
+    def test_a_new_copy_that_cannot_be_moved_into_place_puts_the_old_one_back(self):
+        self.run_cli("menubar", "enable")
+        with open(os.path.join(self.dir(), "old.luau"), "w", encoding="utf-8") as f:
+            f.write("-- from a release before\n")
+        rename = os.rename
+
+        def refuse_the_new_copy(src, dst):
+            if dst == self.dir() and os.path.basename(src) == "new":
+                raise OSError(13, "Permission denied", dst)
+            return rename(src, dst)
+        with mock.patch.object(cli.os, "rename", side_effect=refuse_the_new_copy):
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn(f"could not install the Noctalia plugin in {self.dir()}", said)
+        self.assertIn("Permission denied", said)
+        self.assertNotIn("Traceback", said)
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+        self.assertEqual(sorted(os.listdir(self.SRC) + ["old.luau"]), sorted(os.listdir(self.dir())))
+
+    def test_when_the_old_copy_cannot_be_moved_back_either_it_is_kept_and_both_failures_said(self):
+        self.run_cli("menubar", "enable")
+        with open(os.path.join(self.dir(), "old.luau"), "w", encoding="utf-8") as f:
+            f.write("-- from a release before\n")
+        rename = os.rename
+
+        def refuse_both(src, dst):
+            if dst == self.dir():               # the new copy moving in, and the old one moving back
+                raise OSError(13, f"Permission denied ({os.path.basename(src)})", dst)
+            return rename(src, dst)
+        with mock.patch.object(cli.os, "rename", side_effect=refuse_both):
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn(f"could not install the Noctalia plugin in {self.dir()}", said)
+        self.assertIn("Permission denied (new)", said)             # what failed first
+        self.assertIn("could not be moved back", said)
+        self.assertIn("Permission denied (old)", said)             # and then
+        self.assertNotIn("Traceback", said)
+        (held,) = self.staging()
+        old = os.path.join(self.plugins, held, "old")
+        self.assertIn(f"It is whole in {old}", said)
+        self.assertEqual(sorted(os.listdir(self.SRC) + ["old.luau"]), sorted(os.listdir(old)))
+        self.assertFalse(os.path.lexists(self.dir()))
+        # What the message offers: a later enable installs a new copy and clears what was kept.
+        self.aged(os.path.join(self.plugins, held))
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+
+    @unittest.skipIf(os.geteuid() == 0, "root writes where it likes")
+    def test_a_plugins_directory_that_cannot_be_written_to_is_said_not_thrown(self):
+        os.makedirs(self.plugins)
+        os.chmod(self.plugins, 0o500)
+        self.addCleanup(os.chmod, self.plugins, 0o700)
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn(f"could not install the Noctalia plugin in {self.dir()}", said)
+        self.assertIn(self.plugins, said)                           # the path the disk refused, and why
+        self.assertIn("Permission denied", said)
+        self.assertNotIn("Traceback", said)
+        self.assertEqual([], self.fake.calls)
+
+    def test_a_plugin_disable_cannot_remove_is_said_not_thrown(self):
+        elsewhere = os.path.join(self.tmp.name, "checkout")
+        shutil.copytree(self.SRC, elsewhere)
+        os.makedirs(self.plugins)
+        os.symlink(elsewhere, self.dir())                           # a link goes with os.unlink
+        with mock.patch.object(cli.os, "unlink", side_effect=OSError(1, "Operation not permitted", self.dir())):
+            code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(1, code)
+        self.assertIn(f"{self.dir()} could not be removed", said)
+        self.assertIn("Operation not permitted", said)
+        self.assertNotIn("Traceback", said)
+        self.assertTrue(os.path.islink(self.dir()))
+
+    def read_only(self, path):
+        os.chmod(path, 0o555)
+        # Writable again for the temp dir's own cleanup, if it is still there by then.
+        self.addCleanup(lambda: os.path.isdir(path) and os.chmod(path, 0o755))
+
+    @unittest.skipIf(os.geteuid() == 0, "root removes what it likes")
+    def test_a_copy_the_disk_will_not_let_go_of_is_a_failure_and_still_ours(self):
+        # A real read-only copy: none of its files can be removed. It was once reported as gone.
+        self.run_cli("menubar", "enable")
+        self.read_only(self.dir())
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(1, code, said)
+        self.assertIn(f"{self.dir()} could not be removed", said)
+        self.assertIn("Permission denied", said)
+        self.assertIn("left in place", said)
+        self.assertNotIn("is out of Noctalia's bar", said)
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(self.dir())))
+        self.assertTrue(cli.noctalia_installed())
+        self.assertIn(f"is in {self.dir()}", self.run_cli("menubar")[1])
+        os.chmod(self.dir(), 0o755)                                 # put right: the next disable finishes
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertFalse(os.path.lexists(self.dir()))
+
+    def test_a_removal_stopped_part_way_leaves_a_copy_that_still_says_it_is_ours(self):
+        # Stopped at the manifest, the last file to go: what is left is still this plugin's.
+        self.run_cli("menubar", "enable")
+        unlink = os.unlink
+
+        def keep_the_manifest(path, *a, **k):
+            if os.path.basename(path) == "plugin.toml":
+                raise OSError(5, "Input/output error", path)
+            return unlink(path, *a, **k)
+        with mock.patch.object(cli.os, "unlink", side_effect=keep_the_manifest):
+            code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(1, code, said)
+        self.assertEqual(["plugin.toml"], os.listdir(self.dir()))
+        self.assertTrue(cli.noctalia_installed())
+        code, said = self.run_cli("menubar", "enable")              # and a later run takes it for ours
+        self.assertEqual(0, code, said)
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(self.dir())))
+
+    @unittest.skipIf(os.geteuid() == 0, "root removes what it likes")
+    def test_a_plugins_directory_that_keeps_the_emptied_copy_leaves_nothing_anyone_owns(self):
+        # A read-only plugins directory: every file of the copy goes, the directory cannot. An empty
+        # directory is nothing, so it is not taken for someone else's and the next enable fills it.
+        self.run_cli("menubar", "enable")
+        self.read_only(self.plugins)
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(1, code, said)
+        self.assertIn(f"{self.dir()} could not be removed", said)
+        self.assertEqual([], os.listdir(self.dir()))
+        self.assertIsNone(cli.noctalia_plugin_state())
+        self.assertNotIn("is not this plugin's", self.run_cli("menubar")[1])
+        os.chmod(self.plugins, 0o755)
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(self.dir())))
+
+    def staging(self):
+        return [n for n in os.listdir(self.plugins) if n.startswith(cli.NOCTALIA_STAGING)]
+
+    def test_an_older_copy_is_moved_aside_whole_and_removed_only_once_the_new_one_is_in_place(self):
+        self.run_cli("menubar", "enable")
+        with open(os.path.join(self.dir(), "old.luau"), "w", encoding="utf-8") as f:
+            f.write("-- from a release before\n")
+        seen, rename = [], os.rename
+
+        def watch(src, dst):
+            rename(src, dst)
+            # After each move: is a copy in place, and is the old one still whole somewhere.
+            (held,) = self.staging()
+            old = os.path.join(self.plugins, held, "old")
+            seen.append((os.path.basename(src), os.path.isdir(self.dir()) and sorted(os.listdir(self.dir())),
+                         os.path.isdir(old) and sorted(os.listdir(old))))
+        with mock.patch.object(cli.os, "rename", side_effect=watch):
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        new, old = sorted(os.listdir(self.SRC)), sorted(os.listdir(self.SRC) + ["old.luau"])
+        # Never a copy with some of its files gone: the old one aside whole, then the new one in.
+        self.assertEqual([("layer-hud", False, old), ("new", new, old)], seen)
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+        self.assertEqual(new, sorted(os.listdir(self.dir())))
+
+    def test_the_copy_being_made_ready_is_never_where_the_shell_takes_a_directory_for_a_plugin(self):
+        # Noctalia takes every directory of the plugins directory with a plugin.toml in it for a
+        # plugin (plugin_registry.cpp, scanDir): the staged copy is one level further down.
+        seen = []
+
+        def look(text):
+            (held,) = self.staging()
+            seen.append((sorted(os.listdir(os.path.join(self.plugins, held))),
+                         os.path.exists(os.path.join(self.plugins, held, "plugin.toml")),
+                         cli.noctalia_manifest_id(os.path.join(self.plugins, held, "new"))))
+            return text
+        with mock.patch.object(cli, "bake_marks", side_effect=look):
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertEqual([(["new"], False, cli.NOCTALIA_ID)], seen)
+
+    def killed_install(self, *copies):
+        """What an install killed half way leaves: its staging directory, with these copies in it,
+        last changed long enough ago that no run is still at work in it."""
+        left = os.path.join(self.plugins, cli.NOCTALIA_STAGING + "k1ll3d")
+        os.makedirs(left)
+        for name in copies:
+            shutil.copytree(self.SRC, os.path.join(left, name))
+        return self.aged(left)
+
+    def aged(self, left, seconds=None):
+        """A staging directory (and what is in it) last changed that long ago: an hour, by default."""
+        when = time.time() - (3600 if seconds is None else seconds)
+        for p in [left] + [os.path.join(left, n) for n in os.listdir(left)]:
+            os.utime(p, (when, when), follow_symlinks=False)
+        return left
+
+    def test_what_a_killed_install_left_is_cleared_by_the_next_one(self):
+        # Killed between the two moves: nothing in place, the old copy and the new one set aside.
+        self.killed_install("old", "new")
+        self.assertIsNone(cli.noctalia_plugin_state())              # an empty place, not someone else's
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+        # Killed while copying, before or after the manifest was there; and by `disable` as well.
+        left = self.killed_install("new")
+        os.mkdir(os.path.join(left, "old"))
+        self.aged(left)
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertNotIn(left, said)
+        self.assertEqual([], os.listdir(self.plugins))
+
+    def test_a_staging_directory_with_anything_else_in_it_is_named_and_left(self):
+        left = self.killed_install("old")
+        os.remove(os.path.join(left, "old", "plugin.toml"))          # no longer says whose it is
+        self.aged(left)
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertIn(f"{left} is named like the directory", said)
+        self.assertIn("not a copy of this plugin", said)
+        self.assertIn("no plugin.toml of its own, so Noctalia does not load it", said)
+        self.assertIn("can be deleted by hand", said)
+        self.assertEqual(["widget.luau"], os.listdir(os.path.join(left, "old")))
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertIn(left, said)
+        self.assertEqual([os.path.basename(left)], os.listdir(self.plugins))
+        # Nor is someone's file or link under that name taken for one.
+        shutil.rmtree(left)
+        with open(left, "w", encoding="utf-8") as f:
+            f.write("a file\n")
+        self.assertEqual(0, self.run_cli("menubar", "enable")[0])
+        self.assertTrue(os.path.isfile(left))
+
+    def test_a_staging_directory_changed_in_the_last_few_minutes_is_left_to_the_run_at_work_in_it(self):
+        left = self.killed_install("old", "new")
+        self.aged(left, cli.NOCTALIA_STAGING_AGE - 30)               # not quite old enough
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertNotIn(left, said)
+        self.assertEqual(["new", "old"], sorted(os.listdir(left)))
+        # A copy in it changed just now counts too, however old the directory itself.
+        self.aged(left)
+        os.utime(os.path.join(left, "new"))
+        self.assertEqual(0, self.run_cli("menubar", "disable")[0])
+        self.assertEqual(["new", "old"], sorted(os.listdir(left)))
+        self.aged(left, cli.NOCTALIA_STAGING_AGE + 30)               # and then, older than that, it goes
+        self.assertEqual(0, self.run_cli("menubar", "enable")[0])
+        self.assertFalse(os.path.lexists(left))
+
+    def another_run_while_copying(self, *argv):
+        """`menubar enable`, with another run of the command (argv) let in while it is copying the
+        new plugin, as a second terminal or the bar's own click would -> both results."""
+        bake, other = cli.bake_marks, []
+
+        def meanwhile(text):
+            if not other:
+                other.append(None)
+                other[0] = self.run_cli(*argv)
+            return bake(text)
+        with mock.patch.object(cli, "bake_marks", side_effect=meanwhile):
+            first = self.run_cli("menubar", "enable")
+        return first, other[0]
+
+    def test_a_disable_while_an_enable_copies_does_not_take_the_enables_copy(self):
+        self.run_cli("menubar", "enable")
+        (code, said), (other_code, other_said) = self.another_run_while_copying("menubar", "disable")
+        self.assertEqual(0, other_code, other_said)
+        self.assertEqual(0, code, said)
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(self.dir())))   # the last run wins
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+
+    def test_two_enables_at_once_leave_one_copy_installed(self):
+        self.run_cli("menubar", "enable")
+        (code, said), (other_code, other_said) = self.another_run_while_copying("menubar", "enable")
+        self.assertEqual(0, other_code, other_said)
+        self.assertEqual(0, code, said)
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(self.dir())))
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+
+    def test_a_staging_directory_noctalia_loads_is_said_to_be_one(self):
+        # A plugin.toml at its top makes it a plugin directory to Noctalia (plugin_registry.cpp,
+        # scanDir), whatever its name: so the note does not say Noctalia leaves it be.
+        left = self.killed_install()
+        with open(os.path.join(left, "plugin.toml"), "w", encoding="utf-8") as f:
+            f.write('id = "someone/else"\n')
+        self.aged(left)
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertIn(f"{left} is named like the directory", said)
+        self.assertIn("has a plugin.toml of its own, so Noctalia tries to load it as a plugin", said)
+        self.assertNotIn("does not load", said)
+        self.assertEqual(["plugin.toml"], os.listdir(left))
+
+    @unittest.skipIf(os.geteuid() == 0, "root removes what it likes")
+    def test_copies_of_ours_the_disk_keeps_in_a_staging_directory_are_said_to_be_ours(self):
+        left = self.killed_install("old")
+        self.read_only(os.path.join(left, "old"))
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(0, code, said)
+        self.assertIn(f"{left} holds only copies of this plugin", said)
+        self.assertIn("could not be removed", said)
+        self.assertIn("Permission denied", said)
+        self.assertNotIn("not a copy of this plugin", said)
+        # Still whole, manifest and all: a removal that stops goes no further than that.
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(os.path.join(left, "old"))))
+
+    def test_enable_looks_again_at_whose_the_directory_is_right_before_it_moves_it(self):
+        self.run_cli("menubar", "enable")
+
+        def swap(text):                     # while the new copy is being made ready
+            shutil.rmtree(self.dir())
+            self.someone_elses()
+            return text
+        with mock.patch.object(cli, "bake_marks", side_effect=swap):
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn(f"{self.dir()} is not this plugin's", said)
+        self.assert_theirs_is_untouched()
+
+    def test_disable_looks_again_at_whose_the_directory_is_right_before_it_removes_it(self):
+        self.run_cli("menubar", "enable")
+
+        def swap(argv):                     # while the shell is being asked, which can take its time
+            if argv[1:3] == ("plugins", "disable") and cli.noctalia_installed():
+                shutil.rmtree(self.dir())
+                self.someone_elses()
+            return False
+        self.fake.refuse.append(swap)
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(["tray"], self.fake.cfg["bar"]["main"]["end"])
+        self.assertIn(f"{self.dir()} is not this plugin's", said)
+        self.assert_theirs_is_untouched()
+
+    def test_disable_leaves_another_plugins_directory_alone_and_says_so_without_failing(self):
+        # What `disable` is for holds with it there -- our icon out of the bars, our plugin off the
+        # disk -- and the user could only make a failure go away by moving someone else's plugin.
+        self.someone_elses()
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertIn("the bar plugin was not installed", said)
+        self.assertIn(f"{self.dir()} is not this plugin's", said)
+        self.assertIn("left alone", said)
+        self.assertNotIn("is out of", said)
+        self.assertNotIn("left in place", said)                     # that is said of ours, to finish later
+        self.assert_theirs_is_untouched()
+        self.assertNotIn(("msg", "plugins", "disable", cli.NOCTALIA_ID), self.fake.calls)
+
+    def test_the_note_about_another_plugins_directory_goes_to_stderr(self):
+        self.someone_elses()
+        with mock.patch.object(cli.shutil, "which", side_effect=lambda n: None if n.startswith("omarchy") else "/usr/bin/" + n), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            code = cli.main(["menubar", "disable"])
+        self.assertEqual(0, code)
+        self.assertEqual("the bar plugin was not installed\n", out.getvalue())
+        self.assertIn("is not this plugin's", err.getvalue())
+
+    def test_disable_takes_the_icon_out_of_the_bar_and_says_both_that_and_the_directory_left(self):
+        # This plugin was enabled once, and its directory has since become someone else's.
+        self.fake.cfg["bar"]["main"]["end"] = ["tray", cli.NOCTALIA_WIDGET]
+        self.someone_elses()
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertEqual(["tray"], self.fake.cfg["bar"]["main"]["end"])
+        self.assertIn(("msg", "plugins", "disable", cli.NOCTALIA_ID), self.fake.calls)
+        self.assertIn("the HUD's icon is out of Noctalia's bar", said)
+        self.assertIn("is not this plugin's", said)
+        self.assertIn("left alone", said)
+        self.assert_theirs_is_untouched()
+
+    def test_disable_still_fails_for_what_it_could_not_do_with_another_plugins_directory_there(self):
+        self.fake.cfg["bar"]["main"]["end"] = ["tray", cli.NOCTALIA_WIDGET]
+        self.fake.cfg["bar"]["main"]["start"] = [cli.NOCTALIA_WIDGET]
+        self.someone_elses()
+        self.fake.refuse.append(lambda argv: argv[1] == "config-set" and argv[2] == "bar.main.end")
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(1, code)
+        self.assertIn("bar.main.end was not taken", said)
+        self.assertIn("is not this plugin's", said)
+        self.assertNotIn("left in place", said)                     # theirs is not ours to finish with later
+        self.assert_theirs_is_untouched()
+
+    def test_disable_without_noctalia_on_the_path_leaves_another_plugins_directory_too(self):
+        self.someone_elses()
+        code, said = self.run_cli("menubar", "disable",
+                                  which=lambda n: None if n.startswith("omarchy") or n == "noctalia" else "/usr/bin/" + n)
+        self.assertEqual(0, code, said)
+        self.assertIn("is not this plugin's", said)
+        self.assert_theirs_is_untouched()
+        self.assertEqual([], self.fake.calls)
+
+    def test_status_does_not_call_another_plugins_directory_installed(self):
+        self.someone_elses()
+        code, said = self.run_cli("menubar")
+        self.assertEqual(0, code)
+        self.assertIn("is not installed", said)
+        self.assertIn(f"{self.dir()} is not this plugin's", said)
+        self.assertIn("will not replace it", said)
+        self.assertNotIn(f"is in {self.dir()}", said)
+        self.assertEqual([], self.fake.calls)                       # nothing to ask the shell about
+        self.assert_theirs_is_untouched()
+
+    def linked_copy(self):
+        """This plugin's place as a link to a copy kept elsewhere -> where the copy is."""
+        elsewhere = os.path.join(self.tmp.name, "checkout")
+        shutil.copytree(self.SRC, elsewhere)
+        os.makedirs(self.plugins)
+        os.symlink(elsewhere, self.dir())
+        return elsewhere
+
+    def refusing_the_new_copy(self):
+        """os.rename refusing the new copy's move into the plugin's place."""
+        rename = os.rename
+
+        def refuse(src, dst):
+            if dst == self.dir() and os.path.basename(src) == "new":
+                raise OSError(13, "Permission denied", dst)
+            return rename(src, dst)
+        return mock.patch.object(cli.os, "rename", side_effect=refuse)
+
+    def test_a_link_is_put_back_when_the_new_copy_cannot_move_in(self):
+        elsewhere = self.linked_copy()
+        with self.refusing_the_new_copy():
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn(f"could not install the Noctalia plugin in {self.dir()}", said)
+        self.assertNotIn("Traceback", said)
+        self.assertTrue(os.path.islink(self.dir()))
+        self.assertEqual(elsewhere, os.readlink(self.dir()))
+        self.assertTrue(cli.noctalia_installed())
+        self.assertEqual(["layer-hud"], os.listdir(self.plugins))
+
+    def test_a_link_that_cannot_be_put_back_either_is_said_with_where_it_pointed(self):
+        elsewhere = self.linked_copy()
+        with self.refusing_the_new_copy(), \
+                mock.patch.object(cli.os, "symlink", side_effect=OSError(28, "No space left on device")):
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn("Permission denied", said)                   # what failed first
+        self.assertIn(f"the link that was there, to {elsewhere}, could not be put back", said)
+        self.assertIn("No space left on device", said)
+        self.assertIn(f"ln -s {elsewhere} {self.dir()}", said)
+        self.assertNotIn("Traceback", said)
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(elsewhere)))   # the copy itself stays
+
+    def test_a_link_to_this_plugin_is_taken_as_a_link_and_what_it_points_at_stays(self):
+        elsewhere = os.path.join(self.tmp.name, "checkout")
+        shutil.copytree(self.SRC, elsewhere)
+        os.makedirs(self.plugins)
+        os.symlink(elsewhere, self.dir())
+        self.assertTrue(cli.noctalia_installed())
+        code, said = self.run_cli("menubar", "enable")              # a copy of regular files, as ever
+        self.assertEqual(0, code, said)
+        self.assertFalse(os.path.islink(self.dir()))
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(elsewhere)))
+        shutil.rmtree(self.dir())
+        os.symlink(elsewhere, self.dir())
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertFalse(os.path.lexists(self.dir()))
+        self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(elsewhere)))
+
+    def uninstall_step(self):
+        out = io.StringIO()
+        with mock.patch.object(cli.shutil, "which", side_effect=lambda n: "/usr/bin/" + n), \
+                contextlib.redirect_stdout(out):
+            cli.noctalia_uninstall()
+        return out.getvalue()
+
+    def test_uninstall_takes_the_icon_out_and_says_what_is_left_to_do_by_hand_when_it_cannot(self):
+        self.run_cli("menubar", "enable")
+        with mock.patch.object(cli, "noctalia", lambda *a: None):
+            said = self.uninstall_step()
+        self.assertIn("does not say which bars there are", said)
+        self.assertIn(f"left {self.dir()} in place", said)
+        self.assertIn(cli.NOCTALIA_WIDGET, said)
+        self.assertNotIn("took the bar plugin out", said)
+        self.assertTrue(os.path.isdir(self.dir()))
+        said = self.uninstall_step()                                # the shell is back
+        self.assertIn("took the bar plugin out of Noctalia", said)
+        self.assertFalse(os.path.exists(self.dir()))
+        self.assertEqual(["tray"], self.fake.cfg["bar"]["main"]["end"])
+        self.assertEqual("", self.uninstall_step())                 # and again, nothing to say
+
+    def test_uninstall_leaves_another_plugins_directory_alone_and_says_so(self):
+        self.someone_elses()
+        said = self.uninstall_step()
+        self.assertIn(f"{self.dir()} is not this plugin's", said)
+        self.assertIn("left alone", said)
+        self.assertNotIn("took the bar plugin out", said)
+        self.assertNotIn("then delete it", said)                    # it is not ours to have deleted
+        self.assert_theirs_is_untouched()
+
+    def test_the_marks_are_written_into_the_widget_as_a_string_literal_a_quote_cannot_end(self):
+        text = '"__ZMK_LAYER_HUD_COMMAND__" "__ZMK_LAYER_HUD_STATE__" "__ZMK_LAYER_HUD_START_WITH__"'
+        with mock.patch.object(cli, "ROOT", 'a"b\\c'), mock.patch.object(cli, "STATE", 'st"a\\te'), \
+                mock.patch.object(cli.shutil, "which", return_value=None):
+            baked = cli.bake_marks(text)
+        self.assertEqual(r'"a\"b\\c/bin/zmk-layer-hud" "st\"a\\te" ""', baked)
+
+    def update_runs(self):
+        """What an `update` of an installed tree runs once the new tree is in place."""
+        root = os.path.join(self.tmp.name, "tree")
+        os.makedirs(os.path.join(root, "bin"))
+        with open(os.path.join(root, "bin", "zmk-layer-hud"), "w") as f:
+            f.write("old\n")
+        cli.write_installed(root, "v1.0.0", "1" * 40)
+
+        def fetch(ref, dest):
+            os.makedirs(os.path.join(dest, "bin"))
+            with open(os.path.join(dest, "bin", "zmk-layer-hud"), "w") as f:
+                f.write("new\n")
+            return "2" * 40
+        args = cli.build_parser().parse_args(["update"])
+        with mock.patch.object(cli, "ROOT", root), mock.patch.object(cli, "in_clone", lambda: False), \
+                mock.patch.object(cli, "fetch_tree", fetch), mock.patch.object(cli, "latest_release", lambda: "v1.1.0"), \
+                mock.patch.object(cli, "processes", lambda pattern: {}), mock.patch.object(cli, "venv_ok", lambda: False), \
+                mock.patch.object(cli.subprocess, "call", return_value=0) as call, \
+                mock.patch.dict(os.environ, {"ZMKHUD_REF": ""}), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(0, cli.cmd_update(args))
+        return root, [c[0][0] for c in call.call_args_list]
+
+    def test_update_refreshes_the_noctalia_plugin_when_it_is_the_only_one_installed(self):
+        shutil.copytree(self.SRC, self.dir())
+        root, ran = self.update_runs()
+        self.assertIn([os.path.join(root, "bin", "zmk-layer-hud"), "menubar", "enable"], ran)
+
+    def test_update_does_not_take_another_plugins_directory_for_an_install_to_refresh(self):
+        self.someone_elses()
+        root, ran = self.update_runs()
+        self.assertNotIn([os.path.join(root, "bin", "zmk-layer-hud"), "menubar", "enable"], ran)
+        self.assert_theirs_is_untouched()
+
+    def test_without_a_bar_here_it_says_so(self):
+        code, said = self.run_cli("menubar", "enable", which=lambda n: None)
+        self.assertEqual(1, code)
+        self.assertIn("toggle", said)
+        self.assertFalse(os.path.exists(self.plugins))
 
 
 def desktop_exec(text):
@@ -682,8 +1874,16 @@ class Doctor(unittest.TestCase):
         results, said = self.rows("carbon\tnone\tnot macOS\nterminals\ton\ta prompt is seen\n"
                                   "a11y\toff\tjeepney is not in the venv (zmk-layer-hud setup)\nlock\ton\tHyprland says unlocked\n")
         self.assertEqual([cli.OK, cli.WARN], results)
-        self.assertIn("seen by the terminals' prompts, Hyprland's session lock", said)
+        self.assertIn("seen by the terminals' prompts, the session lock", said)
         self.assertIn("secure input: the accessibility bus: jeepney is not in the venv", said)
+
+    def test_a_probe_that_sees_only_what_is_named_says_so_in_the_row(self):
+        # niri's session lock: a locker is seen by its process name alone, which is not the same as seen.
+        results, said = self.rows("carbon\tnone\tnot macOS\nterminals\ton\ta prompt is seen\n"
+                                  "a11y\ton\tthe apps expose their widgets\nlock\tpartial\tby process name\n")
+        self.assertEqual([cli.OK], results)
+        self.assertIn("seen by the terminals' prompts, the accessibility bus, "
+                      "the session lock (by process name only: feed.lockers adds more)", said)
 
     def test_nothing_watching_is_a_warning_with_what_to_do(self):
         results, said = self.rows("carbon\tnone\tnot macOS\nterminals\toff\tno terminals' directory\n"
@@ -959,6 +2159,7 @@ class Update(unittest.TestCase):
                 mock.patch.object(cli, "fetch_tree", fetch), mock.patch.object(cli, "latest_release", lambda: "v1.1.0"), \
                 mock.patch.object(cli, "processes", lambda pattern: {}), mock.patch.object(cli, "venv_ok", lambda: False), \
                 mock.patch.object(cli, "plugin_dir", lambda: os.path.join(tmp.name, "no-plugin")), \
+                mock.patch.object(cli, "NOCTALIA_PLUGINS", os.path.join(tmp.name, "no-noctalia")), \
                 mock.patch.dict(os.environ, {"ZMKHUD_REF": ""}), contextlib.redirect_stdout(io.StringIO()) as out:
             self.assertEqual(0, cli.cmd_update(args))
             with open(os.path.join(root, "bin", "zmk-layer-hud")) as f:

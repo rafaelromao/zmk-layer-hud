@@ -15,7 +15,7 @@ Every verb of `zmk-layer-hud`, as its own `--help` prints it. Written by `make c
 - [`log`](#log) — follow the panel and feed logs
 - [`doctor`](#doctor) — check this machine and say what is missing
 - [`autostart`](#autostart) — start the HUD hidden at login, counting from the first keystroke, or stop doing so
-- [`menubar`](#menubar) — the icon that shows, hides or starts the HUD, with its WPM: macOS's menubar, Omarchy's bar
+- [`menubar`](#menubar) — the icon that shows, hides or starts the HUD, with its WPM: the macOS menubar, Omarchy's bar, Noctalia's bar
 - [`setup`](#setup) — set this machine up (packages, venv, config, permissions)
 - [`update`](#update) — fetch a newer tree over this one
 - [`uninstall`](#uninstall) — remove the tree and the command
@@ -219,7 +219,8 @@ options:
 ```text
 usage: zmk-layer-hud menubar [-h] [{status,enable,disable,wpm}] [{current,average,top}]
 
-the icon that shows, hides or starts the HUD, with its WPM: macOS's menubar, Omarchy's bar
+the icon that shows, hides or starts the HUD, with its WPM: the macOS menubar, Omarchy's bar,
+Noctalia's bar
 
 positional arguments:
   {status,enable,disable,wpm}

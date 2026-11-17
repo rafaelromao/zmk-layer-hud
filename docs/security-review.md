@@ -103,8 +103,13 @@ in-process; the firmware sends positions and a layer bitmap, never usages or cha
   stars -- looks like an editor and is not seen; nor is a prompt on the far side of `ssh`,
   `mosh`, a container or a VM, whose pty is not this machine's (the local one is raw for the
   whole session). Local tmux and screen are seen, and the ssh client's own passphrase prompt.
-- **The session lock is seen under Hyprland alone.** Another compositor's lock screen is not:
-  the lockers set no logind hint, so there is nothing to ask. Stop the HUD before locking there.
+- **The session lock is seen under Hyprland and niri, the latter less well.** Hyprland says it
+  itself (`solitaryBlockedBy` with `LOCK`); niri's IPC has no lock state, so there only a locker
+  named hyprlock, swaylock, gtklock or waylock is seen by its process name, and so is one named in
+  `feed.lockers` in the config (a lock screen built into a shell is such a one: its process is
+  the shell's, so it has to be named). `doctor` says the niri lock is seen by process name only.
+  Any other compositor's lock screen is not seen at all: the lockers set no logind hint, so there
+  is nothing to ask. Stop the HUD before locking where none of these applies.
 - **When the gate misses, a session keeps the keys as a multiset**: a count per key and layer,
   no order, which for a short secret typed on an otherwise quiet day says which keys it used.
   `feed.sessions: 0` keeps no files.
