@@ -251,9 +251,13 @@ is running or not:
 
   Because the directory's name is only the id's tail, another author's plugin can have it too
   (`someone/layer-hud`), so the name is never taken as proof. The directory is this plugin's when
-  the `plugin.toml` in it carries the id `zmk/layer-hud` (`noctalia_plugin_state`; the id is read
-  a line at a time from the manifest's top level, since Python 3.10 has no `tomllib`), and only
-  then do `enable`, `disable`, `update` and `uninstall` write over it or remove it. Anything else
+  the `plugin.toml` in it opens with the id `zmk/layer-hud` (`noctalia_plugin_state`). Python 3.10
+  has no `tomllib`, so the id is read by hand, and only where no TOML parser is needed to be sure
+  of it: as the manifest's first statement, after nothing but blank lines and comments, as this
+  plugin's own manifest has it. An `id = ...` further down could be a line inside a multi-line
+  string or an entry's own id, and is not looked for; nor is a line with whitespace or a line
+  ending TOML does not allow (a no-break space, a form feed, a carriage return alone). What it
+  cannot be sure of is someone else's, never ours. Only then do `enable`, `disable`, `update` and `uninstall` write over it or remove it. Anything else
   in its place -- another plugin, a directory without a manifest, a file -- is left alone: `enable`
   and `disable` say so and exit 1, `uninstall` says so, `update` does not run `menubar enable` for
   it, and `menubar status` calls the plugin not installed and says why. A link to a copy of the

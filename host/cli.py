@@ -1457,24 +1457,38 @@ def noctalia_plugin_dir():
     return os.path.join(NOCTALIA_PLUGINS, "layer-hud")
 
 
-# A manifest's `id = "author/plugin"` line: a bare or quoted key, a string with no escapes in it.
-NOCTALIA_MANIFEST_ID = re.compile(r"""\s*(?:id|"id"|'id')\s*=\s*(?:"([^"\\]*)"|'([^']*)')\s*(?:#.*)?""")
+# The two kinds of line the manifest reader knows, in TOML's own terms: whitespace is a space or a
+# tab and nothing else, and no control character but a tab is in a comment, none at all in the id.
+NOCTALIA_MANIFEST_COMMENT = r"(?:#[^\x00-\x08\x0a-\x1f\x7f]*)?"
+NOCTALIA_MANIFEST_BLANK = re.compile(r"[ \t]*" + NOCTALIA_MANIFEST_COMMENT)
+# `id = "author/plugin"`: a bare or quoted key, one string on one line with no escapes in it.
+NOCTALIA_MANIFEST_ID = re.compile(r"""[ \t]*(?:id|"id"|'id')[ \t]*=[ \t]*"""
+                                  r"""(?:"([^"\\\x00-\x1f\x7f]*)"|'([^'\x00-\x1f\x7f]*)')[ \t]*"""
+                                  + NOCTALIA_MANIFEST_COMMENT)
 
 
 def noctalia_manifest_id(directory):
-    """The `id` a plugin directory's plugin.toml gives, or None: no such file, or no id this can
-    read. Read a line at a time, not with tomllib, which the Python 3.10 this supports does not
-    have: the plugin's id is a key of the top level, which ends at the first table header, so a
-    `[[widget]]`'s own `id` is never taken for it. An id written any way this does not read is
-    None, and None is never this plugin's."""
+    """The `id` a plugin directory's plugin.toml opens with, or None. Read by hand, not with
+    tomllib, which the Python 3.10 this supports does not have -- and a reader that is not a TOML
+    parser must not guess, because what it reads as this plugin's id gets the directory removed.
+    So it takes the id only where no parser is needed to be sure of it: as the manifest's first
+    statement, with nothing before it but blank lines and comments, which is how this plugin's own
+    manifest is written. An id further down could as well be a line of a multi-line string, or an
+    entry's own id under a table header, and is not looked for. Lines end at a line feed (with a
+    carriage return before it or not), as TOML's do: a carriage return alone, a form feed or a
+    no-break space is not something TOML allows there, and makes the line one this does not know.
+    None is never this plugin's: no such file, an id written another way, an id that is not first.
+    What follows the id is not read, so a file that stops being TOML after it still has one."""
     try:
-        with open(os.path.join(directory, "plugin.toml"), encoding="utf-8") as f:
+        with open(os.path.join(directory, "plugin.toml"), encoding="utf-8", newline="\n") as f:
             for line in f:
-                if line.lstrip().startswith("["):
+                line = line[:-2] if line.endswith("\r\n") else line[:-1] if line.endswith("\n") else line
+                if NOCTALIA_MANIFEST_BLANK.fullmatch(line):
+                    continue
+                m = NOCTALIA_MANIFEST_ID.fullmatch(line)
+                if not m:
                     return None
-                m = NOCTALIA_MANIFEST_ID.fullmatch(line.rstrip("\r\n"))
-                if m:
-                    return m.group(1) if m.group(1) is not None else m.group(2)
+                return m.group(1) if m.group(1) is not None else m.group(2)
     except (OSError, ValueError):
         pass
     return None
@@ -1483,7 +1497,7 @@ def noctalia_manifest_id(directory):
 def noctalia_plugin_state():
     """Whose the directory `menubar enable` installs into is. The name is only the id's tail, which
     another author's plugin can have too, so the name alone says nothing: "ours" when the
-    plugin.toml in it carries this plugin's id, "theirs" when anything else is there -- another
+    plugin.toml in it opens with this plugin's id, "theirs" when anything else is there -- another
     plugin, a directory without a manifest, a file -- and None when nothing is. Only "ours" is
     ever removed or written over."""
     path = noctalia_plugin_dir()
@@ -1498,7 +1512,7 @@ def noctalia_installed():
 
 def noctalia_theirs():
     """What is said of something in the plugin's place that is not the plugin."""
-    return f"{noctalia_plugin_dir()} is not this plugin's (no plugin.toml in it carries the id {NOCTALIA_ID})"
+    return f"{noctalia_plugin_dir()} is not this plugin's (no plugin.toml in it that opens with the id {NOCTALIA_ID})"
 
 
 def noctalia_remove_plugin():

@@ -1059,28 +1059,106 @@ class NoctaliaPlugin(unittest.TestCase):
             with open(os.path.join(self.dir(), "plugin.toml"), encoding="utf-8") as f:
                 self.assertEqual(manifest, f.read())
 
+    OURS = b'id = "zmk/layer-hud"\n'
+
+    # Manifests the reader takes an id from: the id is the first statement, written plainly.
+    READ = (
+        (b'id = "a/b"\n', "a/b"),
+        (b'id = "a/b"', "a/b"),                                           # no newline at the end
+        (b"id='a/b'   # the id\r\n", "a/b"),                              # TOML's other line ending
+        (b'"id" = "a/b"\n', "a/b"),
+        (b"'id'\t=\t'a/b'\n", "a/b"),
+        (b'# a comment\n\n  \t\n\r\nid = "a/b"\nname = "B"\n', "a/b"),
+        ('# café   still the comment\nid = "a/b" # café\n'.encode("utf-8"), "a/b"),
+        # A `[[widget]]`'s own id, further down, is not the plugin's.
+        (b'id = "a/b"\n\n[[widget]]\nid = "zmk/layer-hud"\n', "a/b"),
+    )
+
+    # Manifests it takes none from, each with this plugin's id somewhere a careless reader finds it.
+    UNREAD = (
+        # Someone else's valid manifest, with our id as a line of a multi-line string.
+        b'description = """\nid = "zmk/layer-hud"\n"""\nid = "someone/layer-hud"\n',
+        b"description = '''\nid = \"zmk/layer-hud\"\n'''\nid = \"someone/layer-hud\"\n",
+        b'description = """Shows"""\nid = "zmk/layer-hud"\n',
+        b'id = """zmk/layer-hud"""\n',
+        b'id = """\nzmk/layer-hud"""\n',
+        # Not the first statement: after another key, inside an array, under a table header.
+        b'name = "B"\n' + OURS,
+        b'tags = [\n' + OURS + b']\n',
+        b'[[widget]]\n' + OURS,
+        b'[plugin]\n' + OURS,
+        # Whitespace and line endings that are not TOML's, which Python's own would let through.
+        'id = "zmk/layer-hud"\n'.encode("utf-8"),
+        ' id = "zmk/layer-hud"\n'.encode("utf-8"),
+        b'id\x0c= "zmk/layer-hud"\n',
+        b'id\x0b= "zmk/layer-hud"\n',
+        b'name = "B"\r' + OURS,
+        b'# a comment\r' + OURS,
+        b'\r' + OURS,
+        b'id = "zmk/layer-hud"\r',
+        b'id = "zmk/layer-hud"\r\r\n',
+        'name = "B\u0085id = "zmk/layer-hud"\n'.encode("utf-8"),
+        '# a comment id = "zmk/layer-hud"\n'.encode("utf-8"),
+        b'# a comment\x00\n' + OURS,
+        b'\xef\xbb\xbf' + OURS,                                          # a byte order mark
+        # An id that is not one plain string, or not an id.
+        b"", b"\n\n# nothing\n", b"name = 'B'\n", b"id = 3\n", b'id = "zmk\\u002flayer-hud"\n',
+        b'idx = "zmk/layer-hud"\n', b'id.x = "zmk/layer-hud"\n', b'id = "zmk/layer-hud" "c"\n',
+        b'id = "zmk/layer-hud", name = "B"\n', b'id = "zmk/layer-hud\n', b'id = "zmk/layer-hud\x7f"\n',
+        b'id = "zmk/layer-hud\xff"\n', b'id == "zmk/layer-hud"\n', b'= "zmk/layer-hud"\n',
+    )
+
+    def manifest_id(self, data):
+        where = tempfile.mkdtemp(dir=self.tmp.name)
+        with open(os.path.join(where, "plugin.toml"), "wb") as f:
+            f.write(data)
+        return cli.noctalia_manifest_id(where)
+
     def test_the_id_of_a_manifest_is_read_without_tomllib(self):
-        def read(text):
-            where = tempfile.mkdtemp(dir=self.tmp.name)
-            with open(os.path.join(where, "plugin.toml"), "wb") as f:
-                f.write(text if isinstance(text, bytes) else text.encode("utf-8"))
-            return cli.noctalia_manifest_id(where)
         # Python 3.10 has no tomllib, and the README supports 3.10.
         with mock.patch.dict(sys.modules, {"tomllib": None}):
             # The manifest this ships, as it is written: were its id ever written a way this does
             # not read, `enable` would take its own older copy for someone else's.
             self.assertEqual(cli.NOCTALIA_ID, cli.noctalia_manifest_id(self.SRC))
-            self.assertEqual("a/b", read('name = "B"\nid = "a/b"\n'))
-            self.assertEqual("a/b", read("id='a/b'   # the id\r\n"))
-            self.assertEqual("a/b", read('"id" = "a/b"\n'))
-            # A `[[widget]]`'s own id is not the plugin's, whatever it says.
-            self.assertIsNone(read(f'name = "B"\n\n[[widget]]\nid = "{cli.NOCTALIA_ID}"\n'))
-            self.assertEqual("a/b", read(f'id = "a/b"\n\n[[widget]]\nid = "{cli.NOCTALIA_ID}"\n'))
-            # What it cannot read is no id at all, never a guess.
-            for unreadable in ("", "name = 'B'\n", 'id = 3\n', 'id = "a\\u002fb"\n', 'idx = "a/b"\n',
-                               'id = "a/b" "c"\n', b'id = "a/b\xff"\n'):
-                self.assertIsNone(read(unreadable), unreadable)
+            for data, said in self.READ:
+                self.assertEqual(said, self.manifest_id(data), data)
         self.assertIsNone(cli.noctalia_manifest_id(os.path.join(self.tmp.name, "nowhere")))
+
+    def test_an_id_the_reader_cannot_be_sure_of_is_no_id(self):
+        # What is read as this plugin's id gets the directory removed, so what is not plainly the
+        # manifest's first statement is not read at all: None, never a guess.
+        for data in self.UNREAD:
+            self.assertIsNone(self.manifest_id(data), data)
+
+    @unittest.skipUnless(tomllib, "compared with tomllib (Python 3.11)")
+    def test_whatever_id_the_reader_gives_is_the_one_a_toml_parser_gives(self):
+        # One way only: the reader may give no id where a parser finds one (it reads less), never
+        # one a parser does not find. Every shape above, and the manifest this ships.
+        with open(os.path.join(self.SRC, "plugin.toml"), "rb") as f:
+            shipped = f.read()
+        self.assertEqual(cli.NOCTALIA_ID, tomllib.loads(shipped.decode("utf-8"))["id"])
+        for data in (shipped,) + tuple(d for d, _ in self.READ) + self.UNREAD:
+            said = self.manifest_id(data)
+            if said is not None:
+                self.assertEqual(said, tomllib.loads(data.decode("utf-8")).get("id"), data)
+
+    def test_someone_elses_manifest_with_this_plugins_id_inside_a_string_is_left_alone(self):
+        # Valid TOML whose id is someone/layer-hud: read a line at a time without knowing of the
+        # string, it was taken for this plugin, written over by `enable` and removed by `disable`.
+        manifest = ('description = """\nid = "zmk/layer-hud"\n"""\nid = "someone/layer-hud"\n'
+                    'name = "Theirs"\nversion = "1.0.0"\nplugin_api = 3\n')
+        self.someone_elses(manifest)
+        self.assertFalse(cli.noctalia_installed())
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn("is not this plugin's", said)
+        self.assert_theirs_is_untouched(manifest)
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(1, code)
+        self.assertIn("is not this plugin's", said)
+        self.assert_theirs_is_untouched(manifest)
+        self.assertIn("is not this plugin's", self.uninstall_step())
+        self.assert_theirs_is_untouched(manifest)
 
     def test_enable_leaves_another_plugins_directory_alone_and_says_so(self):
         self.someone_elses()
