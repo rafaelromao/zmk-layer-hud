@@ -909,7 +909,10 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
     earlier import left, not a cached clone. What those carried that the sources given now would
     not make again (carried(), below) is said first; keep=True keeps just that and makes the rest
     anew, keep=False drops it, and keep=None asks `ask` (a question -> yes/no), or refuses with the
-    list when there is no one to ask. config.yaml is never written either way."""
+    list when there is no one to ask. config.yaml is never written either way.
+
+    pinned: the repo was given by URL on purpose (only `import <url>` says so), recorded in the
+    definitions so `sync` does not move it to a working copy; written only for a URL read directly."""
     config_path = keymap_mod.config_path(config_path)
     if not os.path.exists(config_path):
         new_config(config_path)
