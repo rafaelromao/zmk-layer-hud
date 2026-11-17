@@ -1572,6 +1572,8 @@ class SimBluez:
                      for path, interfaces in self.objects.items()}]
         elif message.member == "Disconnect" and message.path == self.DEVICE:
             self.change(Connected=False, ServicesResolved=False)
+        elif message.member == "Connect" and message.path == self.DEVICE:
+            self.change(Connected=True, ServicesResolved=True)
         return self.Message("return", body=body)
 
     def change(self, **props):
@@ -1596,8 +1598,10 @@ class BleakBluez(unittest.TestCase):
     reaches into bleak's private members, so a bump of bleak that changes what they do fails here
     and not on someone's keyboard.
 
-    Not run: bleak's check of BlueZ's version (it starts `bluetoothctl`), its scanner, dbus_fast,
-    BlueZ, a keyboard."""
+    bleak's BlueZ scanner runs here too, wherever the feed scans, in place of the platform's.
+
+    Not run: bleak's check of BlueZ's version (it starts `bluetoothctl`), dbus_fast, BlueZ, a
+    keyboard."""
 
     def setUp(self):
         import importlib.util
@@ -1612,9 +1616,16 @@ class BleakBluez(unittest.TestCase):
             del sys.modules[name]       # bleak's BlueZ modules are imported anew, on the stand-in
         import bleak
         from bleak.backends.bluezdbus.client import BleakClientBlueZDBus
+        from bleak.backends.bluezdbus.scanner import BleakScannerBlueZDBus
         from bleak.backends.bluezdbus.version import BlueZFeatures
         from bleak.backends.device import BLEDevice
         BlueZFeatures.checked_bluez_version = True
+        # The feed's own scan (BleakScanner, as _find calls it) is bleak's BlueZ scanner on this BlueZ
+        # whatever system the tests run on: never CoreBluetooth, never a real adapter.
+        scanner = mock.patch.object(bleak, "get_platform_scanner_backend_type",
+                                    lambda: (BleakScannerBlueZDBus, "bluez_dbus"))
+        scanner.start()
+        self.addCleanup(scanner.stop)
         self.BleakClient = functools.partial(bleak.BleakClient, backend=BleakClientBlueZDBus)
         # As bleak's scanner hands a device over: by its path, with what BlueZ said of it.
         self.scanned = BLEDevice(self.sim.keyboard["Address"], "TwoNr9",
@@ -1695,6 +1706,29 @@ class BleakBluez(unittest.TestCase):
         self.assertIsNone(self.session(found_connected=False))
         self.assertEqual(["StartNotify", "Disconnect"], self.sim.asked())
         self.assertFalse(self.sim.keyboard["Connected"])
+
+    def test_a_name_a_keyboard_advertises_reaches_the_log_and_the_pages_printable(self):
+        # Found by bleak's own scanner, which names it after BlueZ's Alias: the name is the device's.
+        import hudfeed
+        forged = "TwoNr9\nhudfeed: forged line\x1b[2K"
+        self.sim.keyboard.update(Connected=False, ServicesResolved=False, Name=forged, Alias=forged)
+        for picked in ({}, {"name": "twonr9\nhudfeed"}):      # a configured name is matched as it came
+            self.sim.keyboard.update(Connected=False, ServicesResolved=False)
+            said, out = [], []
+            r = hudfeed.BleReader(out.append, log=said.append, rescan=1.0, **picked)
+            r.stop()                            # a session that is read and ends at once
+
+            async def scan_and_read():
+                asyncio.get_running_loop().call_later(0.05, lambda: self.sim.change(RSSI=-50))
+                with mock.patch.object(hudfeed.sys, "platform", "linux"):
+                    device = await r._find()
+                self.assertEqual(forged, device.name)               # as the scan gave it
+                self.assertIsNot(device, r._found_connected)
+                return await r._session(self.BleakClient, device)
+            self.assertIsNone(asyncio.run(scan_and_read()), picked)
+            self.assertEqual(["hudfeed: reading TwoNr9?hudfeed: forged line?[2K over BLE"], said, picked)
+            self.assertEqual({"TwoNr9?hudfeed: forged line?[2K"}, {m["device"] for m in out if "device" in m}
+                             | {m["name"] for m in out if m.get("kind") == "device"})
 
 
 class HidKeys(unittest.TestCase):

@@ -739,8 +739,13 @@ class BleReader:
         await asyncio.to_thread(self._stop.wait, seconds)
 
     async def _session(self, BleakClient, device):
-        """Reads one connection until it drops. -> None once it has been read, else why not."""
-        name = device.name or str(device.address)
+        """Reads one connection until it drops. -> None once it has been read, else why not.
+
+        The name is the device's own choice, whichever way it was found (a scan names it after
+        BlueZ's Alias or what it advertised, CoreBluetooth after what it says), and every line of
+        the log about it and the pages' device name are written with it: so it is made printable
+        here, where they all take it. Names are matched as they came, before this."""
+        name = printable(device.name or str(device.address))
         reading = False
         stream = Stream(self.emit, name, self.dead_key_ms, self.raw, self.log, self.altgr)
         self._streams.add(stream)
