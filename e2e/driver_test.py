@@ -373,10 +373,12 @@ class Workflow(unittest.TestCase):
         self.assertIn("github.event.pull_request.head.repo.full_name == github.repository", gate)
         self.assertIn("contains(github.event.pull_request.labels.*.name, 'release-validation')", gate)
 
-    def test_a_label_cannot_cancel_a_running_validation(self):
-        cancel = str(self.wf["concurrency"]["cancel-in-progress"])
-        self.assertIn("github.event.action != 'labeled'", cancel)
-        self.assertIn("github.event.pull_request.number", self.wf["concurrency"]["group"])
+    def test_no_run_can_cancel_another(self):
+        """The release pull request's opening and its label are two runs of one commit in the same second;
+        a concurrency group cancelled one of them and left cancelled checks on the pull request (#31)."""
+        self.assertNotIn("concurrency", self.wf)
+        for name, job in self.wf["jobs"].items():
+            self.assertNotIn("concurrency", job, name)
 
     def test_artifacts_are_uploaded_whatever_happened(self):
         for name, job in self.wf["jobs"].items():
