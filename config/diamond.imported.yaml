@@ -5,8 +5,9 @@
 # This copy is for reading; the HUD takes the same from the definitions beside it.
 # Anything you set in config.yaml wins over both, so corrections belong there and
 # survive a sync.
-#   source:   github.com/rafaelromao/keyboards
+#   source:   ~/projects/keyboards
 #   keyboard: diamond
+#   remote:   github.com/rafaelromao/keyboards
 
 # The keyboard's own combo timeout: presses within it are one chord, and the HUD has
 # to group them the same way or it draws chords that were never struck.

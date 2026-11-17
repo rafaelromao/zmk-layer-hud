@@ -406,6 +406,15 @@ zmk-layer-hud sync                                     # read the same sources a
 zmk-layer-hud sync --watch                             # and again each time one of them is saved
 ```
 
+`sync` reads the source the last `import` recorded. A working copy is read as it is on disk, so
+whichever branch you have checked out is the keymap the HUD takes its layer ids from, and uncommitted
+edits count. It is recorded as `~/…` when it is under your home, so the same record works on Linux
+and macOS, and the working copy's `origin` is recorded beside it: on a machine where the working copy
+is not, `sync` reads that remote instead (and says so), without changing the record. A repo imported
+by URL is read from the remote's default branch, whatever you have checked out. The shipped Diamond
+config records `~/projects/keyboards`; to follow the remote instead, `zmk-layer-hud import
+github.com/rafaelromao/keyboards`, and to go back, `zmk-layer-hud import ~/projects/keyboards`.
+
 The config stays yours: anything set there wins, and a sync never touches it. What a repo's keymap
 says is also written for you to read, in `config.imported.yaml`. When the drawing is a curated
 keymap-drawer file, the one thing import cannot know is which drawn layer shows which ZMK layer —

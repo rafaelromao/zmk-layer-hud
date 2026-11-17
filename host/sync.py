@@ -64,6 +64,55 @@ class SyncError(Exception):
 
 # ---------- the repo ----------
 
+def expand(repo):
+    """A recorded repo as a path to open: `~` is this machine's home, so a record made on Linux
+    reads on macOS."""
+    return os.path.expanduser(repo)
+
+
+def portable_path(path, home=None):
+    """A working copy as it is recorded: `~/…` when it is under the home directory, so the record
+    is the same on every machine that keeps its repos there; the absolute path otherwise."""
+    path = os.path.abspath(expand(path))
+    home = os.path.abspath(home or os.path.expanduser("~"))
+    if path == home or not path.startswith(home + os.sep):
+        return path
+    return "~/" + os.path.relpath(path, home).replace(os.sep, "/")
+
+
+def normalise_remote(url):
+    """A git remote as `host/owner/repo`, the form `import` takes and `resolve_source` clones over
+    https; None for anything that is not that (a path, nothing)."""
+    m = re.fullmatch(r"(?:git@|(?:ssh|https?|git)://(?:[^@/]+@)?)?([\w.-]+\.[\w-]+)[:/]([\w.-]+/[\w.-]+?)(?:\.git)?/?", (url or "").strip())
+    return f"{m.group(1)}/{m.group(2)}" if m else None
+
+
+def remote_of(root):
+    """The `origin` of a working copy, normalised; None without git, a remote, or one that is not a URL."""
+    try:
+        return normalise_remote(run(["git", "-C", root, "remote", "get-url", "origin"]).stdout)
+    except SyncError:
+        return None
+
+
+def branch_of(root):
+    """The branch a working copy has checked out; None when detached or not a git working copy."""
+    try:
+        branch = run(["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+    except SyncError:
+        return None
+    return None if branch in ("", "HEAD") else branch
+
+
+def pick_source(repo, remote):
+    """(what to read, what to record) for a recorded repo. A working copy missing from this machine
+    is read through its remote instead, but the record stays as it was: it is the working copy that
+    is wanted wherever it is, and the remote is only what stands in for it."""
+    if repo and not is_url(repo) and not os.path.isdir(expand(repo)) and remote:
+        return remote, repo
+    return repo, None
+
+
 def resolve_source(spec, fresh=False):
     """A working copy to read. A path is used where it is; a URL is cloned into the cache and
     fetched on every later sync, so a sync sees what was pushed. fresh: clone it again."""
@@ -579,8 +628,10 @@ def render(data, undecided):
          "# Anything you set in config.yaml wins over both, so corrections belong there and",
          "# survive a sync.",
          f"#   source:   {data['source']}",
-         f"#   keyboard: {data['keyboard']}",
-         ""]
+         f"#   keyboard: {data['keyboard']}"]
+    if data.get("remote"):
+        L.append(f"#   remote:   {data['remote']}")
+    L.append("")
     if undecided:
         L += [f"# {len(undecided)} layer(s) below have no drawing: set `drawer:` for them in config.yaml",
               "# under `layers:`, or leave them null if nothing draws them.", ""]
@@ -850,7 +901,8 @@ def describe_layer(entry):
     return f'shown as "{entry.get("label")}", {drawn}'
 
 
-def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=False, keep=None, ask=None):
+def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=False, keep=None, ask=None,
+              remote=None):
     """Write the definitions (and, from a repo, the readable record) for one config.
 
     pristine: from what is given now and nothing else -- not the definitions or the record an
@@ -896,11 +948,22 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
         source = None
 
     if source:
-        root, kind = resolve_source(source, fresh=pristine)
+        reading, stands_in_for = pick_source(source, remote)
+        root, kind = resolve_source(reading, fresh=pristine)
         keymap_path = find_keymap(root, keyboard)
         board = os.path.basename(keymap_path)[: -len(".keymap")]
-        say(quiet, f"reading {os.path.relpath(keymap_path, root)}")
-        sources.update(repo=source if kind == "url" else os.path.abspath(os.path.expanduser(source)), keyboard=board)
+        branch = branch_of(root) if kind == "path" else None
+        if stands_in_for:
+            where = f"{reading} (the working copy {stands_in_for} is missing)"
+        elif kind == "url":
+            where = reading
+        else:
+            where = source + (f" (branch {branch})" if branch else "")
+        say(quiet, f"reading {os.path.relpath(keymap_path, root)} from {where}")
+        remote_rec = remote if stands_in_for else remote_of(root) if kind == "path" else None
+        sources.update(repo=source if (kind == "url" or stands_in_for) else portable_path(source), keyboard=board)
+        if remote_rec:
+            sources["remote"] = remote_rec
         dts = device_tree(keymap_path)
         zlayers = layer_list(keymap_path, root, dts, log)
     elif not cfg.get("keymap"):
@@ -1027,12 +1090,15 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
         zmk = {"layers": layers, "combo_term_ms": combo_term(keymap_path),
                "combo_idle_ms": combo_idle(keymap_path, dts), "combos": coverage}
         rec = dict(zmk, source=sources["repo"], keyboard=board)
+        if sources.get("remote"):
+            rec["remote"] = sources["remote"]
         zmk = {k: v for k, v in zmk.items() if v is not None}
     else:
         # A drawing alone: what an earlier repo import said of the keymap still holds, and where it
         # came from is kept, so a later sync reads that repo again.
         zmk = (previous or {}).get("zmk") or (before_rec and {k: v for k, v in before_rec.items() if v})
         repo, kb = (None, None) if pristine else recorded(config_path)
+        remote_kept = None if pristine else recorded_remote(config_path)
         if pristine:
             old_zmk = (old_defs or {}).get("zmk") or (old_rec and {k: v for k, v in old_rec.items() if v})
             old_repo, old_kb = recorded(config_path)
@@ -1073,8 +1139,8 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
                     zmk["layers"] = {i: dict(e, label=e["name"].title()) if int(i) in {p for p, _, _ in labelled} else e
                                      for i, e in zmk["layers"].items()}
             if "repo" in kept:
-                repo, kb = old_repo, old_kb
-        sources.update({k: v for k, v in (("repo", repo), ("keyboard", kb)) if v})
+                repo, kb, remote_kept = old_repo, old_kb, recorded_remote(config_path)
+        sources.update({k: v for k, v in (("repo", repo), ("keyboard", kb), ("remote", remote_kept)) if v})
 
     definitions = {"version": keymap_mod.DEFINITIONS_VERSION, "sources": sources, "source": short}
     if zmk:
@@ -1138,6 +1204,19 @@ def recorded(config_path):
     return None, None
 
 
+def recorded_remote(config_path):
+    """The remote a recorded working copy stands in for when it is not on this machine, or None."""
+    previous = read_previous(definitions_path(config_path))
+    if previous is not None:
+        return (previous.get("sources") or {}).get("remote")
+    rec = imported_path(config_path)
+    if os.path.isfile(rec):
+        with open(rec, encoding="utf-8") as f:
+            found = re.search(r"^#\s+remote:\s+(.+)$", f.read(), re.M)
+        return found.group(1).strip() if found else None
+    return None
+
+
 # ---------- watching ----------
 
 def is_url(repo):
@@ -1174,6 +1253,7 @@ def inputs(config_path, repo=None, keyboard=None):
             searched = layout is None
         if isinstance(layout, dict):
             files += [layout[k] for k in keymap_mod.LAYOUT_FILES if isinstance(layout.get(k), str)]
+    repo = expand(repo) if repo else repo
     if repo and os.path.isdir(repo):
         try:
             keymap_path = find_keymap(repo, keyboard)
@@ -1212,7 +1292,7 @@ def watch(config_path, quiet=False, fetch=True, interval=1.0, sleep=time.sleep, 
     def once():
         keymap_mod._glyph_memo.clear()
         try:
-            do_import(repo, keyboard, config_path, quiet, fetch)
+            do_import(repo, keyboard, config_path, quiet, fetch, remote=recorded_remote(config_path))
         except (SyncError, keymap_mod.KeymapError, OSError) as e:
             print(f"zmk-layer-hud sync: {e}", file=sys.stderr)
         except Exception as e:            # the config saved half-edited, say: the next save is taken
@@ -1290,7 +1370,8 @@ def main(argv=None):
                     return watch(config_path, opts.get("quiet", False), fetch)
                 except KeyboardInterrupt:
                     return 0
-            return do_import(repo, keyboard, config_path, opts.get("quiet", False), fetch)
+            return do_import(repo, keyboard, config_path, opts.get("quiet", False), fetch,
+                             remote=recorded_remote(config_path))
         raise SyncError(f"unknown command {cmd!r}; try `import` or `sync`")
     except (SyncError, keymap_mod.KeymapError, OSError) as e:
         print(f"zmk-layer-hud {cmd}: {e}", file=sys.stderr)

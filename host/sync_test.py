@@ -11,6 +11,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -519,6 +520,181 @@ layers:
   Num:  ["1", "2", "3", "4", "5", "6", "7", "8"]
   Nav:  [q, w, e, r, t, z, u, i]
 """
+
+
+def git(repo, *args):
+    env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
+    return subprocess.run(["git", "-C", repo, *args], check=True, capture_output=True, text=True, env=env).stdout.strip()
+
+
+@unittest.skipUnless(HAVE_YAML and shutil.which("git"), "reading a config needs PyYAML or yq, and these need git")
+class WorkingCopy(unittest.TestCase):
+    """A keyboard's repo read where it is: whichever branch is checked out is the keymap that is read."""
+
+    def setUp(self):
+        self.d = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.d)
+        self.repo = os.path.join(self.d, "repo")
+        os.makedirs(self.repo)
+        git(self.repo, "init", "-q", "-b", "main")
+        write(self.repo, "boards/dia/dia.keymap", RENUMBER_KEYMAP)
+        write(self.repo, "boards/dia/defs/config.dtsi", "#define BASE 0\n#define NUM 1\n#define NAV 2\n")
+        git(self.repo, "add", "-A")
+        git(self.repo, "commit", "-qm", "main")
+        git(self.repo, "switch", "-qc", "taken-out")
+        write(self.repo, "boards/dia/dia.keymap", RENUMBER_KEYMAP_AFTER)
+        write(self.repo, "boards/dia/defs/config.dtsi", "#define BASE 0\n#define NAV 1\n")
+        git(self.repo, "commit", "-qam", "NUM taken out")
+        git(self.repo, "switch", "-q", "main")
+        write(self.d, "board.yaml", RENUMBER_YAML)
+        self.config = write(self.d, "config.yaml", "keymap: board.yaml\ntitle: T\n")
+        self.defs = sync.definitions_path(self.config)
+
+    def layers(self):
+        with open(self.defs, encoding="utf-8") as f:
+            return [l["name"] for _, l in sorted(json.load(f)["zmk"]["layers"].items(), key=lambda kv: int(kv[0]))]
+
+    def run_sync(self, source=None, say=False):
+        with mock.patch.object(sync, "parse_keymap", return_value={"combos": []}), \
+                contextlib.redirect_stderr(io.StringIO()) as err, contextlib.redirect_stdout(io.StringIO()) as out:
+            repo, board = sync.recorded(self.config)
+            sync.do_import(source or repo, board or "dia", self.config, quiet=not say, fetch=False,
+                           remote=None if source else sync.recorded_remote(self.config))   # as `sync` does: the record is read, not given
+        return out.getvalue() + err.getvalue()
+
+    def test_sync_follows_the_branch_that_is_checked_out(self):
+        self.run_sync(self.repo)
+        self.assertEqual(["ALPHA", "NUMBERS", "NAVIGATION"], self.layers())
+        git(self.repo, "switch", "-q", "taken-out")
+        self.run_sync()                      # no source named: the one recorded is read again
+        self.assertEqual(["ALPHA", "NAVIGATION"], self.layers())
+
+    def recorded_repo(self):
+        with open(self.defs, encoding="utf-8") as f:
+            return json.load(f)["sources"]["repo"]
+
+    def test_a_working_copy_under_home_is_recorded_as_a_home_relative_path_and_read_again_from_it(self):
+        with mock.patch.dict(os.environ, {"HOME": self.d}):
+            self.run_sync(self.repo)
+            self.assertEqual("~/repo", self.recorded_repo())
+            with open(sync.imported_path(self.config), encoding="utf-8") as f:
+                self.assertIn("#   source:   ~/repo", f.read())
+            git(self.repo, "switch", "-q", "taken-out")
+            self.run_sync()
+            self.assertEqual(["ALPHA", "NAVIGATION"], self.layers())
+            keymap = os.path.join(self.repo, "boards/dia/dia.keymap")
+            self.assertIn(keymap, sync.inputs(self.config, "~/repo", "dia"))     # so --watch and doctor see it
+
+    def test_a_working_copy_outside_home_is_recorded_as_it_is(self):
+        with mock.patch.dict(os.environ, {"HOME": os.path.join(self.d, "elsewhere")}):
+            self.run_sync(self.repo)
+        self.assertEqual(self.repo, self.recorded_repo())
+
+    def recorded_sources(self):
+        with open(self.defs, encoding="utf-8") as f:
+            return json.load(f)["sources"]
+
+    def test_the_remote_of_a_working_copy_is_recorded_beside_it_and_survives_every_sync(self):
+        git(self.repo, "remote", "add", "origin", "git@github.com:you/keys.git")
+        with mock.patch.dict(os.environ, {"HOME": self.d}):
+            self.run_sync(self.repo)
+            self.assertEqual("github.com/you/keys", self.recorded_sources()["remote"])
+            self.run_sync()
+            self.assertEqual("github.com/you/keys", self.recorded_sources()["remote"])
+            with open(sync.imported_path(self.config), encoding="utf-8") as f:
+                self.assertIn("#   remote:   github.com/you/keys", f.read())
+            self.assertEqual(("~/repo", "dia"), sync.recorded(self.config))
+            self.assertEqual("github.com/you/keys", sync.recorded_remote(self.config))
+
+    def test_a_working_copy_without_a_remote_records_none(self):
+        self.run_sync(self.repo)
+        self.assertNotIn("remote", self.recorded_sources())
+        self.assertIsNone(sync.recorded_remote(self.config))
+
+    def test_a_remote_is_normalised_to_host_owner_repo(self):
+        for url in ("git@github.com:o/r.git", "https://github.com/o/r.git", "https://github.com/o/r",
+                    "ssh://git@github.com/o/r.git", "github.com/o/r"):
+            self.assertEqual("github.com/o/r", sync.normalise_remote(url), url)
+        for url in ("", "/srv/git/r.git", "not a url"):
+            self.assertIsNone(sync.normalise_remote(url), url)
+
+    def test_a_missing_working_copy_is_read_from_its_remote_and_the_record_stays(self):
+        git(self.repo, "remote", "add", "origin", "git@github.com:you/keys.git")
+        with mock.patch.dict(os.environ, {"HOME": self.d}):
+            self.run_sync(self.repo)
+            with open(self.defs, encoding="utf-8") as f:
+                defs = json.load(f)
+            defs["sources"]["repo"] = "~/moved-away"             # the working copy is not on this machine
+            with open(self.defs, "w", encoding="utf-8") as f:
+                json.dump(defs, f)
+            seen = []
+
+            def cloned(spec, fresh=False):                        # the clone of the remote is the repo, here
+                seen.append(spec)
+                return self.repo, "url"
+            with mock.patch.object(sync, "resolve_source", side_effect=cloned):
+                said = self.run_sync(say=True)
+        self.assertEqual(["github.com/you/keys"], seen)
+        self.assertIn("from github.com/you/keys (the working copy ~/moved-away is missing)", said)
+        self.assertEqual("~/moved-away", self.recorded_sources()["repo"])
+        self.assertEqual("github.com/you/keys", self.recorded_sources()["remote"])
+
+    def test_a_missing_working_copy_with_no_remote_is_the_error_it_always_was(self):
+        with mock.patch.dict(os.environ, {"HOME": self.d}):
+            self.run_sync(self.repo)
+            shutil.rmtree(self.repo)
+            with self.assertRaisesRegex(sync.SyncError, "neither a directory nor a repository"):
+                self.run_sync()
+
+    def test_the_remote_is_kept_by_a_header_only_record_and_a_url_import_has_none(self):
+        git(self.repo, "remote", "add", "origin", "git@github.com:you/keys.git")
+        self.run_sync(self.repo)
+        os.remove(self.defs)                                  # only the readable record is left
+        self.assertEqual("github.com/you/keys", sync.recorded_remote(self.config))
+        self.assertEqual((self.repo, "dia"), sync.recorded(self.config))
+        git(self.repo, "remote", "remove", "origin")
+        with mock.patch.object(sync, "resolve_source", return_value=(self.repo, "url")):
+            self.run_sync("github.com/you/keys")
+        self.assertNotIn("remote", self.recorded_sources())   # a URL is its own remote
+
+    def test_watching_reads_a_missing_working_copy_through_its_remote(self):
+        git(self.repo, "remote", "add", "origin", "git@github.com:you/keys.git")
+        with mock.patch.dict(os.environ, {"HOME": self.d}):
+            self.run_sync(self.repo)
+            with open(self.defs, encoding="utf-8") as f:
+                defs = json.load(f)
+            defs["sources"]["repo"] = "~/moved-away"
+            with open(self.defs, "w", encoding="utf-8") as f:
+                json.dump(defs, f)
+            self.assertNotIn(os.path.join(self.repo, "boards/dia/dia.keymap"), sync.inputs(self.config, "~/moved-away", "dia"))
+            with mock.patch.object(sync, "do_import") as imported, mock.patch.object(sync, "inputs", return_value=[]):
+                sync.watch(self.config, quiet=True, rounds=0)
+        self.assertEqual("github.com/you/keys", imported.call_args.kwargs["remote"])
+        self.assertEqual("~/moved-away", imported.call_args.args[0])
+
+    def test_what_was_read_is_said_with_its_branch(self):
+        said = self.run_sync(self.repo, say=True)
+        self.assertIn(f"from {self.repo} (branch main)", said)
+        git(self.repo, "switch", "-q", "taken-out")
+        self.assertIn(f"from {self.repo} (branch taken-out)", self.run_sync(say=True))
+        git(self.repo, "switch", "-q", "--detach")
+        said = self.run_sync(say=True)
+        self.assertIn(f"from {self.repo}\n", said)
+        self.assertNotIn("branch", said.split("reading", 1)[1].splitlines()[0])
+
+
+@unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
+class ShippedDiamond(unittest.TestCase):
+    """A fresh install links the shipped Diamond files, so what they record is what `sync` reads first."""
+
+    def test_the_shipped_diamond_syncs_from_the_local_checkout_and_falls_back_to_the_remote(self):
+        config = os.path.join(sync.ROOT, "config", "diamond.yaml")
+        self.assertEqual(("~/projects/keyboards", "diamond"), sync.recorded(config))
+        self.assertEqual("github.com/rafaelromao/keyboards", sync.recorded_remote(config))
+        with open(sync.imported_path(config), encoding="utf-8") as f:
+            head = f.read()
+        self.assertIn("#   source:   ~/projects/keyboards", head)
+        self.assertIn("#   remote:   github.com/rafaelromao/keyboards", head)
 
 
 @unittest.skipUnless(HAVE_YAML, "reading a config needs PyYAML or yq")
