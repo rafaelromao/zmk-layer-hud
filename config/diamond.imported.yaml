@@ -26,27 +26,29 @@ layers:
   5: { name: INSERT, symbol: VIM_INSERT, drawer: null, label: Vim insert }    # not drawn — set one in config.yaml if it should be
   6: { name: REPLACE, symbol: VIM_REPLACE, drawer: null, label: Vim replace }    # not drawn — set one in config.yaml if it should be
   7: { name: CMDLINE, symbol: VIM_CMDLINE, drawer: null, label: Vim cmdline }    # not drawn — set one in config.yaml if it should be
-  8: { name: CAPSWORD, symbol: CASE_A1, drawer: shifted1, label: Caps word }
-  9: { name: CAPSLINE, symbol: CPLK_A1, drawer: shifted1, label: Caps line }
-  10: { name: SHORTCUTS, symbol: SHORTS, drawer: shortcuts, label: Shortcuts }
-  11: { name: TOGGLES, symbol: TOGS, drawer: toggles, label: Toggles }
-  12: { name: MEHS, symbol: MEHS, drawer: mehs, label: Mehs }
-  13: { name: ALPHA2, symbol: ALPHA2, drawer: alpha2, label: Alpha 2 }
-  14: { name: NUMBERS, symbol: NUM, drawer: numbers, label: Numbers }
-  15: { name: SYMBOLS, symbol: SYM, drawer: symbols, label: Symbols }
-  16: { name: "Ç EXTENSION", symbol: CCEDIL, drawer: "ç-extension", label: "Ç extension" }
-  17: { name: SHIFTED ALPHA2, symbol: SFT_A2, drawer: shifted2, label: "Shift · Alpha 2" }
-  18: { name: CASE ALPHA2, symbol: CASE_A2, drawer: shifted2, label: "Caps · Alpha 2" }
-  19: { name: "CASE Ç EXTENSION", symbol: CASE_CCEDIL, drawer: "ç-extension", label: "Caps · Ç" }
-  20: { name: ALT REP 2, symbol: ALTREP2, drawer: null, label: Alt repeat }    # not drawn — set one in config.yaml if it should be
-  21: { name: NAVIGATION, symbol: NAV, drawer: nav, label: Navigation }
-  22: { name: NUMBERS, symbol: NUM_CP, drawer: numbers, label: Numbers }
-  23: { name: SYMBOLS, symbol: SYM_CP, drawer: symbols, label: Symbols }
-  24: { name: MOUSE, symbol: MEDIA, drawer: media, label: "Media / mouse" }
-  25: { name: NAVIGATION, symbol: NAV_CP, drawer: nav, label: Navigation }
-  26: { name: TEXT NAVIGATION, symbol: TEXT, drawer: text, label: Text navigation }
-  27: { name: FUNCTIONS, symbol: FUN, drawer: func, label: Function keys }
-  28: { name: MACROS, symbol: MACROS, drawer: macros, label: Macros }
+  8: { name: MEHS, symbol: MEHS, drawer: mehs, label: Mehs }
+  9: { name: ALPHA1 CP, symbol: ALPHA1_CP, drawer: null, label: Alpha1 Cp }    # not drawn — set one in config.yaml if it should be
+  10: { name: CAPSWORD, symbol: CASE_A1, drawer: shifted1, label: Caps word }
+  11: { name: CAPSLINE, symbol: CPLK_A1, drawer: shifted1, label: Caps line }
+  12: { name: SHORTCUTS, symbol: SHORTS, drawer: shortcuts, label: Shortcuts }
+  13: { name: TOGGLES, symbol: TOGS, drawer: toggles, label: Toggles }
+  14: { name: ALPHA2, symbol: ALPHA2, drawer: alpha2, label: Alpha 2 }
+  15: { name: NUMBERS, symbol: NUM, drawer: numbers, label: Numbers }
+  16: { name: SYMBOLS, symbol: SYM, drawer: symbols, label: Symbols }
+  17: { name: "Ç EXTENSION", symbol: CCEDIL, drawer: "ç-extension", label: "Ç extension" }
+  18: { name: SHIFTED ALPHA2, symbol: SFT_A2, drawer: shifted2, label: "Shift · Alpha 2" }
+  19: { name: CASE ALPHA2, symbol: CASE_A2, drawer: shifted2, label: "Caps · Alpha 2" }
+  20: { name: "CASE Ç EXTENSION", symbol: CASE_CCEDIL, drawer: "ç-extension", label: "Caps · Ç" }
+  21: { name: ALT REP 2, symbol: ALTREP2, drawer: null, label: Alt repeat }    # not drawn — set one in config.yaml if it should be
+  22: { name: NAVIGATION, symbol: NAV, drawer: nav, label: Navigation }
+  23: { name: NUMBERS, symbol: NUM_CP, drawer: numbers, label: Numbers }
+  24: { name: SYMBOLS, symbol: SYM_CP, drawer: symbols, label: Symbols }
+  25: { name: MOUSE, symbol: MEDIA, drawer: media, label: "Media / mouse" }
+  26: { name: NAVIGATION, symbol: NAV_CP, drawer: nav, label: Navigation }
+  27: { name: TEXT NAVIGATION, symbol: TEXT, drawer: text, label: Text navigation }
+  28: { name: FUNCTIONS, symbol: FUN, drawer: func, label: Function keys }
+  29: { name: MACROS, symbol: MACROS, drawer: macros, label: Macros }
+  30: { name: BASE, symbol: BASE, drawer: null, label: Base }    # not drawn — set one in config.yaml if it should be
 
 combos:
   - positions: [11, 12, 22]    # &lm_ent_vim
