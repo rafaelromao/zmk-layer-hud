@@ -559,20 +559,21 @@ def parse_layers_and_combos(doc, n_keys):
             raise KeymapError(f"layer {name} has {len(keys)} keys, the layout has {n_keys}")
         layers[name] = keys
     combos = []
-    raw_combos = doc.get("combos") or []
     resolved = None
     try:
         from keymap_drawer.keymap import KeymapData
-        kd = KeymapData(layers=raw_layers, combos=raw_combos, layout=None, config=None)
-        resolved = [(c.key_positions, {"t": c.key.tap, "h": c.key.hold, "s": c.key.shifted, "type": c.key.type},
-                     c.layers) for c in kd.combos]
+        kd = KeymapData(layers=raw_layers, combos=doc.get("combos") or [], layout=None, config=None)
+        # The drawer's own resolved key, as it writes it: tap, hold, shifted, left, right and type,
+        # short aliases and all, straight into norm_key. left and right are its fields, so nothing
+        # of a combo's is dropped on the way through it.
+        resolved = [(c.key_positions, c.key.model_dump(), c.layers) for c in kd.combos]
     except ImportError:
         pass
     except Exception as e:
         raise KeymapError(f"keymap-drawer rejected the combos: {e}") from e
     if resolved is None:
         resolved = []
-        for c in raw_combos:
+        for c in doc.get("combos") or []:
             positions = c.get("p", c.get("key_positions"))
             if not positions:
                 continue  # trigger-key combos need keymap-drawer to resolve

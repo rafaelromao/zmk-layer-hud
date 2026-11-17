@@ -248,6 +248,275 @@ const eIdx = DIAMOND.layers[DIAMOND.base].findIndex(key => key.tap === "e");
   check(eq(out.board.lit, []), "and then out");
 })();
 
+(function aChordStruckWithCtrlReadsItsCtrlLegend() {
+  // A mod-morph's chord (keymap's DIAG_SYMBOL): what it makes is the modifiers held when it fires,
+  // so its pill reads the state it was struck in -- the drawing's own tap and shifted without Ctrl,
+  // its ctrl and ctrl+shift legends with it.
+  const morph = mutate => {
+    const doc = JSON.parse(JSON.stringify(DIAMOND));
+    mutate(doc.combos[0].key);                       // positions [0,1] on the base, no hold
+    const ks = K.create();
+    ks.read(doc, 0);
+    return { key: doc.combos[0].key, read: (m, t) => ks.read(m, t), to: t => ks.tick(t) };
+  };
+  const SHIFT_KEY = 23;                              // the drawing's sticky shift: held as a key
+  const strike = (m, flags, held = []) => {
+    m.read({ kind: "layers", ids: [] }, 900);
+    for (const i of held) m.read({ kind: "press", pos: posOfIdx(i) }, 600);
+    if (flags) m.read({ kind: "key", type: "flagsChanged", flags }, 990);
+    for (const p of DIAMOND.combos[0].positions) m.read({ kind: "press", pos: posOfIdx(p) }, 1000);
+    return m.to(1400).board.pills;
+  };
+  const ctrl = k => { k.left = "=="; k.right = "!="; };
+
+  {
+    // The ctrl report trails the chord's keys, as it can when positions and modifiers come on
+    // different channels: the pill still reads the ctrl legend.
+    const m = morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); });
+    m.read({ kind: "layers", ids: [] }, 900);
+    for (const p of DIAMOND.combos[0].positions) m.read({ kind: "press", pos: posOfIdx(p) }, 1000);
+    m.read({ kind: "key", type: "flagsChanged", flags: { ctrl: true } }, 1005);
+    const pills = m.to(1400).board.pills;
+    check(pills.length === 1 && pills[0].key.tap === "==",
+          `a ctrl report that trails the chord still makes its ctrl legend: ${JSON.stringify(pills.map(p => p.key))}`);
+  }
+
+  {
+    // Ctrl held on its own key, and the report says it was let go as the chord fires: ZMK masks the
+    // modifiers of a mod-morph from the report while it runs, so the held key is what says Ctrl is down.
+    const m = morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); });
+    m.read({ kind: "layers", ids: [] }, 900);
+    m.read({ kind: "press", pos: posOfIdx(7) }, 600);
+    m.read({ kind: "key", type: "flagsChanged", flags: { ctrl: true } }, 610);
+    const [first, second] = DIAMOND.combos[0].positions;
+    m.read({ kind: "press", pos: posOfIdx(first) }, 1000);
+    m.read({ kind: "key", type: "flagsChanged", flags: { ctrl: false } }, 1000);
+    m.read({ kind: "press", pos: posOfIdx(second) }, 1000);
+    const pills = m.to(1400).board.pills;
+    check(pills.length === 1 && pills[0].key.tap === "==",
+          `a masked report does not let go of a held Ctrl key: ${JSON.stringify(pills.map(p => p.key))}`);
+  }
+
+  {
+    // Command held on its own key: the premise (not checked on a keyboard) is that ZMK sends a
+    // shortcut for the chord, not what its four legends say, so that chord draws no pill.
+    const m = morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); });
+    m.read({ kind: "layers", ids: [] }, 900);
+    m.read({ kind: "press", pos: posOfIdx(16) }, 600);
+    for (const p of DIAMOND.combos[0].positions) m.read({ kind: "press", pos: posOfIdx(p) }, 1000);
+    const pills = m.to(1400).board.pills;
+    check(pills.length === 0, `a chord with Command held draws no pill: ${JSON.stringify(pills.map(p => p.key))}`);
+  }
+
+  let pills = strike(morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); }), { ctrl: true });
+  check(pills.length === 1 && pills[0].key.tap === "==" && pills[0].key.shifted === "!=",
+        `struck with Ctrl, its ctrl legend: ${JSON.stringify(pills.map(p => p.key))}`);
+
+  pills = strike(morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); }), { ctrl: true }, [SHIFT_KEY]);
+  check(pills.length === 1 && pills[0].key.tap === "!=" && pills[0].key.shifted === "==",
+        `struck with Ctrl and Shift, its ctrl+shift legend: ${JSON.stringify(pills.map(p => p.key))}`);
+
+  pills = strike(morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); }), null);
+  check(pills.length === 1 && pills[0].key.tap === "(" && pills[0].key.shifted === ")",
+        `struck with nothing held, the legend it always had: ${JSON.stringify(pills.map(p => p.key))}`);
+
+  pills = strike(morph(k => { k.tap = "("; k.shifted = ")"; }), { ctrl: true });
+  check(pills.length === 1 && pills[0].key.tap === "(" && pills[0].key.shifted === ")",
+        `a chord that says nothing about Ctrl is drawn as it always was: ${JSON.stringify(pills.map(p => p.key))}`);
+
+  pills = strike(morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); }), null, [SHIFT_KEY]);
+  check(pills.length === 1 && pills[0].key.tap === ")" && pills[0].key.shifted === "(",
+        `struck with Shift, its shifted legend leads: ${JSON.stringify(pills.map(p => p.key))}`);
+
+  {
+    // A chord whose own key carries Ctrl (a home-row Ctrl): it is not a Ctrl held, so the plain
+    // chord keeps its legend.
+    const doc = JSON.parse(JSON.stringify(DIAMOND));
+    doc.combos[0].positions = [7, 0];
+    doc.combos[0].key.tap = "("; doc.combos[0].key.shifted = ")"; ctrl(doc.combos[0].key);
+    const ks = K.create(); ks.read(doc, 0);
+    ks.read({ kind: "layers", ids: [] }, 900);
+    ks.read({ kind: "press", pos: posOfIdx(7) }, 1000);
+    ks.read({ kind: "press", pos: posOfIdx(0) }, 1000);
+    const got = ks.tick(1400).board.pills;
+    check(got.length === 1 && got[0].key.tap === "(",
+          `a chord whose own key is a Ctrl keeps its plain legend: ${JSON.stringify(got.map(p => p.key))}`);
+  }
+
+  pills = strike(morph(k => { k.tap = "("; k.shifted = ")"; ctrl(k); }), { ctrl: true, shift: true });
+  check(pills.length === 1 && pills[0].key.tap === "==" && pills[0].key.shifted === "!=",
+        `a shift in the output report alone is not a shift held: ${JSON.stringify(pills.map(p => p.key))}`);
+})();
+
+(function whatAFourStateChordLeavesAloneAndWhereItStopsAtTheKeys() {
+  // The edges of the above: what the reading of held modifiers must not spill into (the board's own
+  // modifiers, a chord's count, a chord without `left`), and what it does not read.
+  const CHORD = DIAMOND.combos[0].positions;          // [0, 1] on the base
+  const CTRL_KEY = 7, ALT_KEY = 8, CMD_KEY = 16, SHIFT_KEY = 23;   // n/⌃, s/⌥, p/⌘ held; ⇧ itself
+  const rig = mutate => {
+    const doc = JSON.parse(JSON.stringify(DIAMOND));
+    if (mutate) mutate(doc.combos[0].key, doc);
+    const ks = K.create(), said = [];
+    ks.read(doc, 0);
+    return {
+      said,
+      read(m, t) { const o = ks.read(m, t); said.push(...o.said); return o; },
+      to(t) { const o = ks.tick(t); said.push(...o.said); return o; },
+    };
+  };
+  const four = k => { k.tap = "("; k.shifted = ")"; k.left = "=="; k.right = "!="; };
+  const down = (m, i, t) => m.read({ kind: "press", pos: posOfIdx(i) }, t);
+  const up = (m, i, t) => m.read({ kind: "release", pos: posOfIdx(i) }, t);
+  const chord = (m, t) => { for (const p of CHORD) down(m, p, t); };
+  const flags = (m, f, t) => m.read({ kind: "key", type: "flagsChanged", flags: f }, t);
+  const legends = pills => JSON.stringify(pills.map(p => [p.key.tap, p.key.shifted]));
+  const said = m => m.said.map(e => e.say + (e.as ? ":" + e.as : ""));
+
+  // The board's own modifiers are the report's, as they were: a key's release is not a report.
+  for (const [what, key, flag] of [["Ctrl", CTRL_KEY, "ctrl"], ["Shift", SHIFT_KEY, "shift"]]) {
+    const m = rig();
+    m.read({ kind: "layers", ids: [] }, 100);
+    down(m, key, 600); flags(m, { [flag]: true }, 800);
+    flags(m, { [flag]: false }, 1990);                // the report goes before the position does
+    const out = up(m, key, 2000);
+    check(!out.board.mods[flag] && out.board.modSource[flag] === undefined,
+          `${what} let go in the report, its key let go after: no ${what} held, none ringed: ${JSON.stringify([out.board.mods, out.board.modSource])}`);
+    check(!m.to(4000).board.mods[flag], `${what} does not come back by itself`);
+  }
+  {
+    const m = rig();
+    m.read({ kind: "layers", ids: [] }, 100);
+    down(m, CTRL_KEY, 600);
+    const out = flags(m, { alt: true }, 700);
+    check(!out.board.mods.ctrl && out.board.mods.alt, `a key that can be a Ctrl is not a Ctrl on the board: ${JSON.stringify(out.board.mods)}`);
+  }
+  {
+    // A chord on a home-row Ctrl of its own, and an Alt reported meanwhile: its hold is the Alt.
+    const m = rig((k, doc) => { doc.combos[0].positions = [CTRL_KEY, 0]; four(k); });
+    m.read({ kind: "layers", ids: [] }, 900);
+    down(m, CTRL_KEY, 1000); down(m, 0, 1000);
+    flags(m, { alt: true }, 1100);
+    const out = m.to(1500);
+    check(out.board.pills.length === 1 && out.board.pills[0].hold === "⌥" && !out.board.mods.ctrl,
+          `the chord's own Ctrl key is no Ctrl held: ${JSON.stringify(out.board.pills.map(p => p.hold))} ${JSON.stringify(out.board.mods)}`);
+  }
+
+  // Command or Option held outside a four-state chord: no pill, and still the chord that fired.
+  for (const [what, key] of [["Command", CMD_KEY], ["Option", ALT_KEY]]) {
+    const m = rig(four);
+    m.read({ kind: "layers", ids: [] }, 900);
+    down(m, key, 600); chord(m, 1000);
+    for (const p of CHORD) up(m, p, 1100);
+    up(m, key, 1200);
+    const out = m.to(3000), got = said(m);
+    check(out.board.pills.length === 0, `${what} held: a four-state chord draws no pill`);
+    check(got.includes("combo") && got.includes("keystroke:chord") && !got.includes("keystroke:tap"),
+          `${what} held: it still counts as one chord, not as its keys: ${got}`);
+    check(m.said.filter(e => e.say === "press").length === 3, `${what} held: its keys are still presses`);
+  }
+  {
+    // Without `left` it is not a four-state chord: the pill is as it always was.
+    const m = rig(k => { k.tap = "("; k.shifted = ")"; });
+    m.read({ kind: "layers", ids: [] }, 900);
+    down(m, CMD_KEY, 600); chord(m, 1000);
+    const pills = m.to(1400).board.pills;
+    check(legends(pills) === '[["(",")"]]', `Command held, a chord without left: its pill as always: ${legends(pills)}`);
+    check(said(m).includes("combo"), "and counted as a chord");
+  }
+
+  // A glyph goes with its legend: the page draws a glyph in place of the text it is given.
+  {
+    const glyphs = k => { four(k); k.glyph = "mdi:tap"; k.glyph_shifted = "mdi:shifted"; k.glyph_hold = "mdi:hold"; };
+    const read = (held, f) => {
+      const m = rig(glyphs);
+      m.read({ kind: "layers", ids: [] }, 900);
+      for (const i of held) down(m, i, 600);
+      if (f) flags(m, f, 990);
+      chord(m, 1000);
+      return m.to(1400).board.pills.map(p => p.key);
+    };
+    let [key] = read([], { ctrl: true });
+    check(key.tap === "==" && !key.glyph && !key.glyph_shifted && !key.glyph_hold,
+          `a ctrl legend is text, with none of the tap's glyphs: ${JSON.stringify(key)}`);
+    [key] = read([SHIFT_KEY], null);
+    check(key.tap === ")" && key.glyph === "mdi:shifted" && key.shifted === "(" && key.glyph_shifted === "mdi:tap",
+          `the shifted legend takes its glyph along as the legends trade places: ${JSON.stringify(key)}`);
+    [key] = read([], null);
+    check(key.tap === "(" && key.glyph === "mdi:tap" && key.glyph_shifted === "mdi:shifted",
+          `struck plain, its glyphs as drawn: ${JSON.stringify(key)}`);
+  }
+
+  // Which chords read Shift, and which legends they need.
+  {
+    const read = (mutate, held, f) => {
+      const m = rig(mutate);
+      m.read({ kind: "layers", ids: [] }, 900);
+      for (const i of held) down(m, i, 600);
+      if (f) flags(m, f, 990);
+      chord(m, 1000);
+      return legends(m.to(1400).board.pills);
+    };
+    const plain = k => { k.tap = "("; k.shifted = ")"; };
+    check(read(plain, [SHIFT_KEY]) === '[["(",")"]]', "a Shift key held, a chord without left: as it always was");
+    check(read(k => { plain(k); k.right = "!="; }, [SHIFT_KEY, CTRL_KEY], { ctrl: true }) === '[["(",")"]]',
+          "right without left says nothing, a Ctrl and a Shift held or not");
+    check(read(k => { plain(k); k.left = "=="; }, [], { ctrl: true }) === '[["==",""]]', "left without right: Ctrl reads left, nothing small");
+    check(read(k => { plain(k); k.left = "=="; }, [SHIFT_KEY], { ctrl: true }) === '[["==",""]]', "left without right, Shift too: left still");
+  }
+
+  // Held keys are what they were when they went down.
+  {
+    const m = rig(four);                                // the ⎋ chord on [0, 1], on alpha2 as on the base
+    down(m, CTRL_KEY, 600);                             // a Ctrl on the base layer's home row
+    flags(m, { ctrl: true }, 800);
+    m.read({ kind: "layers", ids: [ALPHA2] }, 900);  // where that position is another key
+    down(m, CHORD[0], 1000);
+    flags(m, { ctrl: false }, 1000);                    // masked, as the morph runs
+    down(m, CHORD[1], 1000);
+    const out = m.to(1400);
+    check(out.board.layers[0] === "alpha2" && legends(out.board.pills) === '[["==","!="]]',
+          `a Ctrl held across a layer change is still a Ctrl: ${out.board.layers} ${legends(out.board.pills)}`);
+  }
+
+  // What is not read, written down as it is: a Shift that only the report says (a sticky Shift, caps
+  // word) and a hold-tap that has not turned into its hold. Neither is checked on a keyboard.
+  {
+    const m = rig(four);
+    m.read({ kind: "layers", ids: [] }, 800);
+    down(m, SHIFT_KEY, 850); flags(m, { shift: true }, 855); up(m, SHIFT_KEY, 900);
+    chord(m, 1000);
+    check(legends(m.to(1400).board.pills) === '[["(",")"]]', "a Shift only in the report is not read (limitation)");
+  }
+  {
+    const m = rig(four);
+    m.read({ kind: "layers", ids: [] }, 800);
+    down(m, CTRL_KEY, 900); chord(m, 1000);
+    check(legends(m.to(1400).board.pills) === '[["==","!="]]', "a hold-tap down counts as held, resolved or not (premise)");
+  }
+
+  // A report that trails the chord can only be one for a modifier held before it, not a key after it.
+  for (const [what, key, flag] of [["Shift", SHIFT_KEY, "shift"], ["Ctrl", CTRL_KEY, "ctrl"]]) {
+    const m = rig(four);
+    m.read({ kind: "layers", ids: [] }, 900);
+    chord(m, 1000);
+    down(m, key, 1100); flags(m, { [flag]: true }, 1105);
+    check(legends(m.to(1400).board.pills) === '[["(",")"]]', `a ${what} key that goes down after the chord is not a state it was struck in`);
+  }
+
+  // Without a report of what is typed, a chord that may read Ctrl waits for the reports; a chord that
+  // cannot is drawn at once.
+  {
+    const wait = mutate => {
+      const m = rig(mutate);
+      m.read({ kind: "layers", ids: [] }, 900);
+      chord(m, 1000);
+      return [m.to(1299).board.pills.length, m.to(1301).board.pills.length];
+    };
+    check(eq(wait(four), [0, 1]), "a four-state chord is drawn when combo_decide_ms is up");
+    check(eq(wait(k => { k.tap = "("; k.shifted = ")"; }), [1, 1]), "a chord without left is drawn at once");
+  }
+})();
+
 (function aBiggerChordsPillTakesTheSmallerOnesPlace() {
   const big = DIAMOND.combos.find(c => onBase(c) && c.key.tap === "meh ␣");
   const small = DIAMOND.combos.find(c => onBase(c) && c.positions.length === 2 && c.positions.every(p => big.positions.includes(p)) &&
