@@ -591,6 +591,29 @@ beside anything that is wrong. What it cannot see:
   Privacy & Security → Bluetooth). `… over BLE, not read` means it connected but found no signal
   service: the firmware was built without `CONFIG_ZMK_LAYER_SIGNAL_GATT`, or macOS has cached the
   keyboard's services from an older firmware — remove and re-pair it.
+  On Linux the feed asks BlueZ (on the system bus) for a connected keyboard that lists the signal
+  service, so no address is needed there either: `ble.address` only picks one of several. With
+  several connected and none picked, the feed reads the first by BlueZ's object path, the same
+  one every time, and its log names it and the others; `ble.address` picks one. `keyboard.name`
+  does too, but it also picks the keyboard the serial and HID readers take. BlueZ may still list
+  the services it cached from an older firmware; if the feed never finds the keyboard,
+  `bluetoothctl remove <address>` and pair it again. A keyboard the feed finds already connected
+  through BlueZ, the feed does not disconnect, when it stops (quit, restart, update) or when it
+  cannot read it: BlueZ's link is shared by every application, and the library (bleak) sends
+  BlueZ a `Disconnect` for what it closes, so the feed lets go of the keyboard first. bleak has
+  no setting for that; the feed reaches into its internals, for the version pinned in
+  `host/requirements.txt`, and with a bleak that lacks them it says in its log that it cannot
+  leave the keyboard connected. A keyboard the scan finds is closed with bleak's `Disconnect`
+  as before, and that includes one BlueZ connected by itself while the scan ran. bleak also
+  sends `Disconnect` for a keyboard whose services BlueZ does not resolve in time, so while
+  BlueZ is resolving them the feed looks again later (`… has not resolved its services yet`),
+  for 30 s at most, as long as bleak itself waits. After that it also scans for another
+  keyboard with the signal, passing that one over and leaving it connected; with `ble.address`
+  set it keeps waiting, as the address names that keyboard. What remains: if the keyboard
+  drops, or BlueZ resolves its services again, in the moment between the feed's look and
+  bleak's connect, bleak's failed connect still sends `Disconnect` for it. All of this is
+  tested against bleak's own code on a simulated BlueZ and has not been checked on hardware: if
+  the keyboard does drop off, `bluetoothctl connect <address>` asks BlueZ to connect it again.
 - **`no definitions yet`**: `start` waits for `import` to have drawn the keymap:
   `zmk-layer-hud import <your zmk-config>`, or with `keymap:` set, `zmk-layer-hud import`.
 - **No `layers` lines**: `zmk-layer-hud feed --raw` logs every frame it decodes, so silence there

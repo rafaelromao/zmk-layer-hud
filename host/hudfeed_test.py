@@ -5,6 +5,7 @@ what a report means is host/hiddecode.py's, tested in hiddecode_test.py. Stream 
 """
 
 import asyncio
+import functools
 import json
 import os
 import re
@@ -1044,6 +1045,859 @@ class BleReading(unittest.TestCase):
         with mock.patch.dict(sys.modules, {"bleak": types.SimpleNamespace(BleakClient=None)}):
             asyncio.run(r._loop())
         self.assertLess(time.monotonic() - started, 1.0)       # not the 3 s backoff
+
+
+class BluezConnected(unittest.TestCase):
+    """The keyboard BlueZ has connected, from its managed objects: no scan, no adapter."""
+
+    SVC = "d1f0a7c2-6b3e-4f8a-9c21-5e7b4a0d9f31"
+
+    @staticmethod
+    def device(address, name, connected=True, uuids=(), path=None, resolved=True):
+        """`resolved`: ServicesResolved, and None for a device that does not have the property."""
+        v = lambda x: types.SimpleNamespace(value=x)
+        props = {"Connected": v(connected), "Address": v(address), "Name": v(name), "UUIDs": v(list(uuids))}
+        if resolved is not None:
+            props["ServicesResolved"] = v(resolved)
+        return (path or "/org/bluez/hci0/dev_" + address.replace(":", "_")), {"org.bluez.Device1": props}
+
+    def objects(self, *devices):
+        return dict(devices)
+
+    def test_the_connected_keyboard_with_the_service_is_found(self):
+        import hudfeed
+        objs = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]),
+                            self.device("DC:2C:26:2A:31:DE", "Keychron K4", uuids=["1812"]))
+        self.assertEqual(("/org/bluez/hci0/dev_F9_BD_CA_10_F7_A8", "F9:BD:CA:10:F7:A8", "TwoNr9"),
+                         hudfeed.bluez_connected(objs))
+
+    def test_a_keyboard_not_connected_is_not_found(self):
+        import hudfeed
+        objs = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", connected=False, uuids=[self.SVC]))
+        self.assertIsNone(hudfeed.bluez_connected(objs))
+
+    def test_a_connected_keyboard_without_the_service_is_not_taken(self):
+        import hudfeed
+        objs = self.objects(self.device("DC:2C:26:2A:31:DE", "Keychron K4", uuids=["1812"]))
+        self.assertIsNone(hudfeed.bluez_connected(objs))
+
+    def test_the_configured_address_and_name_pick_between_two(self):
+        import hudfeed
+        objs = self.objects(self.device("AA:AA:AA:AA:AA:01", "Other", uuids=[self.SVC]),
+                            self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]))
+        self.assertEqual("F9:BD:CA:10:F7:A8", hudfeed.bluez_connected(objs, address="f9:bd:ca:10:f7:a8")[1])
+        self.assertEqual("TwoNr9", hudfeed.bluez_connected(objs, name="twonr")[2])
+        self.assertIsNone(hudfeed.bluez_connected(objs, address="11:22:33:44:55:66"))
+
+    def test_a_keyboard_whose_services_are_not_resolved_is_not_taken_yet(self):
+        import hudfeed
+        for resolved in (False, None):          # not yet, or a device without the property
+            objs = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC], resolved=resolved))
+            self.assertIsNone(hudfeed.bluez_connected(objs), resolved)
+            self.assertEqual([("/org/bluez/hci0/dev_F9_BD_CA_10_F7_A8", "F9:BD:CA:10:F7:A8", "TwoNr9")],
+                             hudfeed.bluez_matches(objs, resolving=True), resolved)
+        both = self.objects(self.device("AA:AA:AA:AA:AA:01", "Other", uuids=[self.SVC], resolved=False),
+                            self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]))
+        self.assertEqual("F9:BD:CA:10:F7:A8", hudfeed.bluez_connected(both)[1])
+        self.assertEqual(["AA:AA:AA:AA:AA:01"], [a for _, a, _ in hudfeed.bluez_matches(both, resolving=True)])
+
+    def test_while_bluez_resolves_the_keyboard_there_is_no_scan_and_the_log_says_why(self):
+        import hudfeed
+        said = []
+        r = hudfeed.BleReader(lambda m: None, log=said.append, rescan=0.0)
+        answers = [self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC], resolved=False))] * 2
+
+        async def objects_now():
+            return answers.pop(0) if answers else self.objects(
+                self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]))
+
+        async def scan(*a, **kw):
+            raise AssertionError("the scan should not run")
+
+        async def pause(seconds):
+            if not answers:
+                r.stop()
+        r._pause = pause
+        modules = self.fake_bleak(scan)
+        modules["bleak"].BleakScanner.find_device_by_filter = scan
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.object(hudfeed, "bluez_objects", objects_now), \
+                mock.patch.dict(sys.modules, modules):
+            self.assertIsNone(asyncio.run(r._find()))
+            self.assertIsNone(r._found_connected)
+            modules["bleak"].BleakClient = None
+            asyncio.run(r._loop())          # one more look while it resolves, said once, then stopped
+            self.assertEqual("F9:BD:CA:10:F7:A8", asyncio.run(r._find()).address)   # resolved: taken
+        self.assertEqual(["hudfeed: TwoNr9 (F9:BD:CA:10:F7:A8) is connected and BlueZ has not resolved its services "
+                          "yet: looking again rather than connect to it now"], said)
+        self.assertIsNone(r._resolving)
+
+    def stuck(self, times, resolved_from=None, objects_at=None, **picked):
+        """A keyboard BlueZ never resolves (TwoNr9), Other advertising, looked for at `times` (s):
+        -> (what each look found, the scan's filters by look, the log), the scan finding Other
+        when it runs. `resolved_from`: the look from which TwoNr9 is resolved after all;
+        `objects_at(look)`: what BlueZ has at each look, instead of TwoNr9 alone."""
+        import hudfeed
+        said, scans = [], {}
+        r = hudfeed.BleReader(lambda m: None, log=said.append, rescan=0.0, **picked)
+        clock = iter(times)
+        r._clock = lambda: now
+        other = types.SimpleNamespace(address="AA:AA:AA:AA:AA:01", name="Other")
+
+        async def objects_now():
+            if objects_at:
+                return objects_at(look)
+            resolved = resolved_from is not None and look >= resolved_from
+            return self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC], resolved=resolved))
+
+        async def by_filter(match, timeout):
+            scans[look] = match
+            return other
+
+        async def by_address(address, timeout):
+            scans[look] = address
+            return None
+        modules = self.fake_bleak(by_address)
+        modules["bleak"].BleakScanner.find_device_by_filter = by_filter
+        found = []
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.object(hudfeed, "bluez_objects", objects_now), \
+                mock.patch.dict(sys.modules, modules):
+            for look, now in enumerate(clock):
+                device = asyncio.run(r._find())
+                found.append(None if device is None else (device.address, device is r._found_connected))
+        return found, scans, said
+
+    def test_a_keyboard_that_never_resolves_holds_the_scan_back_only_as_long_as_bleak_would_have(self):
+        import hudfeed
+        self.assertEqual(30, hudfeed.BLE_RESOLVE_WAIT_S)
+        found, scans, said = self.stuck([100, 110, 129.9, 130, 145])
+        self.assertEqual([None, None, None, ("AA:AA:AA:AA:AA:01", False), ("AA:AA:AA:AA:AA:01", False)], found)
+        self.assertEqual([3, 4], sorted(scans))
+        advert = types.SimpleNamespace(service_uuids=[self.SVC])
+        keyboard = lambda address: types.SimpleNamespace(address=address, name="")
+        self.assertFalse(scans[3](keyboard("f9:bd:ca:10:f7:a8"), advert))     # the scan passes the stuck one over
+        self.assertTrue(scans[3](keyboard("AA:AA:AA:AA:AA:01"), advert))
+        self.assertEqual(["hudfeed: BlueZ has not resolved the services of TwoNr9 (F9:BD:CA:10:F7:A8) in 30 s: "
+                          "scanning for another keyboard too (the scan passes over every keyboard BlueZ is still "
+                          "resolving and leaves them connected)"], said)
+
+    def test_past_the_wait_the_scan_passes_over_every_keyboard_bluez_is_still_resolving(self):
+        # TwoNr9 never resolves; Corne, connected too, is still resolving: were BlueZ to resolve it
+        # while the scan runs, the scan would hand it over and the session would end with a Disconnect.
+        def bluez(look):
+            return self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC], resolved=False),
+                                self.device("C0:C0:C0:C0:C0:02", "Corne", uuids=[self.SVC], resolved=look >= 2))
+        found, scans, said = self.stuck([0, 31, 32], objects_at=bluez)
+        self.assertEqual([None, ("AA:AA:AA:AA:AA:01", False), ("C0:C0:C0:C0:C0:02", True)], found)
+        advert = types.SimpleNamespace(service_uuids=[self.SVC])
+        keyboard = lambda address: types.SimpleNamespace(address=address, name="")
+        self.assertEqual([False, False, True], [scans[1](keyboard(a), advert) for a in
+                                                ("F9:BD:CA:10:F7:A8", "c0:c0:c0:c0:c0:02", "AA:AA:AA:AA:AA:01")])
+        self.assertEqual([1], list(scans))                       # Corne, once resolved, by the lookup
+        self.assertEqual(1, len(said))
+
+    def test_what_the_scan_passes_over_is_what_bluez_is_resolving_at_that_look_and_no_longer(self):
+        # Past the wait TwoNr9 drops, and advertises: the scan after that must be able to find it.
+        def bluez(look):
+            connected = look < 2
+            return self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC], resolved=False,
+                                            connected=connected))
+        found, scans, _ = self.stuck([0, 31, 32], objects_at=bluez)
+        advert = types.SimpleNamespace(service_uuids=[self.SVC])
+        twonr9 = types.SimpleNamespace(address="F9:BD:CA:10:F7:A8", name="TwoNr9")
+        self.assertEqual([1, 2], list(scans))
+        self.assertFalse(scans[1](twonr9, advert))
+        self.assertTrue(scans[2](twonr9, advert))
+
+    def test_the_wait_is_counted_again_when_the_first_keyboard_resolving_is_another(self):
+        # TwoNr9 and Corne resolving from 0; at 25 TwoNr9 is gone, so Corne is the first: its wait
+        # is counted from 25, and the scan runs from 55, not from 30.
+        def bluez(look):
+            keyboards = [self.device("C0:C0:C0:C0:C0:02", "Corne", uuids=[self.SVC], resolved=False)]
+            if look == 0:
+                keyboards.append(self.device("0A:0A:0A:0A:0A:03", "TwoNr9", uuids=[self.SVC], resolved=False))
+            return self.objects(*keyboards)
+        found, scans, said = self.stuck([0, 25, 40, 54.9, 55], objects_at=bluez)
+        self.assertEqual([None, None, None, None, ("AA:AA:AA:AA:AA:01", False)], found)
+        self.assertEqual([4], list(scans))
+        self.assertIn("Corne (C0:C0:C0:C0:C0:02) in 30 s", said[0])
+
+    def test_one_resolved_inside_the_wait_or_after_it_is_taken_by_the_lookup_and_never_by_the_scan(self):
+        found, scans, _ = self.stuck([0, 10, 20], resolved_from=2)
+        self.assertEqual([None, None, ("F9:BD:CA:10:F7:A8", True)], found)
+        self.assertEqual({}, scans)
+        found, scans, _ = self.stuck([0, 31, 32], resolved_from=2)
+        self.assertEqual([None, ("AA:AA:AA:AA:AA:01", False), ("F9:BD:CA:10:F7:A8", True)], found)
+        self.assertEqual([1], list(scans))
+
+    def test_with_ble_address_set_the_one_it_names_is_waited_for_and_no_scan_runs(self):
+        found, scans, said = self.stuck([0, 31, 300], address="f9:bd:ca:10:f7:a8")
+        self.assertEqual([None, None, None], found)
+        self.assertEqual(({}, []), (scans, said))
+
+    def test_the_wait_starts_again_for_a_keyboard_that_resolved_and_is_resolving_once_more(self):
+        import hudfeed
+        r = hudfeed.BleReader(lambda m: None, log=lambda *a: None)
+        r._clock = lambda: now
+        answers = {0: False, 25: True, 40: False, 65: False, 71: False}
+
+        async def objects_now():
+            return self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC], resolved=answers[now]))
+        modules = self.fake_bleak(None)
+        modules["bleak"].BleakScanner.find_device_by_filter = None
+        stuck = []
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.object(hudfeed, "bluez_objects", objects_now), \
+                mock.patch.dict(sys.modules, modules):
+            for now in answers:
+                asyncio.run(r._connected_bluez())
+                stuck.append(r._stuck)
+        self.assertEqual([None, None, None, None, {"f9:bd:ca:10:f7:a8"}], stuck)   # 40 + 30, not 0 + 30
+
+    def test_looks_while_bluez_resolves_keep_to_the_rescan_and_do_not_back_off(self):
+        import hudfeed
+        r = hudfeed.BleReader(lambda m: None, log=lambda *a: None, rescan=2.0)
+        rounds = [None, None, "resolving", "resolving", "resolving", None, None]
+        paused = []
+
+        async def find():
+            r._resolving = rounds.pop(0)
+            return None
+
+        async def pause(seconds):
+            paused.append(seconds)
+            if not rounds:
+                r.stop()
+        r._find, r._pause = find, pause
+        with mock.patch.dict(sys.modules, {"bleak": types.SimpleNamespace(BleakClient=None)}):
+            asyncio.run(r._loop())
+        self.assertEqual([2.0, 4.0, 2.0, 2.0, 2.0, 2.0, 4.0], paused)
+
+    def test_a_name_comes_back_fit_for_the_log_whatever_the_device_called_itself(self):
+        import hudfeed
+        forged = "TwoNr9\nhudfeed: reading Diamond over BLE\r\x1b[2K\x1b]0;title\x07‮ \x00"
+        objs = self.objects(self.device("F9:BD:CA:10:F7:A8", forged, uuids=[self.SVC]),
+                            self.device("AA:AA:AA:AA:AA:01", "K" * 300, uuids=[self.SVC]))
+        (_, _, long), (_, _, label) = hudfeed.bluez_matches(objs)
+        self.assertEqual("TwoNr9?hudfeed: reading Diamond over BLE??[2K?]0;title????", label)
+        self.assertEqual("K" * 63 + "…", long)
+        # ... and that is the name every line of the log about it is written with
+        devices, said = self.finds(objs)
+        self.assertEqual(long, devices[0].name)
+        self.assertEqual(1, len(said))
+        self.assertTrue(said[0].isprintable(), said[0])
+        self.assertIn(label, said[0])
+        # the configured name is still matched against the name as BlueZ gave it
+        self.assertEqual("F9:BD:CA:10:F7:A8", hudfeed.bluez_connected(objs, name="twonr9\nhudfeed")[1])
+        self.assertEqual("Keychron K4", hudfeed.printable("Keychron K4"))
+        self.assertEqual("Ünïcödé ⌨ 键盘", hudfeed.printable("Ünïcödé ⌨ 键盘"))
+
+    def test_of_several_the_first_by_object_path_is_taken_however_bluez_lists_them(self):
+        import hudfeed
+        two = [self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]),
+               self.device("AA:AA:AA:AA:AA:01", "Other", uuids=[self.SVC]),
+               self.device("00:00:00:00:00:01", "Keychron K4", uuids=["1812"])]
+        for listed in (two, two[::-1]):
+            objs = self.objects(*listed)
+            self.assertEqual(("/org/bluez/hci0/dev_AA_AA_AA_AA_AA_01", "AA:AA:AA:AA:AA:01", "Other"),
+                             hudfeed.bluez_connected(objs))
+            self.assertEqual(["AA:AA:AA:AA:AA:01", "F9:BD:CA:10:F7:A8"],
+                             [address for _, address, _ in hudfeed.bluez_matches(objs)])
+
+    def finds(self, objs, times=1, **picked):
+        """-> (the devices _find gave, what the log said), BlueZ answering `objs` each time."""
+        import hudfeed
+        said = []
+        r = hudfeed.BleReader(lambda m: None, log=said.append, **picked)
+
+        async def objects_now():
+            return objs
+
+        async def scan(*a, **kw):
+            raise AssertionError("the scan should not run")
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.object(hudfeed, "bluez_objects", objects_now), \
+                mock.patch.dict(sys.modules, self.fake_bleak(scan)):
+            return [asyncio.run(r._find()) for _ in range(times)], said
+
+    def test_several_connected_are_said_once_with_the_one_taken_and_how_to_pick(self):
+        objs = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]),
+                            self.device("AA:AA:AA:AA:AA:01", "Other", uuids=[self.SVC]))
+        devices, said = self.finds(objs, times=3)
+        self.assertEqual(["AA:AA:AA:AA:AA:01"] * 3, [d.address for d in devices])
+        self.assertEqual(["hudfeed: 2 connected BLE keyboards have the layer signal: reading Other "
+                          "(AA:AA:AA:AA:AA:01), not TwoNr9 (F9:BD:CA:10:F7:A8); `ble.address` in the config picks "
+                          "one (`keyboard.name` does too, and also picks the keyboard the serial and HID readers "
+                          "take)"], said)
+
+    def test_one_connected_or_one_picked_of_several_is_taken_without_a_word(self):
+        one = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]),
+                           self.device("DC:2C:26:2A:31:DE", "Keychron K4", uuids=["1812"]))
+        two = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]),
+                           self.device("AA:AA:AA:AA:AA:01", "Other", uuids=[self.SVC]))
+        for objs, picked in ((one, {}), (two, {"address": "f9:bd:ca:10:f7:a8"}), (two, {"name": "twonr"})):
+            devices, said = self.finds(objs, **picked)
+            self.assertEqual((["F9:BD:CA:10:F7:A8"], []), ([d.address for d in devices], said), picked)
+
+    @staticmethod
+    def fake_bleak(scan):
+        # bleak is not needed to test the order: the device and the scanner are stand-ins.
+        device = types.ModuleType("bleak.backends.device")
+        device.BLEDevice = lambda address, name, details: types.SimpleNamespace(
+            address=address, name=name, details=details)
+        scanner = types.SimpleNamespace(BleakScanner=types.SimpleNamespace(find_device_by_address=scan))
+        return {"bleak": scanner, "bleak.backends.device": device, "bleak.backends": types.ModuleType("bleak.backends")}
+
+    def test_on_linux_the_connected_keyboard_is_tried_before_any_scan(self):
+        import hudfeed
+        r = hudfeed.BleReader(lambda m: None, address="F9:BD:CA:10:F7:A8", log=lambda *a: None)
+        objs = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]))
+
+        async def objects_now():
+            return objs
+
+        async def scan(address, timeout):
+            raise AssertionError("the scan should not run")
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.object(hudfeed, "bluez_objects", objects_now), \
+                mock.patch.dict(sys.modules, self.fake_bleak(scan)):
+            device = asyncio.run(r._find())
+        self.assertEqual("/org/bluez/hci0/dev_F9_BD_CA_10_F7_A8", device.details["path"])
+        self.assertEqual("F9:BD:CA:10:F7:A8", device.address)
+
+    def test_without_the_system_bus_the_scan_is_still_the_way_in(self):
+        import hudfeed
+        r = hudfeed.BleReader(lambda m: None, address="F9:BD:CA:10:F7:A8", log=lambda *a: None)
+
+        async def no_bus():
+            raise OSError("no system bus")
+
+        async def scan(address, timeout):
+            return "scanned"
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.object(hudfeed, "bluez_objects", no_bus), \
+                mock.patch.dict(sys.modules, self.fake_bleak(scan)):
+            self.assertEqual("scanned", asyncio.run(r._find()))
+
+    @staticmethod
+    def fake_dbus(reply=None, connect_error=None):
+        """dbus_fast as bluez_objects uses it: a bus that answers `reply` (which dbus_fast returns,
+        and does not raise, when it is a D-Bus error) or whose connect fails. -> (modules, calls)."""
+        calls = []
+
+        class Bus:
+            def __init__(self, bus_type=None):
+                calls.append("new")
+
+            async def connect(self):
+                calls.append("connect")
+                if connect_error:
+                    raise connect_error
+                return self
+
+            async def call(self, message):
+                calls.append("call")
+                return reply
+
+            def disconnect(self):
+                calls.append("disconnect")
+        dbus, aio, constants = (types.ModuleType(n) for n in ("dbus_fast", "dbus_fast.aio", "dbus_fast.constants"))
+        dbus.BusType = types.SimpleNamespace(SYSTEM="system")
+        dbus.Message = lambda **kw: types.SimpleNamespace(**kw)
+        aio.MessageBus = Bus
+        constants.MessageType = types.SimpleNamespace(METHOD_RETURN="return", ERROR="error")
+        return {"dbus_fast": dbus, "dbus_fast.aio": aio, "dbus_fast.constants": constants}, calls
+
+    def test_the_managed_objects_are_what_a_method_return_carries(self):
+        import hudfeed
+        objs = self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC]))
+        modules, calls = self.fake_dbus(types.SimpleNamespace(message_type="return", body=[objs]))
+        with mock.patch.dict(sys.modules, modules):
+            self.assertIs(objs, asyncio.run(hudfeed.bluez_objects()))
+        self.assertEqual(["new", "connect", "call", "disconnect"], calls)
+
+    def test_an_error_reply_is_not_taken_for_managed_objects(self):
+        import hudfeed
+        error = types.SimpleNamespace(message_type="error", error_name="org.freedesktop.DBus.Error.ServiceUnknown",
+                                      body=["The name org.bluez was not provided by any .service files"])
+        modules, calls = self.fake_dbus(error)
+        with mock.patch.dict(sys.modules, modules):
+            with self.assertRaisesRegex(RuntimeError, "ServiceUnknown"):
+                asyncio.run(hudfeed.bluez_objects())
+        self.assertEqual("disconnect", calls[-1])
+
+    def test_a_bus_whose_connect_failed_is_still_disconnected(self):
+        import hudfeed
+        modules, calls = self.fake_dbus(connect_error=OSError("auth"))
+        with mock.patch.dict(sys.modules, modules):
+            with self.assertRaises(OSError):
+                asyncio.run(hudfeed.bluez_objects())
+        self.assertEqual(["new", "connect", "disconnect"], calls)
+
+    def test_an_error_reply_from_bluez_leaves_the_scan_as_the_way_in(self):
+        import hudfeed
+        r = hudfeed.BleReader(lambda m: None, address="F9:BD:CA:10:F7:A8", log=lambda *a: None)
+        error = types.SimpleNamespace(message_type="error", error_name="org.freedesktop.DBus.Error.ServiceUnknown",
+                                      body=["The name org.bluez was not provided by any .service files"])
+
+        async def scan(address, timeout):
+            return "scanned"
+        modules, _ = self.fake_dbus(error)
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.dict(sys.modules, {**modules, **self.fake_bleak(scan)}):
+            self.assertEqual("scanned", asyncio.run(r._find()))
+
+    def test_managed_objects_that_cannot_be_read_leave_the_scan_as_the_way_in(self):
+        import hudfeed
+        r = hudfeed.BleReader(lambda m: None, address="F9:BD:CA:10:F7:A8", log=lambda *a: None)
+        no_connected = {"/org/bluez/hci0/dev_X": {"org.bluez.Device1": {"Address": types.SimpleNamespace(value="X")}}}
+
+        async def scan(address, timeout):
+            return "scanned"
+        for odd in ("not a dict", no_connected):
+            async def objects_now():
+                return odd
+            with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                    mock.patch.object(hudfeed, "bluez_objects", objects_now), \
+                    mock.patch.dict(sys.modules, self.fake_bleak(scan)):
+                self.assertEqual("scanned", asyncio.run(r._find()), odd)
+
+    def test_with_no_connected_keyboard_and_no_address_the_scan_is_by_service(self):
+        import hudfeed
+        r = hudfeed.BleReader(lambda m: None, name="twonr", log=lambda *a: None)
+        seen = []
+
+        async def objects_now():
+            return {}
+
+        async def by_filter(match, timeout):
+            seen.append(match)
+            return "filtered"
+        modules = self.fake_bleak(None)
+        modules["bleak"].BleakScanner.find_device_by_filter = by_filter
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.object(hudfeed, "bluez_objects", objects_now), \
+                mock.patch.dict(sys.modules, modules):
+            self.assertEqual("filtered", asyncio.run(r._find()))
+        advert = lambda *uuids: types.SimpleNamespace(service_uuids=list(uuids))
+        named = lambda name: types.SimpleNamespace(name=name)
+        self.assertTrue(seen[0](named("TwoNr9"), advert(self.SVC)))
+        self.assertFalse(seen[0](named("TwoNr9"), advert("1812")))
+        self.assertFalse(seen[0](named("Other"), advert(self.SVC)))
+
+    def test_nothing_found_on_linux_does_not_send_the_user_to_an_address(self):
+        import hudfeed
+        said = []
+        r = hudfeed.BleReader(lambda m: None, log=said.append, rescan=0.0)
+
+        async def nothing():
+            return None
+
+        async def pause(seconds):
+            r.stop()
+        r._find, r._pause = nothing, pause
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.dict(sys.modules, {"bleak": types.SimpleNamespace(BleakClient=None)}):
+            asyncio.run(r._loop())
+        self.assertEqual(["hudfeed: no BLE keyboard with the layer signal connected or advertising yet"], said)
+
+    def test_what_bluez_had_connected_is_remembered_and_what_the_scan_found_is_not(self):
+        import hudfeed
+        r = hudfeed.BleReader(lambda m: None, address="F9:BD:CA:10:F7:A8", log=lambda *a: None)
+        answers = [self.objects(self.device("F9:BD:CA:10:F7:A8", "TwoNr9", uuids=[self.SVC])), {}]
+
+        async def objects_now():
+            return answers.pop(0)
+
+        async def scan(address, timeout):
+            return "scanned"
+        with mock.patch.object(hudfeed.sys, "platform", "linux"), \
+                mock.patch.object(hudfeed, "bluez_objects", objects_now), \
+                mock.patch.dict(sys.modules, self.fake_bleak(scan)):
+            device = asyncio.run(r._find())
+            self.assertIs(device, r._found_connected)
+            self.assertEqual("scanned", asyncio.run(r._find()))
+            self.assertIsNone(r._found_connected)
+
+
+class BleLeftConnected(unittest.TestCase):
+    """A keyboard the BlueZ lookup found is left connected when the feed is done with it; one the
+    scan handed over is disconnected, as before, whoever connected it. The client here stands in
+    for bleak's BlueZ one as BleReader._let_go reads it: closing it sends Device1.Disconnect while
+    it holds the device connected. BleakBluez, below, holds that reading to bleak itself."""
+
+    def setUp(self):
+        import hudfeed
+        self.said, self.sent, self.backends = [], [], []
+        self.reader = hudfeed.BleReader(lambda m: None, log=self.said.append)
+        self.reader.stop()                      # a session that is read and ends at once
+        self.device = types.SimpleNamespace(name="TwoNr9", address="F9:BD:CA:10:F7:A8")
+
+    def client(self, notify_error=None, members=True, drops=False):
+        sent, backends = self.sent, self.backends
+
+        class Backend:
+            def __init__(self):
+                self._is_connected = True
+                if members:
+                    self._disconnect_monitor_event = self.monitor = asyncio.Event()
+
+            def _cleanup_all(self):
+                sent.append("cleaned up")
+
+        class Client:
+            def __init__(self, device, disconnected_callback):
+                self._backend = Backend()
+                backends.append(self._backend)
+
+            @property
+            def is_connected(self):
+                return self._backend._is_connected
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *exc):
+                if self._backend._is_connected:
+                    sent.append("Disconnect")
+                sent.append("closed")
+                return False
+
+            async def start_notify(self, uuid, callback):
+                if notify_error:
+                    raise notify_error
+                sent.append("StartNotify")
+                if drops:
+                    self._backend._is_connected = False
+
+            async def stop_notify(self, uuid):
+                sent.append("StopNotify")
+        return Client
+
+    def test_a_keyboard_found_connected_is_left_connected_when_the_feed_stops(self):
+        self.reader._found_connected = self.device
+        self.assertIsNone(asyncio.run(self.reader._session(self.client(), self.device)))
+        self.assertEqual(["StartNotify", "StopNotify", "cleaned up", "closed"], self.sent)
+        self.assertEqual(["hudfeed: reading TwoNr9 over BLE"], self.said)
+        # ... and what would disconnect it when the event loop ends has been told it is over
+        self.assertTrue(self.backends[0].monitor.is_set())
+        self.assertIsNone(self.backends[0]._disconnect_monitor_event)
+
+    def test_one_the_scan_handed_over_is_disconnected_as_before(self):
+        self.reader._found_connected = types.SimpleNamespace(name="Other", address="AA:AA:AA:AA:AA:01")
+        self.assertIsNone(asyncio.run(self.reader._session(self.client(), self.device)))
+        self.assertEqual(["StartNotify", "Disconnect", "closed"], self.sent)
+
+    def test_one_found_connected_that_cannot_be_read_is_left_connected_too(self):
+        self.reader._found_connected = self.device
+        failed = asyncio.run(self.reader._session(self.client(notify_error=OSError("no such characteristic")),
+                                                  self.device))
+        self.assertEqual("TwoNr9 over BLE, not read (OSError: no such characteristic)", failed)
+        self.assertNotIn("Disconnect", self.sent)
+        self.assertEqual(["cleaned up", "closed"], self.sent[-2:])
+
+    def test_one_that_went_by_itself_is_closed_as_bleak_closes_it(self):
+        self.reader._found_connected = self.device
+        asyncio.run(self.reader._session(self.client(drops=True), self.device))
+        self.assertEqual(["StartNotify", "closed"], self.sent)
+
+    def test_a_bleak_without_what_this_reads_disconnects_as_before_and_says_so_once(self):
+        self.reader._found_connected = self.device
+        for _ in range(2):
+            asyncio.run(self.reader._session(self.client(members=False), self.device))
+        self.assertEqual(["StartNotify", "Disconnect", "closed"] * 2, self.sent)
+        self.assertEqual(1, len([s for s in self.said if "cannot leave TwoNr9 connected" in s]), self.said)
+
+
+class SimBluez:
+    """BlueZ on the system bus, as far as bleak's BlueZ client and manager and hudfeed's own lookup
+    talk to it: an adapter and one connected keyboard with the signal characteristic, every method
+    call recorded by its member, a Disconnect answered with the property change BlueZ signals. It
+    comes as the dbus_fast modules those import (`modules`), so there is no D-Bus and no dbus_fast
+    in it, and what runs on it is the same on every system.
+
+    It is bleak's Python that is run, not dbus_fast and not BlueZ: what a real bus or a real
+    keyboard does differently is not seen here."""
+
+    ADAPTER = "/org/bluez/hci0"
+    DEVICE = ADAPTER + "/dev_F9_BD_CA_10_F7_A8"
+    SERVICE = DEVICE + "/service000a"
+    SIGNAL = SERVICE + "/char000b"
+    DBUS_FAST = ("dbus_fast", "dbus_fast.aio", "dbus_fast.aio.message_bus", "dbus_fast.auth", "dbus_fast.constants",
+                 "dbus_fast.errors", "dbus_fast.message", "dbus_fast.service", "dbus_fast.signature",
+                 "dbus_fast.validators")
+
+    def __init__(self):
+        import hudfeed
+        sim = self
+        self.calls, self.buses = [], []
+        self.objects = {
+            self.ADAPTER: {"org.bluez.Adapter1": {"Address": "00:1A:7D:DA:71:13", "Powered": True, "Roles": ["central"]}},
+            self.DEVICE: {"org.bluez.Device1": {
+                "Address": "F9:BD:CA:10:F7:A8", "Name": "TwoNr9", "Alias": "TwoNr9", "Adapter": self.ADAPTER,
+                "Connected": True, "Paired": True, "ServicesResolved": True, "UUIDs": [hudfeed.BLE_SERVICE_UUID]}},
+            self.SERVICE: {"org.bluez.GattService1": {
+                "UUID": hudfeed.BLE_SERVICE_UUID, "Device": self.DEVICE, "Primary": True}},
+            self.SIGNAL: {"org.bluez.GattCharacteristic1": {
+                "UUID": hudfeed.BLE_SIGNAL_UUID, "Service": self.SERVICE, "Flags": ["notify"], "Value": b""}},
+        }
+
+        class Variant:
+            def __init__(self, signature, value):
+                self.signature, self.value = signature, value
+
+        def unpack_variants(value):
+            if isinstance(value, Variant):
+                return unpack_variants(value.value)
+            if isinstance(value, dict):
+                return {k: unpack_variants(v) for k, v in value.items()}
+            return [unpack_variants(v) for v in value] if isinstance(value, list) else value
+
+        class Message:
+            def __init__(self, message_type="call", **fields):
+                self.message_type, self.error_name, self.body, self.unix_fds = message_type, None, [], []
+                self.destination = self.path = self.interface = self.member = self.signature = None
+                self.__dict__.update(fields)
+
+        class MessageBus:
+            def __init__(self, bus_type=None, **kw):
+                self.connected, self.handlers = False, []
+                sim.buses.append(self)
+
+            async def connect(self):
+                self.connected = True
+                return self
+
+            def add_message_handler(self, handler):
+                self.handlers.append(handler)
+
+            async def call(self, message):
+                return sim.answer(message)
+
+            async def send(self, message):
+                sim.answer(message)
+
+            def disconnect(self):
+                self.connected = False
+
+            async def wait_for_disconnect(self):
+                pass
+
+            def _finalize(self, err):   # what bleak's manager does to the bus of an event loop that is over
+                self.connected = False
+        self.Variant, self.Message = Variant, Message
+        kinds = types.SimpleNamespace(METHOD_CALL="call", METHOD_RETURN="return", ERROR="error", SIGNAL="signal")
+        buses = types.SimpleNamespace(SYSTEM="system")
+        m = self.modules = {name: mock.MagicMock(unsafe=True) for name in self.DBUS_FAST}
+        m["dbus_fast"].AuthError = type("AuthError", (Exception,), {})
+        m["dbus_fast"].unpack_variants = unpack_variants
+        m["dbus_fast"].Variant = m["dbus_fast.signature"].Variant = Variant
+        m["dbus_fast"].Message = m["dbus_fast.message"].Message = Message
+        m["dbus_fast"].MessageType = m["dbus_fast.constants"].MessageType = kinds
+        m["dbus_fast"].BusType = m["dbus_fast.constants"].BusType = buses
+        m["dbus_fast.constants"].ErrorType = types.SimpleNamespace(
+            UNKNOWN_OBJECT=types.SimpleNamespace(value="org.freedesktop.DBus.Error.UnknownObject"))
+        m["dbus_fast.errors"].InvalidObjectPathError = type("InvalidObjectPathError", (Exception,), {})
+        m["dbus_fast.aio"].MessageBus = m["dbus_fast.aio.message_bus"].MessageBus = MessageBus
+
+    @property
+    def keyboard(self):
+        return self.objects[self.DEVICE]["org.bluez.Device1"]
+
+    def answer(self, message):
+        self.calls.append(message.member)
+        body = []
+        if message.member == "GetManagedObjects":
+            body = [{path: {interface: {k: self.Variant("v", v) for k, v in props.items()}
+                            for interface, props in interfaces.items()}
+                     for path, interfaces in self.objects.items()}]
+        elif message.member == "Disconnect" and message.path == self.DEVICE:
+            self.change(Connected=False, ServicesResolved=False)
+        elif message.member == "Connect" and message.path == self.DEVICE:
+            self.change(Connected=True, ServicesResolved=True)
+        return self.Message("return", body=body)
+
+    def change(self, **props):
+        """The keyboard's properties change, and every bus that listens is told, as BlueZ tells it."""
+        self.keyboard.update(props)
+        signal = self.Message("signal", path=self.DEVICE, interface="org.freedesktop.DBus.Properties",
+                              member="PropertiesChanged",
+                              body=["org.bluez.Device1", {k: self.Variant("v", v) for k, v in props.items()}, []])
+        for bus in self.buses:
+            for handler in list(bus.handlers) if bus.connected else ():
+                handler(signal)
+
+    def asked(self):
+        """What the keyboard itself was asked for, in order: the calls that reach it or its link."""
+        return [c for c in self.calls if c in ("Connect", "Disconnect", "StartNotify", "StopNotify")]
+
+
+class BleakBluez(unittest.TestCase):
+    """What BleReader._let_go relies on, held to the bleak that is installed. It is bleak's own
+    BleakClient on its own BlueZ client and manager that run here, through their real connect(),
+    start_notify, stop_notify and disconnect(), on a BlueZ that is simulated (SimBluez): _let_go
+    reaches into bleak's private members, so a bump of bleak that changes what they do fails here
+    and not on someone's keyboard.
+
+    bleak's BlueZ scanner runs here too, wherever the feed scans, in place of the platform's.
+
+    Not run: bleak's check of BlueZ's version (it starts `bluetoothctl`), dbus_fast, BlueZ, a
+    keyboard."""
+
+    def setUp(self):
+        import importlib.util
+        if importlib.util.find_spec("bleak") is None:
+            self.skipTest("bleak is not installed")
+        import hudfeed
+        self.sim = SimBluez()
+        patch = mock.patch.dict(sys.modules, self.sim.modules)    # all of it is put back after the test
+        patch.start()
+        self.addCleanup(patch.stop)
+        for name in [n for n in sys.modules if n.startswith("bleak.backends.bluezdbus")]:
+            del sys.modules[name]       # bleak's BlueZ modules are imported anew, on the stand-in
+        import bleak
+        from bleak.backends.bluezdbus.client import BleakClientBlueZDBus
+        from bleak.backends.bluezdbus.scanner import BleakScannerBlueZDBus
+        from bleak.backends.bluezdbus.version import BlueZFeatures
+        from bleak.backends.device import BLEDevice
+        BlueZFeatures.checked_bluez_version = True
+        # The feed's own scan (BleakScanner, as _find calls it) is bleak's BlueZ scanner on this BlueZ
+        # whatever system the tests run on: never CoreBluetooth, never a real adapter.
+        scanner = mock.patch.object(bleak, "get_platform_scanner_backend_type",
+                                    lambda: (BleakScannerBlueZDBus, "bluez_dbus"))
+        scanner.start()
+        self.addCleanup(scanner.stop)
+        self.BleakClient = functools.partial(bleak.BleakClient, backend=BleakClientBlueZDBus)
+        # As bleak's scanner hands a device over: by its path, with what BlueZ said of it.
+        self.scanned = BLEDevice(self.sim.keyboard["Address"], "TwoNr9",
+                                 {"path": self.sim.DEVICE, "props": dict(self.sim.keyboard)})
+        self.said = []
+        self.reader = hudfeed.BleReader(lambda m: None, log=self.said.append)
+        self.reader.stop()              # a session that is read and ends at once
+
+    def session(self, found_connected):
+        """One session of the feed's reader on the keyboard: looked up in BlueZ as on Linux, or handed
+        over as a scan hands it. -> what _session returned."""
+        import hudfeed
+
+        async def run():
+            device = self.scanned
+            if found_connected:
+                with mock.patch.object(hudfeed.sys, "platform", "linux"):
+                    device = await self.reader._find()
+                self.assertIs(device, self.reader._found_connected)
+            return await self.reader._session(self.BleakClient, device)
+        return asyncio.run(run())       # and the event loop ends, which cancels what bleak left running
+
+    def test_bleak_disconnects_a_keyboard_it_did_not_connect_when_its_client_closes(self):
+        import hudfeed
+
+        async def use():
+            async with self.BleakClient(self.scanned) as client:
+                await client.start_notify(hudfeed.BLE_SIGNAL_UUID, lambda *a: None)
+        asyncio.run(use())
+        self.assertEqual(["StartNotify", "Disconnect"], self.sim.asked())      # no Connect: it was connected
+        self.assertFalse(self.sim.keyboard["Connected"])
+
+    def test_and_when_the_event_loop_ends_with_its_client_never_closed(self):
+        async def leave():
+            await self.BleakClient(self.scanned).connect()
+        asyncio.run(leave())
+        self.assertEqual(["Disconnect"], self.sim.asked())
+
+    def test_and_when_its_connect_gives_up_on_services_that_do_not_resolve_or_are_not_said(self):
+        # Why bluez_matches wants ServicesResolved: this is the keyboard it would otherwise hand over.
+        import bleak.exc
+        for resolved, error in ((False, asyncio.TimeoutError), (None, bleak.exc.BleakError)):
+            self.sim.calls.clear()
+            self.sim.keyboard.update(Connected=True, ServicesResolved=resolved)
+            if resolved is None:
+                del self.sim.keyboard["ServicesResolved"]
+
+            async def connect():
+                await self.BleakClient(self.scanned, timeout=0.05).connect()
+            with self.assertRaises(error):
+                asyncio.run(connect())
+            self.assertEqual(["Disconnect"], self.sim.asked(), resolved)     # no Connect: it was connected
+            self.assertFalse(self.sim.keyboard["Connected"])
+
+    def test_while_bluez_resolves_a_keyboard_the_feed_asks_nothing_of_it_and_does_not_scan(self):
+        import hudfeed
+        self.sim.keyboard["ServicesResolved"] = False
+        with mock.patch.object(hudfeed.sys, "platform", "linux"):
+            self.assertIsNone(asyncio.run(self.reader._find()))
+        self.assertEqual(["GetManagedObjects"], self.sim.calls)                 # and no StartDiscovery
+        self.assertTrue(self.sim.keyboard["Connected"])
+
+    def test_a_session_on_a_keyboard_found_connected_stops_notifying_and_leaves_it_connected(self):
+        self.assertIsNone(self.session(found_connected=True))
+        self.assertEqual(["StartNotify", "StopNotify"], self.sim.asked())
+        self.assertTrue(self.sim.keyboard["Connected"])
+        self.assertEqual(["hudfeed: reading TwoNr9 over BLE"], self.said)      # bleak has what _let_go reads
+        # the client's own bus and the lookup's are closed: the one left open is bleak's manager's
+        self.assertEqual(1, sum(bus.connected for bus in self.sim.buses), len(self.sim.buses))
+
+    def test_a_session_that_cannot_read_a_keyboard_found_connected_leaves_it_connected_too(self):
+        del self.sim.objects[self.sim.SIGNAL]
+        self.assertIn("TwoNr9 over BLE, not read (BleakCharacteristicNotFoundError", self.session(found_connected=True))
+        self.assertEqual([], self.sim.asked())
+        self.assertTrue(self.sim.keyboard["Connected"])
+
+    def test_a_session_on_a_keyboard_the_scan_handed_over_ends_with_bleaks_disconnect(self):
+        self.assertIsNone(self.session(found_connected=False))
+        self.assertEqual(["StartNotify", "Disconnect"], self.sim.asked())
+        self.assertFalse(self.sim.keyboard["Connected"])
+
+    def test_a_stuck_keyboard_resolved_while_the_scan_runs_is_not_handed_over_by_it(self):
+        # Past BLE_RESOLVE_WAIT_S the scan runs again; bleak's scanner reports the connected keyboard as
+        # soon as BlueZ says something new of it, which here is that it is resolved at last.
+        import hudfeed
+        self.sim.keyboard["ServicesResolved"] = False
+        said = []
+        r = hudfeed.BleReader(lambda m: None, log=said.append, rescan=0.3)
+        r._clock = lambda: now
+        seen = []
+
+        async def look():
+            loop = asyncio.get_running_loop()
+            if now:
+                loop.call_later(0.05, lambda: self.sim.change(ServicesResolved=True))
+            with mock.patch.object(hudfeed.sys, "platform", "linux"):
+                device = await r._find()
+            seen.append(device is not None and device is r._found_connected)
+            return device
+        for now in (0, hudfeed.BLE_RESOLVE_WAIT_S + 1):
+            self.assertIsNone(asyncio.run(look()), now)
+        self.assertIn("StartDiscovery", self.sim.calls)                      # the scan did run, and passed it over
+        now = hudfeed.BLE_RESOLVE_WAIT_S + 2
+        self.assertEqual(self.sim.keyboard["Address"], asyncio.run(look()).address)
+        self.assertEqual([False, False, True], seen)                         # ... and the lookup took it
+        self.assertEqual([], self.sim.asked())
+        self.assertEqual(1, len([s for s in said if "scanning for another keyboard too" in s]), said)
+
+    def test_a_name_a_keyboard_advertises_reaches_the_log_and_the_pages_printable(self):
+        # Found by bleak's own scanner, which names it after BlueZ's Alias: the name is the device's.
+        import hudfeed
+        forged = "TwoNr9\nhudfeed: forged line\x1b[2K"
+        self.sim.keyboard.update(Connected=False, ServicesResolved=False, Name=forged, Alias=forged)
+        for picked in ({}, {"name": "twonr9\nhudfeed"}):      # a configured name is matched as it came
+            self.sim.keyboard.update(Connected=False, ServicesResolved=False)
+            said, out = [], []
+            r = hudfeed.BleReader(out.append, log=said.append, rescan=1.0, **picked)
+            r.stop()                            # a session that is read and ends at once
+
+            async def scan_and_read():
+                asyncio.get_running_loop().call_later(0.05, lambda: self.sim.change(RSSI=-50))
+                with mock.patch.object(hudfeed.sys, "platform", "linux"):
+                    device = await r._find()
+                self.assertEqual(forged, device.name)               # as the scan gave it
+                self.assertIsNot(device, r._found_connected)
+                return await r._session(self.BleakClient, device)
+            self.assertIsNone(asyncio.run(scan_and_read()), picked)
+            self.assertEqual(["hudfeed: reading TwoNr9?hudfeed: forged line?[2K over BLE"], said, picked)
+            self.assertEqual({"TwoNr9?hudfeed: forged line?[2K"}, {m["device"] for m in out if "device" in m}
+                             | {m["name"] for m in out if m.get("kind") == "device"})
 
 
 class HidKeys(unittest.TestCase):
