@@ -1377,7 +1377,9 @@ def cmd_menubar(args):
             print("no bar here for the icon (zmk-layer-hud menubar enable needs Omarchy or Noctalia)")
         return 0
     if args.action == "disable":
-        omarchy_out = remove_plugin() if omarchy_installed else False
+        # Omarchy's bar is cleaned wherever Omarchy is, not only where the folder is: a folder deleted
+        # by hand leaves its entry in shell.json, which only this takes out.
+        omarchy_out = remove_plugin() if (omarchy_here or omarchy_installed) else False
         if omarchy_out:
             rescan_plugins()
         noctalia_out = noctalia_disable() if noctalia_plugin_there else False

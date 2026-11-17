@@ -8,6 +8,7 @@ import io
 import json
 import os
 import re
+import shutil
 import stat
 import subprocess
 import sys
@@ -570,6 +571,25 @@ class OmarchyPlugin(unittest.TestCase):
         with open(self.shell, encoding="utf-8") as f:
             self.assertEqual(SHELL_JSON, f.read())
         self.assertFalse(os.path.exists(os.path.join(self.plugins, cli.OMARCHY_ID)))
+
+    def test_disable_takes_an_entry_out_of_the_bar_when_its_folder_is_gone(self):
+        # A plugin folder deleted by hand leaves its entry in shell.json: `disable` still cleans it,
+        # as it did before it looked at the folder.
+        with open(self.shell, "w", encoding="utf-8") as f:
+            f.write(SHELL_JSON)
+        self.run_cli("menubar", "enable")
+        self.assertTrue(cli.bar_has(self.bar(), cli.OMARCHY_ID))
+        shutil.rmtree(os.path.join(self.plugins, cli.OMARCHY_ID))
+        code, said, _ = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertFalse(cli.bar_has(self.bar(), cli.OMARCHY_ID))
+        self.assertIn("Omarchy's bar", said)
+
+    def test_disable_on_a_machine_without_omarchy_touches_nothing(self):
+        code, said, _ = self.run_cli("menubar", "disable", which=lambda n: None)
+        self.assertEqual(0, code, said)
+        self.assertIn("not installed", said)
+        self.assertFalse(os.path.exists(self.shell))
 
     def test_the_old_id_is_taken_out(self):
         cfg = json.loads(SHELL_JSON)
