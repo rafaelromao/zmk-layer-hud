@@ -1379,8 +1379,8 @@ class BluezConnected(unittest.TestCase):
 
 
 class BleLeftConnected(unittest.TestCase):
-    """A keyboard BlueZ had connected before the feed came is left connected when the feed is done
-    with it; one the feed connected itself is disconnected, as before. The client here stands in
+    """A keyboard the BlueZ lookup found is left connected when the feed is done with it; one the
+    scan handed over is disconnected, as before, whoever connected it. The client here stands in
     for bleak's BlueZ one as BleReader._let_go reads it: closing it sends Device1.Disconnect while
     it holds the device connected. BleakBluez, below, holds that reading to bleak itself."""
 
@@ -1441,7 +1441,7 @@ class BleLeftConnected(unittest.TestCase):
         self.assertTrue(self.backends[0].monitor.is_set())
         self.assertIsNone(self.backends[0]._disconnect_monitor_event)
 
-    def test_one_the_feed_connected_itself_is_disconnected_as_before(self):
+    def test_one_the_scan_handed_over_is_disconnected_as_before(self):
         self.reader._found_connected = types.SimpleNamespace(name="Other", address="AA:AA:AA:AA:AA:01")
         self.assertIsNone(asyncio.run(self.reader._session(self.client(), self.device)))
         self.assertEqual(["StartNotify", "Disconnect", "closed"], self.sent)

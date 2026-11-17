@@ -563,18 +563,18 @@ class BleReader:
         """The keyboard BlueZ already has connected, or None; see bluez_connected. Wrapped the way
         bleak's own scanner wraps what it finds, so BleakClient takes it by its path.
 
-        It is remembered as found connected, which is what keeps the feed from disconnecting it:
-        BlueZ's link is shared by every application, the keyboard types through it, and it was
-        there before the feed came (_let_go). One that drops between this and the client, so that
-        bleak connects it again, is left connected all the same.
+        It is remembered as found here, which is what keeps the feed from disconnecting it: BlueZ's
+        link is shared by every application, the keyboard types through it, and it was connected
+        when the feed looked (_let_go). One that drops between this and the client, so that bleak
+        connects it again, is left connected all the same: it is how it was found that counts.
 
         With several such keyboards connected the first by object path is read, as bluez_connected
         has it, and the log says which and how to pick: once, until what it says changes.
 
         One whose services BlueZ has not resolved yet is left to the next look (bluez_matches says
         why), and so is the scan: a scan hands over a connected keyboard as soon as BlueZ says
-        anything new of it, the feed would take that for one of its own, and close it with a
-        Disconnect. `_resolving` then says so, for the loop's log."""
+        anything new of it, and a keyboard the scan hands over is closed with a Disconnect
+        (_left_connected). `_resolving` then says so, for the loop's log."""
         from bleak.backends.device import BLEDevice
         self._found_connected = self._resolving = None
         try:
@@ -602,9 +602,12 @@ class BleReader:
 
     @contextlib.asynccontextmanager
     async def _left_connected(self, client, device):
-        """Around a session, inside the client: on the way out a keyboard BlueZ had connected
-        already is let go of first (_let_go). One the scan found is the feed's own connection and
-        closes as it always did, as does every keyboard on macOS."""
+        """Around a session, inside the client: on the way out a keyboard the BlueZ lookup found
+        (_connected_bluez) is let go of first (_let_go). What decides is how the keyboard was
+        found, not who connected it: one the scan handed over closes as it always did, with
+        bleak's Disconnect, as does every keyboard on macOS. That is usually a keyboard bleak
+        connected itself, but not always: BlueZ may connect one that wakes during the scan, and
+        bleak, finding it connected, then skips Connect and still disconnects it here."""
         try:
             yield
         finally:
