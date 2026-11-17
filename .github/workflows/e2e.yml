@@ -5,13 +5,23 @@
 #
 # What it proves and what it cannot is in docs/development.md ("End-to-end validation").
 #
-# MAINTAINERS, BEFORE LABELLING A FORK'S PULL REQUEST: the label runs that pull request's own code -- its
-# `e2e/` scripts and the HUD of its tree -- with `sudo` on the runner and, in the Linux jobs, as root in a
-# `--privileged` container. The trigger is `pull_request`, so a fork's run has a read-only token and no
-# secrets, and what the code can reach is the throwaway runner; it is still someone else's code run as root
-# there. So:
-#   1. Read the pull request's whole diff, as it stands, before putting the label on.
-#   2. Take the label off when the run is done (`gh pr edit <number> --remove-label release-validation`).
+# MAINTAINERS, ON A FORK'S PULL REQUEST: these jobs run the pull request's own code -- its `e2e/` scripts and
+# the HUD of its tree -- with `sudo` on the runner and, in the Linux jobs, as root in a `--privileged`
+# container. The trigger is `pull_request`, so a fork's run has a read-only token and no secrets, and what the
+# code can reach is the throwaway runner.
+#
+# The label is NOT what keeps a fork's code from such a run. A `pull_request` run is made from the workflow
+# files of the pull request's own merge commit, this one included: a fork that edits `.github/workflows/` can
+# take the `if:` below out, or add a workflow of its own, and get the same `sudo` and `--privileged` run with
+# no label on the pull request. Against that the only gate is GitHub's own approval of fork runs, a setting of
+# the repository (Settings, Actions, General) that this file can neither see nor vouch for. What the label
+# gates is cost and accident: with this file as it is, no long job per platform on every pull request, and no
+# privileged run of a contributor's change before someone has looked at it.
+#
+# So, before labelling a fork's pull request, and before approving a run of one that GitHub holds:
+#   1. Read the pull request's whole diff as it stands, `.github/workflows/` included.
+#   2. Check that the commit the run is on is the one that was read: a push in between moves it.
+#   3. Take the label off when the run is done (`gh pr edit <number> --remove-label release-validation`).
 # The label stays on the pull request, and while it is on every later push runs these jobs again, on code
 # nobody has read and with no new decision by anyone. A push that needs validating gets the label again, after
 # its diff has been read. Nothing here takes the label off for you, and nothing should be made to try: a
@@ -21,7 +31,7 @@
 # The gate is the jobs' own `if`, and not a path or branch filter on the trigger: a job skipped by its `if`
 # reports as passed, so a required check never waits for a run that is not coming, which a filtered-out
 # workflow would leave it doing. The repository comparison keeps a fork from borrowing the release branch's
-# name.
+# name -- a fork that leaves this file as it is: see above for one that does not.
 name: e2e
 
 on:
