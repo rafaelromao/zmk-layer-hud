@@ -243,12 +243,25 @@ def _write_if_changed(path, text):
 
 
 def _rewrite(path, text):
-    """The user's own file written again whole, so that at any moment it is either as it was or as
-    it is meant to be: the text goes to a temporary file beside it, which then takes its place
-    (os.replace). Written straight into the file, a write cut short would leave the user's
-    config with its end missing. A path that is a link stays one, pointing where it did: the
-    file it leads to is the one replaced. The file keeps its mode, and one this user may not
-    write is refused as it was when it was written in place, though a rename would not ask."""
+    """The user's own file written again whole, by replacing it: the text goes to a temporary file
+    beside it, is synced, and takes its place (os.replace), so that the file is at any moment
+    either as it was or as it is meant to be. Written straight into the file, a write cut short
+    would leave the user's config with its end missing.
+
+    What is kept of a write in place: a path that is a link stays one, pointing where it did (the
+    file it leads to is the one replaced); the file's permission bits; and the refusal of a file
+    this user may not write, which a rename by itself would not ask.
+
+    What is not kept, because what is there afterwards is a new file: another hard link to the old
+    file keeps the old text; the owner and group are a new file's (this process's, and what the
+    directory gives), and ACLs and extended attributes are not copied; and the directory the file
+    lives in has to be writable, so a writable file in a directory that is not is refused
+    (OSError) where a write in place went through -- `zmk-layer-hud uninstall` says so and goes on
+    with the rest (cli.py remove_shortcuts).
+
+    A failure this process lives to see takes the temporary file away again. A kill or a power cut
+    between the write and the replace leaves it beside the file (`<name>.<random>.tmp`), and the
+    file itself as it was."""
     real = os.path.realpath(path)
     os.close(os.open(real, os.O_WRONLY))
     fd, tmp = tempfile.mkstemp(prefix=os.path.basename(real) + ".", suffix=".tmp", dir=os.path.dirname(real))
