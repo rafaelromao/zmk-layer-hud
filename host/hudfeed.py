@@ -940,7 +940,8 @@ PROBE_WORDS = {"carbon": "macOS's secure input", "terminals": "the terminals' pr
 
 def probe_report(environ=os.environ):
     """One line per probe, for `--probes` and `zmk-layer-hud doctor`: its name, `on`, `off`,
-    `partial` (on, but seeing only what is named: niri's session lock) or `none` (not for this
+    `partial` (on, but seeing only what is named: a session lock the compositor does not say,
+    which is niri's always and Hyprland's where its socket has no answer) or `none` (not for this
     system), and why. Asked here rather than in the doctor because the probes
     need the venv (jeepney) and the feed's own tables."""
     lines = []
@@ -984,19 +985,25 @@ def probe_report(environ=os.environ):
                 say("a11y", "on", "the apps expose their widgets (org.a11y.Status IsEnabled)" if enabled else
                     "IsEnabled is off: the feed turns it on when it starts (feed.accessibility), and a browser "
                     "running since before needs starting again")
+    # As sessionlock.probe goes: Hyprland's socket is asked where there is one, niri's or not; what
+    # it does not say (and niri, which never does) leaves the lockers' process names, which is
+    # `partial` whichever compositor's socket led there.
     path = sessionlock.socket_path(environ)
+    by_name = (f"a locker is looked for by process name ({', '.join(sessionlock.LOCKERS)}, and `feed.lockers` in "
+               "the config), and one not named is not seen, a lock screen built into a shell among them")
     if not path and not sessionlock.niri_socket_path(environ):
         say("lock", "off", "no Hyprland or niri (HYPRLAND_INSTANCE_SIGNATURE and NIRI_SOCKET unset, or no "
                             "control socket): a lock screen is not seen")
     elif not path:
-        say("lock", "partial", "niri does not say whether the session is locked (its IPC has no lock state): a locker "
-            f"is looked for by process name ({', '.join(sessionlock.LOCKERS)}, and `feed.lockers` in the config), "
-            "and one not named is not seen, a lock screen built into a shell among them")
+        say("lock", "partial", f"niri does not say whether the session is locked (its IPC has no lock state): {by_name}")
     else:
         got = sessionlock.locked(path)
-        say("lock", "on", "Hyprland does not say (no solitaryBlockedBy in `hyprctl -j monitors`): a locker is looked for "
-            f"by name ({', '.join(sessionlock.LOCKERS)})" if got is None else
-            f"Hyprland says the session is {'locked' if got else 'unlocked'}")
+        if got is None:
+            say("lock", "partial", "Hyprland's socket does not say whether the session is locked (no answer from it, "
+                "or no solitaryBlockedBy in `hyprctl -j monitors`, which an older Hyprland does not have): "
+                f"{by_name}")
+        else:
+            say("lock", "on", f"Hyprland says the session is {'locked' if got else 'unlocked'}")
     return lines
 
 

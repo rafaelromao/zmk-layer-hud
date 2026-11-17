@@ -1601,7 +1601,8 @@ def check_secure(results):
     the compositor's session lock. Asked of the feed itself (`hudfeed.py --probes`), which has the venv
     and the probes; without a venv, the accessibility bus alone, through systemd's busctl.
     The row that says ok names only the probes that are fully on. One that sees part (`partial`:
-    the session lock under niri, seen by its locker's process name) is a warning with what to do."""
+    a session lock seen by its locker's process name, as under niri always and under a Hyprland
+    whose socket does not say) is a warning with what to do."""
     if not venv_ok():
         check_accessibility(results)
         return
@@ -1617,7 +1618,7 @@ def check_secure(results):
         state, _, why = rest.partition("\t")
         if state == "on":
             on.append(PROBE_WORDS.get(name, name))
-        elif state == "partial":        # seen only by what is named (niri's lock): a warning of its own, never the green row
+        elif state == "partial":        # seen only by what is named (a lock the compositor does not say): a warning of its own, never the green row
             partial.append((name, why))
         elif state == "off":
             off.append((name, why))
@@ -1640,9 +1641,10 @@ def check_secure(results):
 PROBE_WORDS = {"carbon": "macOS's secure input", "terminals": "the terminals' prompts",
                "a11y": "the accessibility bus", "lock": "the session lock"}
 
-# What to do about a probe that sees only part (`partial` in the feed's report). The lock under niri:
-# a lock screen whose process is not named is not seen, and the doctor cannot tell whether the one
-# in use is named, so the row is a warning whatever the config says.
+# What to do about a probe that sees only part (`partial` in the feed's report). The lock where the
+# compositor does not say (niri, or a Hyprland whose socket has no answer): a lock screen whose
+# process is not named is not seen, and the doctor cannot tell whether the one in use is named, so
+# the row is a warning whatever the config says.
 PARTIAL_FIX = {"lock": "the unlock password typed into a lock screen that is not named reaches the strip and the session's counts\n"
                        "name its process in feed.lockers in the config (as `comm` in /proc spells it), or stop the HUD before locking"}
 

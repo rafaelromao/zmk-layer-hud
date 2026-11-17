@@ -390,6 +390,58 @@ class Secure(unittest.TestCase):
         self.assertIn("process name", lock[1])
         self.assertIn("feed.lockers", lock[1])
 
+    def test_the_lock_row_is_partial_whenever_the_probe_goes_by_name_whichever_socket_led_there(self):
+        # The report against the probe itself (sessionlock.probe), case by case: `on` only where the
+        # compositor says, `partial` wherever the lockers' names are the answer -- niri, and a
+        # Hyprland socket that does not say (an older Hyprland, or one left behind that no longer
+        # answers, in a niri session as well) -- and `off` where there is no probe at all.
+        import sessionlock
+        old, says, gone = [{"name": "eDP-1"}], [{"solitaryBlockedBy": []}], OSError(111, "Connection refused")
+        with tempfile.TemporaryDirectory() as d:
+            niri = os.path.join(d, "niri.sock")
+            hypr = os.path.join(d, "hypr", "sig", ".socket.sock")
+            os.makedirs(os.path.dirname(hypr))
+            for path in (niri, hypr):
+                with open(path, "w"):
+                    pass
+            in_niri = {"NIRI_SOCKET": niri}
+            in_hypr = {"HYPRLAND_INSTANCE_SIGNATURE": "sig", "XDG_RUNTIME_DIR": d}
+            for what, env, answer, state, reason in (
+                    ("niri", in_niri, says, "partial", "niri does not say"),
+                    ("an older Hyprland", in_hypr, old, "partial", "Hyprland's socket does not say"),
+                    ("a Hyprland that does not answer", in_hypr, gone, "partial", "Hyprland's socket does not say"),
+                    ("a Hyprland socket left behind in a niri session", {**in_hypr, **in_niri}, gone, "partial",
+                     "Hyprland's socket does not say"),
+                    ("Hyprland", in_hypr, says, "on", "Hyprland says the session is unlocked"),
+                    ("neither", {}, says, "off", "no Hyprland or niri")):
+                with self.subTest(what), mock.patch("hudfeed.sys.platform", "linux"), \
+                        mock.patch("hudfeed.a11y.HAVE_JEEPNEY", False), \
+                        mock.patch("hudfeed.terminal_probe", return_value=None), \
+                        mock.patch.object(sessionlock, "monitors", side_effect=[answer] * 2), \
+                        mock.patch.object(sessionlock, "locker_running", return_value=False) as by_name:
+                    lock = dict(line.split("\t", 1) for line in probe_report(environ=env))["lock"].split("\t")
+                    self.assertEqual(state, lock[0])
+                    self.assertIn(reason, lock[1])
+                    self.assertEqual(state == "partial", "feed.lockers" in lock[1] and "one not named is not seen" in lock[1])
+                    probe = sessionlock.probe(log=lambda *_: None, environ=env)
+                    self.assertEqual(state == "off", probe is None)
+                    if probe is not None:
+                        self.assertFalse(probe())
+                    self.assertEqual(state == "partial", by_name.called)     # the report says what the probe does
+
+    def test_a_hyprland_socket_nothing_answers_on_is_partial_without_a_stand_in(self):
+        # No mock of the socket: a file where the socket was is what a Hyprland that crashed leaves.
+        with tempfile.TemporaryDirectory() as d:
+            hypr = os.path.join(d, "hypr", "sig", ".socket.sock")
+            os.makedirs(os.path.dirname(hypr))
+            with open(hypr, "w"):
+                pass
+            with mock.patch("hudfeed.sys.platform", "linux"), \
+                    mock.patch("hudfeed.a11y.HAVE_JEEPNEY", False), \
+                    mock.patch("hudfeed.terminal_probe", return_value=None):
+                lines = probe_report(environ={"HYPRLAND_INSTANCE_SIGNATURE": "sig", "XDG_RUNTIME_DIR": d})
+        self.assertEqual("partial", dict(line.split("\t", 1) for line in lines)["lock"].split("\t")[0])
+
     @mock.patch("hudfeed.a11y.available", new=lambda: False)
     def test_the_configs_lockers_reach_the_lock_probe(self):
         with mock.patch("hudfeed.carbon_probe", return_value=None), \

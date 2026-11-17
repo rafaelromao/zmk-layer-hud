@@ -686,8 +686,9 @@ class Doctor(unittest.TestCase):
         self.assertIn("secure input: the accessibility bus: jeepney is not in the venv", said)
 
     def test_a_probe_that_sees_only_what_is_named_is_a_warning_of_its_own(self):
-        # niri's session lock: a locker is seen by its process name alone, which is not the same as
-        # seen, so it is never in the green row. What is fully on is said as before.
+        # A session lock the compositor does not say (niri's, always): a locker is seen by its process
+        # name alone, which is not the same as seen, so it is never in the green row. What is fully
+        # on is said as before.
         results, said = self.rows("carbon\tnone\tnot macOS\nterminals\ton\ta prompt is seen\n"
                                   "a11y\ton\tthe apps expose their widgets\n"
                                   "lock\tpartial\ta locker is looked for by process name, and one not named is not seen\n")
@@ -702,26 +703,37 @@ class Doctor(unittest.TestCase):
         self.assertIn("feed.lockers", fix[1])
         self.assertIn("stop the HUD before locking", fix[1])
 
-    def test_the_feeds_own_niri_row_is_never_ok(self):
-        # The row as the feed writes it under niri (hudfeed.probe_report), not a made-up one.
+    def test_the_feeds_own_row_for_a_lock_seen_by_name_is_never_ok(self):
+        # The rows as the feed writes them (hudfeed.probe_report), not made-up ones: under niri, and
+        # under a Hyprland whose socket does not say, where the lockers are looked for the same way.
         import hudfeed
+        import sessionlock
         with tempfile.TemporaryDirectory() as d:
-            sock = os.path.join(d, "niri.sock")
-            with open(sock, "w"):
-                pass
-            with mock.patch("hudfeed.sys.platform", "linux"), \
-                    mock.patch("hudfeed.a11y.HAVE_JEEPNEY", False), \
-                    mock.patch("hudfeed.terminal_probe", return_value=lambda: False):
-                lines = hudfeed.probe_report(environ={"NIRI_SOCKET": sock})
-        results, said = self.rows("\n".join(lines) + "\n")
-        said = said.splitlines()
-        self.assertEqual(cli.OK, results[0])        # the terminals' prompts, which are fully on
-        self.assertNotIn("the session lock", said[0])
-        lock = next(i for i, line in enumerate(said) if line.startswith("[warn] secure input: the session lock: "))
-        self.assertIn("a lock screen built into a shell", said[lock])
-        self.assertIn("feed.lockers in the config", said[lock + 2])
-        self.assertIn("stop the HUD before locking", said[lock + 2])
-        self.assertFalse([line for line in said if line.startswith("[ok  ]") and "lock" in line], said)
+            niri = os.path.join(d, "niri.sock")
+            hypr = os.path.join(d, "hypr", "sig", ".socket.sock")
+            os.makedirs(os.path.dirname(hypr))
+            for path in (niri, hypr):
+                with open(path, "w"):
+                    pass
+            for what, env in (("niri", {"NIRI_SOCKET": niri}),
+                              ("Hyprland", {"HYPRLAND_INSTANCE_SIGNATURE": "sig", "XDG_RUNTIME_DIR": d})):
+                with self.subTest(what):
+                    with mock.patch("hudfeed.sys.platform", "linux"), \
+                            mock.patch("hudfeed.a11y.HAVE_JEEPNEY", False), \
+                            mock.patch("hudfeed.terminal_probe", return_value=lambda: False), \
+                            mock.patch.object(sessionlock, "monitors", return_value=[{"name": "eDP-1"}]):
+                        lines = hudfeed.probe_report(environ=env)
+                    results, said = self.rows("\n".join(lines) + "\n")
+                    said = said.splitlines()
+                    self.assertEqual(cli.OK, results[0])        # the terminals' prompts, which are fully on
+                    self.assertNotIn("the session lock", said[0])
+                    lock = next(i for i, line in enumerate(said)
+                                if line.startswith("[warn] secure input: the session lock: "))
+                    self.assertIn(what, said[lock])
+                    self.assertIn("a lock screen built into a shell", said[lock])
+                    self.assertIn("feed.lockers in the config", said[lock + 2])
+                    self.assertIn("stop the HUD before locking", said[lock + 2])
+                    self.assertFalse([line for line in said if line.startswith("[ok  ]") and "lock" in line], said)
 
     def test_a_probe_in_part_and_none_on_is_not_nothing_and_not_ok(self):
         results, said = self.rows("carbon\tnone\tnot macOS\nterminals\toff\tno terminals' directory\n"

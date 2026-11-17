@@ -107,9 +107,11 @@ in-process; the firmware sends positions and a layer bitmap, never usages or cha
   itself (`solitaryBlockedBy` with `LOCK`); niri's IPC has no lock state, so there only a locker
   named hyprlock, swaylock, gtklock or waylock is seen by its process name, and so is one named in
   `feed.lockers` in the config (a lock screen built into a shell is such a one: its process is
-  the shell's, so it has to be named). `doctor` reports the niri lock as a warning of its own,
-  never in its ok row: it is seen by process name only, a lock screen not named is not, and the
-  thing to do is to name it in `feed.lockers` or stop the HUD before locking.
+  the shell's, so it has to be named). A Hyprland whose socket does not say (an older one, with no
+  `solitaryBlockedBy`, or a socket nothing answers on) is the same case: the lockers' names. `doctor`
+  reports a lock seen by process name only as a warning of its own, never in its ok row -- niri's
+  always, Hyprland's where it does not say: a lock screen not named is not seen, and the thing to do
+  is to name it in `feed.lockers` or stop the HUD before locking.
   Any other compositor's lock screen is not seen at all: the lockers set no logind hint, so there
   is nothing to ask. Stop the HUD before locking where none of these applies.
 - **When the gate misses, a session keeps the keys as a multiset**: a count per key and layer,

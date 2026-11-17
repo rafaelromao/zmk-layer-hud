@@ -376,12 +376,13 @@ accessibility bus, where the apps -- browsers, password managers, polkit's dialo
 widget has focus and what it is. For that the feed tells them assistive technology is wanted, as a
 screen reader would; a browser running since before shows nothing until it is started again, and
 `feed.accessibility: 0` leaves that setting alone. The session lock is seen too — under Hyprland
-on its own socket, under niri (where the compositor says nothing) by the process name of hyprlock,
-swaylock, gtklock or waylock, and of any lock screen `feed.lockers` names — so the unlock password
-goes nowhere. A lock screen built into a shell is seen under niri only once its process is named
-there (`feed.lockers: [name]`, as `comm` in `/proc` spells it). `zmk-layer-hud doctor` cannot
-tell whether the lock screen in use is one of the named, so under niri its session lock row is
-always a warning, never ok. On both systems, while a terminal is
+on its own socket; under niri, where the compositor says nothing, and under a Hyprland whose socket
+does not say, by the process name of hyprlock, swaylock, gtklock or waylock, and of any lock screen
+`feed.lockers` names — so the unlock password goes nowhere. By name, a lock screen built into a
+shell is seen only once its process is named there (`feed.lockers: [name]`, as `comm` in `/proc`
+spells it). `zmk-layer-hud doctor` cannot tell whether the lock screen in use is one of the named,
+so wherever the lock is seen by name only — under niri always — its session lock row is a warning,
+never ok. On both systems, while a terminal is
 asking for a password -- `sudo`, `ssh`, `su`, anything that reads a line with echo off -- the feed
 sees that too. Either way it then passes on nothing typed: no characters, no keys lit, no layer
 changes, nothing counted. The strip clears, the board dims and the banner says `secure input ·
@@ -636,11 +637,11 @@ beside anything that is wrong. What it cannot see:
   exposes nothing (no accessibility bus, `GTK_A11Y=none`, a toolkit of its own) gives no sign, and
   there the strip shows what is typed and the board lights its keys. The session lock is seen
   under Hyprland (from its own socket, by name -- hyprlock, swaylock, gtklock, waylock -- where
-  Hyprland does not say) and under niri (by name only, its IPC having no lock state; a lock
-  screen built into a shell is seen once `feed.lockers` names its process); another
+  Hyprland does not say) and under niri (by name only, its IPC having no lock state); by name, a
+  lock screen built into a shell is seen once `feed.lockers` names its process. Another
   compositor's lock screen is not. `zmk-layer-hud doctor` says what sees a secret
-  being typed here, and warns of what is seen only in part (niri's lock). Stop the HUD, or record
-  with it hidden, when that matters.
+  being typed here, and warns of what is seen only in part (a lock seen by name: niri's, and
+  Hyprland's where it does not say). Stop the HUD, or record with it hidden, when that matters.
 - A terminal's prompt is seen when it reads a line with echo off, as `sudo`, `ssh`, `su`, `passwd`
   and `getpass` do. One that takes the keys raw, one at a time -- `sudo` with `pwfeedback`,
   `systemd-ask-password`, a pinentry, a prompt that masks with stars -- is not, and nor is a prompt
