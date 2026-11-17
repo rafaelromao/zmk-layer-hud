@@ -1573,7 +1573,7 @@ def noctalia_status():
                   for line in r[1].splitlines())
     placed = any(NOCTALIA_WIDGET in (noctalia_list(f"bar.{bar}.{side}") or [])
                  for bar in noctalia_bars() for side in NOCTALIA_SIDES)
-    if placed and not noctalia_saved_placed():
+    if placed and noctalia_saved_placed() is False:
         return here + ("" if enabled else ", disabled (zmk-layer-hud menubar enable)") + \
             ", in the bar now but not in Noctalia's saved settings (zmk-layer-hud menubar enable)"
     return here + ("" if enabled else ", disabled (zmk-layer-hud menubar enable)") + \
@@ -1581,15 +1581,21 @@ def noctalia_status():
 
 
 def noctalia_saved_placed():
-    """Whether the settings Noctalia saved to disk have the widget in a bar's `end`: the shell
-    writes them on every change, and the bar comes back from them on a restart."""
-    import tomllib
+    """Whether the settings Noctalia saved to disk have the widget in a bar's `end` (the shell
+    writes them on every change, and the bar comes back from them on a restart): True or False,
+    or None when this cannot say -- no tomllib (Python 3.11 has it, the 3.10 this supports does
+    not), no such file where it was looked for, or one that does not parse. None is no claim
+    either way."""
+    try:
+        import tomllib
+    except ImportError:
+        return None
     state = os.environ.get("XDG_STATE_HOME") or os.path.expanduser("~/.local/state")
     try:
         with open(os.path.join(state, "noctalia", "settings.toml"), "rb") as f:
             saved = tomllib.load(f)
     except (OSError, ValueError):
-        return False
+        return None
     bars = saved.get("bar") or {}
     return any(NOCTALIA_WIDGET in ((bars.get(bar) or {}).get("end") or [])
                for bar in bars if isinstance(bars.get(bar), dict))

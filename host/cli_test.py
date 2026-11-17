@@ -780,6 +780,27 @@ class NoctaliaPlugin(unittest.TestCase):
         self.assertIn("not in Noctalia's saved settings", said)
         self.assertNotIn("but not in the bar", said)
 
+    def test_status_claims_nothing_about_saved_settings_it_cannot_read(self):
+        self.run_cli("menubar", "enable")
+        state = os.path.join(self.tmp.name, "state", "noctalia")
+        self.assertIsNone(cli.noctalia_saved_placed())            # no file where it looks
+        self.assertNotIn("saved settings", self.run_cli("menubar")[1])
+        os.makedirs(state)
+        settings = os.path.join(state, "settings.toml")
+        with open(settings, "w", encoding="utf-8") as f:
+            f.write("[bar.main\nend = ")                          # not TOML
+        self.assertIsNone(cli.noctalia_saved_placed())
+        self.assertNotIn("saved settings", self.run_cli("menubar")[1])
+        with open(settings, "w", encoding="utf-8") as f:
+            f.write('[bar.main]\nend = [ "tray" ]\n')              # would be said, if it could be read
+        # Python 3.10 has no tomllib, and the README supports 3.10: status must still run.
+        with mock.patch.dict(sys.modules, {"tomllib": None}):
+            self.assertIsNone(cli.noctalia_saved_placed())
+            code, said = self.run_cli("menubar")
+        self.assertEqual(0, code, said)
+        self.assertNotIn("saved settings", said)
+        self.assertIn(f"in {self.dir()}", said)
+
     def test_without_a_bar_here_it_says_so(self):
         code, said = self.run_cli("menubar", "enable", which=lambda n: None)
         self.assertEqual(1, code)
