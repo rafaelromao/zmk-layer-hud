@@ -22,7 +22,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import cli  # noqa: E402
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+try:
+    import tomllib
+except ImportError:             # before Python 3.11; 3.10 is supported, and has none
+    tomllib = None
+
+ROOT =os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SHIM = os.path.join(ROOT, "bin", "zmk-layer-hud")
 
 
@@ -798,6 +803,9 @@ class NoctaliaPlugin(unittest.TestCase):
         self.assertEqual(0, code)
         self.assertIn("but not in the bar", said)
 
+    # Without tomllib the saved settings are not read and nothing is said of them, which
+    # test_status_claims_nothing_about_saved_settings_it_cannot_read holds on every Python.
+    @unittest.skipUnless(tomllib, "the saved settings are read with tomllib (Python 3.11)")
     def test_status_says_when_the_bar_has_it_but_the_saved_settings_do_not(self):
         self.run_cli("menubar", "enable")
         state = os.path.join(self.tmp.name, "state", "noctalia")
@@ -847,6 +855,7 @@ class NoctaliaPlugin(unittest.TestCase):
             del os.environ["NOCTALIA_DATA_HOME"], os.environ["XDG_DATA_HOME"]
             self.assertEqual(os.path.expanduser("~/.local/share/noctalia"), cli.noctalia_home("DATA", "~/.local/share"))
 
+    @unittest.skipUnless(tomllib, "the saved settings are read with tomllib (Python 3.11)")
     def test_the_saved_settings_are_read_from_noctalias_own_state_home_when_it_is_set(self):
         self.run_cli("menubar", "enable")
         for home, end in (("state", '"tray", "zmk-hud"'), ("profile", '"tray"')):
