@@ -953,13 +953,14 @@ def do_import(source, keyboard, config_path, quiet=False, fetch=True, pristine=F
         keymap_path = find_keymap(root, keyboard)
         board = os.path.basename(keymap_path)[: -len(".keymap")]
         branch = branch_of(root) if kind == "path" else None
-        where = (f"{reading} (the working copy {stands_in_for} is missing)" if stands_in_for
-                 else reading if kind == "url" else f"{source}" + (f" (branch {branch})" if branch else ""))
-        say(quiet, f"reading {os.path.relpath(keymap_path, root)} from {where}")
         if stands_in_for:
-            remote_rec = remote
+            where = f"{reading} (the working copy {stands_in_for} is missing)"
+        elif kind == "url":
+            where = reading
         else:
-            remote_rec = remote_of(root) if kind == "path" else None
+            where = source + (f" (branch {branch})" if branch else "")
+        say(quiet, f"reading {os.path.relpath(keymap_path, root)} from {where}")
+        remote_rec = remote if stands_in_for else remote_of(root) if kind == "path" else None
         sources.update(repo=source if (kind == "url" or stands_in_for) else portable_path(source), keyboard=board)
         if remote_rec:
             sources["remote"] = remote_rec
@@ -1203,8 +1204,6 @@ def recorded(config_path):
     return None, None
 
 
-# ---------- watching ----------
-
 def recorded_remote(config_path):
     """The remote a recorded working copy stands in for when it is not on this machine, or None."""
     previous = read_previous(definitions_path(config_path))
@@ -1217,6 +1216,8 @@ def recorded_remote(config_path):
         return found.group(1).strip() if found else None
     return None
 
+
+# ---------- watching ----------
 
 def is_url(repo):
     return "://" in repo or repo.startswith("git@")

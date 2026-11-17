@@ -11,6 +11,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -522,7 +523,6 @@ layers:
 
 
 def git(repo, *args):
-    import subprocess
     env = dict(os.environ, GIT_AUTHOR_NAME="t", GIT_AUTHOR_EMAIL="t@t", GIT_COMMITTER_NAME="t", GIT_COMMITTER_EMAIL="t@t")
     return subprocess.run(["git", "-C", repo, *args], check=True, capture_output=True, text=True, env=env).stdout.strip()
 
@@ -559,7 +559,7 @@ class WorkingCopy(unittest.TestCase):
                 contextlib.redirect_stderr(io.StringIO()) as err, contextlib.redirect_stdout(io.StringIO()) as out:
             repo, board = sync.recorded(self.config)
             sync.do_import(source or repo, board or "dia", self.config, quiet=not say, fetch=False,
-                           remote=None if source else sync.recorded_remote(self.config))
+                           remote=None if source else sync.recorded_remote(self.config))   # as `sync` does: the record is read, not given
         return out.getvalue() + err.getvalue()
 
     def test_sync_follows_the_branch_that_is_checked_out(self):
@@ -645,6 +645,32 @@ class WorkingCopy(unittest.TestCase):
             shutil.rmtree(self.repo)
             with self.assertRaisesRegex(sync.SyncError, "neither a directory nor a repository"):
                 self.run_sync()
+
+    def test_the_remote_is_kept_by_a_header_only_record_and_a_url_import_has_none(self):
+        git(self.repo, "remote", "add", "origin", "git@github.com:you/keys.git")
+        self.run_sync(self.repo)
+        os.remove(self.defs)                                  # only the readable record is left
+        self.assertEqual("github.com/you/keys", sync.recorded_remote(self.config))
+        self.assertEqual((self.repo, "dia"), sync.recorded(self.config))
+        git(self.repo, "remote", "remove", "origin")
+        with mock.patch.object(sync, "resolve_source", return_value=(self.repo, "url")):
+            self.run_sync("github.com/you/keys")
+        self.assertNotIn("remote", self.recorded_sources())   # a URL is its own remote
+
+    def test_watching_reads_a_missing_working_copy_through_its_remote(self):
+        git(self.repo, "remote", "add", "origin", "git@github.com:you/keys.git")
+        with mock.patch.dict(os.environ, {"HOME": self.d}):
+            self.run_sync(self.repo)
+            with open(self.defs, encoding="utf-8") as f:
+                defs = json.load(f)
+            defs["sources"]["repo"] = "~/moved-away"
+            with open(self.defs, "w", encoding="utf-8") as f:
+                json.dump(defs, f)
+            self.assertNotIn(os.path.join(self.repo, "boards/dia/dia.keymap"), sync.inputs(self.config, "~/moved-away", "dia"))
+            with mock.patch.object(sync, "do_import") as imported, mock.patch.object(sync, "inputs", return_value=[]):
+                sync.watch(self.config, quiet=True, rounds=0)
+        self.assertEqual("github.com/you/keys", imported.call_args.kwargs["remote"])
+        self.assertEqual("~/moved-away", imported.call_args.args[0])
 
     def test_what_was_read_is_said_with_its_branch(self):
         said = self.run_sync(self.repo, say=True)
