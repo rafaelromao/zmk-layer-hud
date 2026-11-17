@@ -1218,17 +1218,22 @@ class NoctaliaPlugin(unittest.TestCase):
         self.assertEqual(sorted(os.listdir(self.SRC)), sorted(os.listdir(self.dir())))
         self.assertEqual(["layer-hud"], os.listdir(self.plugins))
 
-    def test_an_install_that_fails_leaves_nothing_staged_and_the_copy_that_was_there(self):
+    def installed_widget(self):
+        with open(os.path.join(self.dir(), "widget.luau"), encoding="utf-8") as f:
+            return f.read()
+
+    def test_an_install_that_fails_says_why_and_leaves_nothing_staged_and_the_copy_that_was_there(self):
         self.run_cli("menubar", "enable")
-        with open(os.path.join(self.dir(), "widget.luau"), encoding="utf-8") as f:
-            before = f.read()
-        with mock.patch.object(cli, "bake_marks", side_effect=OSError("disk full")), \
-                mock.patch.object(cli.shutil, "which", return_value=None):
-            with self.assertRaises(OSError):
-                cli.install_noctalia_plugin()
+        before = self.installed_widget()
+        # The disk's refusals are said as this command says any failure: no traceback.
+        with mock.patch.object(cli, "bake_marks", side_effect=OSError(28, "No space left on device")):
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn(f"could not install the Noctalia plugin in {self.dir()}", said)
+        self.assertIn("No space left on device", said)
+        self.assertNotIn("Traceback", said)
         self.assertEqual(["layer-hud"], os.listdir(self.plugins))
-        with open(os.path.join(self.dir(), "widget.luau"), encoding="utf-8") as f:
-            self.assertEqual(before, f.read())
+        self.assertEqual(before, self.installed_widget())
 
     def test_a_new_copy_that_cannot_be_moved_into_place_puts_the_old_one_back(self):
         self.run_cli("menubar", "enable")
@@ -1240,12 +1245,40 @@ class NoctaliaPlugin(unittest.TestCase):
             if dst == self.dir() and os.path.basename(src) == "new":
                 raise OSError(13, "Permission denied", dst)
             return rename(src, dst)
-        with mock.patch.object(cli.os, "rename", side_effect=refuse_the_new_copy), \
-                mock.patch.object(cli.shutil, "which", return_value=None):
-            with self.assertRaises(OSError):
-                cli.install_noctalia_plugin()
+        with mock.patch.object(cli.os, "rename", side_effect=refuse_the_new_copy):
+            code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn(f"could not install the Noctalia plugin in {self.dir()}", said)
+        self.assertIn("Permission denied", said)
+        self.assertNotIn("Traceback", said)
         self.assertEqual(["layer-hud"], os.listdir(self.plugins))
         self.assertEqual(sorted(os.listdir(self.SRC) + ["old.luau"]), sorted(os.listdir(self.dir())))
+
+    @unittest.skipIf(os.geteuid() == 0, "root writes where it likes")
+    def test_a_plugins_directory_that_cannot_be_written_to_is_said_not_thrown(self):
+        os.makedirs(self.plugins)
+        os.chmod(self.plugins, 0o500)
+        self.addCleanup(os.chmod, self.plugins, 0o700)
+        code, said = self.run_cli("menubar", "enable")
+        self.assertEqual(1, code)
+        self.assertIn(f"could not install the Noctalia plugin in {self.dir()}", said)
+        self.assertIn(self.plugins, said)                           # the path the disk refused, and why
+        self.assertIn("Permission denied", said)
+        self.assertNotIn("Traceback", said)
+        self.assertEqual([], self.fake.calls)
+
+    def test_a_plugin_disable_cannot_remove_is_said_not_thrown(self):
+        elsewhere = os.path.join(self.tmp.name, "checkout")
+        shutil.copytree(self.SRC, elsewhere)
+        os.makedirs(self.plugins)
+        os.symlink(elsewhere, self.dir())                           # a link goes with os.unlink
+        with mock.patch.object(cli.os, "unlink", side_effect=OSError(1, "Operation not permitted", self.dir())):
+            code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(1, code)
+        self.assertIn(f"{self.dir()} could not be removed", said)
+        self.assertIn("Operation not permitted", said)
+        self.assertNotIn("Traceback", said)
+        self.assertTrue(os.path.islink(self.dir()))
 
     def staging(self):
         return [n for n in os.listdir(self.plugins) if n.startswith(cli.NOCTALIA_STAGING)]

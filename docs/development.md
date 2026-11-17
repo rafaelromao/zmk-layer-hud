@@ -274,7 +274,9 @@ is running or not:
   only then does the old one go: killed at any point, `enable` leaves a whole copy in place or
   none, never one that has lost its `plugin.toml` and so would read as someone else's. The next
   `enable` or `disable` removes such a staging directory when all in it is copies of this plugin
-  (or empty), and otherwise names it and leaves it.
+  (or empty), and otherwise names it and leaves it. What the disk refuses (a plugins directory
+  that cannot be written to, a move or a removal that fails) is said with the path and the reason,
+  and the command exits 1, rather than ending in a traceback.
 
 What the icons show comes from the page: `{"kind":"stats"}` (docs/protocol.md) carries the
 session's average and top WPM and the rows of its stats column, at most once a second, and the

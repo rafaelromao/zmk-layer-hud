@@ -1753,17 +1753,20 @@ def install_noctalia_plugin():
     at any point, this leaves the old copy, the new one, or neither in place with both set aside --
     never half of one, which would no longer say whose it is -- and the next run clears what was
     set aside (noctalia_leftovers). Whose the place is, is asked again right before the old copy is
-    moved: the copying in between takes its time."""
+    moved: the copying in between takes its time.
+    What the disk refuses -- a plugins directory that cannot be written to, a move that fails -- is
+    said with the path and the reason, as any other failure of this command is."""
     import tempfile
     dest = noctalia_plugin_dir()
     if noctalia_plugin_state() == "theirs":
         raise noctalia_refusal()
     source = os.path.join(ROOT, "host", "linux", "noctalia")
-    os.makedirs(NOCTALIA_PLUGINS, exist_ok=True)
-    for left in noctalia_leftovers():
-        warn(noctalia_leftover_said(left))
-    staging = tempfile.mkdtemp(prefix=NOCTALIA_STAGING, dir=NOCTALIA_PLUGINS)
+    staging = None
     try:
+        os.makedirs(NOCTALIA_PLUGINS, exist_ok=True)
+        for left in noctalia_leftovers():
+            warn(noctalia_leftover_said(left))
+        staging = tempfile.mkdtemp(prefix=NOCTALIA_STAGING, dir=NOCTALIA_PLUGINS)
         staged, old = os.path.join(staging, "new"), os.path.join(staging, "old")
         os.mkdir(staged)
         # The manifest first: a copy cut short still says whose it is, to the run that finds it.
@@ -1788,8 +1791,11 @@ def install_noctalia_plugin():
             if os.path.isdir(old) and not os.path.lexists(dest):
                 os.rename(old, dest)        # the copy that was there, back where it was
             raise
+    except OSError as e:
+        raise Fail(f"could not install the Noctalia plugin in {dest}: {e}")
     finally:
-        shutil.rmtree(staging, ignore_errors=True)
+        if staging:
+            shutil.rmtree(staging, ignore_errors=True)
     return dest
 
 
@@ -1853,7 +1859,11 @@ def noctalia_disable():
         if not r or r[0] != 0:
             problems.append(f"Noctalia would not disable {NOCTALIA_ID} ({noctalia_said(r)}); "
                             f"`noctalia msg plugins disable {NOCTALIA_ID}` does it by hand")
-    removed = noctalia_remove_plugin()    # which looks again at whose it is
+    removed = False
+    try:
+        removed = noctalia_remove_plugin()        # which looks again at whose it is
+    except OSError as e:
+        problems.append(f"{noctalia_plugin_dir()} could not be removed: {e}")
     return bool(changed) or removed, problems, notes()
 
 
