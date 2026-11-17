@@ -187,8 +187,9 @@ work:
   running it says so and leaves the plugin where it is, so run it again once the shell is up. The
   plugin's directory, `~/.local/share/noctalia/plugins/layer-hud`, is named for the end of its id
   alone, which another plugin can share: `enable`, `disable` and `uninstall` replace or remove it
-  only when the `plugin.toml` in it opens with the id `zmk/layer-hud`. Anything else there is left alone, and
-  `enable` and `disable` say so and fail. Under
+  only when the `plugin.toml` in it opens with the id `zmk/layer-hud`. Anything else there is left
+  alone and said: `enable` fails for it, since the HUD's plugin cannot go in, while `disable` and
+  `uninstall` still take the icon out of the bars and succeed. Under
   niri the HUD first opens in the screen's top-right corner (niri does not say how much room a bar
   takes), which on a bar along the top edge can be over the icon: drag the HUD once, and its place
   is saved.

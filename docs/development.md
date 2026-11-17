@@ -257,10 +257,14 @@ is running or not:
   plugin's own manifest has it. An `id = ...` further down could be a line inside a multi-line
   string or an entry's own id, and is not looked for; nor is a line with whitespace or a line
   ending TOML does not allow (a no-break space, a form feed, a carriage return alone). What it
-  cannot be sure of is someone else's, never ours. Only then do `enable`, `disable`, `update` and `uninstall` write over it or remove it. Anything else
-  in its place -- another plugin, a directory without a manifest, a file -- is left alone: `enable`
-  and `disable` say so and exit 1, `uninstall` says so, `update` does not run `menubar enable` for
-  it, and `menubar status` calls the plugin not installed and says why. A link to a copy of the
+  cannot be sure of is someone else's, never ours. Only then do `enable`, `disable`, `update` and
+  `uninstall` write over it or remove it. Anything else in its place -- another plugin, a
+  directory without a manifest, a file -- is left alone: `enable` says so and exits 1, since the
+  directory stands where the plugin has to go; `disable` takes our icon out of the bars as ever,
+  says on stderr what it left, and exits 0, for what it promises still holds and only moving
+  someone else's plugin could clear a failure (it exits 1 only for what it could not do itself);
+  `uninstall` says so, `update` does not run `menubar enable` for it, and `menubar status` calls
+  the plugin not installed and says why. A link to a copy of the
   plugin is removed as a link. The new copy is made ready one level down in a directory of its
   own (`mkdtemp`) and renamed into place, so nothing that was already there is removed for it, and
   the shell, which takes every directory of the plugins directory with a `plugin.toml` in it for a

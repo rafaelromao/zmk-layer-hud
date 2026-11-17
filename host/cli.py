@@ -1394,13 +1394,16 @@ def cmd_menubar(args):
         if omarchy_out:
             rescan_plugins()
         # Noctalia's too is asked wherever Noctalia is, for an entry whose folder is already gone.
-        noctalia_out, problems = noctalia_disable() if (noctalia_here or noctalia_plugin_there) else (False, [])
+        noctalia_out, problems, notes = (noctalia_disable() if (noctalia_here or noctalia_plugin_there)
+                                         else (False, [], []))
         gone = [name for name, out in (("Omarchy", omarchy_out), ("Noctalia", noctalia_out and not problems)) if out]
         if gone:
             print("the HUD's icon is out of " + " and ".join(f"{name}'s bar" for name in gone))
         elif not problems:
             print("the bar plugin was not installed")
-        for why in problems:
+        # A note is what was left alone on purpose (someone else's directory in the plugin's place):
+        # said, and no failure, for what `disable` is for is done all the same.
+        for why in notes + problems:
             warn(f"Noctalia: {why}")
         if problems:
             if noctalia_installed():
@@ -1752,24 +1755,29 @@ def noctalia_enable():
 
 
 def noctalia_disable():
-    """Out of the bar and off the disk -> (took, problems): whether there was anything to take, and
-    what could not be done, as sentences. The widget's `[widget.zmk-hud]` definition is left where
-    it is: it is inert without the plugin, and the next enable writes the same one over it.
+    """Out of the bar and off the disk -> (took, problems, notes): whether there was anything to
+    take, what could not be done, and what was left alone on purpose, each as sentences. The
+    widget's `[widget.zmk-hud]` definition is left where it is: it is inert without the plugin, and
+    the next enable writes the same one over it.
     When the shell cannot be asked, or will not take a bar's list, the plugin stays on the disk:
     gone from it with the icon still in the bar, a later `disable` would find nothing to do and
     this command could never take the icon out. Where there is no `noctalia` at all there is no
     bar of its to clean, and the folder is all there is to take.
     Only this plugin's folder is taken. Something else in its place -- another author's plugin
-    whose id ends the same way -- is left alone, and that is one of the problems: said, with the
-    command failing for it, rather than passed over as if the place had been empty."""
+    whose id ends the same way -- is left alone and said, as a note and not a problem: with it
+    there, what this promises still holds (our icon out of the bars, our plugin off the disk), and
+    the only way to make a failure go away would be to move someone else's plugin."""
+    def notes():
+        # Asked when it is said, after anything was removed: what is there now.
+        return [noctalia_theirs() + ", so it was left alone"] if noctalia_plugin_state() == "theirs" else []
+
     state = noctalia_plugin_state()
-    theirs = [noctalia_theirs() + ", so it was left alone"] if state == "theirs" else []
     asked = bool(shutil.which("noctalia"))
     changed, failed = noctalia_place(put_in=False)[:2] if asked else ([], [])
     if state != "ours" and not changed:
-        return False, theirs              # nothing of ours is known here, and no bar has any
+        return False, [], notes()         # nothing of ours is known here, and no bar has any
     if failed:
-        return bool(changed), failed + theirs
+        return bool(changed), failed, notes()
     problems = []
     if asked:
         r = noctalia("msg", "plugins", "disable", NOCTALIA_ID)
@@ -1779,7 +1787,7 @@ def noctalia_disable():
     removed = state == "ours"
     if removed:
         noctalia_remove_plugin()
-    return bool(changed) or removed, problems + theirs
+    return bool(changed) or removed, problems, notes()
 
 
 def noctalia_uninstall():
@@ -1787,10 +1795,10 @@ def noctalia_uninstall():
     what stopped that, said. By hand, because this command goes with the tree."""
     if not (noctalia_plugin_state() or shutil.which("noctalia")):
         return
-    took, problems = noctalia_disable()
+    took, problems, notes = noctalia_disable()
     if took and not problems:
         print("    took the bar plugin out of Noctalia")
-    for why in problems:
+    for why in notes + problems:
         print(f"    Noctalia: {why}")
     if problems and noctalia_installed():     # ours and still there; someone else's is not ours to delete
         print(f"    left {noctalia_plugin_dir()} in place: take `{NOCTALIA_WIDGET}` out of the bars' lists "

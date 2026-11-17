@@ -593,6 +593,22 @@ class OmarchyPlugin(unittest.TestCase):
         self.assertIn("Omarchy's bar", said)
         self.assertEqual([], [c for c in self.noctalia.calls if c[:2] == ("msg", "config-set")])
 
+    def test_someone_elses_noctalia_plugin_does_not_fail_omarchys_disable(self):
+        # Both bars on one machine: another author's directory in the Noctalia plugin's place is
+        # said, and a disable that took the icon out of Omarchy's bar still succeeds.
+        with open(self.shell, "w", encoding="utf-8") as f:
+            f.write(SHELL_JSON)
+        self.run_cli("menubar", "enable")
+        theirs = os.path.join(self.tmp.name, "noctalia", "layer-hud")
+        os.makedirs(theirs)
+        with open(os.path.join(theirs, "plugin.toml"), "w", encoding="utf-8") as f:
+            f.write('id = "someone/layer-hud"\n')
+        code, said, _ = self.run_cli("menubar", "disable")
+        self.assertEqual(0, code, said)
+        self.assertIn("Omarchy's bar", said)
+        self.assertIn("is not this plugin's", said)
+        self.assertEqual(["plugin.toml"], os.listdir(theirs))
+
     def test_disable_on_a_machine_without_omarchy_touches_nothing(self):
         code, said, _ = self.run_cli("menubar", "disable", which=lambda n: None)
         self.assertEqual(0, code, said)
@@ -1154,7 +1170,7 @@ class NoctaliaPlugin(unittest.TestCase):
         self.assertIn("is not this plugin's", said)
         self.assert_theirs_is_untouched(manifest)
         code, said = self.run_cli("menubar", "disable")
-        self.assertEqual(1, code)
+        self.assertEqual(0, code, said)
         self.assertIn("is not this plugin's", said)
         self.assert_theirs_is_untouched(manifest)
         self.assertIn("is not this plugin's", self.uninstall_step())
@@ -1214,35 +1230,59 @@ class NoctaliaPlugin(unittest.TestCase):
         with open(os.path.join(self.dir(), "widget.luau"), encoding="utf-8") as f:
             self.assertEqual(before, f.read())
 
-    def test_disable_leaves_another_plugins_directory_alone_and_fails_saying_so(self):
+    def test_disable_leaves_another_plugins_directory_alone_and_says_so_without_failing(self):
+        # What `disable` is for holds with it there -- our icon out of the bars, our plugin off the
+        # disk -- and the user could only make a failure go away by moving someone else's plugin.
         self.someone_elses()
         code, said = self.run_cli("menubar", "disable")
-        self.assertEqual(1, code)
+        self.assertEqual(0, code, said)
+        self.assertIn("the bar plugin was not installed", said)
         self.assertIn(f"{self.dir()} is not this plugin's", said)
         self.assertIn("left alone", said)
         self.assertNotIn("is out of", said)
         self.assertNotIn("left in place", said)                     # that is said of ours, to finish later
-        self.assertNotIn("not installed", said)                     # nor is it passed over as an empty place
         self.assert_theirs_is_untouched()
         self.assertNotIn(("msg", "plugins", "disable", cli.NOCTALIA_ID), self.fake.calls)
 
-    def test_disable_takes_the_icon_out_of_the_bar_and_still_leaves_another_plugins_directory(self):
+    def test_the_note_about_another_plugins_directory_goes_to_stderr(self):
+        self.someone_elses()
+        with mock.patch.object(cli.shutil, "which", side_effect=lambda n: None if n.startswith("omarchy") else "/usr/bin/" + n), \
+                contextlib.redirect_stdout(io.StringIO()) as out, contextlib.redirect_stderr(io.StringIO()) as err:
+            code = cli.main(["menubar", "disable"])
+        self.assertEqual(0, code)
+        self.assertEqual("the bar plugin was not installed\n", out.getvalue())
+        self.assertIn("is not this plugin's", err.getvalue())
+
+    def test_disable_takes_the_icon_out_of_the_bar_and_says_both_that_and_the_directory_left(self):
         # This plugin was enabled once, and its directory has since become someone else's.
         self.fake.cfg["bar"]["main"]["end"] = ["tray", cli.NOCTALIA_WIDGET]
         self.someone_elses()
         code, said = self.run_cli("menubar", "disable")
-        self.assertEqual(1, code)
+        self.assertEqual(0, code, said)
         self.assertEqual(["tray"], self.fake.cfg["bar"]["main"]["end"])
         self.assertIn(("msg", "plugins", "disable", cli.NOCTALIA_ID), self.fake.calls)
+        self.assertIn("the HUD's icon is out of Noctalia's bar", said)
         self.assertIn("is not this plugin's", said)
         self.assertIn("left alone", said)
+        self.assert_theirs_is_untouched()
+
+    def test_disable_still_fails_for_what_it_could_not_do_with_another_plugins_directory_there(self):
+        self.fake.cfg["bar"]["main"]["end"] = ["tray", cli.NOCTALIA_WIDGET]
+        self.fake.cfg["bar"]["main"]["start"] = [cli.NOCTALIA_WIDGET]
+        self.someone_elses()
+        self.fake.refuse.append(lambda argv: argv[1] == "config-set" and argv[2] == "bar.main.end")
+        code, said = self.run_cli("menubar", "disable")
+        self.assertEqual(1, code)
+        self.assertIn("bar.main.end was not taken", said)
+        self.assertIn("is not this plugin's", said)
+        self.assertNotIn("left in place", said)                     # theirs is not ours to finish with later
         self.assert_theirs_is_untouched()
 
     def test_disable_without_noctalia_on_the_path_leaves_another_plugins_directory_too(self):
         self.someone_elses()
         code, said = self.run_cli("menubar", "disable",
                                   which=lambda n: None if n.startswith("omarchy") or n == "noctalia" else "/usr/bin/" + n)
-        self.assertEqual(1, code)
+        self.assertEqual(0, code, said)
         self.assertIn("is not this plugin's", said)
         self.assert_theirs_is_untouched()
         self.assertEqual([], self.fake.calls)
