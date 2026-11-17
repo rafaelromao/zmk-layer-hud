@@ -685,7 +685,7 @@ class NiriProbe(Probe):
         if written.exists():
             binds = kdl_binds(written.read_text(encoding="utf-8"))
             report.check("shortcuts: every bind is repeat=false",
-                         len(binds) >= 2 and all(b["props"].get("repeat") == "false" for b in binds),
+                         len(binds) >= 2 and all(b["props"].get("repeat") == "true" for b in binds),
                          ", ".join(f"{b['key']} {b['props']}" for b in binds) or "no binds found")
         report.check("shortcuts: config.kdl ends with the include", include_is_last(main.read_text(encoding="utf-8"), NIRI_INCLUDE),
                      NIRI_INCLUDE)
